@@ -164,6 +164,67 @@ describe("CorrectionSessionManager", () => {
     await workspace.close();
   });
 
+  it("commit I/O 중 같은 version 명령을 거부해 최신 session 상태 유실을 막는다", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-correction-race-"));
+    const workspace = await StagingWorkspace.open(temporary.path);
+    const document = await goldenDocument();
+    await workspace.saveReady(document, []);
+    let releaseCommit: (() => void) | undefined;
+    let notifyCommitStarted: (() => void) | undefined;
+    const commitStarted = new Promise<void>((resolve) => {
+      notifyCommitStarted = resolve;
+    });
+    const release = new Promise<void>((resolve) => {
+      releaseCommit = resolve;
+    });
+    const delayedWorkspace = {
+      catalog: () => workspace.catalog(),
+      readDocument: (...args: Parameters<StagingWorkspace["readDocument"]>) =>
+        workspace.readDocument(...args),
+      readFindings: (...args: Parameters<StagingWorkspace["readFindings"]>) =>
+        workspace.readFindings(...args),
+      readOriginal: (...args: Parameters<StagingWorkspace["readOriginal"]>) =>
+        workspace.readOriginal(...args),
+      readSourceBundle: (...args: Parameters<StagingWorkspace["readSourceBundle"]>) =>
+        workspace.readSourceBundle(...args),
+      commitCorrection: async (...args: Parameters<StagingWorkspace["commitCorrection"]>) => {
+        notifyCommitStarted?.();
+        await release;
+        return workspace.commitCorrection(...args);
+      },
+    };
+    const manager = new CorrectionSessionManager(delayedWorkspace, () => "session-race");
+    const created = await manager.create({
+      authority: "staging",
+      gameId: document.metadata.gameId,
+    });
+    manager.command(
+      created.sessionId,
+      0,
+      { commandId: "race-move", kind: "move_event", eventId: "e4", beforeEventId: "e2" },
+      true,
+    );
+
+    const committing = manager.commit(created.sessionId, {
+      expectedSessionVersion: 1,
+      allowBlockingStaging: false,
+    });
+    await commitStarted;
+    expect(() =>
+      manager.command(
+        created.sessionId,
+        1,
+        { commandId: "concurrent-delete", kind: "delete_event", eventId: "e2" },
+        true,
+      ),
+    ).toThrow(StaleCorrectionSessionError);
+    releaseCommit?.();
+    await expect(committing).resolves.toMatchObject({
+      session: { sessionVersion: 2, dirty: false },
+    });
+    await workspace.close();
+  });
+
   it("다중 행 추가 batch를 한 번의 version 증가와 undo 단위로 처리한다", async () => {
     await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-correction-batch-"));
     const workspace = await StagingWorkspace.open(temporary.path);
@@ -245,6 +306,39 @@ describe("CorrectionSessionManager", () => {
     });
     const undone = manager.undo(created.sessionId, 1);
     expect(undone.session.draftDocument).toEqual(current.document);
+    await workspace.close();
+  });
+
+  it("sealed revision draft에서 original을 불러와도 revisionBase를 유지한다", async () => {
+    await using temporary = await mkdtempDisposable(
+      path.join(tmpdir(), "kbo-original-load-revision-"),
+    );
+    const workspace = await StagingWorkspace.open(temporary.path);
+    const original = await goldenDocument();
+    await workspace.saveReady(original, []);
+    const sealed = parseStagingGameDocumentV2({
+      ...original,
+      revisionBase: {
+        kind: "sealed_revision",
+        revision: 1,
+        documentHash: "a".repeat(64),
+      },
+    });
+    await workspace.commitCorrection({
+      baseAuthority: "staging",
+      targetAuthority: "staging",
+      baseDocumentHash: stagingDocumentHash(original),
+      document: sealed,
+      findings: compileStagingGameDocumentV2(sealed).findings,
+    });
+    const manager = new CorrectionSessionManager(workspace, () => "session-original-revision");
+    const created = await manager.create({
+      authority: "staging",
+      gameId: original.metadata.gameId,
+    });
+
+    const loaded = await manager.loadOriginal(created.sessionId, 0);
+    expect(loaded.session.draftDocument.revisionBase).toEqual(sealed.revisionBase);
     await workspace.close();
   });
 

@@ -120,6 +120,9 @@ function insertEvent(
   event: StagingRelayEvent,
   beforeEventId: string | null,
 ): StagingRelayEvent[] {
+  if (event.identity.kind !== "manual") {
+    throw new Error("수동 추가 명령은 source identity를 만들 수 없습니다.");
+  }
   if (events.some((candidate) => candidate.identity.eventId === event.identity.eventId))
     throw new Error(`이미 존재하는 원장 event ID입니다: ${event.identity.eventId}`);
   const result = [...events];
@@ -273,11 +276,22 @@ function replaceEvent(
   const current = document.events[index];
   if (current === undefined) throw new Error(`원장 event를 찾을 수 없습니다: ${eventId}`);
   const events = [...document.events];
-  events[index] = {
+  const common = {
     ...replacement,
     identity: current.identity,
     sequence: current.sequence,
-  } as StagingRelayEvent;
+  };
+  events[index] = (
+    current.identity.kind === "source"
+      ? {
+          ...common,
+          ...(current.relayText === undefined ? {} : { relayText: current.relayText }),
+          ...(current.observedStateAfter === undefined
+            ? {}
+            : { observedStateAfter: current.observedStateAfter }),
+        }
+      : common
+  ) as StagingRelayEvent;
   const replaced = withEvents(document, events);
   return current.kind === "pitch" && replacement.kind !== "pitch"
     ? excludeTrackingForPitch(
@@ -337,6 +351,8 @@ function updateRosterPlayer(
   playerId: string,
   player: StagingGameDocumentV2["rosters"][Side]["players"][number],
 ): StagingGameDocumentV2 {
+  if (player.playerId !== playerId)
+    throw new Error("roster 선수 ID는 update 명령으로 변경할 수 없습니다.");
   const players = [...document.rosters[side].players];
   const index = players.findIndex((candidate) => candidate.playerId === playerId);
   if (index < 0) throw new Error(`roster 선수를 찾을 수 없습니다: ${playerId}`);
@@ -365,6 +381,8 @@ function updateBatterRecord(
   playerId: string,
   record: StagingGameDocumentV2["officialRecords"]["batters"][number],
 ): StagingGameDocumentV2 {
+  if (record.playerId !== playerId)
+    throw new Error("공식 타자 기록의 선수 ID가 update 대상과 다릅니다.");
   const records = [...document.officialRecords.batters];
   const index = records.findIndex((candidate) => candidate.playerId === playerId);
   if (index < 0) records.push(record);
@@ -377,6 +395,8 @@ function updatePitcherRecord(
   playerId: string,
   record: StagingGameDocumentV2["officialRecords"]["pitchers"][number],
 ): StagingGameDocumentV2 {
+  if (record.playerId !== playerId)
+    throw new Error("공식 투수 기록의 선수 ID가 update 대상과 다릅니다.");
   const records = [...document.officialRecords.pitchers];
   const index = records.findIndex((candidate) => candidate.playerId === playerId);
   if (index < 0) records.push(record);

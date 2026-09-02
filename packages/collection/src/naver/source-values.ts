@@ -1,3 +1,5 @@
+import { canonicalStringify, compareCanonicalStrings } from "@kbo/contracts";
+
 import { NaverSourceFormatError } from "../errors.js";
 
 export type JsonRecord = Readonly<Record<string, unknown>>;
@@ -79,13 +81,19 @@ export function parseHalf(value: unknown): "top" | "bottom" | null {
   return null;
 }
 
-export function sortValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortValue);
+export function sourceValueFingerprint(value: unknown): string {
+  return canonicalStringify(normalizeSourceJsonValue(value));
+}
+
+function normalizeSourceJsonValue(value: unknown): unknown {
+  if (value === undefined) return null;
+  if (Array.isArray(value)) return value.map(normalizeSourceJsonValue);
   if (!isRecord(value)) return value;
   return Object.fromEntries(
     Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, child]) => [key, sortValue(child)]),
+      .filter(([, child]) => child !== undefined)
+      .sort(([left], [right]) => compareCanonicalStrings(left, right))
+      .map(([key, child]) => [key, normalizeSourceJsonValue(child)]),
   );
 }
 

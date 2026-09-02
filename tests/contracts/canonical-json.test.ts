@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CanonicalJsonError, canonicalStringify } from "@kbo/contracts";
+import { CanonicalJsonError, canonicalStringify, compareCanonicalStrings } from "@kbo/contracts";
 
 describe("canonicalStringify", () => {
   it("object key를 코드 포인트 순으로 정렬하고 문자열을 NFC로 정규화한다", () => {
@@ -9,6 +9,16 @@ describe("canonicalStringify", () => {
 
   it("배열 순서와 -0 정규화를 보존한다", () => {
     expect(canonicalStringify([2, -0, 1])).toBe("[2,0,1]");
+  });
+
+  it("문자열 정렬도 locale 대신 NFC code-point 순서를 사용한다", () => {
+    expect(["한", "A", "e\u0301", "é"].sort(compareCanonicalStrings)).toEqual([
+      "A",
+      "e\u0301",
+      "é",
+      "한",
+    ]);
+    expect(compareCanonicalStrings("e\u0301", "é")).toBe(0);
   });
 
   it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])(

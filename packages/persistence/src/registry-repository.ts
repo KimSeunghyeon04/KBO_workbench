@@ -3,7 +3,7 @@ import type {
   RegistrySeasonDataset,
   RegistryStatusEvent,
 } from "@kbo/contracts";
-import { parseRegistrySeasonDataset } from "@kbo/contracts";
+import { compareCanonicalStrings, parseRegistrySeasonDataset } from "@kbo/contracts";
 import type { Pool, PoolClient } from "pg";
 
 export interface RegistryDateRange {
@@ -219,7 +219,7 @@ async function upsertRegistryTeams(
     dataset.registrationSnapshots.map((snapshot) => [snapshot.teamCode, snapshot.teamName]),
   );
   for (const [teamCode, teamName] of [...teams].sort(([left], [right]) =>
-    left.localeCompare(right),
+    compareCanonicalStrings(left, right),
   )) {
     const candidates = await client.query<{ readonly team_id: string }>(
       `SELECT DISTINCT i.team_id FROM catalog.team_name_observations n
@@ -271,7 +271,7 @@ async function upsertRegistryPlayers(
   for (const snapshot of dataset.registrationSnapshots)
     for (const player of snapshot.players) players.set(player.playerId, player);
   for (const player of [...players.values()].sort((left, right) =>
-    left.playerId.localeCompare(right.playerId),
+    compareCanonicalStrings(left.playerId, right.playerId),
   )) {
     const canonicalPlayerId = `kbo:${player.playerId}`;
     const identityKey = canonicalPlayerId;
@@ -293,8 +293,8 @@ async function upsertRegistryPlayers(
       )
       .sort(
         (left, right) =>
-          left.snapshot.snapshotDate.localeCompare(right.snapshot.snapshotDate) ||
-          left.item.playerName.localeCompare(right.item.playerName),
+          compareCanonicalStrings(left.snapshot.snapshotDate, right.snapshot.snapshotDate) ||
+          compareCanonicalStrings(left.item.playerName, right.item.playerName),
       );
     for (const observation of observations) {
       await client.query(
@@ -517,7 +517,7 @@ function firstTeamStints(
   }
   const result: Stint[] = [];
   for (const [key, unsortedDays] of [...daysByPlayerTeam].sort(([left], [right]) =>
-    left.localeCompare(right),
+    compareCanonicalStrings(left, right),
   )) {
     const separator = key.indexOf("\u0000");
     const teamIdentityKey = key.slice(0, separator);
@@ -584,7 +584,9 @@ function organizationStints(
       });
     }
   });
-  for (const [key, start] of [...active].sort(([left], [right]) => left.localeCompare(right))) {
+  for (const [key, start] of [...active].sort(([left], [right]) =>
+    compareCanonicalStrings(left, right),
+  )) {
     const separator = key.indexOf("\u0000");
     result.push({
       kind: "organization_affiliation",

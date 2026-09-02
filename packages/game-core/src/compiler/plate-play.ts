@@ -152,8 +152,12 @@ export function applyIndependentRunnerPlay(
   state: MutableState,
   event: RunnerAdvanceEvent,
   runners: readonly RunnerAdvanceEvent[],
+  attachedNonState: readonly StagingRelayEvent[],
   context: CompileContext,
 ): PlatePlayApplication {
+  const relayRows = [...runners, ...attachedNonState].sort(
+    (left, right) => left.sequence - right.sequence,
+  );
   const pitcherId =
     state.activePlateAppearance?.currentPitcherId ??
     state.activePitchers[opposite(battingSide(state.half))];
@@ -165,7 +169,7 @@ export function applyIndependentRunnerPlay(
       "domain",
       "주자 이동의 책임 투수를 결정할 수 없습니다.",
     );
-    return { relayEventIds: runners.map(id), relayTexts: relayTextsOf(runners), movements: [] };
+    return { relayEventIds: relayRows.map(id), relayTexts: relayTextsOf(relayRows), movements: [] };
   }
   const rawMovements: CompiledRunnerMovement[] = [];
   for (const runner of runners) {
@@ -180,10 +184,10 @@ export function applyIndependentRunnerPlay(
     context,
     rawMovements,
   );
-  for (const runner of runners.slice(1)) appendPlateEvent(state, id(runner));
+  for (const row of relayRows.slice(1)) appendPlateEvent(state, id(row));
   return {
-    relayEventIds: runners.map(id),
-    relayTexts: relayTextsOf(runners),
+    relayEventIds: relayRows.map(id),
+    relayTexts: relayTextsOf(relayRows),
     movements: applied ? placementMovements : [],
   };
 }

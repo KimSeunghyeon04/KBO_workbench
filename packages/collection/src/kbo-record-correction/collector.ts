@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import {
   canonicalStringify,
+  compareCanonicalStrings,
   parseRecordCorrectionSeasonDataset,
   type RecordCorrectionNotice,
   type RecordCorrectionSeasonDataset,
@@ -170,13 +171,13 @@ export class KboRecordCorrectionCollector {
       season: options.season,
       collectedAt: latestCollectedAt(sourcePages),
       sourcePages: sourcePages.sort((left, right) =>
-        left.requestKey.localeCompare(right.requestKey),
+        compareCanonicalStrings(left.requestKey, right.requestKey),
       ),
       notices: notices.sort(
         (left, right) =>
           left.seriesId - right.seriesId ||
           left.recordNumber - right.recordNumber ||
-          left.noticeId.localeCompare(right.noticeId),
+          compareCanonicalStrings(left.noticeId, right.noticeId),
       ),
     });
     const sourceBundleHash = createHash("sha256")

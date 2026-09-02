@@ -191,6 +191,58 @@ describe("원자적 주자 위치 해석", () => {
     );
   });
 
+  it("review와 administrative가 사이에 있어도 독립 주자 이동을 한 play로 묶는다", () => {
+    const replay = compileStagingGameDocumentV2(
+      makeDocument([
+        { kind: "half_inning_start", payload: {} },
+        { kind: "batter_start", payload: { batterId: "a1", pitcherId: "hp1" } },
+        { kind: "plate_result", payload: { result: "double", batterId: "a1", pitcherId: "hp1" } },
+        { kind: "batter_start", payload: { batterId: "a2", pitcherId: "hp1" } },
+        { kind: "plate_result", payload: { result: "single", batterId: "a2", pitcherId: "hp1" } },
+        { kind: "batter_start", payload: { batterId: "a3", pitcherId: "hp1" } },
+        {
+          kind: "runner_advance",
+          payload: {
+            runnerId: "a2",
+            fromBase: 1,
+            toBase: 2,
+            outcome: "safe",
+            context: { kind: "independent", reason: "stolen_base" },
+          },
+        },
+        {
+          kind: "review",
+          payload: { decision: "upheld", reviewedEventId: "e6" },
+          relayText: "비식별 판독 유지",
+        },
+        {
+          kind: "administrative",
+          payload: { code: "announcement" },
+          relayText: "비식별 안내",
+        },
+        {
+          kind: "runner_advance",
+          payload: {
+            runnerId: "a1",
+            fromBase: 2,
+            toBase: 3,
+            outcome: "safe",
+            context: { kind: "independent", reason: "other" },
+          },
+        },
+      ]),
+    );
+
+    const runnerPlay = replay.plays.find((play) => play.kind === "runner_advance");
+    expect(runnerPlay).toMatchObject({
+      applied: true,
+      relayEventIds: ["e6", "e7", "e8", "e9"],
+    });
+    expect(replay.findings.map((finding) => finding.code)).not.toContain(
+      "runner_destination_occupied",
+    );
+  });
+
   it("행 순서상 제3아웃 뒤에 있는 명시적 득점도 tag out이면 인정한다", () => {
     const replay = compileStagingGameDocumentV2(
       makeDocument([

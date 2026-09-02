@@ -4,7 +4,7 @@ import type {
   StagingGameDocumentV2,
   StagingRelayEvent,
 } from "@kbo/contracts";
-import { parseStagingGameDocumentV2 } from "@kbo/contracts";
+import { compareCanonicalStrings, parseStagingGameDocumentV2 } from "@kbo/contracts";
 import {
   compileStagingGameDocumentV2,
   stagingDocumentHash,
@@ -449,7 +449,7 @@ async function upsertGameCatalog(
     }
   }
   for (const [externalPlayerId, displayName] of [...names].sort(([left], [right]) =>
-    left.localeCompare(right),
+    compareCanonicalStrings(left, right),
   )) {
     const identityKey = `naver:${externalPlayerId}`;
     await client.query(

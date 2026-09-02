@@ -23,7 +23,10 @@ describe("평면 원장 golden compile", () => {
     ]);
     expect(replay.frames).toHaveLength(document.events.length);
     expect(single).toMatchObject({ relayEventIds: ["e10", "e11"], applied: true });
-    expect(homer).toMatchObject({ relayEventIds: ["e17", "e18", "e19"], applied: true });
+    expect(homer).toMatchObject({
+      relayEventIds: ["e17", "e18", "e19", "e20"],
+      applied: true,
+    });
     expect(homer?.movements.map((movement) => [movement.runnerId, movement.derived])).toEqual([
       ["a1", false],
       ["a2", false],

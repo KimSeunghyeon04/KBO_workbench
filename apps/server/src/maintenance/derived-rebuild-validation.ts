@@ -26,7 +26,9 @@ export function assertNoUnexpectedQuarantineIncrease(
   }
   const blockingCodeSummary = [...gamesByCode]
     .map(([code, gameIds]) => ({ code, games: gameIds.size }))
-    .sort((left, right) => right.games - left.games || left.code.localeCompare(right.code))
+    .sort(
+      (left, right) => right.games - left.games || compareCanonicalStrings(left.code, right.code),
+    )
     .slice(0, 5)
     .map(({ code, games }) => `${code}=${String(games)}`)
     .join(", ");
@@ -35,3 +37,4 @@ export function assertNoUnexpectedQuarantineIncrease(
     `재생성 격리 경기가 증가했습니다: baseline=${String(baselineQuarantined)}, projected=${String(quarantined.length)}; blocking codes: ${blockingCodeSummary}`,
   );
 }
+import { compareCanonicalStrings } from "@kbo/contracts";

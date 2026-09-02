@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import {
   canonicalStringify,
+  compareCanonicalStrings,
   type GameCatalog,
   type GameCatalogItem,
   type ImportJob,
@@ -150,7 +151,7 @@ export class ImportJobManager {
   public list(): readonly ImportJob[] {
     return [...this.jobs.values()]
       .map((job) => cloneImportJob(job.snapshot))
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+      .sort((left, right) => compareCanonicalStrings(right.createdAt, left.createdAt));
   }
 
   public async waitForTerminal(jobId: string): Promise<ImportJob> {
@@ -178,7 +179,7 @@ export class ImportJobManager {
     );
     const ready = workspaceCatalog.games
       .filter((game) => game.authority === "staging")
-      .sort((left, right) => left.gameId.localeCompare(right.gameId));
+      .sort((left, right) => compareCanonicalStrings(left.gameId, right.gameId));
     const candidates = ready.filter(
       (game) => game.season !== null && !activeGameIds.has(game.gameId),
     );

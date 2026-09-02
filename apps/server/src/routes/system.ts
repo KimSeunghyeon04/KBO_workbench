@@ -1,5 +1,6 @@
 import {
   DatabaseOverviewSchema,
+  compareCanonicalStrings,
   DashboardSummarySchema,
   HealthStatusSchema,
   SystemStatusSchema,
@@ -130,6 +131,6 @@ function recentFailures(runtime: RouteContext["runtime"]): FailureDiagnostic[] {
         occurredAt: job.finishedAt ?? job.createdAt,
       })),
   ]
-    .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
+    .sort((left, right) => compareCanonicalStrings(right.occurredAt, left.occurredAt))
     .slice(0, 10);
 }

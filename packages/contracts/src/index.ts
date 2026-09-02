@@ -1,4 +1,8 @@
-export { CanonicalJsonError, canonicalStringify } from "./canonical-json.js";
+export {
+  CanonicalJsonError,
+  canonicalStringify,
+  compareCanonicalStrings,
+} from "./canonical-json.js";
 export {
   ApiErrorSchema,
   CatalogAuthoritySchema,

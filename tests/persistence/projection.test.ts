@@ -230,6 +230,7 @@ describe("원장 + compiled fact 관계형 projection", () => {
       ["e4", null],
       ["e5", 3],
       ["e6", null],
+      ["e7", null],
     ]);
   });
 

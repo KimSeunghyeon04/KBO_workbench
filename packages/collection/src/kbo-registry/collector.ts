@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import {
   canonicalStringify,
+  compareCanonicalStrings,
   parseRegistrySeasonDataset,
   type RegistrySeasonDataset,
   type RegistrySourcePage,
@@ -146,13 +147,13 @@ export class KboRegistryCollector {
       sourcePages: sourcePages.sort(sourcePageOrder),
       registrationSnapshots: snapshots.sort(
         (left, right) =>
-          left.snapshotDate.localeCompare(right.snapshotDate) ||
-          left.teamCode.localeCompare(right.teamCode),
+          compareCanonicalStrings(left.snapshotDate, right.snapshotDate) ||
+          compareCanonicalStrings(left.teamCode, right.teamCode),
       ),
       statusEvents: statusEvents.sort(
         (left, right) =>
-          left.effectiveDate.localeCompare(right.effectiveDate) ||
-          left.sourceRequestKey.localeCompare(right.sourceRequestKey) ||
+          compareCanonicalStrings(left.effectiveDate, right.effectiveDate) ||
+          compareCanonicalStrings(left.sourceRequestKey, right.sourceRequestKey) ||
           left.sourceRowIndex - right.sourceRowIndex,
       ),
     });
@@ -179,7 +180,7 @@ export function registryContentHash(body: string): string {
 }
 
 function sourcePageOrder(left: RegistrySourcePage, right: RegistrySourcePage): number {
-  return left.requestKey.localeCompare(right.requestKey);
+  return compareCanonicalStrings(left.requestKey, right.requestKey);
 }
 
 function datesBetween(from: string, to: string): string[] {

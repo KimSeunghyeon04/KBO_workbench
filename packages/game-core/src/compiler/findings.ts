@@ -1,4 +1,4 @@
-import type { StagingRelayEvent } from "@kbo/contracts";
+import { compareCanonicalStrings, type StagingRelayEvent } from "@kbo/contracts";
 
 import type { Finding, FindingDetail } from "../types.js";
 import type { CompileContext } from "./model.js";
@@ -37,6 +37,7 @@ export function findingFor(
 export function compareFindings(left: Finding, right: Finding): number {
   return (
     (left.eventSequence ?? Number.MAX_SAFE_INTEGER) -
-      (right.eventSequence ?? Number.MAX_SAFE_INTEGER) || left.code.localeCompare(right.code)
+      (right.eventSequence ?? Number.MAX_SAFE_INTEGER) ||
+    compareCanonicalStrings(left.code, right.code)
   );
 }

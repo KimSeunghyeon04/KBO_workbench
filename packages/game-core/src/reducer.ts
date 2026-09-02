@@ -41,7 +41,6 @@ export function compileStagingGameDocumentV2(input: unknown): ReplayResult {
     batterHeadersConfirmedBySubstitution: findBatterHeadersConfirmedBySubstitution(document),
     observationMismatchFields: new Set(),
     uncertainRbiBatterIds: new Set(),
-    ignoreTrailingFinalArtifact: false,
   };
   const links: PlayIndex = buildPlayIndex(document);
   const hitByPitchTerminalPitchIds = findHitByPitchTerminalPitchIds(document.events);
@@ -77,7 +76,7 @@ export function compileStagingGameDocumentV2(input: unknown): ReplayResult {
     for (const linkedFinding of links.findingByEvent.get(eventId) ?? []) {
       local.findings.push(linkedFinding);
     }
-    if (event.kind === "plate_result" && links.invalidResultIds.has(eventId)) {
+    if (event.kind === "plate_result" && links.invalidPlayLeaderIds.has(eventId)) {
       addFinding(
         local,
         event,
@@ -93,6 +92,7 @@ export function compileStagingGameDocumentV2(input: unknown): ReplayResult {
       links.linkedByResult.get(eventId) ?? [],
       links.nonStateByResult.get(eventId) ?? [],
       links.independentByLeader.get(eventId) ?? [],
+      links.nonStateByIndependentLeader.get(eventId) ?? [],
     );
     const newFindings = local.findings.slice(context.findings.length);
     const blocking = newFindings.some((finding) => finding.severity === "blocking");
@@ -132,7 +132,6 @@ export function compileStagingGameDocumentV2(input: unknown): ReplayResult {
       }
       context.observationMismatchFields = local.observationMismatchFields;
       context.uncertainRbiBatterIds = local.uncertainRbiBatterIds;
-      context.ignoreTrailingFinalArtifact = local.ignoreTrailingFinalArtifact;
     }
     context.findings = local.findings;
     const after = snapshot(state);

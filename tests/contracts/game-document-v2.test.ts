@@ -60,16 +60,60 @@ describe("StagingGameDocumentV2 strict 원장 계약", () => {
     expect(() => parseStagingGameDocumentV2(document)).toThrow(ContractValidationError);
   });
 
-  it("원문을 trim하고 공백 및 1,000자 초과를 거부한다", async () => {
+  it("비정규 원문 공백과 1,000자 초과를 엄격 거부한다", async () => {
     const document = await fixture();
     const first = (document.events as Array<Record<string, unknown>>)[0];
     if (first === undefined) throw new Error("event fixture가 없습니다.");
     first.relayText = "  1회초 시작  ";
-    expect(parseStagingGameDocumentV2(document).events[0]?.relayText).toBe("1회초 시작");
+    expect(() => parseStagingGameDocumentV2(document)).toThrow(/앞뒤 공백/);
     first.relayText = "   ";
     expect(() => parseStagingGameDocumentV2(document)).toThrow(ContractValidationError);
     first.relayText = "가".repeat(1_001);
     expect(() => parseStagingGameDocumentV2(document)).toThrow(ContractValidationError);
+  });
+
+  it("양 팀 roster와 같은 유형의 공식 기록에서 선수 ID 중복을 거부한다", async () => {
+    const rosterDuplicate = await fixture();
+    const rosters = rosterDuplicate.rosters as Record<
+      string,
+      { players: Array<{ playerId: string }> }
+    >;
+    rosters.home.players[0] = {
+      ...rosters.home.players[0],
+      playerId: rosters.away.players[0]?.playerId ?? "missing",
+    };
+    expect(() => parseStagingGameDocumentV2(rosterDuplicate)).toThrow(/roster 선수 ID/);
+
+    const recordDuplicate = await fixture();
+    const official = recordDuplicate.officialRecords as Record<
+      string,
+      Array<Record<string, unknown>>
+    >;
+    const duplicateRecord = {
+      playerId: "a1",
+      side: "away",
+      atBats: 0,
+      runs: 0,
+      hits: 0,
+      homeRuns: 0,
+      runsBattedIn: 0,
+      walks: 0,
+      strikeouts: 0,
+    };
+    official.batters.push(duplicateRecord, { ...duplicateRecord });
+    expect(() => parseStagingGameDocumentV2(recordDuplicate)).toThrow(/공식 기록/);
+  });
+
+  it("manual 행에는 제공자 observedStateAfter를 저장하지 않는다", async () => {
+    const document = await fixture();
+    const first = (document.events as Array<Record<string, unknown>>)[0];
+    if (first === undefined) throw new Error("event fixture가 없습니다.");
+    first.identity = {
+      kind: "manual",
+      eventId: "0198f1e2-7d2a-7000-8000-000000000080",
+    };
+    first.observedStateAfter = { balls: 0, strikes: 0, outs: 0 };
+    expect(() => parseStagingGameDocumentV2(document)).toThrow(/source 원장 행/);
   });
 
   it("주자 이동은 기존 베이스와 정확히 하나의 context만 가진다", async () => {

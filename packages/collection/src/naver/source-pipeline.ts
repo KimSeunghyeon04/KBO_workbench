@@ -1,3 +1,5 @@
+import { compareCanonicalStrings } from "@kbo/contracts";
+
 import { NaverSourceFormatError } from "../errors.js";
 import type {
   CanonicalNaverRow,
@@ -16,7 +18,7 @@ import {
   parseHalf,
   parseSide,
   record,
-  sortValue,
+  sourceValueFingerprint,
   validInteger,
   type JsonRecord,
 } from "./source-values.js";
@@ -114,7 +116,7 @@ function decodeRow(
     sourceEventId: optionalText(first(raw, ["source_event_id", "id", "seqno", "seqNo"])),
     sourceType: explicitKind ?? (numericType === null ? "unknown" : `type:${String(numericType)}`),
     ...canonical,
-    semanticFingerprint: JSON.stringify(sortValue(canonical)),
+    semanticFingerprint: sourceValueFingerprint(canonical),
   };
 }
 
@@ -157,7 +159,7 @@ function orderBlocks(blocks: readonly RelayBlockInput[]): RelayBlockInput[] {
       leftInning - rightInning ||
       Number(leftHalf === "bottom") - Number(rightHalf === "bottom") ||
       blockOrder(left) - blockOrder(right) ||
-      left.endpoint.localeCompare(right.endpoint) ||
+      compareCanonicalStrings(left.endpoint, right.endpoint) ||
       left.endpointBlockIndex - right.endpointBlockIndex
     );
   });

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import {
   canonicalStringify,
+  compareCanonicalStrings,
   type ReplayFielder,
   type ReplayFrame,
   type ReplayManifest,
@@ -296,7 +297,7 @@ function currentFielders(
     .sort(
       (left, right) =>
         (left.battingOrder ?? 99) - (right.battingOrder ?? 99) ||
-        left.playerId.localeCompare(right.playerId),
+        compareCanonicalStrings(left.playerId, right.playerId),
     )
     .map((item) => ({
       side: item.side,

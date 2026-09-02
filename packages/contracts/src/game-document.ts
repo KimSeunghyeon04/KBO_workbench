@@ -91,17 +91,16 @@ export class ContractValidationError extends Error {
 }
 
 export function parseStagingGameDocumentV2(value: unknown): StagingGameDocumentV2 {
-  const normalized = normalizeInput(value);
-  if (!Value.Check(StagingGameDocumentV2Schema, normalized)) {
+  if (!Value.Check(StagingGameDocumentV2Schema, value)) {
     throw new ContractValidationError(
-      [...Value.Errors(StagingGameDocumentV2Schema, normalized)].map((error) => ({
+      [...Value.Errors(StagingGameDocumentV2Schema, value)].map((error) => ({
         code: `schema_${String(error.type)}`,
         message: error.message,
         path: error.path || "$",
       })),
     );
   }
-  const decoded = normalizeDateTimes(Value.Decode(StagingGameDocumentV2Schema, normalized));
+  const decoded = normalizeDateTimes(Value.Decode(StagingGameDocumentV2Schema, value));
   const issues = validateStagingGameDocumentV2Semantics(decoded);
   if (issues.length > 0) throw new ContractValidationError(issues);
   return decoded;
@@ -128,6 +127,8 @@ export function validateStagingGameDocumentV2Semantics(
     issues.push(
       issue("home_roster_team_mismatch", "/rosters/home/teamId", "홈 roster 팀이 다릅니다."),
     );
+  validateUniquePlayers(document, issues);
+  validateUniqueOfficialRecords(document, issues);
   const eventIds = new Set<string>();
   for (const [index, event] of document.events.entries()) {
     if (event.sequence !== index)
@@ -161,6 +162,14 @@ export function validateStagingGameDocumentV2Semantics(
           "manual_relay_text_missing",
           `/events/${index}/relayText`,
           "수동 원장 행에는 확정한 중계 문구가 필요합니다.",
+        ),
+      );
+    if (event.identity.kind === "manual" && event.observedStateAfter !== undefined)
+      issues.push(
+        issue(
+          "manual_observed_state_forbidden",
+          `/events/${index}/observedStateAfter`,
+          "제공자 관측 상태는 source 원장 행에만 저장할 수 있습니다.",
         ),
       );
     if (
@@ -232,18 +241,6 @@ function allowsBattedBall(result: PlateResult): boolean {
   );
 }
 
-function normalizeInput(value: unknown): unknown {
-  if (!isRecord(value) || !Array.isArray(value.events)) return value;
-  return {
-    ...value,
-    events: value.events.map((raw) =>
-      isRecord(raw) && typeof raw.relayText === "string"
-        ? { ...raw, relayText: raw.relayText.trim() }
-        : raw,
-    ),
-  };
-}
-
 function normalizeDateTimes(document: StagingGameDocumentV2): StagingGameDocumentV2 {
   return {
     ...document,
@@ -270,6 +267,43 @@ function issue(code: string, path: string, message: string): ContractIssue {
   return { code, path, message };
 }
 
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function validateUniquePlayers(document: StagingGameDocumentV2, issues: ContractIssue[]): void {
+  const seen = new Map<string, string>();
+  for (const side of ["away", "home"] as const) {
+    for (const [index, player] of document.rosters[side].players.entries()) {
+      const previous = seen.get(player.playerId);
+      if (previous !== undefined) {
+        issues.push(
+          issue(
+            "duplicate_roster_player_id",
+            `/rosters/${side}/players/${index}/playerId`,
+            `roster 선수 ID가 중복됩니다. 첫 위치: ${previous}`,
+          ),
+        );
+      } else {
+        seen.set(player.playerId, `/rosters/${side}/players/${index}/playerId`);
+      }
+    }
+  }
+}
+
+function validateUniqueOfficialRecords(
+  document: StagingGameDocumentV2,
+  issues: ContractIssue[],
+): void {
+  for (const recordType of ["batters", "pitchers"] as const) {
+    const seen = new Set<string>();
+    for (const [index, record] of document.officialRecords[recordType].entries()) {
+      if (seen.has(record.playerId)) {
+        issues.push(
+          issue(
+            "duplicate_official_record_player_id",
+            `/officialRecords/${recordType}/${index}/playerId`,
+            "같은 유형의 공식 기록에 선수 ID가 중복됩니다.",
+          ),
+        );
+      }
+      seen.add(record.playerId);
+    }
+  }
 }

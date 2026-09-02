@@ -1,4 +1,4 @@
-import type { PlateResultEvent } from "@kbo/contracts";
+import { compareCanonicalStrings, type PlateResultEvent } from "@kbo/contracts";
 
 import { isAtBat, isHit } from "../rules.js";
 import type { CompileContext, MutableBatterLine, MutablePitcherLine } from "./model.js";
@@ -98,5 +98,5 @@ export function comparePlayerLine(
   left: { readonly playerId: string },
   right: { readonly playerId: string },
 ): number {
-  return left.playerId.localeCompare(right.playerId);
+  return compareCanonicalStrings(left.playerId, right.playerId);
 }

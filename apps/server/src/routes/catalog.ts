@@ -1,4 +1,9 @@
-import { ApiErrorSchema, GameCatalogSchema, StagingGameDocumentV2Schema } from "@kbo/contracts";
+import {
+  ApiErrorSchema,
+  compareCanonicalStrings,
+  GameCatalogSchema,
+  StagingGameDocumentV2Schema,
+} from "@kbo/contracts";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 
 import type { RouteContext } from "./context.js";
@@ -16,7 +21,7 @@ export const catalogRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app
       ]);
       const catalog = {
         games: [...workspaceCatalog.games, ...storedCatalog].sort((left, right) =>
-          right.updatedAt.localeCompare(left.updatedAt),
+          compareCanonicalStrings(right.updatedAt, left.updatedAt),
         ),
       };
       return request.query.authority === undefined

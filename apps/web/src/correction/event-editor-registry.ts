@@ -493,9 +493,12 @@ export function newCommandId(source: Pick<Crypto, "getRandomValues"> = crypto): 
   return `cmd-${uuid(bytes)}`;
 }
 
-export function newManualEventId(source: Pick<Crypto, "getRandomValues"> = crypto): string {
+export function newManualEventId(
+  source: Pick<Crypto, "getRandomValues"> = crypto,
+  now: () => number = Date.now,
+): string {
   const bytes = source.getRandomValues(new Uint8Array(16));
-  let time = Date.now();
+  let time = now();
   for (let index = 5; index >= 0; index -= 1) {
     bytes[index] = time & 0xff;
     time = Math.floor(time / 256);

@@ -29,13 +29,13 @@ export function applyLedgerEvent(
   linkedRunners: readonly RunnerAdvanceEvent[],
   attachedNonState: readonly StagingRelayEvent[],
   independentRunners: readonly RunnerAdvanceEvent[],
+  independentNonState: readonly StagingRelayEvent[],
 ): EventApplication {
   const simple = (): EventApplication => ({
     relayEventIds: [event.identity.eventId],
     relayTexts: relayTextsOf([event]),
     movements: [],
   });
-  if (context.ignoreTrailingFinalArtifact) return simple();
   if (
     event.kind !== "half_inning_start" &&
     event.kind !== "administrative" &&
@@ -86,6 +86,7 @@ export function applyLedgerEvent(
         state,
         event,
         independentRunners.length === 0 ? [event] : independentRunners,
+        independentNonState,
         context,
       );
     case "substitution":
@@ -112,10 +113,6 @@ function applyHalfStart(
   event: Extract<StagingRelayEvent, { kind: "half_inning_start" }>,
   context: CompileContext,
 ): void {
-  if (isTrailingFinalArtifact(state, event, context)) {
-    context.ignoreTrailingFinalArtifact = true;
-    return;
-  }
   const expected = nextHalf(state);
   if (state.halfActive) {
     const boundaryReason = state.outs === 3 ? "third_out" : "source_boundary";
@@ -158,29 +155,6 @@ function applyHalfStart(
   state.bases = noBases();
   state.activePlateAppearance = null;
   context.observationMismatchFields.clear();
-}
-
-function isTrailingFinalArtifact(
-  state: MutableState,
-  event: Extract<StagingRelayEvent, { kind: "half_inning_start" }>,
-  context: CompileContext,
-): boolean {
-  if (
-    context.document.metadata.status !== "final" ||
-    !state.halfActive ||
-    state.outs !== 3 ||
-    state.inning < context.document.metadata.scheduledInnings
-  )
-    return false;
-  const gameAlreadyDecided =
-    (state.half === "bottom" && state.awayScore !== state.homeScore) ||
-    (state.half === "top" && state.homeScore > state.awayScore);
-  if (!gameAlreadyDecided) return false;
-  return context.document.events
-    .slice(event.sequence + 1)
-    .every((trailing) =>
-      ["batter_start", "review", "administrative", "unresolved"].includes(trailing.kind),
-    );
 }
 
 function applyBatterStart(

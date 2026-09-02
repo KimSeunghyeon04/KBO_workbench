@@ -12,6 +12,13 @@ export function canonicalStringify(value: unknown): string {
   return serialize(value, "$", new WeakSet<object>());
 }
 
+/** ICU나 host locale에 의존하지 않는 canonical Unicode code-point 정렬이다. */
+export function compareCanonicalStrings(left: string, right: string): number {
+  const normalizedLeft = left.normalize("NFC");
+  const normalizedRight = right.normalize("NFC");
+  return normalizedLeft < normalizedRight ? -1 : normalizedLeft > normalizedRight ? 1 : 0;
+}
+
 function serialize(value: unknown, path: string, ancestors: WeakSet<object>): string {
   if (value === null) {
     return "null";
@@ -78,7 +85,7 @@ function serializeObject(value: object, path: string, ancestors: WeakSet<object>
     }
 
     return `{${[...normalizedKeys.entries()]
-      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .sort(([left], [right]) => compareCanonicalStrings(left, right))
       .map(([normalizedKey, originalKey]) => {
         const item = record[originalKey];
         if (item === undefined) {

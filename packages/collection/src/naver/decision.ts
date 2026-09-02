@@ -1,3 +1,7 @@
+import { compareCanonicalStrings } from "@kbo/contracts";
+
+import { sourceValueFingerprint } from "./source-values.js";
+
 export interface DecisionEvidence {
   readonly source: "structured" | "source_state" | "exact_text" | "roster" | "context";
   readonly detail: string;
@@ -38,7 +42,7 @@ export function decide<Value>(
     (left, right) =>
       right.strength - left.strength ||
       (right.specificity ?? 0) - (left.specificity ?? 0) ||
-      left.ruleId.localeCompare(right.ruleId),
+      compareCanonicalStrings(left.ruleId, right.ruleId),
   );
   const strongest = ordered[0];
   if (strongest === undefined) return { status: "not_applicable" };
@@ -85,5 +89,7 @@ export function unresolved(
 function stableDecisionKey(value: unknown): string {
   if (value === undefined) return "undefined";
   if (value === null) return "null";
-  return typeof value === "object" ? JSON.stringify(value) : `${typeof value}:${String(value)}`;
+  return typeof value === "object"
+    ? sourceValueFingerprint(value)
+    : `${typeof value}:${String(value)}`;
 }

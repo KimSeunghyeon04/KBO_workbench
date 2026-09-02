@@ -5,6 +5,7 @@ import path from "node:path";
 
 import {
   canonicalStringify,
+  compareCanonicalStrings,
   parseStagingGameDocumentV2,
   type StagingGameDocumentV2,
 } from "@kbo/contracts";
@@ -96,7 +97,9 @@ export class V3TransferWorkspace {
   public async writeManifest(
     games: readonly V3TransferGameManifest[],
   ): Promise<V3TransferManifest> {
-    const sorted = [...games].sort((left, right) => left.gameId.localeCompare(right.gameId));
+    const sorted = [...games].sort((left, right) =>
+      compareCanonicalStrings(left.gameId, right.gameId),
+    );
     const manifest: V3TransferManifest = {
       formatVersion: 1,
       createdAt: new Date().toISOString(),

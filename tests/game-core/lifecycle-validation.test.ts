@@ -114,7 +114,7 @@ describe("원장 compiler의 PA lifecycle과 불연속", () => {
     );
   });
 
-  it("승패가 확정된 final 경기 뒤의 투구 없는 phantom 반이닝은 원장에 남기되 상태에 적용하지 않는다", () => {
+  it("승패가 확정된 final 경기 뒤 행도 compiler가 삼키지 않고 unresolved를 차단한다", () => {
     const raw = makeDocument(
       [
         { kind: "half_inning_start", payload: {} },
@@ -168,6 +168,13 @@ describe("원장 compiler의 PA lifecycle과 불연속", () => {
           payload: { code: "footer" },
           relayText: "승리투수: ap1",
         },
+        {
+          kind: "unresolved",
+          inning: 2,
+          half: "top",
+          payload: { sourceType: "unknown-footer" },
+          relayText: "해석 불가 종료 행",
+        },
       ],
       "final",
     ) as Record<string, unknown>;
@@ -181,16 +188,16 @@ describe("원장 compiler의 PA lifecycle과 불연속", () => {
 
     const replay = compileStagingGameDocumentV2(document);
     expect(replay.finalState).toMatchObject({
-      inning: 1,
-      half: "bottom",
-      outs: 3,
+      inning: 2,
+      half: "top",
+      outs: 0,
       awayScore: 1,
       homeScore: 0,
     });
-    expect(replay.frames).toHaveLength(19);
-    expect(replay.plateAppearances.some((plate) => plate.batterId === "a5")).toBe(false);
-    expect(replay.findings.map((finding) => finding.code)).not.toContain(
-      "final_game_has_incomplete_half",
+    expect(replay.frames).toHaveLength(20);
+    expect(replay.plateAppearances.some((plate) => plate.batterId === "a5")).toBe(true);
+    expect(replay.findings.map((finding) => finding.code)).toEqual(
+      expect.arrayContaining(["unresolved_relay_row", "final_game_has_incomplete_half"]),
     );
   });
 
@@ -239,6 +246,26 @@ describe("원장 compiler의 PA lifecycle과 불연속", () => {
       ]),
     );
     expect(replay.plays.find((play) => play.relayEventIds.includes("e2"))?.applied).toBe(false);
+  });
+
+  it("dangling·self·future review 참조를 결정론적인 blocking finding으로 만든다", () => {
+    const replay = compileStagingGameDocumentV2(
+      makeDocument([
+        { kind: "half_inning_start", payload: {} },
+        { kind: "review", payload: { reviewedEventId: "e1" }, relayText: "자기 참조" },
+        { kind: "review", payload: { reviewedEventId: "missing" }, relayText: "대상 없음" },
+        { kind: "review", payload: { reviewedEventId: "e4" }, relayText: "미래 참조" },
+        { kind: "batter_start", payload: { batterId: "a1", pitcherId: "hp1" } },
+      ]),
+    );
+
+    expect(replay.findings.map((finding) => finding.code)).toEqual(
+      expect.arrayContaining([
+        "self_review_reference",
+        "dangling_review_reference",
+        "future_review_reference",
+      ]),
+    );
   });
 
   it("타석 결과 count와 연결 주자 전 단계 점수를 최종 play 상태에 잘못 비교하지 않는다", () => {

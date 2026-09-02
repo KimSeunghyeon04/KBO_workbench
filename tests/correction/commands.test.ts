@@ -54,6 +54,18 @@ describe("평면 원장 보정 명령", () => {
     expect(deleted.preview.eventCountDelta).toBe(-1);
   });
 
+  it("수동 추가 경로에서 source identity를 위조할 수 없다", async () => {
+    const document = await golden();
+    expect(() =>
+      applyCorrectionCommand(document, {
+        commandId: "forged-source-add",
+        kind: "add_event",
+        beforeEventId: null,
+        event: { ...document.events[0], sequence: document.events.length },
+      }),
+    ).toThrow(CorrectionCommandError);
+  });
+
   it("연결된 타석 결과를 삭제하면 주자 행은 남고 dangling finding이 즉시 생긴다", async () => {
     const document = await golden();
     const corrected = applyCorrectionCommand(document, {
@@ -95,10 +107,72 @@ describe("평면 원장 보정 명령", () => {
       identity: { kind: "source", eventId: "e7", eventIndex: 7 },
       sequence: 7,
       kind: "administrative",
+      relayText: unresolved.events[7]?.relayText,
     });
     expect(corrected.replay.findings.map((finding) => finding.code)).not.toContain(
       "unresolved_relay_row",
     );
+  });
+
+  it("source 행 교체가 원문과 observedStateAfter를 보존한다", async () => {
+    const base = await golden();
+    const document = parseStagingGameDocumentV2({
+      ...base,
+      events: base.events.map((event) =>
+        event.identity.eventId === "e7"
+          ? {
+              ...event,
+              observedStateAfter: { balls: 1, strikes: 2, outs: 0 },
+            }
+          : event,
+      ),
+    });
+    const corrected = applyCorrectionCommand(document, {
+      commandId: "preserve-source-evidence",
+      kind: "replace_event",
+      eventId: "e7",
+      event: manualAdministrative("0198f1e2-7d2a-7000-8000-000000000099", 0, "바꾸려 한 원문"),
+    });
+
+    expect(corrected.document.events[7]).toMatchObject({
+      identity: document.events[7]?.identity,
+      relayText: document.events[7]?.relayText,
+      observedStateAfter: { balls: 1, strikes: 2, outs: 0 },
+    });
+  });
+
+  it("roster와 공식 기록 update가 선수 ID를 암묵적으로 바꾸지 못하게 한다", async () => {
+    const document = await golden();
+    const player = document.rosters.away.players[0];
+    if (player === undefined) throw new Error("away roster fixture가 없습니다.");
+    expect(() =>
+      applyCorrectionCommand(document, {
+        commandId: "rename-roster-player",
+        kind: "update_roster_player",
+        side: "away",
+        playerId: player.playerId,
+        player: { ...player, playerId: "different-player" },
+      }),
+    ).toThrow(/선수 ID/);
+    expect(() =>
+      applyCorrectionCommand(document, {
+        commandId: "rename-official-player",
+        kind: "update_official_record",
+        recordType: "batter",
+        playerId: "a1",
+        record: {
+          playerId: "a2",
+          side: "away",
+          atBats: 0,
+          runs: 0,
+          hits: 0,
+          homeRuns: 0,
+          runsBattedIn: 0,
+          walks: 0,
+          strikeouts: 0,
+        },
+      }),
+    ).toThrow(/선수 ID/);
   });
 
   it("tracking이 연결된 투구를 삭제하면 관측값은 남고 수동 제외로 전환한다", async () => {

@@ -72,5 +72,4 @@ export interface CompileContext {
   readonly batterHeadersConfirmedBySubstitution: ReadonlySet<string>;
   observationMismatchFields: Set<string>;
   uncertainRbiBatterIds: Set<string>;
-  ignoreTrailingFinalArtifact: boolean;
 }
