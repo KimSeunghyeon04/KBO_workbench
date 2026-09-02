@@ -4,7 +4,11 @@ import type {
   StagingGameDocumentV2,
   StagingRelayEvent,
 } from "@kbo/contracts";
-import { compareCanonicalStrings, parseStagingGameDocumentV2 } from "@kbo/contracts";
+import {
+  compareCanonicalStrings,
+  parseStagingGameDocumentV2,
+  parseStagingRelayEvent,
+} from "@kbo/contracts";
 import {
   compileStagingGameDocumentV2,
   stagingDocumentHash,
@@ -29,7 +33,9 @@ import {
   type RelationalProjection,
 } from "./projection.js";
 import { readProjection, writeProjection } from "./projection-repository.js";
+import { PROJECTION_ENUM_VALUES } from "./projection-descriptor.js";
 import { readDatabaseCatalog } from "./revision-catalog-repository.js";
+import { rebaseSealedCorrectionDraft } from "./revision-draft-rebase.js";
 import { PersistenceIntegrityError } from "./errors.js";
 
 export { PersistenceIntegrityError } from "./errors.js";
@@ -296,14 +302,7 @@ export class GameRevisionStore {
       if (stagingDocumentHash(stored) !== manifest.document_hash) {
         throw new PersistenceIntegrityError("DB 원장 fact의 문서 hash가 manifest와 다릅니다.");
       }
-      return parseStagingGameDocumentV2({
-        ...stored,
-        revisionBase: {
-          kind: "sealed_revision",
-          revision,
-          documentHash: manifest.document_hash,
-        },
-      });
+      return rebaseSealedCorrectionDraft(stored, revision, manifest.document_hash);
     } finally {
       client.release();
     }
@@ -756,7 +755,7 @@ function replaySourceFromProjection(
         ...(row.pitcher_id === null ? {} : { pitcherId: text(row.pitcher_id) }),
         ...(row.batter_id === null ? {} : { batterId: text(row.batter_id) }),
         ...(row.observed_at === null ? {} : { observedAt: text(row.observed_at) }),
-        ...(row.stance === null ? {} : { stance: text(row.stance) as "L" | "R" | "S" }),
+        ...(row.stance === null ? {} : { stance: stance(row.stance) }),
         ...trackingNumbersFromRow(row),
         resolution: { kind: "linked", pitchEventId: text(link.pitch_id) },
       };
@@ -814,7 +813,7 @@ function replayFromProjection(gameId: string, tables: ProjectionTables): ReplayR
     return {
       playId: text(row.play_id),
       sequence: number(row.source_sequence),
-      kind: text(row.kind) as CompiledPlay["kind"],
+      kind: relayEventKind(row.kind),
       inning: number(row.inning),
       half: half(row.half),
       relayEventIds: relayEvents.map((event) => text(event.event_id)),
@@ -830,19 +829,17 @@ function replayFromProjection(gameId: string, tables: ProjectionTables): ReplayR
         runnerId: text(movement.runner_id),
         fromBase: number(movement.from_base),
         toBase: number(movement.to_base),
-        outcome: text(movement.outcome) as "safe" | "out" | "scored",
+        outcome: runnerOutcome(movement.outcome),
         ...(movement.out_kind === null
           ? {}
           : {
-              outKind: text(movement.out_kind) as NonNullable<
-                CompiledPlay["movements"][number]["outKind"]
-              >,
+              outKind: runnerOutKind(movement.out_kind),
             }),
         ...(movement.supersedes_third_out === null
           ? {}
           : { supersedesThirdOut: boolean(movement.supersedes_third_out) }),
         responsiblePitcherId: text(movement.responsible_pitcher_id),
-        reason: text(movement.reason) as CompiledPlay["movements"][number]["reason"],
+        reason: runnerMovementReason(movement.reason),
         derived: boolean(movement.derived),
         sequence: number(movement.source_sequence),
       })),
@@ -857,7 +854,7 @@ function replayFromProjection(gameId: string, tables: ProjectionTables): ReplayR
     return {
       eventId,
       sequence: number(event.event_sequence),
-      kind: text(event.kind) as ReplayFrame["kind"],
+      kind: relayEventKind(event.kind),
       playId: play?.playId ?? null,
       before: play?.before ?? stateFromNearestPlay(plays, number(event.event_sequence)),
       after: play?.after ?? stateFromNearestPlay(plays, number(event.event_sequence)),
@@ -873,12 +870,9 @@ function replayFromProjection(gameId: string, tables: ProjectionTables): ReplayR
     batterId: text(row.batter_id),
     startPitcherId: text(row.start_pitcher_id),
     pitcherId: text(row.pitcher_id),
-    result:
-      row.result === null
-        ? null
-        : (text(row.result) as NonNullable<PlateAppearanceSummary["result"]>),
+    result: row.result === null ? null : plateResult(row.result),
     completed: boolean(row.completed),
-    terminationReason: text(row.termination_reason) as PlateAppearanceSummary["terminationReason"],
+    terminationReason: plateAppearanceTerminationReason(row.termination_reason),
     actualPitchCount: number(row.actual_pitch_count),
     eventIds:
       plateEventsByIndex
@@ -908,7 +902,7 @@ function replayFromProjection(gameId: string, tables: ProjectionTables): ReplayR
       batterId: row.batter_id === null ? null : text(row.batter_id),
       pitcherId: row.pitcher_id === null ? null : text(row.pitcher_id),
       sourcePitchId: row.source_pitch_id === null ? null : text(row.source_pitch_id),
-      call: text(row.pitch_call) as CompiledPitchFact["call"],
+      call: pitchCall(row.pitch_call),
       actual: boolean(row.actual),
       ball: boolean(row.ball),
       calledStrike: boolean(row.called_strike),
@@ -1175,8 +1169,9 @@ export function hydrateProjectionLedger(
             : resolutionKind === "excluded"
               ? ({
                   kind: "excluded",
-                  reason: requiredNullableText(row.exclusion_reason, "tracking 제외 사유") as
-                    "not_a_pitch" | "provider_conflict" | "invalid_measurement" | "manual_other",
+                  reason: trackingExclusionReason(
+                    requiredNullableText(row.exclusion_reason, "tracking 제외 사유"),
+                  ),
                   ...(row.exclusion_note === null ? {} : { note: text(row.exclusion_note) }),
                 } as const)
               : (() => {
@@ -1203,7 +1198,7 @@ export function hydrateProjectionLedger(
       ...(row.pitcher_id === null ? {} : { pitcherId: text(row.pitcher_id) }),
       ...(row.batter_id === null ? {} : { batterId: text(row.batter_id) }),
       ...(row.observed_at === null ? {} : { observedAt: text(row.observed_at) }),
-      ...(row.stance === null ? {} : { stance: text(row.stance) as "L" | "R" | "S" }),
+      ...(row.stance === null ? {} : { stance: stance(row.stance) }),
       ...trackingNumbersFromRow(row),
       resolution,
     };
@@ -1304,7 +1299,7 @@ function hydrateEvents(tables: ProjectionTables): StagingRelayEvent[] {
     );
   }
   return tables.relay_event_facts.map((header) => {
-    const kind = text(header.kind) as StagingRelayEvent["kind"];
+    const kind = relayEventKind(header.kind);
     const table = RELAY_SUBTYPE_TABLES[kind];
     if (table === undefined) {
       throw new PersistenceIntegrityError(`알 수 없는 relay kind: ${kind}`);
@@ -1341,36 +1336,30 @@ function hydrateEvent(row: ProjectionRow): StagingRelayEvent {
   };
   switch (row.kind) {
     case "half_inning_start":
-      return { ...base, kind: "half_inning_start", payload: {} };
+      return hydratedRelayEvent({ ...base, kind: "half_inning_start", payload: {} });
     case "batter_start":
-      return {
+      return hydratedRelayEvent({
         ...base,
         kind: "batter_start",
         payload: { batterId: text(row.batter_id), pitcherId: text(row.pitcher_id) },
-      };
+      });
     case "pitch":
-      return {
+      return hydratedRelayEvent({
         ...base,
         kind: "pitch",
         payload: {
-          call: text(row.pitch_call) as Extract<
-            StagingRelayEvent,
-            { kind: "pitch" }
-          >["payload"]["call"],
+          call: text(row.pitch_call),
           ...(row.source_pitch_id === null ? {} : { sourcePitchId: text(row.source_pitch_id) }),
           ...(row.batter_id === null ? {} : { batterId: text(row.batter_id) }),
           ...(row.pitcher_id === null ? {} : { pitcherId: text(row.pitcher_id) }),
         },
-      };
+      });
     case "plate_result":
-      return {
+      return hydratedRelayEvent({
         ...base,
         kind: "plate_result",
         payload: {
-          result: text(row.plate_result) as Extract<
-            StagingRelayEvent,
-            { kind: "plate_result" }
-          >["payload"]["result"],
+          result: text(row.plate_result),
           batterId: text(row.batter_id),
           pitcherId: text(row.pitcher_id),
           ...(row.credited_rbi === null ? {} : { creditedRbi: number(row.credited_rbi) }),
@@ -1381,28 +1370,24 @@ function hydrateEvent(row: ProjectionRow): StagingRelayEvent {
           ...(row.batted_ball_type === null
             ? {}
             : {
-                battedBallType: text(row.batted_ball_type) as
-                  "ground_ball" | "fly_ball" | "line_drive" | "popup",
+                battedBallType: text(row.batted_ball_type),
               }),
           ...(row.is_bunt === null ? {} : { isBunt: boolean(row.is_bunt) }),
         },
-      };
+      });
     case "runner_advance":
-      return {
+      return hydratedRelayEvent({
         ...base,
         kind: "runner_advance",
         payload: {
           runnerId: text(row.runner_id),
           fromBase: number(row.from_base),
           toBase: number(row.to_base),
-          outcome: text(row.runner_outcome) as "safe" | "out" | "scored",
+          outcome: text(row.runner_outcome),
           ...(row.runner_out_kind === null
             ? {}
             : {
-                outKind: text(row.runner_out_kind) as Extract<
-                  StagingRelayEvent,
-                  { kind: "runner_advance" }
-                >["payload"]["outKind"],
+                outKind: text(row.runner_out_kind),
               }),
           ...(row.supersedes_third_out === null
             ? {}
@@ -1415,21 +1400,17 @@ function hydrateEvent(row: ProjectionRow): StagingRelayEvent {
               ? { kind: "plate_result", plateResultEventId: text(row.plate_result_event_id) }
               : {
                   kind: "independent",
-                  reason: text(row.runner_reason) as Extract<
-                    StagingRelayEvent,
-                    { kind: "runner_advance" }
-                  >["payload"]["context"] &
-                    never,
+                  reason: text(row.runner_reason),
                 },
         },
-      } as StagingRelayEvent;
+      });
     case "substitution":
-      return {
+      return hydratedRelayEvent({
         ...base,
         kind: "substitution",
         payload: {
           side: side(row.substitution_side),
-          role: text(row.substitution_role) as "batter" | "runner" | "pitcher" | "fielder",
+          role: text(row.substitution_role),
           incomingPlayerId: text(row.incoming_player_id),
           ...(row.outgoing_player_id === null
             ? {}
@@ -1437,34 +1418,32 @@ function hydrateEvent(row: ProjectionRow): StagingRelayEvent {
           ...(row.batting_order === null ? {} : { battingOrder: number(row.batting_order) }),
           ...(row.field_position === null ? {} : { fieldPosition: text(row.field_position) }),
         },
-      };
+      });
     case "review":
-      return {
+      return hydratedRelayEvent({
         ...base,
         kind: "review",
         payload: {
           ...(row.review_decision === null
             ? {}
             : {
-                decision: text(row.review_decision) as
-                  "requested" | "upheld" | "overturned" | "inconclusive",
+                decision: text(row.review_decision),
               }),
           ...(row.reviewed_event_id === null
             ? {}
             : { reviewedEventId: text(row.reviewed_event_id) }),
         },
-      };
+      });
     case "administrative":
-      return {
+      return hydratedRelayEvent({
         ...base,
         kind: "administrative",
         payload: {
-          code: text(row.administrative_code) as
-            "announcement" | "mound_visit" | "break" | "footer" | "other",
+          code: text(row.administrative_code),
         },
-      };
+      });
     case "unresolved":
-      return {
+      return hydratedRelayEvent({
         ...base,
         kind: "unresolved",
         payload: {
@@ -1472,15 +1451,22 @@ function hydrateEvent(row: ProjectionRow): StagingRelayEvent {
           ...(row.suspected_kind === null
             ? {}
             : {
-                suspectedKind: text(row.suspected_kind) as Exclude<
-                  StagingRelayEvent["kind"],
-                  "unresolved"
-                >,
+                suspectedKind: text(row.suspected_kind),
               }),
         },
-      };
+      });
     default:
       throw new PersistenceIntegrityError(`알 수 없는 relay kind: ${String(row.kind)}`);
+  }
+}
+
+function hydratedRelayEvent(value: unknown): StagingRelayEvent {
+  try {
+    return parseStagingRelayEvent(value);
+  } catch (error: unknown) {
+    throw new PersistenceIntegrityError(
+      `DB relay event가 계약을 위반합니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`,
+    );
   }
 }
 
@@ -1499,17 +1485,18 @@ function hydrateObserved(row: ProjectionRow): StagingRelayEvent["observedStateAf
   const basesPresent = [row.observed_base1, row.observed_base2, row.observed_base3].some(
     (value) => value !== null,
   );
+  const bases: [string | boolean | null, string | boolean | null, string | boolean | null] = [
+    observedBase(row.observed_base1),
+    observedBase(row.observed_base2),
+    observedBase(row.observed_base3),
+  ];
   return {
     ...(row.observed_balls === null ? {} : { balls: number(row.observed_balls) }),
     ...(row.observed_strikes === null ? {} : { strikes: number(row.observed_strikes) }),
     ...(row.observed_outs === null ? {} : { outs: number(row.observed_outs) }),
     ...(basesPresent
       ? {
-          bases: [
-            observedBase(row.observed_base1),
-            observedBase(row.observed_base2),
-            observedBase(row.observed_base3),
-          ] as [string | boolean | null, string | boolean | null, string | boolean | null],
+          bases,
         }
       : {}),
     ...(row.observed_away_score === null ? {} : { awayScore: number(row.observed_away_score) }),
@@ -1561,6 +1548,71 @@ function half(value: unknown): "top" | "bottom" {
   if (item !== "top" && item !== "bottom")
     throw new PersistenceIntegrityError("DB half 값이 올바르지 않습니다.");
   return item;
+}
+
+const RUNNER_MOVEMENT_REASONS = [...PROJECTION_ENUM_VALUES.runnerReason, "plate_result"] as const;
+
+function isOneOf<const Item extends string>(
+  value: string,
+  candidates: readonly Item[],
+): value is Item {
+  return candidates.some((candidate) => candidate === value);
+}
+
+function enumText<const Item extends string>(
+  value: unknown,
+  candidates: readonly Item[],
+  label: string,
+): Item {
+  const item = text(value);
+  if (!isOneOf(item, candidates)) {
+    throw new PersistenceIntegrityError(`DB ${label} 값이 올바르지 않습니다: ${item}`);
+  }
+  return item;
+}
+
+function relayEventKind(value: unknown): StagingRelayEvent["kind"] {
+  return enumText(value, PROJECTION_ENUM_VALUES.relayKind, "relay kind");
+}
+
+function pitchCall(value: unknown): CompiledPitchFact["call"] {
+  return enumText(value, PROJECTION_ENUM_VALUES.pitchCall, "pitch call");
+}
+
+function plateResult(value: unknown): NonNullable<PlateAppearanceSummary["result"]> {
+  return enumText(value, PROJECTION_ENUM_VALUES.plateResult, "plate result");
+}
+
+function runnerOutcome(value: unknown): CompiledPlay["movements"][number]["outcome"] {
+  return enumText(value, PROJECTION_ENUM_VALUES.runnerOutcome, "runner outcome");
+}
+
+function runnerOutKind(value: unknown): NonNullable<CompiledPlay["movements"][number]["outKind"]> {
+  return enumText(value, PROJECTION_ENUM_VALUES.runnerOutKind, "runner out kind");
+}
+
+function runnerMovementReason(value: unknown): CompiledPlay["movements"][number]["reason"] {
+  return enumText(value, RUNNER_MOVEMENT_REASONS, "runner movement reason");
+}
+
+function plateAppearanceTerminationReason(
+  value: unknown,
+): PlateAppearanceSummary["terminationReason"] {
+  return enumText(value, PROJECTION_ENUM_VALUES.terminationReason, "PA termination reason");
+}
+
+function trackingExclusionReason(
+  value: unknown,
+): "not_a_pitch" | "provider_conflict" | "invalid_measurement" | "manual_other" {
+  return enumText(
+    value,
+    PROJECTION_ENUM_VALUES.trackingExclusionReason,
+    "tracking exclusion reason",
+  );
+}
+
+function stance(value: unknown): "L" | "R" | "S" {
+  return enumText(value, PROJECTION_ENUM_VALUES.stance, "stance");
 }
 function findingCategory(value: unknown): Finding["category"] {
   const item = text(value);

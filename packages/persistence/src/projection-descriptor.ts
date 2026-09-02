@@ -728,15 +728,19 @@ const NULLABLE_COLUMNS: Readonly<Partial<Record<ProjectionTableName, readonly st
   ],
 };
 
-const ENUM_COLUMNS: Readonly<Record<string, readonly string[]>> = {
-  side: ["away", "home"],
-  substitution_side: ["away", "home"],
-  half: ["top", "bottom"],
-  before_half: ["top", "bottom"],
-  after_half: ["top", "bottom"],
-  final_half: ["top", "bottom"],
-  identity_kind: ["source", "manual"],
-  pitch_call: [
+export const PROJECTION_ENUM_VALUES = {
+  relayKind: [
+    "half_inning_start",
+    "batter_start",
+    "pitch",
+    "plate_result",
+    "runner_advance",
+    "substitution",
+    "review",
+    "administrative",
+    "unresolved",
+  ],
+  pitchCall: [
     "ball",
     "called_strike",
     "swinging_strike",
@@ -749,24 +753,50 @@ const ENUM_COLUMNS: Readonly<Record<string, readonly string[]>> = {
     "automatic_strike",
     "no_pitch",
   ],
-  plate_result: plateResults(),
-  result: plateResults(),
-  batted_ball_type: ["ground_ball", "fly_ball", "line_drive", "popup"],
-  runner_outcome: ["safe", "out", "scored"],
-  outcome: ["safe", "out", "scored"],
-  runner_out_kind: runnerOutKinds(),
-  out_kind: runnerOutKinds(),
-  runner_context_kind: ["plate_result", "independent"],
-  runner_reason: runnerReasons(),
-  reason: [...runnerReasons(), "plate_result"],
-  substitution_role: ["batter", "runner", "pitcher", "fielder"],
-  review_decision: ["requested", "upheld", "overturned", "inconclusive"],
-  administrative_code: ["announcement", "mound_visit", "break", "footer", "other"],
-  suspected_kind: relayKinds().filter((value) => value !== "unresolved"),
-  stance: ["L", "R", "S"],
-  resolution_kind: ["pending", "linked", "duplicate", "excluded"],
-  exclusion_reason: ["not_a_pitch", "provider_conflict", "invalid_measurement", "manual_other"],
-  termination_reason: [
+  plateResult: [
+    "single",
+    "double",
+    "triple",
+    "home_run",
+    "walk",
+    "intentional_walk",
+    "hit_by_pitch",
+    "strikeout",
+    "field_out",
+    "sacrifice_bunt",
+    "sacrifice_fly",
+    "fielder_choice",
+    "reached_on_error",
+    "interference",
+    "double_play",
+    "triple_play",
+    "other",
+  ],
+  runnerOutcome: ["safe", "out", "scored"],
+  runnerOutKind: [
+    "force",
+    "tag",
+    "batter_runner_before_first",
+    "strikeout",
+    "fly_catch",
+    "appeal_force",
+    "appeal_time",
+    "interference",
+    "abandonment",
+  ],
+  runnerReason: [
+    "stolen_base",
+    "caught_stealing",
+    "pickoff",
+    "wild_pitch",
+    "passed_ball",
+    "balk",
+    "defensive_indifference",
+    "error",
+    "appeal",
+    "other",
+  ],
+  terminationReason: [
     "plate_result",
     "third_out",
     "walk_off",
@@ -775,6 +805,42 @@ const ENUM_COLUMNS: Readonly<Record<string, readonly string[]>> = {
     "source_boundary",
     "end_of_document",
   ],
+  trackingExclusionReason: [
+    "not_a_pitch",
+    "provider_conflict",
+    "invalid_measurement",
+    "manual_other",
+  ],
+  stance: ["L", "R", "S"],
+} as const;
+
+const ENUM_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  side: ["away", "home"],
+  substitution_side: ["away", "home"],
+  half: ["top", "bottom"],
+  before_half: ["top", "bottom"],
+  after_half: ["top", "bottom"],
+  final_half: ["top", "bottom"],
+  identity_kind: ["source", "manual"],
+  pitch_call: PROJECTION_ENUM_VALUES.pitchCall,
+  plate_result: PROJECTION_ENUM_VALUES.plateResult,
+  result: PROJECTION_ENUM_VALUES.plateResult,
+  batted_ball_type: ["ground_ball", "fly_ball", "line_drive", "popup"],
+  runner_outcome: PROJECTION_ENUM_VALUES.runnerOutcome,
+  outcome: PROJECTION_ENUM_VALUES.runnerOutcome,
+  runner_out_kind: PROJECTION_ENUM_VALUES.runnerOutKind,
+  out_kind: PROJECTION_ENUM_VALUES.runnerOutKind,
+  runner_context_kind: ["plate_result", "independent"],
+  runner_reason: PROJECTION_ENUM_VALUES.runnerReason,
+  reason: [...PROJECTION_ENUM_VALUES.runnerReason, "plate_result"],
+  substitution_role: ["batter", "runner", "pitcher", "fielder"],
+  review_decision: ["requested", "upheld", "overturned", "inconclusive"],
+  administrative_code: ["announcement", "mound_visit", "break", "footer", "other"],
+  suspected_kind: PROJECTION_ENUM_VALUES.relayKind.filter((value) => value !== "unresolved"),
+  stance: PROJECTION_ENUM_VALUES.stance,
+  resolution_kind: ["pending", "linked", "duplicate", "excluded"],
+  exclusion_reason: PROJECTION_ENUM_VALUES.trackingExclusionReason,
+  termination_reason: PROJECTION_ENUM_VALUES.terminationReason,
   category: ["source", "domain", "persistence"],
   severity: ["warning", "blocking"],
   expected_type: ["string", "number", "boolean", "null"],
@@ -853,7 +919,7 @@ function isIntegerColumn(column: string): boolean {
 function enumValues(table: ProjectionTableName, column: string): readonly string[] | undefined {
   if (column === "kind") {
     const subtype = subtypeKind(table);
-    return subtype === null ? relayKinds() : [subtype];
+    return subtype === null ? PROJECTION_ENUM_VALUES.relayKind : [subtype];
   }
   return ENUM_COLUMNS[column];
 }
@@ -892,71 +958,6 @@ function stateNullableColumns(...prefixes: readonly string[]): string[] {
     `${prefix}_pa_strikeout_responsible_batter_id`,
     `${prefix}_pa_actual_pitch_count`,
   ]);
-}
-
-function relayKinds(): readonly string[] {
-  return [
-    "half_inning_start",
-    "batter_start",
-    "pitch",
-    "plate_result",
-    "runner_advance",
-    "substitution",
-    "review",
-    "administrative",
-    "unresolved",
-  ];
-}
-
-function plateResults(): readonly string[] {
-  return [
-    "single",
-    "double",
-    "triple",
-    "home_run",
-    "walk",
-    "intentional_walk",
-    "hit_by_pitch",
-    "strikeout",
-    "field_out",
-    "sacrifice_bunt",
-    "sacrifice_fly",
-    "fielder_choice",
-    "reached_on_error",
-    "interference",
-    "double_play",
-    "triple_play",
-    "other",
-  ];
-}
-
-function runnerOutKinds(): readonly string[] {
-  return [
-    "force",
-    "tag",
-    "batter_runner_before_first",
-    "strikeout",
-    "fly_catch",
-    "appeal_force",
-    "appeal_time",
-    "interference",
-    "abandonment",
-  ];
-}
-
-function runnerReasons(): readonly string[] {
-  return [
-    "stolen_base",
-    "caught_stealing",
-    "pickoff",
-    "wild_pitch",
-    "passed_ball",
-    "balk",
-    "defensive_indifference",
-    "error",
-    "appeal",
-    "other",
-  ];
 }
 
 function integrity(table: ProjectionTableName, rowIndex: number, message: string): Error {

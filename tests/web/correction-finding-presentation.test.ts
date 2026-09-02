@@ -41,8 +41,8 @@ describe("correction finding presentation", () => {
     );
 
     expect(displayed).toEqual([
-      { ...stillCurrent, origin: "both" },
       { ...storedOnly, origin: "stored" },
+      { ...stillCurrent, origin: "both" },
     ]);
   });
 

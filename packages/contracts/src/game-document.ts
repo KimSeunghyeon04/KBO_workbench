@@ -2,7 +2,8 @@ import { Value } from "@sinclair/typebox/value";
 
 import { StagingGameDocumentV2Schema } from "./game-document/document.js";
 import type { StagingGameDocumentV2 } from "./game-document/document.js";
-import type { PlateResult } from "./game-document/events.js";
+import { StagingRelayEventSchema } from "./game-document/events.js";
+import type { PlateResult, StagingRelayEvent } from "./game-document/events.js";
 
 export {
   EventIdentitySchema,
@@ -104,6 +105,19 @@ export function parseStagingGameDocumentV2(value: unknown): StagingGameDocumentV
   const issues = validateStagingGameDocumentV2Semantics(decoded);
   if (issues.length > 0) throw new ContractValidationError(issues);
   return decoded;
+}
+
+export function parseStagingRelayEvent(value: unknown): StagingRelayEvent {
+  if (!Value.Check(StagingRelayEventSchema, value)) {
+    throw new ContractValidationError(
+      [...Value.Errors(StagingRelayEventSchema, value)].map((error) => ({
+        code: `schema_${String(error.type)}`,
+        message: error.message,
+        path: error.path || "$",
+      })),
+    );
+  }
+  return Value.Decode(StagingRelayEventSchema, value);
 }
 
 export function validateStagingGameDocumentV2Semantics(

@@ -1,4 +1,8 @@
-import type { CorrectionFinding, CorrectionSession } from "@kbo/contracts";
+import {
+  compareCanonicalStrings,
+  type CorrectionFinding,
+  type CorrectionSession,
+} from "@kbo/contracts";
 
 export type FindingOrigin = "stored" | "current" | "both";
 
@@ -37,7 +41,7 @@ export function buildDisplayFindings(
       severityRank(left.severity) - severityRank(right.severity) ||
       (left.eventSequence ?? Number.MAX_SAFE_INTEGER) -
         (right.eventSequence ?? Number.MAX_SAFE_INTEGER) ||
-      left.code.localeCompare(right.code),
+      compareCanonicalStrings(left.code, right.code),
   );
 }
 

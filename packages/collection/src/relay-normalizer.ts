@@ -1,4 +1,4 @@
-import type { Side, StagingRelayEvent } from "@kbo/contracts";
+import { parseStagingRelayEvent, type Side, type StagingRelayEvent } from "@kbo/contracts";
 
 import { emitRelayRow } from "./naver/event-emitter.js";
 import { enrichHitByPitchCalls } from "./naver/hit-by-pitch-enrichment.js";
@@ -35,7 +35,7 @@ export function normalizeNaverRelay(input: {
   const findings: RelayNormalizationResult["findings"][number][] = [];
   for (const row of rows) {
     const emitted = emitRelayRow(input.gameId, row, context);
-    const event = { ...emitted.event, sequence: events.length } as StagingRelayEvent;
+    const event = parseStagingRelayEvent({ ...emitted.event, sequence: events.length });
     events.push(event);
     findings.push(...emitted.findings);
     updateNormalizationContext(row, event, context);

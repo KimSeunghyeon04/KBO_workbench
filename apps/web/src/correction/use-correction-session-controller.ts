@@ -29,10 +29,10 @@ export function useCorrectionSessionController(selectedGame: GameCatalogItem | n
   const openSession = useMutation({
     mutationFn: async () => {
       if (selectedGame === null) throw new Error("보정할 경기를 선택하세요.");
-      return createCorrectionSession(
-        selectedGame.authority as "staging" | "quarantine",
-        selectedGame.gameId,
-      );
+      if (selectedGame.authority !== "staging" && selectedGame.authority !== "quarantine") {
+        throw new Error("현재 파일 원장만 보정 session으로 열 수 있습니다.");
+      }
+      return createCorrectionSession(selectedGame.authority, selectedGame.gameId);
     },
     onSuccess(next) {
       setSession(next);

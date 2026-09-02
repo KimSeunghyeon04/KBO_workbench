@@ -2,6 +2,7 @@ import {
   canonicalStringify,
   parseCorrectionCommand,
   parseStagingGameDocumentV2,
+  parseStagingRelayEvent,
   type AtomicCorrectionCommand,
   type CorrectionCommand,
   type CorrectionPreview,
@@ -281,7 +282,7 @@ function replaceEvent(
     identity: current.identity,
     sequence: current.sequence,
   };
-  events[index] = (
+  events[index] = parseStagingRelayEvent(
     current.identity.kind === "source"
       ? {
           ...common,
@@ -290,8 +291,8 @@ function replaceEvent(
             ? {}
             : { observedStateAfter: current.observedStateAfter }),
         }
-      : common
-  ) as StagingRelayEvent;
+      : common,
+  );
   const replaced = withEvents(document, events);
   return current.kind === "pitch" && replacement.kind !== "pitch"
     ? excludeTrackingForPitch(
@@ -410,7 +411,7 @@ function withEvents(
 ): StagingGameDocumentV2 {
   return {
     ...document,
-    events: events.map((event, sequence) => ({ ...event, sequence }) as StagingRelayEvent),
+    events: events.map((event, sequence) => parseStagingRelayEvent({ ...event, sequence })),
   };
 }
 function resequence(document: StagingGameDocumentV2): StagingGameDocumentV2 {
@@ -429,5 +430,5 @@ function requiredIndex(events: readonly StagingRelayEvent[], eventId: string): n
 }
 
 export function cloneStagingDocument(document: StagingGameDocumentV2): StagingGameDocumentV2 {
-  return JSON.parse(canonicalStringify(document)) as StagingGameDocumentV2;
+  return parseStagingGameDocumentV2(JSON.parse(canonicalStringify(document)) as unknown);
 }

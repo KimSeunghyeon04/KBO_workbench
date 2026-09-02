@@ -1,5 +1,5 @@
 import { constants as fsConstants, createReadStream } from "node:fs";
-import { access, mkdir, readFile, readdir, rename, unlink } from "node:fs/promises";
+import { access, mkdir, readFile, rename, unlink } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import path from "node:path";

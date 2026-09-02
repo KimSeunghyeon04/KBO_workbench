@@ -370,7 +370,7 @@ function snapshot(session: InternalSession): CorrectionSession {
     baseDocumentHash: session.baseDocumentHash,
     sessionVersion: session.sessionVersion,
     draftDocumentHash: stagingDocumentHash(session.document),
-    draftDocument: JSON.parse(canonicalStringify(session.document)) as StagingGameDocumentV2,
+    draftDocument: parseSessionDocument(session.document),
     storedFindings: session.storedFindings.map((finding) =>
       storedFindingSnapshot(session.gameId, finding),
     ),

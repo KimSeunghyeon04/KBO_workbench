@@ -1,9 +1,10 @@
-import type {
-  CatalogAuthority,
-  CorrectionEventContext,
-  GameCatalogItem,
-  StagingGameDocumentV2,
-  StagingRelayEvent,
+import {
+  compareCanonicalStrings,
+  type CatalogAuthority,
+  type CorrectionEventContext,
+  type GameCatalogItem,
+  type StagingGameDocumentV2,
+  type StagingRelayEvent,
 } from "@kbo/contracts";
 
 import { relayTextByEvent } from "../events/relay-text";
@@ -108,7 +109,7 @@ export function filterCorrectionGames(
       (left, right) =>
         Number(right.authority === "quarantine") - Number(left.authority === "quarantine") ||
         right.blockingFindings - left.blockingFindings ||
-        left.gameId.localeCompare(right.gameId),
+        compareCanonicalStrings(left.gameId, right.gameId),
     );
 }
 

@@ -1,4 +1,4 @@
-import { access, mkdir, readdir, rename, rm } from "node:fs/promises";
+import { access, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -21,7 +21,6 @@ interface RebuildSummary {
   readonly quarantined: number;
   readonly pendingTracking: number;
   readonly sourceHashesVerified: number;
-  readonly replaced: boolean;
 }
 
 interface DerivedGame {
@@ -32,6 +31,11 @@ interface DerivedGame {
 
 async function main(): Promise<void> {
   const options = parseArguments(process.argv.slice(2));
+  if (options.confirmReplacement) {
+    throw new Error(
+      "versioned current manifest는 season 디렉터리 교체를 허용하지 않습니다. 재생성 검증 결과를 correction/migration 경로로 적용하세요.",
+    );
+  }
   const config = loadConfig();
   const workspaceRoot = path.resolve(options.workspace ?? config.workspacePath);
   await assertNoActiveWriterOrJournal(workspaceRoot);
@@ -39,10 +43,8 @@ async function main(): Promise<void> {
 
   const runId = randomUUID();
   const temporaryRoot = path.join(workspaceRoot, `.derived-rebuild-${runId}`);
-  const rollbackRoot = path.join(workspaceRoot, `.derived-rollback-${runId}`);
   let sourceWorkspace: StagingWorkspace | null = null;
   let targetWorkspace: StagingWorkspace | null = null;
-  let replaced = false;
   try {
     sourceWorkspace = await StagingWorkspace.open(workspaceRoot);
     targetWorkspace = await StagingWorkspace.open(temporaryRoot);
@@ -53,11 +55,9 @@ async function main(): Promise<void> {
     let ready = 0;
     let quarantined = 0;
     let pendingTracking = 0;
-    const expectedSourceHashes = new Map<string, string>();
     const findingProjections: RebuildFindingProjection[] = [];
     for (const game of games) {
       const current = await sourceWorkspace.readDocument(game.authority, game.season, game.gameId);
-      expectedSourceHashes.set(game.gameId, current.source.sourceBundleHash);
       const source = await sourceWorkspace.readSourceBundle(
         game.season,
         game.gameId,
@@ -95,40 +95,6 @@ async function main(): Promise<void> {
     await sourceWorkspace.close();
     sourceWorkspace = null;
 
-    if (options.confirmReplacement) {
-      await replaceSeasonDirectories(workspaceRoot, temporaryRoot, rollbackRoot, options.season);
-      replaced = true;
-      const verification = await StagingWorkspace.open(workspaceRoot);
-      try {
-        await validateDerivedWorkspace(verification, options.season, games.length);
-        const rebuiltAuthorities = new Map(
-          derivedGames(await verification.catalog(), options.season).map((game) => [
-            game.gameId,
-            game.authority,
-          ]),
-        );
-        for (const game of games) {
-          const authority = rebuiltAuthorities.get(game.gameId);
-          if (authority === undefined) {
-            throw new Error(`교체 후 원장을 찾지 못했습니다: ${game.gameId}`);
-          }
-          const rebuilt = await verification.readDocument(authority, game.season, game.gameId);
-          if (rebuilt.source.sourceBundleHash !== expectedSourceHashes.get(game.gameId)) {
-            throw new Error(`교체 후 source hash가 다릅니다: ${game.gameId}`);
-          }
-          void stagingDocumentHash(rebuilt);
-        }
-      } catch (error: unknown) {
-        await verification.close();
-        await rollbackSeasonDirectories(workspaceRoot, rollbackRoot, options.season);
-        replaced = false;
-        throw error;
-      }
-      await verification.close();
-      await removeControlledDirectory(workspaceRoot, rollbackRoot, ".derived-rollback-");
-      await removeControlledDirectory(workspaceRoot, temporaryRoot, ".derived-rebuild-");
-    }
-
     const summary: RebuildSummary = {
       season: options.season,
       games: games.length,
@@ -136,17 +102,14 @@ async function main(): Promise<void> {
       quarantined,
       pendingTracking,
       sourceHashesVerified: games.length,
-      replaced,
     };
     process.stdout.write(`${JSON.stringify(summary)}\n`);
   } finally {
     await targetWorkspace?.close().catch(() => undefined);
     await sourceWorkspace?.close().catch(() => undefined);
-    if (!replaced) {
-      await removeControlledDirectory(workspaceRoot, temporaryRoot, ".derived-rebuild-").catch(
-        () => undefined,
-      );
-    }
+    await removeControlledDirectory(workspaceRoot, temporaryRoot, ".derived-rebuild-").catch(
+      () => undefined,
+    );
   }
 }
 
@@ -215,47 +178,6 @@ function derivedGames(
       ? [{ gameId: game.gameId, season, authority: game.authority }]
       : [],
   );
-}
-
-async function replaceSeasonDirectories(
-  workspaceRoot: string,
-  temporaryRoot: string,
-  rollbackRoot: string,
-  season: number,
-): Promise<void> {
-  await mkdir(rollbackRoot, { recursive: false });
-  const moved: Array<{ target: string; backup: string; incoming: string }> = [];
-  try {
-    for (const authority of ["original", "staging", "quarantine"] as const) {
-      const target = path.join(workspaceRoot, authority, String(season));
-      const incoming = path.join(temporaryRoot, authority, String(season));
-      const backup = path.join(rollbackRoot, authority);
-      await rename(target, backup);
-      moved.push({ target, backup, incoming });
-      await rename(incoming, target);
-    }
-  } catch (error: unknown) {
-    for (const item of [...moved].reverse()) {
-      await rename(item.target, item.incoming).catch(() => undefined);
-      await rename(item.backup, item.target).catch(() => undefined);
-    }
-    throw error;
-  }
-}
-
-async function rollbackSeasonDirectories(
-  workspaceRoot: string,
-  rollbackRoot: string,
-  season: number,
-): Promise<void> {
-  for (const authority of ["original", "staging", "quarantine"] as const) {
-    const target = path.join(workspaceRoot, authority, String(season));
-    const failed = path.join(workspaceRoot, `.derived-failed-${randomUUID()}-${authority}`);
-    const backup = path.join(rollbackRoot, authority);
-    await rename(target, failed);
-    await rename(backup, target);
-    await removeControlledDirectory(workspaceRoot, failed, ".derived-failed-");
-  }
 }
 
 async function removeControlledDirectory(

@@ -1,6 +1,6 @@
 import type { Side, StagingGameDocumentV2 } from "@kbo/contracts";
 
-import type { ActivePlateAppearance, GameState, PlateAppearanceSummary } from "../types.js";
+import type { GameState, PlateAppearanceSummary } from "../types.js";
 import type { CompileContext, MutableState } from "./model.js";
 
 export function initialState(): MutableState {
@@ -22,30 +22,32 @@ export function initialState(): MutableState {
 export function snapshot(state: MutableState): GameState {
   return {
     ...state,
-    bases: state.bases.map((base) =>
-      base === null ? null : { ...base },
-    ) as unknown as GameState["bases"],
+    bases: [copyBase(state.bases[0]), copyBase(state.bases[1]), copyBase(state.bases[2])],
     activePitchers: { ...state.activePitchers },
     activePlateAppearance:
       state.activePlateAppearance === null
         ? null
-        : ({
+        : {
             ...state.activePlateAppearance,
             eventIds: [...state.activePlateAppearance.eventIds],
-          } as ActivePlateAppearance),
+          },
   };
 }
 
 export function cloneState(state: MutableState): MutableState {
   return {
     ...state,
-    bases: state.bases.map((base) => (base === null ? null : { ...base })) as MutableState["bases"],
+    bases: [copyBase(state.bases[0]), copyBase(state.bases[1]), copyBase(state.bases[2])],
     activePitchers: { ...state.activePitchers },
     activePlateAppearance:
       state.activePlateAppearance === null
         ? null
         : { ...state.activePlateAppearance, eventIds: [...state.activePlateAppearance.eventIds] },
   };
+}
+
+function copyBase(base: GameState["bases"][number]): GameState["bases"][number] {
+  return base === null ? null : { ...base };
 }
 
 export function cloneContext(context: CompileContext): CompileContext {

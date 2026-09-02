@@ -1,9 +1,10 @@
-import type {
-  CorrectionCalculatedRecords,
-  OfficialBatterRecord,
-  OfficialPitcherRecord,
-  Side,
-  StagingGameDocumentV2,
+import {
+  compareCanonicalStrings,
+  type CorrectionCalculatedRecords,
+  type OfficialBatterRecord,
+  type OfficialPitcherRecord,
+  type Side,
+  type StagingGameDocumentV2,
 } from "@kbo/contracts";
 
 export type RecordKind = "batter" | "pitcher";
@@ -207,10 +208,12 @@ function comparePlayerRecords(left: PlayerRecordComparison, right: PlayerRecordC
     sideRank(left.side) - sideRank(right.side) ||
     (left.battingOrder ?? Number.MAX_SAFE_INTEGER) -
       (right.battingOrder ?? Number.MAX_SAFE_INTEGER) ||
-    left.playerName.localeCompare(right.playerName, "ko-KR") ||
-    left.playerId.localeCompare(right.playerId)
+    koreanDisplayCollator.compare(left.playerName, right.playerName) ||
+    compareCanonicalStrings(left.playerId, right.playerId)
   );
 }
+
+const koreanDisplayCollator = new Intl.Collator("ko-KR");
 
 function sideRank(side: Side): number {
   return side === "away" ? 0 : 1;

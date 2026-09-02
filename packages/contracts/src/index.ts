@@ -104,6 +104,7 @@ export {
   OfficialBatterRecordSchema,
   OfficialPitcherRecordSchema,
   parseStagingGameDocumentV2,
+  parseStagingRelayEvent,
   PitchCallSchema,
   PitchEventSchema,
   PlateResultEventSchema,

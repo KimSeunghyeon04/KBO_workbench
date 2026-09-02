@@ -11,7 +11,6 @@ export type ProjectionScalar = string | number | boolean | null;
 export type ProjectionRow = Readonly<Record<string, ProjectionScalar>>;
 import {
   PROJECTION_TABLE_COLUMNS,
-  PROJECTION_TABLE_DESCRIPTORS,
   type ProjectionTableName,
 } from "./projection-descriptor.js";
 

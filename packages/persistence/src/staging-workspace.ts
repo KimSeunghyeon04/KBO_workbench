@@ -15,7 +15,6 @@ import {
   type GameCatalog,
   type GameCatalogItem,
   type SourceBundleManifest,
-  type SourceFailureRecord,
   type StagingCorrectionCommit,
   type StagingGameDocumentV2,
   type StoredFinding,
