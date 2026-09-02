@@ -48,6 +48,19 @@ function Write-Utf8([string]$Path, [string]$Contents) {
   [IO.File]::WriteAllText($Path, $Contents, [Text.UTF8Encoding]::new($false))
 }
 
+function Get-Sha256Hex([string]$Path) {
+  $stream = [IO.File]::OpenRead($Path)
+  $sha256 = [Security.Cryptography.SHA256]::Create()
+  try {
+    $bytes = $sha256.ComputeHash($stream)
+    return -join ($bytes | ForEach-Object { $_.ToString("x2") })
+  }
+  finally {
+    $sha256.Dispose()
+    $stream.Dispose()
+  }
+}
+
 function Assert-BrowserUi {
   $browserSmoke = @'
 import { chromium } from "playwright";
@@ -277,11 +290,11 @@ try {
     formatVersion = 1
     database = [ordered]@{
       file = "postgres.dump"
-      sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $databaseBackup).Hash.ToLowerInvariant()
+      sha256 = Get-Sha256Hex $databaseBackup
     }
     workspace = [ordered]@{
       file = "workspace.zip"
-      sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $workspaceBackup).Hash.ToLowerInvariant()
+      sha256 = Get-Sha256Hex $workspaceBackup
     }
   } | ConvertTo-Json -Depth 4
   Write-Utf8 (Join-Path $migrationBackup "manifest.json") "$backupManifest`n"
@@ -329,8 +342,17 @@ try {
   }
   $revisionOneManifest = Invoke-RestMethod -Uri `
     "$baseUrl/api/v2/games/golden-game-1/revisions/1/replay-manifest"
-  # 원장 21행 중 타석 결과와 연결 주자 행은 같은 원자적 play로 compile된다.
-  if ($revisionOneManifest.frameCount -ne 18) { throw "격리 E2E replay frame 수가 다릅니다." }
+  $revisionOneFrames = Invoke-RestMethod -Uri `
+    "$baseUrl/api/v2/games/golden-game-1/revisions/1/replay-frames?limit=1000"
+  if (
+    $revisionOneManifest.frameCount -lt 1 -or
+    @($revisionOneFrames.frames).Count -ne $revisionOneManifest.frameCount -or
+    $null -ne $revisionOneFrames.nextCursor -or
+    $revisionOneFrames.documentHash -ne $revisionOneManifest.documentHash -or
+    $revisionOneFrames.frameHash -ne $revisionOneManifest.frameHash
+  ) {
+    throw "격리 E2E replay manifest와 atomic frame page가 일치하지 않습니다."
+  }
 
   $null = Invoke-RestMethod -Method Post -Uri `
     "$baseUrl/api/v2/games/golden-game-1/revisions/1/correction-drafts" `

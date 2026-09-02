@@ -9,10 +9,7 @@ import { applyPitchCall, type GameState, type ReplayResult } from "@kbo/game-cor
 
 export type ProjectionScalar = string | number | boolean | null;
 export type ProjectionRow = Readonly<Record<string, ProjectionScalar>>;
-import {
-  PROJECTION_TABLE_COLUMNS,
-  type ProjectionTableName,
-} from "./projection-descriptor.js";
+import { PROJECTION_TABLE_COLUMNS, type ProjectionTableName } from "./projection-descriptor.js";
 
 export {
   decodeProjectionRow,

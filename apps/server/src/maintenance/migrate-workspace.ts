@@ -28,6 +28,7 @@ function parseArguments(args: readonly string[]): Arguments {
   let resolutionFile: string | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
+    if (index === 0 && argument === "--") continue;
     if (argument === "--dry-run" || argument === "--apply") {
       const nextMode = argument === "--apply" ? "apply" : "dry-run";
       if (mode !== null && mode !== nextMode) {

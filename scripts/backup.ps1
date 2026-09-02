@@ -39,6 +39,16 @@ function Get-ComposeConfiguration {
   return (($raw -join "`n") | ConvertFrom-Json)
 }
 
+function Get-RepositoryAppVersion {
+  $packagePath = Join-Path $repositoryRoot "package.json"
+  $package = Get-Content -LiteralPath $packagePath -Raw -Encoding UTF8 | ConvertFrom-Json
+  $version = [string]$package.version
+  if ($version -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') {
+    throw "루트 package.json version이 올바르지 않습니다."
+  }
+  return $version
+}
+
 function Get-WorkspacePath($Configuration) {
   $volume = @($Configuration.services.api.volumes) |
     Where-Object { $_.target -eq "/var/lib/kbo" -and $_.type -eq "bind" } |
@@ -64,10 +74,14 @@ try {
   $dbName = [string]$configuration.services.db.environment.POSTGRES_DB
   $runningServices = @(& docker compose ps --status running --services)
   Assert-NativeSuccess "docker compose ps"
-  $runtimeAppVersion = [string]$configuration.services.api.environment.APP_VERSION
+  $runtimeAppVersion = Get-RepositoryAppVersion
   if ($runningServices -contains "api") {
-    $runtimeAppVersion = ((& docker compose exec -T api printenv APP_VERSION) -join "`n").Trim()
+    $containerAppVersion = ((& docker compose exec -T api node -p `
+      "JSON.parse(require('fs').readFileSync('/app/package.json','utf8')).version") -join "`n").Trim()
     Assert-NativeSuccess "실행 중인 API version 확인"
+    if ($containerAppVersion -ne $runtimeAppVersion) {
+      throw "실행 중인 API와 루트 package.json version이 다릅니다."
+    }
   }
   $runtimeMigrationVersion = ((& docker compose exec -T db psql `
     --username $dbUser --dbname $dbName --tuples-only --no-align `
