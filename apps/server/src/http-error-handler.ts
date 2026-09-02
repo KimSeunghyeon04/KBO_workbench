@@ -1,4 +1,4 @@
-import { ContractValidationError } from "@kbo/contracts";
+import { ContractValidationError, type ErrorCategory } from "@kbo/contracts";
 import { CorrectionCommandError } from "@kbo/correction";
 import {
   BlockingImportError,
@@ -6,9 +6,9 @@ import {
   GameAlreadyImportedError,
   GameRevisionNotFoundError,
   PersistenceIntegrityError,
+  RecordCorrectionStaleError,
   RevisionConflictError,
   StaleStagingDocumentError,
-  RecordCorrectionStaleError,
 } from "@kbo/persistence";
 import type { FastifyInstance } from "fastify";
 
@@ -28,67 +28,66 @@ import {
   ImportJobNotFoundError,
   ImportSourceNotReadyError,
 } from "./jobs/import-job-manager.js";
+import {
+  RecordCorrectionJobConflictError,
+  RecordCorrectionJobNotFoundError,
+} from "./jobs/record-correction-job-manager.js";
 import { InvalidReplayCursorError } from "./replay-service.js";
 import {
   RecordCorrectionConflictError,
   RecordCorrectionNotFoundError,
 } from "./record-correction-service.js";
-import {
-  RecordCorrectionJobConflictError,
-  RecordCorrectionJobNotFoundError,
-} from "./jobs/record-correction-job-manager.js";
 import { apiError, hasValidation } from "./routes/http.js";
+
+interface HttpErrorDescriptor {
+  readonly status: number;
+  readonly code: string;
+  readonly category: ErrorCategory;
+  readonly retryable: boolean;
+  readonly matches: (error: Error) => boolean;
+}
+
+const HTTP_ERROR_DESCRIPTORS: readonly HttpErrorDescriptor[] = [
+  descriptor(404, "collection_job_not_found", "domain", false, JobNotFoundError),
+  descriptor(404, "import_not_found", "domain", false, ImportJobNotFoundError),
+  descriptor(404, "revision_not_found", "domain", false, GameRevisionNotFoundError),
+  descriptor(404, "record_correction_not_found", "domain", false, RecordCorrectionNotFoundError),
+  descriptor(
+    404,
+    "record_correction_job_not_found",
+    "domain",
+    false,
+    RecordCorrectionJobNotFoundError,
+  ),
+  descriptor(404, "correction_not_found", "domain", false, CorrectionSessionNotFoundError),
+  descriptor(404, "correction_source_not_found", "domain", false, CorrectionSourceNotFoundError),
+  descriptor(409, "stale_session", "domain", false, StaleCorrectionSessionError),
+  descriptor(409, "stale_document", "domain", false, StaleStagingDocumentError),
+  descriptor(409, "revision_conflict", "domain", false, RevisionConflictError),
+  descriptor(409, "record_correction_stale", "domain", false, RecordCorrectionStaleError),
+  descriptor(409, "record_correction_conflict", "domain", false, RecordCorrectionConflictError),
+  descriptor(
+    409,
+    "record_correction_job_conflict",
+    "domain",
+    false,
+    RecordCorrectionJobConflictError,
+  ),
+  descriptor(422, "correction_blocked", "domain", false, CorrectionCommitBlockedError),
+  descriptor(400, "invalid_command", "domain", false, CorrectionCommandError),
+  descriptor(400, "invalid_replay_cursor", "domain", false, InvalidReplayCursorError),
+  descriptor(409, "idempotency_conflict", "domain", false, IdempotencyConflictError),
+  descriptor(409, "import_idempotency_conflict", "domain", false, ImportIdempotencyConflictError),
+  descriptor(409, "game_already_imported", "domain", false, GameAlreadyImportedError),
+  descriptor(409, "source_not_ready", "domain", false, ImportSourceNotReadyError),
+  descriptor(422, "blocking_findings", "domain", false, BlockingImportError),
+  descriptor(503, "database_contract", "persistence", true, DatabaseContractError),
+  descriptor(500, "integrity_error", "persistence", false, PersistenceIntegrityError),
+  descriptor(400, "invalid_request", "domain", false, InvalidCollectionRequestError),
+];
 
 export function installHttpErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler(async (error, request, reply) => {
-    if (error instanceof JobNotFoundError) {
-      return reply
-        .code(404)
-        .send(apiError(request.id, "not_found", "domain", error.message, false));
-    }
-    if (error instanceof ImportJobNotFoundError || error instanceof GameRevisionNotFoundError) {
-      return reply
-        .code(404)
-        .send(apiError(request.id, "not_found", "domain", error.message, false));
-    }
-    if (
-      error instanceof RecordCorrectionNotFoundError ||
-      error instanceof RecordCorrectionJobNotFoundError
-    ) {
-      return reply
-        .code(404)
-        .send(apiError(request.id, "record_correction_not_found", "domain", error.message, false));
-    }
-    if (
-      error instanceof CorrectionSessionNotFoundError ||
-      error instanceof CorrectionSourceNotFoundError
-    ) {
-      return reply
-        .code(404)
-        .send(apiError(request.id, "correction_not_found", "domain", error.message, false));
-    }
-    if (
-      error instanceof StaleCorrectionSessionError ||
-      error instanceof StaleStagingDocumentError ||
-      error instanceof RevisionConflictError ||
-      error instanceof RecordCorrectionStaleError ||
-      error instanceof RecordCorrectionConflictError ||
-      error instanceof RecordCorrectionJobConflictError
-    ) {
-      return reply
-        .code(409)
-        .send(apiError(request.id, "stale_session", "domain", error.message, false));
-    }
-    if (error instanceof CorrectionCommitBlockedError) {
-      return reply
-        .code(422)
-        .send(apiError(request.id, "correction_blocked", "domain", error.message, false));
-    }
-    if (error instanceof CorrectionCommandError) {
-      return reply
-        .code(400)
-        .send(apiError(request.id, "invalid_command", "domain", error.message, false));
-    }
     if (error instanceof ContractValidationError) {
       return reply.code(400).send(
         apiError(
@@ -101,48 +100,13 @@ export function installHttpErrorHandler(app: FastifyInstance): void {
         ),
       );
     }
-    if (error instanceof InvalidReplayCursorError) {
-      return reply
-        .code(400)
-        .send(apiError(request.id, "invalid_replay_cursor", "domain", error.message, false));
-    }
-    if (error instanceof IdempotencyConflictError) {
-      return reply
-        .code(409)
-        .send(apiError(request.id, "idempotency_conflict", "domain", error.message, false));
-    }
-    if (
-      error instanceof ImportIdempotencyConflictError ||
-      error instanceof GameAlreadyImportedError
-    ) {
-      return reply
-        .code(409)
-        .send(apiError(request.id, "import_conflict", "domain", error.message, false));
-    }
-    if (error instanceof ImportSourceNotReadyError) {
-      return reply
-        .code(409)
-        .send(apiError(request.id, "source_not_ready", "domain", error.message, false));
-    }
-    if (error instanceof BlockingImportError) {
-      return reply
-        .code(422)
-        .send(apiError(request.id, "blocking_findings", "domain", error.message, false));
-    }
-    if (error instanceof DatabaseContractError) {
-      return reply
-        .code(503)
-        .send(apiError(request.id, "database_contract", "persistence", error.message, true));
-    }
-    if (error instanceof PersistenceIntegrityError) {
-      return reply
-        .code(500)
-        .send(apiError(request.id, "integrity_error", "persistence", error.message, false));
-    }
-    if (error instanceof InvalidCollectionRequestError) {
-      return reply
-        .code(400)
-        .send(apiError(request.id, "invalid_request", "domain", error.message, false));
+    if (error instanceof Error) {
+      const known = HTTP_ERROR_DESCRIPTORS.find((candidate) => candidate.matches(error));
+      if (known !== undefined) {
+        return reply
+          .code(known.status)
+          .send(apiError(request.id, known.code, known.category, error.message, known.retryable));
+      }
     }
     if (hasValidation(error)) {
       return reply
@@ -164,10 +128,26 @@ export function installHttpErrorHandler(app: FastifyInstance): void {
         apiError(
           request.id,
           "internal_error",
-          "persistence",
+          "internal",
           "요청 처리 중 오류가 발생했습니다.",
           false,
         ),
       );
   });
+}
+
+function descriptor<E extends Error>(
+  status: number,
+  code: string,
+  category: ErrorCategory,
+  retryable: boolean,
+  constructor: abstract new (...args: never[]) => E,
+): HttpErrorDescriptor {
+  return {
+    status,
+    code,
+    category,
+    retryable,
+    matches: (error) => error instanceof constructor,
+  };
 }

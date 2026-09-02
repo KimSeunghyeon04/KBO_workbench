@@ -1,7 +1,6 @@
 name: kbo-workbench
 
 x-api-environment: &api-environment
-  APP_VERSION: "3.1.1"
   EXPECTED_MIGRATION_VERSION: "0003_record_correction_scope_classification"
   MIGRATIONS_DIR: "/app/database/v3"
   KBO_DATA_DIR: "/var/lib/kbo"

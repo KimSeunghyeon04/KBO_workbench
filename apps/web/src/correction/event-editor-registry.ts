@@ -1,11 +1,12 @@
-import type {
-  Half,
-  RunnerAdvanceReason,
-  Side,
-  StagingGameDocumentV2,
-  StagingRelayEvent,
-  StagingRelayEventKind,
+import {
+  StagingRelayEventSchema,
+  type Half,
+  type Side,
+  type StagingGameDocumentV2,
+  type StagingRelayEvent,
+  type StagingRelayEventKind,
 } from "@kbo/contracts";
+import { Value } from "@sinclair/typebox/value";
 
 export type DrawerRequest =
   | {
@@ -263,36 +264,41 @@ export function eventFromForm(
   };
   const optional = <T>(value: string, map: (value: string) => T): T | undefined =>
     value.trim() === "" ? undefined : map(value.trim());
-  if (form.kind === "half_inning_start") return { ...base, kind: "half_inning_start", payload: {} };
+  const decode = (value: unknown): StagingRelayEvent | null => {
+    try {
+      return Value.Decode(StagingRelayEventSchema, value);
+    } catch {
+      return null;
+    }
+  };
+  if (form.kind === "half_inning_start")
+    return decode({ ...base, kind: "half_inning_start", payload: {} });
   if (form.kind === "batter_start")
-    return {
+    return decode({
       ...base,
       kind: "batter_start",
       payload: { batterId: form.batterId, pitcherId: form.pitcherId },
-    };
+    });
   if (form.kind === "pitch")
-    return {
+    return decode({
       ...base,
       kind: "pitch",
       payload: {
-        call: form.call as Extract<StagingRelayEvent, { kind: "pitch" }>["payload"]["call"],
+        call: form.call,
         ...(optional(form.sourcePitchId, String) === undefined
           ? {}
           : { sourcePitchId: form.sourcePitchId.trim() }),
         ...(form.batterId === "" ? {} : { batterId: form.batterId }),
         ...(form.pitcherId === "" ? {} : { pitcherId: form.pitcherId }),
       },
-    };
+    });
   if (form.kind === "plate_result") {
     const allowsBattedBall = plateResultAllowsBattedBall(form.result);
-    return {
+    return decode({
       ...base,
       kind: "plate_result",
       payload: {
-        result: form.result as Extract<
-          StagingRelayEvent,
-          { kind: "plate_result" }
-        >["payload"]["result"],
+        result: form.result,
         batterId: form.batterId,
         pitcherId: form.pitcherId,
         ...(form.creditedRbi === "" ? {} : { creditedRbi: Number(form.creditedRbi) }),
@@ -303,28 +309,24 @@ export function eventFromForm(
         ...(!allowsBattedBall || form.battedBallType === ""
           ? {}
           : {
-              battedBallType: form.battedBallType as
-                "ground_ball" | "fly_ball" | "line_drive" | "popup",
+              battedBallType: form.battedBallType,
             }),
         ...(!allowsBattedBall || form.isBunt === "" ? {} : { isBunt: form.isBunt === "true" }),
       },
-    };
+    });
   }
   if (form.kind === "runner_advance")
-    return {
+    return decode({
       ...base,
       kind: "runner_advance",
       payload: {
         runnerId: form.runnerId,
         fromBase: Number(form.fromBase),
         toBase: form.outcome === "scored" ? 4 : Number(form.toBase),
-        outcome: form.outcome as "safe" | "out" | "scored",
+        outcome: form.outcome,
         ...(form.outcome === "out"
           ? {
-              outKind: form.outKind as Extract<
-                StagingRelayEvent,
-                { kind: "runner_advance" }
-              >["payload"]["outKind"],
+              outKind: form.outKind,
             }
           : {}),
         ...(form.outcome === "out" && form.supersedesThirdOut ? { supersedesThirdOut: true } : {}),
@@ -334,53 +336,51 @@ export function eventFromForm(
         context:
           form.contextKind === "plate_result"
             ? { kind: "plate_result", plateResultEventId: form.plateResultEventId }
-            : { kind: "independent", reason: form.reason as RunnerAdvanceReason },
+            : { kind: "independent", reason: form.reason },
       },
-    } as StagingRelayEvent;
+    });
   if (form.kind === "substitution")
-    return {
+    return decode({
       ...base,
       kind: "substitution",
       payload: {
         side: form.side,
-        role: form.role as "batter" | "runner" | "pitcher" | "fielder",
+        role: form.role,
         incomingPlayerId: form.incomingPlayerId,
         ...(form.outgoingPlayerId === "" ? {} : { outgoingPlayerId: form.outgoingPlayerId }),
         ...(form.battingOrder === "" ? {} : { battingOrder: Number(form.battingOrder) }),
         ...(form.fieldPosition.trim() === "" ? {} : { fieldPosition: form.fieldPosition.trim() }),
       },
-    };
+    });
   if (form.kind === "review")
-    return {
+    return decode({
       ...base,
       kind: "review",
       payload: {
         ...(form.decision === ""
           ? {}
           : {
-              decision: form.decision as "requested" | "upheld" | "overturned" | "inconclusive",
+              decision: form.decision,
             }),
         ...(form.reviewedEventId === "" ? {} : { reviewedEventId: form.reviewedEventId }),
       },
-    };
+    });
   if (form.kind === "administrative")
-    return {
+    return decode({
       ...base,
       kind: "administrative",
       payload: {
-        code: form.adminCode as "announcement" | "mound_visit" | "break" | "footer" | "other",
+        code: form.adminCode,
       },
-    };
-  return {
+    });
+  return decode({
     ...base,
     kind: "unresolved",
     payload: {
       sourceType: form.sourceType.trim(),
-      ...(form.suspectedKind === ""
-        ? {}
-        : { suspectedKind: form.suspectedKind as Exclude<StagingRelayEventKind, "unresolved"> }),
+      ...(form.suspectedKind === "" ? {} : { suspectedKind: form.suspectedKind }),
     },
-  };
+  });
 }
 
 export function validateForm(
@@ -397,6 +397,76 @@ export function validateForm(
     (field) => form[field] === "",
   );
   if (missing !== undefined) return "필수 선수를 경기 명단에서 선택하세요.";
+  const battingSide = form.half === "top" ? "away" : "home";
+  const fieldingSide = battingSide === "away" ? "home" : "away";
+  const hasPlayer = (side: Side, playerId: string): boolean =>
+    document.rosters[side].players.some((player) => player.playerId === playerId);
+  const optionalPlayerValid = (side: Side, playerId: string): boolean =>
+    playerId === "" || hasPlayer(side, playerId);
+  if (
+    (form.kind === "batter_start" || form.kind === "plate_result") &&
+    (!hasPlayer(battingSide, form.batterId) || !hasPlayer(fieldingSide, form.pitcherId))
+  )
+    return "타자와 투수는 해당 공수 팀 명단에서 선택하세요.";
+  if (
+    form.kind === "pitch" &&
+    (!optionalPlayerValid(battingSide, form.batterId) ||
+      !optionalPlayerValid(fieldingSide, form.pitcherId))
+  )
+    return "투구 선수는 해당 공수 팀 명단에서 선택하세요.";
+  if (
+    form.kind === "runner_advance" &&
+    (!hasPlayer(battingSide, form.runnerId) ||
+      !optionalPlayerValid(fieldingSide, form.responsiblePitcherId))
+  )
+    return "주자와 책임 투수는 해당 공수 팀 명단에서 선택하세요.";
+  if (
+    form.kind === "substitution" &&
+    (!hasPlayer(form.side, form.incomingPlayerId) ||
+      !optionalPlayerValid(form.side, form.outgoingPlayerId))
+  )
+    return "교체 선수는 선택한 팀 명단에서 선택하세요.";
+  if (form.kind === "pitch" && !enumIncludes(PITCH_CALLS, form.call))
+    return "유효한 투구 판정을 선택하세요.";
+  if (form.kind === "plate_result") {
+    if (!enumIncludes(PLATE_RESULTS, form.result)) return "유효한 타석 결과를 선택하세요.";
+    if (!optionalIntegerInRange(form.creditedRbi, 0, 4)) return "타점은 0~4 정수여야 합니다.";
+    if (!optionalIntegerInRange(form.outsRecorded, 0, 3)) return "아웃 수는 0~3 정수여야 합니다.";
+    if (!optionalIntegerInRange(form.batterDestination, 1, 3))
+      return "타자 도착 루는 1~3 정수여야 합니다.";
+    if (form.battedBallType !== "" && !enumIncludes(BATTED_BALL_TYPES, form.battedBallType))
+      return "유효한 타구 유형을 선택하세요.";
+    if (form.isBunt !== "" && form.isBunt !== "true" && form.isBunt !== "false")
+      return "번트 여부 값이 올바르지 않습니다.";
+  }
+  if (form.kind === "runner_advance") {
+    if (!integerInRange(form.fromBase, 1, 3)) return "출발 루는 1~3 정수여야 합니다.";
+    if (!enumIncludes(RUNNER_OUTCOMES, form.outcome)) return "주자 결과가 올바르지 않습니다.";
+    if (form.outcome !== "scored" && !integerInRange(form.toBase, 1, 3))
+      return "도착 루는 1~3 정수여야 합니다.";
+    if (form.outcome === "out" && !enumIncludes(RUNNER_OUT_KINDS, form.outKind))
+      return "주자 아웃 종류가 올바르지 않습니다.";
+    if (form.contextKind === "independent" && !enumIncludes(RUNNER_REASONS, form.reason))
+      return "독립 주자 이동 사유가 올바르지 않습니다.";
+  }
+  if (form.kind === "substitution") {
+    if (!enumIncludes(SUBSTITUTION_ROLES, form.role)) return "교체 역할이 올바르지 않습니다.";
+    if (!optionalIntegerInRange(form.battingOrder, 1, 9)) return "타순은 1~9 정수여야 합니다.";
+  }
+  if (
+    form.kind === "review" &&
+    form.decision !== "" &&
+    !enumIncludes(REVIEW_DECISIONS, form.decision)
+  )
+    return "판독 결과가 올바르지 않습니다.";
+  if (form.kind === "administrative" && !enumIncludes(ADMINISTRATIVE_CODES, form.adminCode))
+    return "관리 이벤트 코드가 올바르지 않습니다.";
+  if (
+    form.kind === "unresolved" &&
+    form.suspectedKind !== "" &&
+    !enumIncludes(SUSPECTED_EVENT_KINDS, form.suspectedKind)
+  )
+    return "추정 이벤트 종류가 올바르지 않습니다.";
   if (
     form.kind === "runner_advance" &&
     form.contextKind === "plate_result" &&
@@ -481,6 +551,25 @@ export const RUNNER_OUT_KINDS = [
   "interference",
   "abandonment",
 ] as const;
+const BATTED_BALL_TYPES = ["ground_ball", "fly_ball", "line_drive", "popup"] as const;
+const RUNNER_OUTCOMES = ["safe", "out", "scored"] as const;
+const SUBSTITUTION_ROLES = ["batter", "runner", "pitcher", "fielder"] as const;
+const REVIEW_DECISIONS = ["requested", "upheld", "overturned", "inconclusive"] as const;
+const ADMINISTRATIVE_CODES = ["announcement", "mound_visit", "break", "footer", "other"] as const;
+const SUSPECTED_EVENT_KINDS = EVENT_KINDS.filter((kind) => kind !== "unresolved");
+
+function enumIncludes(values: readonly string[], value: string): boolean {
+  return values.includes(value);
+}
+
+function integerInRange(value: string, minimum: number, maximum: number): boolean {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= minimum && parsed <= maximum;
+}
+
+function optionalIntegerInRange(value: string, minimum: number, maximum: number): boolean {
+  return value === "" || integerInRange(value, minimum, maximum);
+}
 
 function optionalNumber(value: number | undefined): string {
   return value === undefined ? "" : String(value);

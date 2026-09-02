@@ -34,3 +34,4 @@ export {
 } from "./import-client";
 export { getRevisionCatalog, loadReplay, type LoadedReplay } from "./replay-client";
 export { getDashboard, getDatabaseOverview, getSystemStatus } from "./system-client";
+export { ApiClientError } from "./transport";

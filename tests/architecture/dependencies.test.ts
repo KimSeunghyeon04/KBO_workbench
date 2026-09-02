@@ -5,7 +5,11 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const packageRoot = path.resolve(process.cwd(), "packages");
-const applicationRoots = [packageRoot, path.resolve(process.cwd(), "apps")];
+const applicationRoots = [
+  packageRoot,
+  path.resolve(process.cwd(), "apps"),
+  path.resolve(process.cwd(), "tests"),
+];
 
 const allowedInternalDependencies = new Map<string, ReadonlySet<string>>([
   ["contracts", new Set()],
@@ -49,7 +53,7 @@ async function sourceFiles(directory: string): Promise<readonly string[]> {
     const absolute = path.join(directory, entry.name);
     if (entry.isDirectory()) {
       results.push(...(await sourceFiles(absolute)));
-    } else if (entry.isFile() && entry.name.endsWith(".ts")) {
+    } else if (entry.isFile() && /\.tsx?$/u.test(entry.name)) {
       results.push(absolute);
     }
   }
@@ -144,6 +148,18 @@ describe("package dependency architecture", () => {
     for (const file of await allSourceFiles()) {
       for (const moduleName of await importedModules(file)) {
         if (/^@kbo\/[^/]+\//u.test(moduleName)) {
+          violations.push(`${path.relative(process.cwd(), file)} -> ${moduleName}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it("source와 test가 설치 디렉터리의 물리 경로를 import하지 않는다", async () => {
+    const violations: string[] = [];
+    for (const file of await allSourceFiles()) {
+      for (const moduleName of await importedModules(file)) {
+        if (/(^|[/\\])node_modules([/\\]|$)/u.test(moduleName)) {
           violations.push(`${path.relative(process.cwd(), file)} -> ${moduleName}`);
         }
       }

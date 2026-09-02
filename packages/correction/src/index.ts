@@ -10,5 +10,3 @@ export {
   type BuiltRecordCorrectionProposal,
   type RecordCorrectionProposalBinding,
 } from "./record-correction-proposal.js";
-
-export const CORRECTION_MODULE_VERSION = "0.5.0";

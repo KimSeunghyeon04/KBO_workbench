@@ -5,11 +5,8 @@ import userEvent from "@testing-library/user-event";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  QueryClient,
-  QueryClientProvider,
-} from "../../apps/web/node_modules/@tanstack/react-query/build/modern/index.js";
-import { MemoryRouter } from "../../apps/web/node_modules/react-router-dom/dist/index.mjs";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import { RecordCorrectionsPage } from "../../apps/web/src/pages/record-corrections-page.js";
 
 afterEach(() => {

@@ -16,7 +16,6 @@ import {
 } from "@kbo/contracts";
 import type { GameState, ReplayResult } from "@kbo/game-core";
 
-export const REPLAY_MODULE_VERSION = "2.0.0";
 export const DEFAULT_REPLAY_CHUNK_SIZE = 250;
 
 export interface ReplaySourceRosterPlayer {

@@ -83,5 +83,3 @@ export type {
   ScheduleExplorer,
   SourceFinding,
 } from "./types.js";
-
-export const COLLECTION_MODULE_VERSION = "0.2.0";

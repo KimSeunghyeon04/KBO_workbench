@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 export const EXPECTED_POSTGRES_MAJOR_VERSION = 16;
 export const EXPECTED_MIGRATION_VERSION = "0003_record_correction_scope_classification";
 
@@ -68,7 +70,7 @@ function booleanEnvironment(name: string, fallback: boolean): boolean {
 
 export function loadConfig(): AppConfig {
   return {
-    apiVersion: process.env.APP_VERSION?.trim() || "3.1.1",
+    apiVersion: rootPackageVersion(),
     collection: {
       maxConcurrentJobs: positiveIntegerEnvironment("KBO_COLLECTION_CONCURRENCY", 1),
       maxAttempts: positiveIntegerEnvironment("KBO_NAVER_MAX_ATTEMPTS", 3),
@@ -102,4 +104,18 @@ export function loadConfig(): AppConfig {
     },
     workspacePath: process.env.KBO_DATA_DIR?.trim() || "/var/lib/kbo",
   };
+}
+
+function rootPackageVersion(): string {
+  const value = JSON.parse(
+    readFileSync(new URL("../../../package.json", import.meta.url), "utf8"),
+  ) as unknown;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("루트 package.json 형식이 올바르지 않습니다.");
+  }
+  const version = Reflect.get(value, "version");
+  if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
+    throw new Error("루트 package.json version이 올바르지 않습니다.");
+  }
+  return version;
 }

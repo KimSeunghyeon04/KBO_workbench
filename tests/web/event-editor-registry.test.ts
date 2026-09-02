@@ -10,6 +10,7 @@ import {
   eventFromForm,
   plateResultAllowsBattedBall,
   resultDefaults,
+  validateForm,
 } from "../../apps/web/src/correction/event-editor-registry.js";
 
 const NON_BATTED_BALL_RESULTS = [
@@ -80,6 +81,22 @@ describe("타석 결과 편집기 타구 정보", () => {
       battedBallType: "fly_ball",
       isBunt: "false",
     });
+  });
+
+  it("enum, 숫자 범위와 팀별 선수 범위를 전송 전에 거부한다", () => {
+    const document = fixture();
+    const valid = {
+      ...emptyForm(9, "top"),
+      kind: "plate_result" as const,
+      batterId: "away-batter",
+      pitcherId: "home-pitcher",
+      relayText: "비식별 타석 결과",
+    };
+    expect(validateForm(valid, document)).toBeNull();
+    expect(validateForm({ ...valid, result: "invented_result" }, document)).toMatch(/타석 결과/);
+    expect(validateForm({ ...valid, creditedRbi: "5" }, document)).toMatch(/0~4/);
+    expect(validateForm({ ...valid, batterId: "home-pitcher" }, document)).toMatch(/공수 팀/);
+    expect(eventFromForm({ ...valid, result: "invented_result" }, document, undefined)).toBeNull();
   });
 });
 

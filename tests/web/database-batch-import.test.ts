@@ -5,10 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  QueryClient,
-  QueryClientProvider,
-} from "../../apps/web/node_modules/@tanstack/react-query/build/modern/index.js";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DatabasePage } from "../../apps/web/src/pages/database-page.js";
 
 afterEach(() => {
@@ -181,6 +178,7 @@ function gameCatalog() {
         updatedAt: "2026-08-30T00:00:00.000Z",
         blockingFindings: 0,
         warningFindings: 0,
+        supersededCount: 0,
       },
       {
         gameId: "anon-game-b",
@@ -189,6 +187,7 @@ function gameCatalog() {
         updatedAt: "2026-08-30T00:00:01.000Z",
         blockingFindings: 0,
         warningFindings: 1,
+        supersededCount: 0,
       },
     ],
   };

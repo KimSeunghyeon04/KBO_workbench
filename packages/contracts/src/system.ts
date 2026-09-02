@@ -1,5 +1,7 @@
 import { type Static, Type } from "@sinclair/typebox";
 
+import { ErrorCategorySchema } from "./collection.js";
+
 const strictObjectOptions = { additionalProperties: false } as const;
 
 export const FailureDiagnosticSchema = Type.Object(
@@ -7,11 +9,7 @@ export const FailureDiagnosticSchema = Type.Object(
     jobId: Type.String({ minLength: 1, maxLength: 200 }),
     kind: Type.Union([Type.Literal("collection"), Type.Literal("import")]),
     gameId: Type.Union([Type.String({ minLength: 1, maxLength: 100 }), Type.Null()]),
-    category: Type.Union([
-      Type.Literal("source"),
-      Type.Literal("domain"),
-      Type.Literal("persistence"),
-    ]),
+    category: ErrorCategorySchema,
     message: Type.String({ minLength: 1, maxLength: 2_000 }),
     occurredAt: Type.String({
       pattern:
@@ -95,5 +93,3 @@ export type BrowserStatus = Static<typeof BrowserStatusSchema>;
 export type SystemStatus = Static<typeof SystemStatusSchema>;
 export type FailureDiagnostic = Static<typeof FailureDiagnosticSchema>;
 export type DashboardSummary = Static<typeof DashboardSummarySchema>;
-
-export const CONTRACT_PACKAGE_VERSION = "0.1.0";

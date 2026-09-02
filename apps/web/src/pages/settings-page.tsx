@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import type { ErrorCategory } from "@kbo/contracts";
 
 import { systemStatusQueryOptions } from "../api/query-options";
 import { StatusBadge } from "../components/status-badge";
@@ -102,8 +103,8 @@ export function SettingsPage(): React.JSX.Element {
   );
 }
 
-function categoryLabel(category: "source" | "domain" | "persistence"): string {
-  return { source: "원천", domain: "규칙", persistence: "저장" }[category];
+function categoryLabel(category: ErrorCategory): string {
+  return { source: "원천", domain: "규칙", persistence: "저장", internal: "내부" }[category];
 }
 
 function formatDateTime(value: string): string {

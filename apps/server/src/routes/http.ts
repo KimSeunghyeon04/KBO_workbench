@@ -1,6 +1,7 @@
 import {
   canonicalStringify,
   parseCorrectionCommand,
+  type ErrorCategory,
   type StagingGameDocumentV2,
 } from "@kbo/contracts";
 import { CorrectionCommandError } from "@kbo/correction";
@@ -9,7 +10,7 @@ import type { FastifyReply } from "fastify";
 export function apiError(
   requestId: string,
   code: string,
-  category: "source" | "domain" | "persistence",
+  category: ErrorCategory,
   message: string,
   retryable: boolean,
   details: { field: string; message: string }[] = [],

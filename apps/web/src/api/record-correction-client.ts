@@ -18,7 +18,7 @@ import {
 } from "@kbo/contracts";
 import { Value } from "@sinclair/typebox/value";
 
-import { requestJson } from "./transport";
+import { requestJson, requestNoContent } from "./transport";
 
 export async function getRecordCorrectionSummary(): Promise<RecordCorrectionSummary> {
   return Value.Decode(
@@ -74,12 +74,9 @@ export async function createRecordCorrectionJob(
 }
 
 export async function cancelRecordCorrectionJob(jobId: string): Promise<void> {
-  const response = await fetch(`/api/v2/record-correction-jobs/${encodeURIComponent(jobId)}`, {
+  await requestNoContent(`/api/v2/record-correction-jobs/${encodeURIComponent(jobId)}`, {
     method: "DELETE",
-    headers: { Accept: "application/json" },
   });
-  if (!response.ok)
-    throw new Error(`기록정정 동기화 취소에 실패했습니다 (${String(response.status)})`);
 }
 
 export async function submitRecordCorrectionReviewAction(

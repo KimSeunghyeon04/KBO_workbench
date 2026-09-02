@@ -10,10 +10,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  QueryClient,
-  QueryClientProvider,
-} from "../../apps/web/node_modules/@tanstack/react-query/build/modern/index.js";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RecordCorrectionProposalPanel } from "../../apps/web/src/correction/record-correction-proposal-panel.js";
 import { makeDocument } from "../helpers/game-document.js";
 

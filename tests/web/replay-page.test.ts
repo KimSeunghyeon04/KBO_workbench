@@ -6,10 +6,7 @@ import type { ReplayFrame, ReplayManifest, ReplayState } from "@kbo/contracts";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  QueryClient,
-  QueryClientProvider,
-} from "../../apps/web/node_modules/@tanstack/react-query/build/modern/index.js";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReplayPage } from "../../apps/web/src/pages/replay-page.js";
 
 afterEach(() => {
@@ -182,6 +179,7 @@ function replayFetchMock(): ReturnType<typeof vi.fn> {
             updatedAt: "2026-08-30T00:00:00.000Z",
             blockingFindings: 0,
             warningFindings: 0,
+            supersededCount: 0,
           },
         ],
       });
