@@ -1,0 +1,442 @@
+{
+  "duplicatePitcherSubstitution": [
+    {
+      "seqno": 0,
+      "type": 0,
+      "text": "1회초 원정 공격"
+    },
+    {
+      "seqno": 1,
+      "type": 8,
+      "text": "1번타자 원정타자",
+      "currentGameState": {
+        "batter": "away-batter",
+        "pitcher": "home-pitcher-active",
+        "ball": "0",
+        "strike": "0",
+        "out": "0",
+        "base1": "0",
+        "base2": "0",
+        "base3": "0"
+      }
+    },
+    {
+      "seqno": 2,
+      "type": 2,
+      "text": "투수 동명투수 : 투수 새투수 (으)로 교체",
+      "currentGameState": {
+        "batter": "away-batter",
+        "pitcher": "home-pitcher-new",
+        "ball": "0",
+        "strike": "0",
+        "out": "0",
+        "base1": "0",
+        "base2": "0",
+        "base3": "0"
+      }
+    },
+    {
+      "seqno": 3,
+      "type": 1,
+      "text": "1구 볼",
+      "pitchResult": "B",
+      "ptsPitchId": "anon-substitution-pitch",
+      "currentGameState": {
+        "batter": "away-batter",
+        "pitcher": "home-pitcher-new",
+        "ball": "1",
+        "strike": "0",
+        "out": "0",
+        "base1": "0",
+        "base2": "0",
+        "base3": "0"
+      }
+    }
+  ],
+  "atomicRunnerIdentity": [
+    {
+      "seqno": 0,
+      "type": 0,
+      "text": "1회초 원정 공격"
+    },
+    {
+      "seqno": 1,
+      "type": 8,
+      "text": "1번타자 동명주자",
+      "currentGameState": { "batter": "runner-correct", "pitcher": "home-pitcher" }
+    },
+    {
+      "seqno": 2,
+      "type": 13,
+      "text": "동명주자 : 2루타",
+      "currentGameState": {
+        "batter": "runner-correct",
+        "pitcher": "home-pitcher",
+        "base1": "0",
+        "base2": "runner-correct",
+        "base3": "0"
+      }
+    },
+    {
+      "seqno": 3,
+      "type": 8,
+      "text": "2번타자 선행주자",
+      "currentGameState": { "batter": "runner-first", "pitcher": "home-pitcher" }
+    },
+    {
+      "seqno": 4,
+      "type": 13,
+      "text": "선행주자 : 1루타",
+      "currentGameState": {
+        "batter": "runner-first",
+        "pitcher": "home-pitcher",
+        "base1": "runner-first",
+        "base2": "runner-correct",
+        "base3": "0"
+      }
+    },
+    {
+      "seqno": 5,
+      "type": 8,
+      "text": "3번타자 현재타자",
+      "currentGameState": { "batter": "current-batter", "pitcher": "home-pitcher" }
+    },
+    {
+      "seqno": 6,
+      "type": 1,
+      "text": "1구 타격",
+      "pitchResult": "H",
+      "ptsPitchId": "anon-atomic-pitch",
+      "currentGameState": {
+        "batter": "current-batter",
+        "pitcher": "home-pitcher",
+        "base1": "runner-first",
+        "base2": "runner-correct",
+        "base3": "0"
+      }
+    },
+    {
+      "seqno": 7,
+      "type": 13,
+      "text": "현재타자 : 1루타",
+      "currentGameState": {
+        "batter": "current-batter",
+        "pitcher": "home-pitcher",
+        "base1": "runner-first",
+        "base2": "runner-correct",
+        "base3": "0"
+      }
+    },
+    {
+      "seqno": 8,
+      "type": 14,
+      "text": "1루주자 현재타자 : 다른주자수비하는 사이 2루까지 진루",
+      "currentGameState": {
+        "batter": "current-batter",
+        "pitcher": "home-pitcher",
+        "awayScore": "0",
+        "homeScore": "0",
+        "base1": "0",
+        "base2": "current-batter",
+        "base3": "0"
+      }
+    },
+    {
+      "seqno": 9,
+      "type": 14,
+      "text": "1루주자 선행주자 : 3루까지 진루",
+      "currentGameState": {
+        "batter": "current-batter",
+        "pitcher": "home-pitcher",
+        "awayScore": "0",
+        "homeScore": "0",
+        "base1": "0",
+        "base2": "current-batter",
+        "base3": "runner-first"
+      }
+    },
+    {
+      "seqno": 10,
+      "type": 14,
+      "text": "2루주자 동명주자 : 홈인",
+      "currentGameState": {
+        "batter": "current-batter",
+        "pitcher": "home-pitcher",
+        "awayScore": "1",
+        "homeScore": "0",
+        "base1": "0",
+        "base2": "current-batter",
+        "base3": "runner-first"
+      }
+    }
+  ],
+  "reachedOnErrorRbi": [
+    { "seqno": 0, "type": 0, "text": "1회초 원정 공격" },
+    {
+      "seqno": 1,
+      "type": 8,
+      "text": "1번타자 선행주자",
+      "currentGameState": { "batter": "lead-runner", "pitcher": "home-pitcher" }
+    },
+    {
+      "seqno": 2,
+      "type": 13,
+      "text": "선행주자 : 3루타",
+      "currentGameState": {
+        "batter": "lead-runner",
+        "pitcher": "home-pitcher",
+        "base1": "0",
+        "base2": "0",
+        "base3": "lead-runner"
+      }
+    },
+    {
+      "seqno": 3,
+      "type": 8,
+      "text": "2번타자 실책타자",
+      "currentGameState": { "batter": "error-batter", "pitcher": "home-pitcher" }
+    },
+    {
+      "seqno": 4,
+      "type": 13,
+      "text": "실책타자 : 유격수 실책으로 출루",
+      "currentGameState": {
+        "batter": "error-batter",
+        "pitcher": "home-pitcher",
+        "awayScore": "0",
+        "homeScore": "0",
+        "base1": "error-batter",
+        "base2": "0",
+        "base3": "lead-runner"
+      }
+    },
+    {
+      "seqno": 5,
+      "type": 14,
+      "text": "3루주자 선행주자 : 홈인",
+      "currentGameState": {
+        "batter": "error-batter",
+        "pitcher": "home-pitcher",
+        "awayScore": "1",
+        "homeScore": "0",
+        "base1": "error-batter",
+        "base2": "0",
+        "base3": "0"
+      }
+    }
+  ],
+  "staleRunnerReplay": [
+    { "seqno": 0, "type": 0, "text": "1회초 원정 공격" },
+    {
+      "seqno": 1,
+      "type": 8,
+      "text": "1번타자 재전송주자",
+      "currentGameState": { "batter": "replayed-runner", "pitcher": "home-pitcher" }
+    },
+    {
+      "seqno": 2,
+      "type": 13,
+      "text": "재전송주자 : 1루타",
+      "currentGameState": {
+        "batter": "replayed-runner",
+        "pitcher": "home-pitcher",
+        "base1": "replayed-runner",
+        "base2": "0",
+        "base3": "0"
+      }
+    },
+    {
+      "seqno": 3,
+      "type": 8,
+      "text": "2번타자 결과타자",
+      "currentGameState": { "batter": "result-batter", "pitcher": "home-pitcher" }
+    },
+    {
+      "seqno": 4,
+      "type": 13,
+      "text": "결과타자 : 1루수 파울플라이 아웃",
+      "currentGameState": {
+        "batter": "result-batter",
+        "pitcher": "home-pitcher",
+        "out": "1",
+        "base1": "replayed-runner",
+        "base2": "0",
+        "base3": "0"
+      }
+    },
+    {
+      "seqno": 5,
+      "type": 14,
+      "text": "1루주자 재전송주자 : 1루수 실책으로 2루까지 진루",
+      "currentGameState": {
+        "batter": "result-batter",
+        "pitcher": "home-pitcher",
+        "out": "1",
+        "base1": "0",
+        "base2": "replayed-runner",
+        "base3": "0"
+      }
+    },
+    {
+      "seqno": 6,
+      "type": 8,
+      "text": "3번타자 다음타자",
+      "currentGameState": {
+        "batter": "next-batter",
+        "pitcher": "home-pitcher",
+        "out": "1",
+        "base1": "0",
+        "base2": "replayed-runner",
+        "base3": "0"
+      }
+    },
+    {
+      "seqno": 7,
+      "type": 14,
+      "text": "1루주자 재전송주자 : 1루수 실책으로 2루까지 진루",
+      "currentGameState": {
+        "batter": "result-batter",
+        "pitcher": "home-pitcher",
+        "out": "1",
+        "base1": "0",
+        "base2": "replayed-runner",
+        "base3": "0"
+      }
+    }
+  ],
+  "hitByPitchTerminalCount": [
+    { "seqno": 0, "type": 0, "text": "1회초 익명원정 공격" },
+    {
+      "seqno": 1,
+      "type": 8,
+      "text": "1번타자 사구타자",
+      "currentGameState": {
+        "batter": "hit-batter",
+        "pitcher": "home-pitcher",
+        "ball": "0",
+        "strike": "0",
+        "out": "0",
+        "base1": "0",
+        "base2": "0",
+        "base3": "0"
+      }
+    },
+    {
+      "seqno": 2,
+      "type": 1,
+      "text": "1구 스트라이크",
+      "pitchResult": "S",
+      "ptsPitchId": "anon-hbp-pitch-1",
+      "currentGameState": {
+        "batter": "hit-batter",
+        "pitcher": "home-pitcher",
+        "ball": "0",
+        "strike": "1",
+        "out": "0",
+        "base1": "0",
+        "base2": "0",
+        "base3": "0"
+      }
+    },
+    {
+      "seqno": 3,
+      "type": 1,
+      "text": "2구 헛스윙",
+      "pitchResult": "S",
+      "ptsPitchId": "anon-hbp-pitch-2",
+      "currentGameState": {
+        "batter": "hit-batter",
+        "pitcher": "home-pitcher",
+        "ball": "0",
+        "strike": "2",
+        "out": "0",
+        "base1": "0",
+        "base2": "0",
+        "base3": "0"
+      }
+    },
+    {
+      "seqno": 4,
+      "type": 1,
+      "text": "3구 볼",
+      "pitchResult": "B",
+      "ptsPitchId": "anon-hbp-pitch-3",
+      "currentGameState": {
+        "batter": "hit-batter",
+        "pitcher": "home-pitcher",
+        "ball": "1",
+        "strike": "2",
+        "out": "0",
+        "base1": "0",
+        "base2": "0",
+        "base3": "0"
+      }
+    },
+    {
+      "seqno": 5,
+      "type": 1,
+      "text": "4구 파울",
+      "pitchResult": "F",
+      "ptsPitchId": "anon-hbp-pitch-4",
+      "currentGameState": {
+        "batter": "hit-batter",
+        "pitcher": "home-pitcher",
+        "ball": "1",
+        "strike": "2",
+        "out": "0",
+        "base1": "0",
+        "base2": "0",
+        "base3": "0"
+      }
+    },
+    {
+      "seqno": 6,
+      "type": 1,
+      "text": "5구 볼",
+      "pitchResult": "B",
+      "ptsPitchId": "anon-hbp-pitch-5",
+      "currentGameState": {
+        "batter": "hit-batter",
+        "pitcher": "home-pitcher",
+        "ball": "2",
+        "strike": "2",
+        "out": "0",
+        "base1": "0",
+        "base2": "0",
+        "base3": "0"
+      }
+    },
+    {
+      "seqno": 7,
+      "type": 1,
+      "text": "6구 볼",
+      "pitchResult": "B",
+      "ptsPitchId": "anon-hbp-pitch-6",
+      "currentGameState": {
+        "batter": "hit-batter",
+        "pitcher": "home-pitcher",
+        "ball": "4",
+        "strike": "2",
+        "out": "0",
+        "base1": "0",
+        "base2": "0",
+        "base3": "0"
+      }
+    },
+    {
+      "seqno": 8,
+      "type": 13,
+      "text": "사구타자 : 몸에 맞는 볼",
+      "currentGameState": {
+        "batter": "hit-batter",
+        "pitcher": "home-pitcher",
+        "ball": "4",
+        "strike": "2",
+        "out": "0",
+        "base1": "hit-batter",
+        "base2": "0",
+        "base3": "0"
+      }
+    }
+  ]
+}

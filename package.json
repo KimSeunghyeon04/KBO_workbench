@@ -1,0 +1,51 @@
+{
+  "name": "kbo-workbench",
+  "version": "3.1.1",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.15.1",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "pnpm build:server && pnpm build:web",
+    "build:server": "tsc -b tsconfig.json",
+    "build:web": "pnpm --filter @kbo/web run build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "maintenance:rebuild-derived": "pnpm build:server && node apps/server/dist/maintenance/rebuild-derived-workspace.js",
+    "schema:game:check": "node scripts/game-document-schema.mjs --check",
+    "schema:game:write": "node scripts/game-document-schema.mjs --write",
+    "test": "vitest run",
+    "test:architecture": "vitest run tests/architecture",
+    "test:integration": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-integration.ps1",
+    "test:e2e": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-compose-recovery.ps1",
+    "performance": "pnpm build:server && node scripts/measure-replay-performance.mjs",
+    "registry:sync": "pnpm build:server && node apps/server/dist/maintenance/registry-sync.js",
+    "db:v3:export-current": "pnpm build:server && node apps/server/dist/maintenance/export-v2-current.js",
+    "db:v3:load-current": "pnpm build:server && node apps/server/dist/maintenance/load-v3-current.js",
+    "db:v3:verify-current": "pnpm build:server && node apps/server/dist/maintenance/load-v3-current.js --verify-only",
+    "typecheck": "tsc -b tsconfig.json && pnpm --filter @kbo/web run typecheck"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.6",
+    "@types/node": "^24.3.0",
+    "@types/pg": "^8.15.5",
+    "@types/react": "19.1.12",
+    "@types/react-dom": "19.1.9",
+    "eslint": "^9.35.0",
+    "fast-check": "^4.3.0",
+    "globals": "^16.3.0",
+    "jsdom": "^30.0.1",
+    "pg": "^8.16.3",
+    "prettier": "^3.6.2",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.42.0",
+    "vitest": "^3.2.4"
+  }
+}

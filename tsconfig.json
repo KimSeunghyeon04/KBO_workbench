@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/contracts" },
+    { "path": "packages/game-core" },
+    { "path": "packages/collection" },
+    { "path": "packages/correction" },
+    { "path": "packages/persistence" },
+    { "path": "packages/replay" },
+    { "path": "packages/test-fixtures" },
+    { "path": "apps/server" }
+  ]
+}

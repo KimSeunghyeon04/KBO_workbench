@@ -1,0 +1,230 @@
+{
+  "20240504OBLG02024": {
+    "duplicateWalkResults": [
+      {
+        "seqno": 349,
+        "type": 13,
+        "text": "정수빈 : 볼넷",
+        "currentGameState": {
+          "homeScore": "2",
+          "awayScore": "3",
+          "pitcher": "64596",
+          "batter": "79231",
+          "strike": "2",
+          "ball": "4",
+          "out": "1",
+          "base1": "1",
+          "base2": "0",
+          "base3": "0"
+        }
+      },
+      {
+        "seqno": 350,
+        "type": 13,
+        "text": "정수빈 : 볼넷",
+        "currentGameState": {
+          "homeScore": "2",
+          "awayScore": "3",
+          "pitcher": "64596",
+          "batter": "79231",
+          "strike": "2",
+          "ball": "4",
+          "out": "1",
+          "base1": "1",
+          "base2": "0",
+          "base3": "0"
+        }
+      }
+    ]
+  },
+  "20240724WOOB02024": {
+    "crossHalfDawsonResult": {
+      "previous": {
+        "seqno": 258,
+        "type": 13,
+        "text": "도슨 : 우익수 플라이 아웃",
+        "currentGameState": {
+          "homeScore": "2",
+          "awayScore": "2",
+          "pitcher": "68220",
+          "batter": "53327",
+          "strike": "1",
+          "ball": "1",
+          "out": "3",
+          "base1": "0",
+          "base2": "0",
+          "base3": "0"
+        }
+      },
+      "mixed": {
+        "seqno": 260,
+        "type": 13,
+        "text": "도슨 : 우익수 플라이 아웃",
+        "currentGameState": {
+          "homeScore": "2",
+          "awayScore": "2",
+          "pitcher": "68220",
+          "batter": "53327",
+          "strike": "1",
+          "ball": "1",
+          "out": "3",
+          "base1": "0",
+          "base2": "0",
+          "base3": "0"
+        }
+      }
+    },
+    "repeatedPitchResultGroup": [
+      {
+        "seqno": 378,
+        "type": 1,
+        "text": "8구 타격",
+        "pitchResult": "H",
+        "ptsPitchId": "240724_204749",
+        "currentGameState": {
+          "homeScore": "3",
+          "awayScore": "2",
+          "pitcher": "77263",
+          "batter": "53312",
+          "strike": "2",
+          "ball": "3",
+          "out": "0",
+          "base1": "0",
+          "base2": "0",
+          "base3": "0"
+        }
+      },
+      {
+        "seqno": 379,
+        "type": 13,
+        "text": "김건희 : 3루수 땅볼 아웃 (3루수->1루수 송구아웃)",
+        "currentGameState": {
+          "homeScore": "3",
+          "awayScore": "2",
+          "pitcher": "77263",
+          "batter": "53312",
+          "strike": "2",
+          "ball": "3",
+          "out": "1",
+          "base1": "0",
+          "base2": "0",
+          "base3": "0"
+        }
+      },
+      {
+        "seqno": 380,
+        "type": 1,
+        "text": "8구 타격",
+        "pitchResult": "H",
+        "ptsPitchId": "240724_204749",
+        "currentGameState": {
+          "homeScore": "3",
+          "awayScore": "2",
+          "pitcher": "77263",
+          "batter": "53312",
+          "strike": "2",
+          "ball": "3",
+          "out": "0",
+          "base1": "0",
+          "base2": "0",
+          "base3": "0"
+        }
+      },
+      {
+        "seqno": 381,
+        "type": 13,
+        "text": "김건희 : 3루수 땅볼 아웃 (3루수->1루수 송구아웃)",
+        "currentGameState": {
+          "homeScore": "3",
+          "awayScore": "2",
+          "pitcher": "77263",
+          "batter": "53312",
+          "strike": "2",
+          "ball": "3",
+          "out": "1",
+          "base1": "0",
+          "base2": "0",
+          "base3": "0"
+        }
+      }
+    ],
+    "missingDawsonResultThenSongPitches": [
+      {
+        "seqno": 558,
+        "type": 1,
+        "text": "3구 볼",
+        "pitchResult": "B",
+        "ptsPitchId": "240724_220157",
+        "currentGameState": {
+          "homeScore": "7",
+          "awayScore": "4",
+          "pitcher": "54263",
+          "batter": "53327",
+          "strike": "2",
+          "ball": "1",
+          "out": "1",
+          "base1": "1",
+          "base2": "0",
+          "base3": "0"
+        }
+      },
+      {
+        "seqno": 559,
+        "type": 1,
+        "text": "4구 헛스윙",
+        "pitchResult": "S",
+        "ptsPitchId": "240724_220223",
+        "currentGameState": {
+          "homeScore": "7",
+          "awayScore": "4",
+          "pitcher": "54263",
+          "batter": "53327",
+          "strike": "3",
+          "ball": "1",
+          "out": "1",
+          "base1": "1",
+          "base2": "0",
+          "base3": "0"
+        }
+      },
+      {
+        "seqno": 560,
+        "type": 1,
+        "text": "1구 스트라이크",
+        "pitchResult": "T",
+        "ptsPitchId": "240724_220257",
+        "currentGameState": {
+          "homeScore": "7",
+          "awayScore": "4",
+          "pitcher": "54263",
+          "batter": "65357",
+          "strike": "1",
+          "ball": "0",
+          "out": "2",
+          "base1": "1",
+          "base2": "0",
+          "base3": "0"
+        }
+      },
+      {
+        "seqno": 561,
+        "type": 1,
+        "text": "2구 볼",
+        "pitchResult": "B",
+        "ptsPitchId": "240724_220314",
+        "currentGameState": {
+          "homeScore": "7",
+          "awayScore": "4",
+          "pitcher": "54263",
+          "batter": "65357",
+          "strike": "1",
+          "ball": "1",
+          "out": "2",
+          "base1": "1",
+          "base2": "0",
+          "base3": "0"
+        }
+      }
+    ]
+  }
+}

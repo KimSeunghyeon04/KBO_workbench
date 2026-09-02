@@ -1,0 +1,98 @@
+.correction-page {
+  max-width: 1440px;
+}
+
+.correction-game-selector {
+  display: grid;
+  align-items: end;
+  grid-template-columns:
+    minmax(130px, 0.45fr) minmax(170px, 0.65fr) minmax(300px, 1.4fr)
+    auto auto;
+  padding: 14px 18px;
+  gap: 10px;
+}
+
+.correction-game-selector label {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.correction-game-selector label > span {
+  color: #69736d;
+  font-size: 11px;
+}
+
+.correction-game-selector button,
+.correction-game-selector .button {
+  display: grid;
+  height: 36px;
+  place-items: center;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.correction-toolbar {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  padding: 12px 18px;
+  gap: 8px;
+}
+
+.correction-toolbar-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  margin-right: auto;
+  gap: 8px;
+}
+
+.correction-toolbar-identity strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-title-row {
+  display: flex;
+  min-height: 28px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panel-title-row h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.panel-title-row > span {
+  color: #69736d;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #59645e;
+  font-size: 11px;
+}
+
+.check-row input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+
+.correction-actions,
+.correction-source-bar,
+.session-identity,
+.commit-form,
+.restore-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}

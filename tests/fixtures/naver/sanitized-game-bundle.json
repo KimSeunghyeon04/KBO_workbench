@@ -1,0 +1,125 @@
+{
+  "gameId": "20260715AABB0",
+  "collectedAt": "2026-07-15T01:02:03Z",
+  "missingEndpoints": [],
+  "payloads": {
+    "lineup": {
+      "away_starter": [
+        {
+          "batorder": 1,
+          "playerCode": "A1",
+          "playerName": "원정 타자",
+          "positionName": "중견수"
+        }
+      ],
+      "game_info": {
+        "aCode": "AA",
+        "aName": "원정",
+        "gdate": 20260715,
+        "gtime": "18:30",
+        "hCode": "BB",
+        "hName": "홈",
+        "stadium": "테스트 구장",
+        "statusCode": "RESULT"
+      },
+      "home_starter": [
+        {
+          "playerCode": "HP",
+          "playerName": "홈 투수",
+          "positionName": "투수"
+        }
+      ]
+    },
+    "record": {
+      "batter": {
+        "away": [
+          {
+            "ab": 1,
+            "bb": 0,
+            "hit": 1,
+            "hr": 0,
+            "kk": 0,
+            "playerCode": "A1",
+            "rbi": 0,
+            "run": 0
+          }
+        ],
+        "home": []
+      },
+      "pitcher": {
+        "away": [],
+        "home": [
+          {
+            "bb": 0,
+            "bbhp": 0,
+            "bf": 1,
+            "er": 0,
+            "hit": 1,
+            "inn": "0",
+            "kk": 0,
+            "pa": 1,
+            "pcode": "HP",
+            "r": 0
+          }
+        ]
+      }
+    },
+    "relay_001": {
+      "result": {
+        "textRelayData": {
+          "textRelays": [
+            {
+              "homeOrAway": "0",
+              "inn": 1,
+              "ptsOptions": [
+                {
+                  "ballcount": 1,
+                  "crossPlateX": 0.1,
+                  "crossPlateY": 0.7083,
+                  "pitchId": "duplicate-source-id",
+                  "speed": "145.5"
+                }
+              ],
+              "textOptions": [
+                {
+                  "currentGameState": { "batter": "A1", "pitcher": "HP" },
+                  "text": "1회초 시작",
+                  "type": 0
+                },
+                {
+                  "currentGameState": { "batter": "A1", "pitcher": "HP" },
+                  "text": "1번 타자",
+                  "type": 8
+                },
+                {
+                  "currentGameState": {
+                    "awayScore": "0",
+                    "ball": "1",
+                    "base1": "0",
+                    "base2": "0",
+                    "base3": "0",
+                    "batter": "A1",
+                    "homeScore": "0",
+                    "out": "0",
+                    "pitcher": "HP",
+                    "strike": "0"
+                  },
+                  "pitchResult": "B",
+                  "ptsPitchId": "duplicate-source-id",
+                  "text": "1구 볼",
+                  "type": 1
+                },
+                {
+                  "currentGameState": { "batter": "A1", "pitcher": "HP" },
+                  "result": "single",
+                  "text": "안타",
+                  "type": 13
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  }
+}

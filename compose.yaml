@@ -1,0 +1,128 @@
+name: kbo-workbench
+
+x-api-environment: &api-environment
+  APP_VERSION: "3.1.1"
+  EXPECTED_MIGRATION_VERSION: "0003_record_correction_scope_classification"
+  MIGRATIONS_DIR: "/app/database/v3"
+  KBO_DATA_DIR: "/var/lib/kbo"
+  KBO_COLLECTION_CONCURRENCY: "${KBO_COLLECTION_CONCURRENCY:-1}"
+  KBO_NAVER_MAX_ATTEMPTS: "${KBO_NAVER_MAX_ATTEMPTS:-3}"
+  KBO_NAVER_REQUESTS_PER_SECOND: "${KBO_NAVER_REQUESTS_PER_SECOND:-4}"
+  KBO_NAVER_TIMEOUT_MS: "${KBO_NAVER_TIMEOUT_MS:-15000}"
+  KBO_REGISTRY_CONCURRENCY: "${KBO_REGISTRY_CONCURRENCY:-2}"
+  KBO_REGISTRY_MAX_ATTEMPTS: "${KBO_REGISTRY_MAX_ATTEMPTS:-3}"
+  KBO_REGISTRY_REQUESTS_PER_SECOND: "${KBO_REGISTRY_REQUESTS_PER_SECOND:-2}"
+  KBO_REGISTRY_TIMEOUT_MS: "${KBO_REGISTRY_TIMEOUT_MS:-15000}"
+  KBO_RECORD_CORRECTION_AUTO_SYNC: "${KBO_RECORD_CORRECTION_AUTO_SYNC:-true}"
+  KBO_RECORD_CORRECTION_MAX_ATTEMPTS: "${KBO_RECORD_CORRECTION_MAX_ATTEMPTS:-3}"
+  KBO_RECORD_CORRECTION_REQUESTS_PER_SECOND: "${KBO_RECORD_CORRECTION_REQUESTS_PER_SECOND:-2}"
+  KBO_RECORD_CORRECTION_TIMEOUT_MS: "${KBO_RECORD_CORRECTION_TIMEOUT_MS:-15000}"
+  KBO_RECORD_CORRECTION_SYNC_INTERVAL_MS: "${KBO_RECORD_CORRECTION_SYNC_INTERVAL_MS:-86400000}"
+  KBO_RECORD_CORRECTION_RETRY_INTERVAL_MS: "${KBO_RECORD_CORRECTION_RETRY_INTERVAL_MS:-21600000}"
+  PGDATABASE: "${POSTGRES_DB}"
+  PGHOST: "db"
+  PGPASSWORD: "${POSTGRES_PASSWORD}"
+  PGPORT: "5432"
+  PGUSER: "${POSTGRES_USER}"
+  KBO_ANALYST_USER: "${KBO_ANALYST_USER:-}"
+  KBO_ANALYST_PASSWORD: "${KBO_ANALYST_PASSWORD:-}"
+
+services:
+  db:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+    volumes:
+      - postgres-data-v3:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${KBO_DB_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - backend
+
+  migrate:
+    image: kbo-workbench-api:local
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    init: true
+    restart: "no"
+    command: ["node", "apps/server/dist/migrate.js"]
+    environment: *api-environment
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - backend
+
+  api:
+    image: kbo-workbench-api:local
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    init: true
+    restart: unless-stopped
+    environment:
+      <<: *api-environment
+      HOST: "0.0.0.0"
+      LOG_LEVEL: "info"
+      PORT: "3000"
+    expose:
+      - "3000"
+    volumes:
+      - "${KBO_DATA_DIR}:/var/lib/kbo"
+    shm_size: "1gb"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      - frontend
+      - backend
+
+  web:
+    image: kbo-workbench-web:local
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${KBO_WEB_PORT}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - frontend
+
+volumes:
+  postgres-data-v3:
+    name: "${KBO_POSTGRES_VOLUME_NAME:-kbo-workbench-postgres-v3}"
+
+networks:
+  frontend:
+  backend:
+    internal: true

@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "provider": "naver",
+    "sourceGameId": "anonymous-pa-rebase",
+    "collectedAt": "2026-08-20T03:00:00.000Z",
+    "sourceBundleHash": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "revisionBase": { "kind": "new_game" },
+  "metadata": {
+    "gameId": "anonymous-pa-rebase",
+    "season": 2026,
+    "gameDate": "2026-08-20",
+    "status": "suspended",
+    "scheduledInnings": 9
+  },
+  "teams": {
+    "away": { "teamId": "ANON-AWAY", "name": "비식별 원정팀" },
+    "home": { "teamId": "ANON-HOME", "name": "비식별 홈팀" }
+  },
+  "rosters": {
+    "away": {
+      "teamId": "ANON-AWAY",
+      "players": [
+        {
+          "playerId": "anon-batter",
+          "name": "비식별 타자",
+          "battingOrder": 1,
+          "starter": true,
+          "positions": ["1B"]
+        }
+      ]
+    },
+    "home": {
+      "teamId": "ANON-HOME",
+      "players": [
+        {
+          "playerId": "anon-pitcher",
+          "name": "비식별 투수",
+          "starter": true,
+          "positions": ["P"]
+        }
+      ]
+    }
+  },
+  "events": [
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "anon-half",
+        "endpoint": "relay_004",
+        "blockIndex": 6,
+        "eventIndex": 0
+      },
+      "sequence": 0,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1회초 시작",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "anon-pa-old",
+        "endpoint": "relay_004",
+        "blockIndex": 5,
+        "eventIndex": 0
+      },
+      "sequence": 1,
+      "inning": 1,
+      "half": "top",
+      "relayText": "비식별 타자 타석",
+      "kind": "batter_start",
+      "payload": { "batterId": "anon-batter", "pitcherId": "anon-pitcher" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "anon-pitch-old",
+        "endpoint": "relay_004",
+        "blockIndex": 5,
+        "eventIndex": 1
+      },
+      "sequence": 2,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1구 스트라이크",
+      "kind": "pitch",
+      "payload": { "sourcePitchId": "anon-old-pitch", "call": "called_strike" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "anon-pa-current",
+        "endpoint": "relay_004",
+        "blockIndex": 4,
+        "eventIndex": 0
+      },
+      "sequence": 3,
+      "inning": 1,
+      "half": "top",
+      "relayText": "비식별 타자 타석 반복",
+      "kind": "batter_start",
+      "payload": { "batterId": "anon-batter", "pitcherId": "anon-pitcher" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "anon-pitch-current",
+        "endpoint": "relay_004",
+        "blockIndex": 4,
+        "eventIndex": 1
+      },
+      "sequence": 4,
+      "inning": 1,
+      "half": "top",
+      "relayText": "2구 타격",
+      "kind": "pitch",
+      "payload": { "sourcePitchId": "anon-current-pitch", "call": "in_play" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "anon-result",
+        "endpoint": "relay_004",
+        "blockIndex": 4,
+        "eventIndex": 2
+      },
+      "sequence": 5,
+      "inning": 1,
+      "half": "top",
+      "relayText": "비식별 타자 아웃",
+      "kind": "plate_result",
+      "payload": {
+        "result": "field_out",
+        "batterId": "anon-batter",
+        "pitcherId": "anon-pitcher",
+        "outsRecorded": 1
+      }
+    }
+  ],
+  "trackingCandidates": [
+    {
+      "trackingId": "anon-tracking-canonical",
+      "source": { "endpoint": "relay_004", "blockIndex": 4, "rowIndex": 0 },
+      "sourcePitchId": "anon-current-pitch",
+      "sourcePitchOrdinal": 2,
+      "sequence": 0,
+      "inning": 1,
+      "half": "top",
+      "plateAppearanceEventId": "anon-pa-old",
+      "pitcherId": "anon-pitcher",
+      "batterId": "anon-batter",
+      "crossPlateX": 0.1,
+      "crossPlateY": 2.5,
+      "resolution": { "kind": "linked", "pitchEventId": "anon-pitch-current" }
+    },
+    {
+      "trackingId": "anon-tracking-duplicate",
+      "source": { "endpoint": "relay_004", "blockIndex": 4, "rowIndex": 1 },
+      "sourcePitchId": "anon-current-pitch",
+      "sourcePitchOrdinal": 2,
+      "sequence": 1,
+      "inning": 1,
+      "half": "top",
+      "plateAppearanceEventId": "anon-pa-old",
+      "pitcherId": "anon-pitcher",
+      "batterId": "anon-batter",
+      "crossPlateX": 0.1,
+      "crossPlateY": 2.5,
+      "resolution": {
+        "kind": "duplicate",
+        "canonicalTrackingId": "anon-tracking-canonical"
+      }
+    }
+  ],
+  "officialRecords": { "batters": [], "pitchers": [] }
+}

@@ -1,0 +1,405 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "provider": "naver",
+    "sourceGameId": "anonymous-observation-sync",
+    "collectedAt": "2026-08-29T00:00:00Z",
+    "sourceBundleHash": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "revisionBase": { "kind": "new_game" },
+  "metadata": {
+    "gameId": "anonymous-observation-sync",
+    "season": 2026,
+    "gameDate": "2026-08-29",
+    "status": "final",
+    "scheduledInnings": 9
+  },
+  "teams": {
+    "away": { "teamId": "AWAY", "name": "원정팀" },
+    "home": { "teamId": "HOME", "name": "홈팀" }
+  },
+  "rosters": {
+    "away": {
+      "teamId": "AWAY",
+      "players": [
+        {
+          "playerId": "away-1",
+          "name": "원정선수1",
+          "battingOrder": 1,
+          "starter": true,
+          "positions": ["CF"]
+        },
+        {
+          "playerId": "away-2",
+          "name": "원정선수2",
+          "battingOrder": 2,
+          "starter": true,
+          "positions": ["2B"]
+        },
+        {
+          "playerId": "away-3",
+          "name": "원정선수3",
+          "battingOrder": 3,
+          "starter": true,
+          "positions": ["1B"]
+        },
+        {
+          "playerId": "away-4",
+          "name": "원정선수4",
+          "battingOrder": 4,
+          "starter": true,
+          "positions": ["DH"]
+        },
+        {
+          "playerId": "away-5",
+          "name": "원정선수5",
+          "battingOrder": 5,
+          "starter": true,
+          "positions": ["RF"]
+        }
+      ]
+    },
+    "home": {
+      "teamId": "HOME",
+      "players": [
+        {
+          "playerId": "home-pitcher",
+          "name": "홈투수",
+          "starter": true,
+          "positions": ["P"]
+        }
+      ]
+    }
+  },
+  "events": [
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "event-0",
+        "endpoint": "relay_001",
+        "blockIndex": 0,
+        "eventIndex": 0
+      },
+      "sequence": 0,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1회초 시작",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "event-1",
+        "endpoint": "relay_001",
+        "blockIndex": 0,
+        "eventIndex": 1
+      },
+      "sequence": 1,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1번타자 원정선수1",
+      "kind": "batter_start",
+      "payload": { "batterId": "away-1", "pitcherId": "home-pitcher" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "event-2",
+        "endpoint": "relay_001",
+        "blockIndex": 0,
+        "eventIndex": 2
+      },
+      "sequence": 2,
+      "inning": 1,
+      "half": "top",
+      "relayText": "원정선수1 : 고의4구",
+      "kind": "plate_result",
+      "payload": {
+        "result": "intentional_walk",
+        "batterId": "away-1",
+        "pitcherId": "home-pitcher",
+        "creditedRbi": 0
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "event-3",
+        "endpoint": "relay_001",
+        "blockIndex": 0,
+        "eventIndex": 3
+      },
+      "sequence": 3,
+      "inning": 1,
+      "half": "top",
+      "relayText": "2번타자 원정선수2",
+      "kind": "batter_start",
+      "payload": { "batterId": "away-2", "pitcherId": "home-pitcher" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "event-4",
+        "endpoint": "relay_001",
+        "blockIndex": 0,
+        "eventIndex": 4
+      },
+      "sequence": 4,
+      "inning": 1,
+      "half": "top",
+      "relayText": "원정선수2 : 고의4구",
+      "kind": "plate_result",
+      "payload": {
+        "result": "intentional_walk",
+        "batterId": "away-2",
+        "pitcherId": "home-pitcher",
+        "creditedRbi": 0
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "event-5",
+        "endpoint": "relay_001",
+        "blockIndex": 0,
+        "eventIndex": 5
+      },
+      "sequence": 5,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1루주자 원정선수1 : 2루까지 진루",
+      "kind": "runner_advance",
+      "payload": {
+        "runnerId": "away-1",
+        "fromBase": 1,
+        "toBase": 2,
+        "outcome": "safe",
+        "context": { "kind": "plate_result", "plateResultEventId": "event-4" }
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "event-6",
+        "endpoint": "relay_001",
+        "blockIndex": 0,
+        "eventIndex": 6
+      },
+      "sequence": 6,
+      "inning": 1,
+      "half": "top",
+      "relayText": "3번타자 원정선수3",
+      "kind": "batter_start",
+      "payload": { "batterId": "away-3", "pitcherId": "home-pitcher" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "event-7",
+        "endpoint": "relay_001",
+        "blockIndex": 0,
+        "eventIndex": 7
+      },
+      "sequence": 7,
+      "inning": 1,
+      "half": "top",
+      "relayText": "원정선수3 : 고의4구",
+      "kind": "plate_result",
+      "payload": {
+        "result": "intentional_walk",
+        "batterId": "away-3",
+        "pitcherId": "home-pitcher",
+        "creditedRbi": 0
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "event-8",
+        "endpoint": "relay_001",
+        "blockIndex": 0,
+        "eventIndex": 8
+      },
+      "sequence": 8,
+      "inning": 1,
+      "half": "top",
+      "relayText": "2루주자 원정선수1 : 3루까지 진루",
+      "kind": "runner_advance",
+      "payload": {
+        "runnerId": "away-1",
+        "fromBase": 2,
+        "toBase": 3,
+        "outcome": "safe",
+        "context": { "kind": "plate_result", "plateResultEventId": "event-7" }
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "event-9",
+        "endpoint": "relay_001",
+        "blockIndex": 0,
+        "eventIndex": 9
+      },
+      "sequence": 9,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1루주자 원정선수2 : 2루까지 진루",
+      "kind": "runner_advance",
+      "payload": {
+        "runnerId": "away-2",
+        "fromBase": 1,
+        "toBase": 2,
+        "outcome": "safe",
+        "context": { "kind": "plate_result", "plateResultEventId": "event-7" }
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "event-10",
+        "endpoint": "relay_001",
+        "blockIndex": 0,
+        "eventIndex": 10
+      },
+      "sequence": 10,
+      "inning": 1,
+      "half": "top",
+      "relayText": "4번타자 원정선수4",
+      "kind": "batter_start",
+      "payload": { "batterId": "away-4", "pitcherId": "home-pitcher" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "event-11",
+        "endpoint": "relay_001",
+        "blockIndex": 0,
+        "eventIndex": 11
+      },
+      "sequence": 11,
+      "inning": 1,
+      "half": "top",
+      "relayText": "원정선수4 : 땅볼 아웃",
+      "kind": "plate_result",
+      "payload": {
+        "result": "field_out",
+        "batterId": "away-4",
+        "pitcherId": "home-pitcher",
+        "battedBallType": "ground_ball",
+        "isBunt": false,
+        "creditedRbi": 0
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "event-12",
+        "endpoint": "relay_001",
+        "blockIndex": 0,
+        "eventIndex": 12
+      },
+      "sequence": 12,
+      "inning": 1,
+      "half": "top",
+      "relayText": "5번타자 원정선수5",
+      "kind": "batter_start",
+      "payload": { "batterId": "away-5", "pitcherId": "home-pitcher" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "event-13",
+        "endpoint": "relay_001",
+        "blockIndex": 0,
+        "eventIndex": 13
+      },
+      "sequence": 13,
+      "inning": 1,
+      "half": "top",
+      "relayText": "원정선수5 : 희생플라이 아웃",
+      "kind": "plate_result",
+      "payload": {
+        "result": "sacrifice_fly",
+        "batterId": "away-5",
+        "pitcherId": "home-pitcher",
+        "creditedRbi": 1,
+        "battedBallType": "fly_ball",
+        "isBunt": false
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "event-14",
+        "endpoint": "relay_001",
+        "blockIndex": 0,
+        "eventIndex": 14
+      },
+      "sequence": 14,
+      "inning": 1,
+      "half": "top",
+      "relayText": "2루주자 원정선수2 : 3루까지 진루",
+      "observedStateAfter": {
+        "balls": 0,
+        "strikes": 0,
+        "outs": 2,
+        "bases": [true, false, true],
+        "awayScore": 0,
+        "homeScore": 0
+      },
+      "kind": "runner_advance",
+      "payload": {
+        "runnerId": "away-2",
+        "fromBase": 2,
+        "toBase": 3,
+        "outcome": "safe",
+        "context": { "kind": "plate_result", "plateResultEventId": "event-13" }
+      }
+    },
+    {
+      "identity": {
+        "kind": "manual",
+        "eventId": "0198f1e2-7d2a-7000-8000-000000000099"
+      },
+      "sequence": 15,
+      "inning": 1,
+      "half": "top",
+      "relayText": "3루주자 원정선수1 : 홈인",
+      "kind": "runner_advance",
+      "payload": {
+        "runnerId": "away-1",
+        "fromBase": 3,
+        "toBase": 4,
+        "outcome": "scored",
+        "context": { "kind": "plate_result", "plateResultEventId": "event-13" }
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "event-16",
+        "endpoint": "relay_001",
+        "blockIndex": 0,
+        "eventIndex": 15
+      },
+      "sequence": 16,
+      "inning": 1,
+      "half": "top",
+      "relayText": "경기 종료",
+      "observedStateAfter": {
+        "balls": 0,
+        "strikes": 0,
+        "outs": 2,
+        "bases": [true, false, true],
+        "awayScore": 1,
+        "homeScore": 0
+      },
+      "kind": "administrative",
+      "payload": { "code": "footer" }
+    }
+  ],
+  "trackingCandidates": [],
+  "officialRecords": { "batters": [], "pitchers": [] }
+}

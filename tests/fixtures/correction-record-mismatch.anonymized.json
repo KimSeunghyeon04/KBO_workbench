@@ -1,0 +1,183 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "provider": "naver",
+    "sourceGameId": "anonymous-record-source",
+    "collectedAt": "2026-08-20T12:00:00+09:00",
+    "sourceBundleHash": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "revisionBase": { "kind": "new_game" },
+  "metadata": {
+    "gameId": "anonymous-record-game",
+    "season": 2026,
+    "gameDate": "2026-08-20",
+    "status": "suspended",
+    "scheduledInnings": 9
+  },
+  "teams": {
+    "away": { "teamId": "ANON-AWAY", "name": "원정 비식별팀" },
+    "home": { "teamId": "ANON-HOME", "name": "홈 비식별팀" }
+  },
+  "rosters": {
+    "away": {
+      "teamId": "ANON-AWAY",
+      "players": [
+        {
+          "playerId": "anon-batter",
+          "name": "비식별 타자",
+          "battingOrder": 1,
+          "starter": true,
+          "positions": ["DH"]
+        }
+      ]
+    },
+    "home": {
+      "teamId": "ANON-HOME",
+      "players": [
+        {
+          "playerId": "anon-pitcher",
+          "name": "비식별 투수",
+          "starter": true,
+          "positions": ["P"]
+        }
+      ]
+    }
+  },
+  "events": [
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "anonymous-half-start",
+        "endpoint": "relay-anonymous",
+        "blockIndex": 0,
+        "eventIndex": 0
+      },
+      "sequence": 0,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1회초 시작",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "anonymous-batter-start",
+        "endpoint": "relay-anonymous",
+        "blockIndex": 0,
+        "eventIndex": 1
+      },
+      "sequence": 1,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1번타자 비식별 타자",
+      "kind": "batter_start",
+      "payload": { "batterId": "anon-batter", "pitcherId": "anon-pitcher" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "anonymous-pitch-1",
+        "endpoint": "relay-anonymous",
+        "blockIndex": 0,
+        "eventIndex": 2
+      },
+      "sequence": 2,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1구 스트라이크",
+      "kind": "pitch",
+      "payload": { "sourcePitchId": "anonymous-source-pitch-1", "call": "called_strike" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "anonymous-pitch-2",
+        "endpoint": "relay-anonymous",
+        "blockIndex": 0,
+        "eventIndex": 3
+      },
+      "sequence": 3,
+      "inning": 1,
+      "half": "top",
+      "relayText": "2구 파울",
+      "kind": "pitch",
+      "payload": { "sourcePitchId": "anonymous-source-pitch-2", "call": "foul" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "anonymous-pitch-3",
+        "endpoint": "relay-anonymous",
+        "blockIndex": 0,
+        "eventIndex": 4
+      },
+      "sequence": 4,
+      "inning": 1,
+      "half": "top",
+      "relayText": "3구 헛스윙",
+      "kind": "pitch",
+      "payload": { "sourcePitchId": "anonymous-source-pitch-3", "call": "swinging_strike" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "anonymous-strikeout",
+        "endpoint": "relay-anonymous",
+        "blockIndex": 0,
+        "eventIndex": 5
+      },
+      "sequence": 5,
+      "inning": 1,
+      "half": "top",
+      "relayText": "비식별 타자 : 삼진 아웃",
+      "kind": "plate_result",
+      "payload": {
+        "result": "strikeout",
+        "batterId": "anon-batter",
+        "pitcherId": "anon-pitcher",
+        "creditedRbi": 0
+      }
+    }
+  ],
+  "trackingCandidates": [],
+  "officialRecords": {
+    "batters": [
+      {
+        "playerId": "anon-batter",
+        "side": "away",
+        "plateAppearances": 1,
+        "atBats": 1,
+        "runs": 0,
+        "hits": 0,
+        "doubles": 0,
+        "triples": 0,
+        "homeRuns": 0,
+        "runsBattedIn": 1,
+        "walks": 0,
+        "intentionalWalks": 0,
+        "hitByPitch": 0,
+        "strikeouts": 1,
+        "sacrificeBunts": 0,
+        "sacrificeFlies": 0
+      }
+    ],
+    "pitchers": [
+      {
+        "playerId": "anon-pitcher",
+        "side": "home",
+        "battersFaced": 1,
+        "outsRecorded": 1,
+        "hits": 0,
+        "runs": 0,
+        "earnedRuns": 0,
+        "walks": 0,
+        "intentionalWalks": 0,
+        "hitByPitch": 0,
+        "strikeouts": 1,
+        "pitches": 4,
+        "strikes": 3
+      }
+    ]
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "replacementPlayer": {
+    "playerCode": "A2",
+    "playerName": "교체 타자",
+    "positionName": "대타"
+  },
+  "block": {
+    "homeOrAway": "0",
+    "inn": 1,
+    "ptsOptions": [
+      {
+        "ballcount": 1,
+        "crossPlateX": 0.2,
+        "crossPlateY": 0.7083,
+        "pitchId": "pinch-hitter-pitch"
+      }
+    ],
+    "textOptions": [
+      {
+        "currentGameState": { "batter": "A1", "pitcher": "HP" },
+        "text": "1회초 시작",
+        "type": 0
+      },
+      {
+        "currentGameState": { "batter": "A1", "pitcher": "HP" },
+        "text": "1번타자 원정 타자",
+        "type": 8
+      },
+      {
+        "currentGameState": { "batter": "A2", "pitcher": "HP" },
+        "playerChange": {
+          "inPlayer": {
+            "playerId": "A2",
+            "playerName": "교체 타자",
+            "playerPos": "대타"
+          },
+          "outPlayer": {
+            "playerId": "A1",
+            "playerName": "원정 타자",
+            "playerPos": "1번타자"
+          },
+          "type": "change"
+        },
+        "text": "1번타자 원정 타자 : 대타 교체 타자 (으)로 교체",
+        "type": 2
+      },
+      {
+        "currentGameState": { "batter": "A2", "pitcher": "HP" },
+        "text": "대타 교체 타자",
+        "type": 8
+      },
+      {
+        "currentGameState": {
+          "awayScore": "0",
+          "ball": "0",
+          "base1": "0",
+          "base2": "0",
+          "base3": "0",
+          "batter": "A2",
+          "homeScore": "0",
+          "out": "0",
+          "pitcher": "HP",
+          "strike": "1"
+        },
+        "pitchResult": "S",
+        "ptsPitchId": "pinch-hitter-pitch",
+        "text": "1구 스트라이크",
+        "type": 1
+      }
+    ]
+  }
+}

@@ -1,0 +1,122 @@
+{
+  "noticeId": "2024:0:900",
+  "noticeHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "sourceRequestKey": "records:2024:0:1",
+  "sourceRowIndex": 0,
+  "seriesId": 0,
+  "seriesName": "비식별 정규시즌",
+  "recordNumber": 900,
+  "gameDate": "2026-08-20",
+  "weekdayText": "",
+  "awayTeamName": "비식별 원정팀",
+  "homeTeamName": "비식별 홈팀",
+  "doubleheaderNumber": null,
+  "venueName": "비식별 구장",
+  "inning": 1,
+  "half": "top",
+  "battingOrder": 2,
+  "decisionBefore": "hit",
+  "decisionAfter": "hit",
+  "beforeRecordText": "안타",
+  "afterRecordText": "안타",
+  "contentText": "선택 계수형 기록의 0 생략 비식별 회귀 자료",
+  "correctionDateText": "01/01",
+  "participants": [
+    {
+      "participantIndex": 0,
+      "rawTeamName": "비식별 원정팀",
+      "rawPlayerName": "비식별 타자",
+      "role": "batter",
+      "parenthesized": false
+    },
+    {
+      "participantIndex": 1,
+      "rawTeamName": "비식별 홈팀",
+      "rawPlayerName": "비식별 투수",
+      "role": "pitcher",
+      "parenthesized": true
+    }
+  ],
+  "statChanges": [
+    {
+      "statIndex": 0,
+      "participantIndex": 0,
+      "rawStatName": "안타",
+      "statCode": "hits",
+      "scope": "batter",
+      "beforeValue": 0,
+      "afterValue": 1,
+      "supportKind": "direct"
+    },
+    {
+      "statIndex": 1,
+      "participantIndex": 0,
+      "rawStatName": "2루타",
+      "statCode": "doubles",
+      "scope": "batter",
+      "beforeValue": 1,
+      "afterValue": 0,
+      "supportKind": "direct"
+    },
+    {
+      "statIndex": 2,
+      "participantIndex": 0,
+      "rawStatName": "3루타",
+      "statCode": "triples",
+      "scope": "batter",
+      "beforeValue": 1,
+      "afterValue": 0,
+      "supportKind": "direct"
+    },
+    {
+      "statIndex": 3,
+      "participantIndex": 0,
+      "rawStatName": "고의4구",
+      "statCode": "intentional_walks",
+      "scope": "batter",
+      "beforeValue": 1,
+      "afterValue": 0,
+      "supportKind": "direct"
+    },
+    {
+      "statIndex": 4,
+      "participantIndex": 0,
+      "rawStatName": "사구",
+      "statCode": "hit_by_pitch",
+      "scope": "batter",
+      "beforeValue": 1,
+      "afterValue": 0,
+      "supportKind": "direct"
+    },
+    {
+      "statIndex": 5,
+      "participantIndex": 0,
+      "rawStatName": "희생번트",
+      "statCode": "sacrifice_bunts",
+      "scope": "batter",
+      "beforeValue": 1,
+      "afterValue": 0,
+      "supportKind": "direct"
+    },
+    {
+      "statIndex": 6,
+      "participantIndex": 0,
+      "rawStatName": "희생플라이",
+      "statCode": "sacrifice_flies",
+      "scope": "batter",
+      "beforeValue": 1,
+      "afterValue": 0,
+      "supportKind": "direct"
+    },
+    {
+      "statIndex": 7,
+      "participantIndex": 1,
+      "rawStatName": "투수 고의4구",
+      "statCode": "intentional_walks_allowed",
+      "scope": "pitcher",
+      "beforeValue": 1,
+      "afterValue": 0,
+      "supportKind": "direct"
+    }
+  ]
+}

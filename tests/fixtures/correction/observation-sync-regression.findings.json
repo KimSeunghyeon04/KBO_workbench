@@ -1,0 +1,11 @@
+[
+  {
+    "code": "source_observation_mismatch",
+    "category": "source",
+    "severity": "blocking",
+    "message": "과거 compiler 관측 비교에서 생성된 비식별 오탐입니다.",
+    "eventId": "event-14",
+    "eventSequence": 14,
+    "details": [{ "field": "homeScore", "expected": 1, "actual": 2 }]
+  }
+]

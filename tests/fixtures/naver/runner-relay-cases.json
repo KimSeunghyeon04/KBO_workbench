@@ -1,0 +1,243 @@
+{
+  "provenance": {
+    "repository": "KBO_scrapping_analysis",
+    "testFile": "tests/v3/test_naver_runners.py",
+    "note": "기존 인라인 Naver relay fixture 중 주자 경로와 제3아웃 순서 의존 사례를 평면 원장 계약에 맞게 축약했다."
+  },
+  "players": [
+    { "playerId": "a1", "name": "Away One", "side": "away", "battingOrder": 1 },
+    { "playerId": "a2", "name": "Away Two", "side": "away", "battingOrder": 2 },
+    { "playerId": "a3", "name": "Away Three", "side": "away", "battingOrder": 3 },
+    { "playerId": "a4", "name": "Away Four", "side": "away", "battingOrder": 4 },
+    { "playerId": "a5", "name": "Away Five", "side": "away", "battingOrder": 5 },
+    {
+      "playerId": "ap1",
+      "name": "Away Pitcher",
+      "side": "away",
+      "positions": ["투수"]
+    },
+    { "playerId": "h1", "name": "Home One", "side": "home", "battingOrder": 1 },
+    {
+      "playerId": "hp1",
+      "name": "Home Pitcher",
+      "side": "home",
+      "positions": ["투수"]
+    }
+  ],
+  "cases": [
+    {
+      "id": "atomic-lead-runner-chains",
+      "sourceTest": "test_runner_paths_are_ordered_as_atomic_lead_runner_chains",
+      "rows": [
+        { "seqno": 0, "type": 0, "text": "1회초 시작" },
+        { "seqno": 1, "type": 8, "text": "1번 타자 Away One" },
+        { "seqno": 2, "type": 13, "text": "Away One : 우익수 앞 1루타", "result": "single" },
+        { "seqno": 3, "type": 8, "text": "2번 타자 Away Two" },
+        { "seqno": 4, "type": 13, "text": "Away Two : 좌중간 2루타", "result": "double" },
+        { "seqno": 5, "type": 8, "text": "3번 타자 Away Three" },
+        { "seqno": 6, "type": 13, "text": "Away Three : 우익수 앞 1루타", "result": "single" },
+        {
+          "seqno": 7,
+          "type": 24,
+          "text": "1루주자 Away Three : 다른주자수비하는 사이 2루까지 진루",
+          "runner_id": "a3",
+          "from_base": 1,
+          "to_base": 2,
+          "outcome": "safe"
+        },
+        {
+          "seqno": 8,
+          "type": 24,
+          "text": "1루주자 Away One : 3루까지 진루",
+          "runner_id": "a1",
+          "from_base": 1,
+          "to_base": 3,
+          "outcome": "safe"
+        },
+        {
+          "seqno": 9,
+          "type": 24,
+          "text": "3루주자 Away One : 홈인",
+          "runner_id": "a1",
+          "from_base": 3,
+          "to_base": 4,
+          "outcome": "scored"
+        },
+        {
+          "seqno": 10,
+          "type": 24,
+          "text": "2루주자 Away Two : 홈인",
+          "runner_id": "a2",
+          "from_base": 2,
+          "to_base": 4,
+          "outcome": "scored"
+        }
+      ],
+      "expected": {
+        "score": 2,
+        "outs": 0,
+        "bases": [null, "a3", null],
+        "movementOrder": [
+          "a2:2-4:scored",
+          "a1:1-3:safe",
+          "a1:3-4:scored",
+          "a3:0-1:safe",
+          "a3:1-2:safe"
+        ]
+      }
+    },
+    {
+      "id": "rundown-score-before-third-out",
+      "sourceTest": "test_20240502_single_rundown_interleaves_batter_extension_before_tag_out",
+      "rows": [
+        { "seqno": 0, "type": 0, "text": "1회초 시작" },
+        { "seqno": 1, "type": 8, "text": "1번 타자 Away One" },
+        { "seqno": 2, "type": 13, "text": "Away One : 땅볼 아웃", "result": "field_out" },
+        { "seqno": 3, "type": 8, "text": "2번 타자 Away Two" },
+        { "seqno": 4, "type": 13, "text": "Away Two : 땅볼 아웃", "result": "field_out" },
+        { "seqno": 5, "type": 8, "text": "3번 타자 Away Three" },
+        { "seqno": 6, "type": 13, "text": "Away Three : 좌중간 2루타", "result": "double" },
+        { "seqno": 7, "type": 8, "text": "4번 타자 Away Four" },
+        { "seqno": 8, "type": 13, "text": "Away Four : 우중간 3루타", "result": "triple" },
+        { "seqno": 9, "type": 8, "text": "5번 타자 Away Five" },
+        { "seqno": 10, "type": 13, "text": "Away Five : 2루수 왼쪽 내야안타", "result": "single" },
+        {
+          "seqno": 11,
+          "type": 24,
+          "text": "1루주자 Away Five : 다른주자수비하는 사이 2루까지 진루",
+          "runner_id": "a5",
+          "from_base": 1,
+          "to_base": 2,
+          "outcome": "safe"
+        },
+        {
+          "seqno": 12,
+          "type": 24,
+          "text": "2루주자 Away Three : 3루까지 진루",
+          "runner_id": "a3",
+          "from_base": 2,
+          "to_base": 3,
+          "outcome": "safe"
+        },
+        {
+          "seqno": 13,
+          "type": 24,
+          "text": "3루주자 Away Three : 태그아웃",
+          "runner_id": "a3",
+          "from_base": 3,
+          "to_base": 3,
+          "outcome": "out"
+        },
+        {
+          "seqno": 14,
+          "type": 24,
+          "text": "3루주자 Away Four : 홈인",
+          "runner_id": "a4",
+          "from_base": 3,
+          "to_base": 4,
+          "outcome": "scored"
+        }
+      ],
+      "expected": {
+        "score": 1,
+        "outs": 3,
+        "bases": [null, null, null],
+        "movementOrder": [
+          "a4:3-4:scored",
+          "a3:2-3:safe",
+          "a5:0-1:safe",
+          "a5:1-2:safe",
+          "a3:3-3:out"
+        ]
+      }
+    },
+    {
+      "id": "dropped-third-strike-rundown",
+      "sourceTest": "test_20240524_dropped_third_strike_interleaves_batter_move_before_tag_out",
+      "rows": [
+        { "seqno": 0, "type": 0, "text": "1회초 시작" },
+        { "seqno": 1, "type": 8, "text": "1번 타자 Away One" },
+        { "seqno": 2, "type": 13, "text": "Away One : 땅볼 아웃", "result": "field_out" },
+        { "seqno": 3, "type": 8, "text": "2번 타자 Away Two" },
+        { "seqno": 4, "type": 13, "text": "Away Two : 땅볼 아웃", "result": "field_out" },
+        { "seqno": 5, "type": 8, "text": "3번 타자 Away Three" },
+        { "seqno": 6, "type": 13, "text": "Away Three : 좌중간 2루타", "result": "double" },
+        { "seqno": 7, "type": 8, "text": "4번 타자 Away Four" },
+        { "seqno": 8, "type": 1, "text": "1구 스트라이크", "ptsPitchId": "s1", "pitchResult": "T" },
+        { "seqno": 9, "type": 1, "text": "2구 파울", "ptsPitchId": "s2", "pitchResult": "F" },
+        { "seqno": 10, "type": 1, "text": "3구 헛스윙", "ptsPitchId": "s3", "pitchResult": "S" },
+        { "seqno": 11, "type": 13, "text": "Away Four : 스트라이크 낫아웃 폭투" },
+        {
+          "seqno": 12,
+          "type": 24,
+          "text": "1루주자 Away Four : 다른주자수비하는 사이 2루까지 진루",
+          "runner_id": "a4",
+          "from_base": 1,
+          "to_base": 2,
+          "outcome": "safe"
+        },
+        {
+          "seqno": 13,
+          "type": 24,
+          "text": "2루주자 Away Three : 폭투로 3루까지 진루",
+          "runner_id": "a3",
+          "from_base": 2,
+          "to_base": 3,
+          "outcome": "safe"
+        },
+        {
+          "seqno": 14,
+          "type": 24,
+          "text": "3루주자 Away Three : 태그아웃",
+          "runner_id": "a3",
+          "from_base": 3,
+          "to_base": 3,
+          "outcome": "out"
+        }
+      ],
+      "expected": {
+        "score": 0,
+        "outs": 3,
+        "bases": [null, null, null],
+        "movementOrder": ["a3:2-3:safe", "a4:0-1:safe", "a4:1-2:safe", "a3:3-3:out"]
+      }
+    },
+    {
+      "id": "inning-ending-fielder-choice",
+      "sourceTest": "test_inning_ending_force_out_precedes_result_without_placing_batter",
+      "rows": [
+        { "seqno": 0, "type": 0, "text": "1회초 시작" },
+        { "seqno": 1, "type": 8, "text": "1번 타자 Away One" },
+        { "seqno": 2, "type": 13, "text": "Away One : 유격수 땅볼 아웃", "result": "field_out" },
+        { "seqno": 3, "type": 8, "text": "2번 타자 Away Two" },
+        { "seqno": 4, "type": 13, "text": "Away Two : 2루수 땅볼 아웃", "result": "field_out" },
+        { "seqno": 5, "type": 8, "text": "3번 타자 Away Three" },
+        { "seqno": 6, "type": 13, "text": "Away Three : 우익수 앞 1루타", "result": "single" },
+        { "seqno": 7, "type": 8, "text": "4번 타자 Away Four" },
+        { "seqno": 8, "type": 13, "text": "Away Four : 좌중간 2루타", "result": "double" },
+        { "seqno": 9, "type": 8, "text": "5번 타자 Away Five" },
+        {
+          "seqno": 10,
+          "type": 23,
+          "text": "Away Five : 3루수 앞 땅볼로 출루",
+          "result": "fielder_choice"
+        },
+        {
+          "seqno": 11,
+          "type": 24,
+          "text": "2루주자 Away Four : 포스아웃 (3루수 3루 터치아웃)",
+          "runner_id": "a4",
+          "from_base": 2,
+          "to_base": 3,
+          "outcome": "out"
+        }
+      ],
+      "expected": {
+        "score": 0,
+        "outs": 3,
+        "bases": [null, null, null],
+        "movementOrder": ["a4:2-3:out", "a5:0-1:safe"]
+      }
+    }
+  ]
+}

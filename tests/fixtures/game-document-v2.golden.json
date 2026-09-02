@@ -1,0 +1,458 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "provider": "naver",
+    "sourceGameId": "20260820-GOLDEN",
+    "collectedAt": "2026-08-20T12:00:00+09:00",
+    "sourceBundleHash": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "revisionBase": { "kind": "new_game" },
+  "metadata": {
+    "gameId": "golden-game-1",
+    "season": 2026,
+    "gameDate": "2026-08-20",
+    "status": "suspended",
+    "scheduledInnings": 9
+  },
+  "teams": {
+    "away": { "teamId": "AWAY", "name": "원정" },
+    "home": { "teamId": "HOME", "name": "홈" }
+  },
+  "rosters": {
+    "away": {
+      "teamId": "AWAY",
+      "players": [
+        {
+          "playerId": "a1",
+          "name": "원정1",
+          "battingOrder": 1,
+          "starter": true,
+          "positions": ["1B"]
+        },
+        {
+          "playerId": "a2",
+          "name": "원정2",
+          "battingOrder": 2,
+          "starter": true,
+          "positions": ["2B"]
+        },
+        {
+          "playerId": "a3",
+          "name": "원정3",
+          "battingOrder": 3,
+          "starter": true,
+          "positions": ["OF"]
+        },
+        {
+          "playerId": "a4",
+          "name": "원정4",
+          "battingOrder": 4,
+          "starter": true,
+          "positions": ["DH"]
+        }
+      ]
+    },
+    "home": {
+      "teamId": "HOME",
+      "players": [
+        { "playerId": "hp1", "name": "선발투수", "starter": true, "positions": ["P"] },
+        { "playerId": "hp2", "name": "구원투수", "starter": false, "positions": ["P"] }
+      ]
+    }
+  },
+  "events": [
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e0",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 0
+      },
+      "sequence": 0,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1회초 시작",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e1",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 1
+      },
+      "sequence": 1,
+      "inning": 1,
+      "half": "top",
+      "relayText": "원정1 타석",
+      "kind": "batter_start",
+      "payload": { "batterId": "a1", "pitcherId": "hp1" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e2",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 2
+      },
+      "sequence": 2,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1구 볼",
+      "kind": "pitch",
+      "payload": { "sourcePitchId": "p-duplicate", "call": "ball" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e3",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 3
+      },
+      "sequence": 3,
+      "inning": 1,
+      "half": "top",
+      "relayText": "2구 볼",
+      "kind": "pitch",
+      "payload": { "sourcePitchId": "p-duplicate", "call": "ball" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e4",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 4
+      },
+      "sequence": 4,
+      "inning": 1,
+      "half": "top",
+      "relayText": "3구 자동 볼",
+      "kind": "pitch",
+      "payload": { "call": "automatic_ball" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e5",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 5
+      },
+      "sequence": 5,
+      "inning": 1,
+      "half": "top",
+      "relayText": "4구 볼",
+      "kind": "pitch",
+      "payload": { "sourcePitchId": "p4", "call": "ball" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e6",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 6
+      },
+      "sequence": 6,
+      "inning": 1,
+      "half": "top",
+      "relayText": "원정1 : 볼넷",
+      "kind": "plate_result",
+      "payload": { "result": "walk", "batterId": "a1", "pitcherId": "hp1", "creditedRbi": 0 }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e7",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 7
+      },
+      "sequence": 7,
+      "inning": 1,
+      "half": "top",
+      "relayText": "잠시 후 경기를 계속합니다",
+      "kind": "administrative",
+      "payload": { "code": "announcement" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e8",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 8
+      },
+      "sequence": 8,
+      "inning": 1,
+      "half": "top",
+      "relayText": "원정2 타석",
+      "kind": "batter_start",
+      "payload": { "batterId": "a2", "pitcherId": "hp1" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e9",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 9
+      },
+      "sequence": 9,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1구 타격",
+      "kind": "pitch",
+      "payload": { "sourcePitchId": "p5", "call": "in_play" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e10",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 10
+      },
+      "sequence": 10,
+      "inning": 1,
+      "half": "top",
+      "relayText": "원정2 : 좌전 안타",
+      "kind": "plate_result",
+      "payload": {
+        "result": "single",
+        "batterId": "a2",
+        "pitcherId": "hp1",
+        "creditedRbi": 0,
+        "battedBallType": "line_drive",
+        "isBunt": false
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e11",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 11
+      },
+      "sequence": 11,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1루주자 원정1 : 2루 진루",
+      "kind": "runner_advance",
+      "payload": {
+        "runnerId": "a1",
+        "fromBase": 1,
+        "toBase": 2,
+        "outcome": "safe",
+        "context": { "kind": "plate_result", "plateResultEventId": "e10" }
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e12",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 12
+      },
+      "sequence": 12,
+      "inning": 1,
+      "half": "top",
+      "relayText": "원정3 타석",
+      "kind": "batter_start",
+      "payload": { "batterId": "a3", "pitcherId": "hp1" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e13",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 13
+      },
+      "sequence": 13,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1구 타격",
+      "kind": "pitch",
+      "payload": { "sourcePitchId": "p6", "call": "in_play" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e14",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 14
+      },
+      "sequence": 14,
+      "inning": 1,
+      "half": "top",
+      "relayText": "원정3 : 2루수 땅볼 아웃",
+      "kind": "plate_result",
+      "payload": {
+        "result": "field_out",
+        "batterId": "a3",
+        "pitcherId": "hp1",
+        "creditedRbi": 0,
+        "battedBallType": "ground_ball",
+        "isBunt": false
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e15",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 15
+      },
+      "sequence": 15,
+      "inning": 1,
+      "half": "top",
+      "relayText": "원정4 타석",
+      "kind": "batter_start",
+      "payload": { "batterId": "a4", "pitcherId": "hp1" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e16",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 16
+      },
+      "sequence": 16,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1구 타격",
+      "kind": "pitch",
+      "payload": { "sourcePitchId": "p7", "call": "in_play" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e17",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 17
+      },
+      "sequence": 17,
+      "inning": 1,
+      "half": "top",
+      "relayText": "원정4 : 좌월 홈런",
+      "kind": "plate_result",
+      "payload": {
+        "result": "home_run",
+        "batterId": "a4",
+        "pitcherId": "hp1",
+        "creditedRbi": 3,
+        "battedBallType": "fly_ball",
+        "isBunt": false
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e18",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 18
+      },
+      "sequence": 18,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1루주자 원정2 : 홈인",
+      "kind": "runner_advance",
+      "payload": {
+        "runnerId": "a2",
+        "fromBase": 1,
+        "toBase": 4,
+        "outcome": "scored",
+        "context": { "kind": "plate_result", "plateResultEventId": "e17" }
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e19",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 19
+      },
+      "sequence": 19,
+      "inning": 1,
+      "half": "top",
+      "relayText": "2루주자 원정1 : 홈인",
+      "kind": "runner_advance",
+      "payload": {
+        "runnerId": "a1",
+        "fromBase": 2,
+        "toBase": 4,
+        "outcome": "scored",
+        "context": { "kind": "plate_result", "plateResultEventId": "e17" }
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e20",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 20
+      },
+      "sequence": 20,
+      "inning": 1,
+      "half": "top",
+      "relayText": "우천 중단",
+      "kind": "administrative",
+      "payload": { "code": "footer" }
+    }
+  ],
+  "trackingCandidates": [
+    {
+      "trackingId": "t1",
+      "source": { "endpoint": "tracking", "blockIndex": 0, "rowIndex": 0 },
+      "sourcePitchId": "p-duplicate",
+      "sourcePitchOrdinal": 1,
+      "sequence": 0,
+      "inning": 1,
+      "half": "top",
+      "plateAppearanceEventId": "e1",
+      "pitcherId": "hp1",
+      "batterId": "a1",
+      "vx0": -145.2,
+      "crossPlateX": 0.1,
+      "crossPlateY": 2.5,
+      "topSz": 3.5,
+      "bottomSz": 1.5,
+      "resolution": { "kind": "linked", "pitchEventId": "e2" }
+    },
+    {
+      "trackingId": "t2",
+      "source": { "endpoint": "tracking", "blockIndex": 0, "rowIndex": 1 },
+      "sourcePitchId": "p-duplicate",
+      "sourcePitchOrdinal": 2,
+      "sequence": 1,
+      "inning": 1,
+      "half": "top",
+      "plateAppearanceEventId": "e1",
+      "pitcherId": "hp1",
+      "batterId": "a1",
+      "vx0": -146.1,
+      "crossPlateX": 1.0,
+      "crossPlateY": 2.5,
+      "topSz": 3.5,
+      "bottomSz": 1.5,
+      "resolution": { "kind": "linked", "pitchEventId": "e3" }
+    }
+  ],
+  "officialRecords": { "batters": [], "pitchers": [] }
+}

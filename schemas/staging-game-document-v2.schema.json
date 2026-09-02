@@ -1,0 +1,1219 @@
+{
+  "additionalProperties": false,
+  "$id": "https://kbo-workbench.local/schemas/staging-game-document-v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "KBO Workbench StagingGameDocumentV2",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "source",
+    "revisionBase",
+    "metadata",
+    "teams",
+    "rosters",
+    "events",
+    "trackingCandidates",
+    "officialRecords"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2, "type": "number" },
+    "source": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["provider", "sourceGameId", "collectedAt", "sourceBundleHash"],
+      "properties": {
+        "provider": { "const": "naver", "type": "string" },
+        "sourceGameId": { "minLength": 1, "maxLength": 200, "type": "string" },
+        "collectedAt": {
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$",
+          "type": "string"
+        },
+        "sourceBundleHash": { "pattern": "^[0-9a-f]{64}$", "type": "string" }
+      }
+    },
+    "revisionBase": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "required": ["kind"],
+          "properties": { "kind": { "const": "new_game", "type": "string" } }
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "required": ["kind", "revision", "documentHash"],
+          "properties": {
+            "kind": { "const": "sealed_revision", "type": "string" },
+            "revision": { "minimum": 1, "type": "integer" },
+            "documentHash": { "pattern": "^[0-9a-f]{64}$", "type": "string" }
+          }
+        }
+      ]
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["gameId", "season", "gameDate", "status", "scheduledInnings"],
+      "properties": {
+        "gameId": { "minLength": 1, "maxLength": 200, "type": "string" },
+        "season": { "minimum": 1982, "maximum": 9999, "type": "integer" },
+        "gameDate": { "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "type": "string" },
+        "scheduledAt": {
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$",
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            { "const": "scheduled", "type": "string" },
+            { "const": "in_progress", "type": "string" },
+            { "const": "final", "type": "string" },
+            { "const": "suspended", "type": "string" },
+            { "const": "cancelled", "type": "string" }
+          ]
+        },
+        "stadium": { "minLength": 1, "maxLength": 100, "type": "string" },
+        "scheduledInnings": { "minimum": 1, "maximum": 99, "type": "integer" }
+      }
+    },
+    "teams": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["away", "home"],
+      "properties": {
+        "away": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": ["teamId", "name"],
+          "properties": {
+            "teamId": { "minLength": 1, "maxLength": 200, "type": "string" },
+            "name": { "minLength": 1, "maxLength": 100, "type": "string" }
+          }
+        },
+        "home": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": ["teamId", "name"],
+          "properties": {
+            "teamId": { "minLength": 1, "maxLength": 200, "type": "string" },
+            "name": { "minLength": 1, "maxLength": 100, "type": "string" }
+          }
+        }
+      }
+    },
+    "rosters": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["away", "home"],
+      "properties": {
+        "away": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": ["teamId", "players"],
+          "properties": {
+            "teamId": { "minLength": 1, "maxLength": 200, "type": "string" },
+            "players": {
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["playerId", "name", "starter", "positions"],
+                "properties": {
+                  "playerId": { "minLength": 1, "maxLength": 100, "type": "string" },
+                  "name": { "minLength": 1, "maxLength": 100, "type": "string" },
+                  "battingOrder": { "minimum": 1, "maximum": 9, "type": "integer" },
+                  "starter": { "type": "boolean" },
+                  "positions": {
+                    "uniqueItems": true,
+                    "type": "array",
+                    "items": { "minLength": 1, "maxLength": 30, "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "home": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": ["teamId", "players"],
+          "properties": {
+            "teamId": { "minLength": 1, "maxLength": 200, "type": "string" },
+            "players": {
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["playerId", "name", "starter", "positions"],
+                "properties": {
+                  "playerId": { "minLength": 1, "maxLength": 100, "type": "string" },
+                  "name": { "minLength": 1, "maxLength": 100, "type": "string" },
+                  "battingOrder": { "minimum": 1, "maximum": 9, "type": "integer" },
+                  "starter": { "type": "boolean" },
+                  "positions": {
+                    "uniqueItems": true,
+                    "type": "array",
+                    "items": { "minLength": 1, "maxLength": 30, "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["identity", "sequence", "inning", "half", "kind", "payload"],
+            "properties": {
+              "identity": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": ["kind", "eventId", "endpoint", "blockIndex", "eventIndex"],
+                    "properties": {
+                      "kind": { "const": "source", "type": "string" },
+                      "eventId": { "minLength": 1, "maxLength": 200, "type": "string" },
+                      "endpoint": { "minLength": 1, "maxLength": 100, "type": "string" },
+                      "blockIndex": { "minimum": 0, "type": "integer" },
+                      "eventIndex": { "minimum": 0, "type": "integer" },
+                      "sourceEventId": { "minLength": 1, "maxLength": 200, "type": "string" }
+                    }
+                  },
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": ["kind", "eventId"],
+                    "properties": {
+                      "kind": { "const": "manual", "type": "string" },
+                      "eventId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              },
+              "sequence": { "minimum": 0, "type": "integer" },
+              "inning": { "minimum": 1, "maximum": 99, "type": "integer" },
+              "half": {
+                "anyOf": [
+                  { "const": "top", "type": "string" },
+                  { "const": "bottom", "type": "string" }
+                ]
+              },
+              "relayText": { "minLength": 1, "maxLength": 1000, "type": "string" },
+              "observedStateAfter": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "balls": { "minimum": 0, "type": "integer" },
+                  "strikes": { "minimum": 0, "type": "integer" },
+                  "outs": { "minimum": 0, "type": "integer" },
+                  "bases": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        { "minLength": 1, "maxLength": 100, "type": "string" },
+                        { "type": "boolean" },
+                        { "type": "null" }
+                      ]
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "awayScore": { "minimum": 0, "type": "integer" },
+                  "homeScore": { "minimum": 0, "type": "integer" }
+                }
+              },
+              "kind": { "const": "half_inning_start", "type": "string" },
+              "payload": { "additionalProperties": false, "type": "object", "properties": {} }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["identity", "sequence", "inning", "half", "kind", "payload"],
+            "properties": {
+              "identity": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": ["kind", "eventId", "endpoint", "blockIndex", "eventIndex"],
+                    "properties": {
+                      "kind": { "const": "source", "type": "string" },
+                      "eventId": { "minLength": 1, "maxLength": 200, "type": "string" },
+                      "endpoint": { "minLength": 1, "maxLength": 100, "type": "string" },
+                      "blockIndex": { "minimum": 0, "type": "integer" },
+                      "eventIndex": { "minimum": 0, "type": "integer" },
+                      "sourceEventId": { "minLength": 1, "maxLength": 200, "type": "string" }
+                    }
+                  },
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": ["kind", "eventId"],
+                    "properties": {
+                      "kind": { "const": "manual", "type": "string" },
+                      "eventId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              },
+              "sequence": { "minimum": 0, "type": "integer" },
+              "inning": { "minimum": 1, "maximum": 99, "type": "integer" },
+              "half": {
+                "anyOf": [
+                  { "const": "top", "type": "string" },
+                  { "const": "bottom", "type": "string" }
+                ]
+              },
+              "relayText": { "minLength": 1, "maxLength": 1000, "type": "string" },
+              "observedStateAfter": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "balls": { "minimum": 0, "type": "integer" },
+                  "strikes": { "minimum": 0, "type": "integer" },
+                  "outs": { "minimum": 0, "type": "integer" },
+                  "bases": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        { "minLength": 1, "maxLength": 100, "type": "string" },
+                        { "type": "boolean" },
+                        { "type": "null" }
+                      ]
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "awayScore": { "minimum": 0, "type": "integer" },
+                  "homeScore": { "minimum": 0, "type": "integer" }
+                }
+              },
+              "kind": { "const": "batter_start", "type": "string" },
+              "payload": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["batterId", "pitcherId"],
+                "properties": {
+                  "batterId": { "minLength": 1, "maxLength": 100, "type": "string" },
+                  "pitcherId": { "minLength": 1, "maxLength": 100, "type": "string" }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["identity", "sequence", "inning", "half", "kind", "payload"],
+            "properties": {
+              "identity": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": ["kind", "eventId", "endpoint", "blockIndex", "eventIndex"],
+                    "properties": {
+                      "kind": { "const": "source", "type": "string" },
+                      "eventId": { "minLength": 1, "maxLength": 200, "type": "string" },
+                      "endpoint": { "minLength": 1, "maxLength": 100, "type": "string" },
+                      "blockIndex": { "minimum": 0, "type": "integer" },
+                      "eventIndex": { "minimum": 0, "type": "integer" },
+                      "sourceEventId": { "minLength": 1, "maxLength": 200, "type": "string" }
+                    }
+                  },
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": ["kind", "eventId"],
+                    "properties": {
+                      "kind": { "const": "manual", "type": "string" },
+                      "eventId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              },
+              "sequence": { "minimum": 0, "type": "integer" },
+              "inning": { "minimum": 1, "maximum": 99, "type": "integer" },
+              "half": {
+                "anyOf": [
+                  { "const": "top", "type": "string" },
+                  { "const": "bottom", "type": "string" }
+                ]
+              },
+              "relayText": { "minLength": 1, "maxLength": 1000, "type": "string" },
+              "observedStateAfter": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "balls": { "minimum": 0, "type": "integer" },
+                  "strikes": { "minimum": 0, "type": "integer" },
+                  "outs": { "minimum": 0, "type": "integer" },
+                  "bases": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        { "minLength": 1, "maxLength": 100, "type": "string" },
+                        { "type": "boolean" },
+                        { "type": "null" }
+                      ]
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "awayScore": { "minimum": 0, "type": "integer" },
+                  "homeScore": { "minimum": 0, "type": "integer" }
+                }
+              },
+              "kind": { "const": "pitch", "type": "string" },
+              "payload": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["call"],
+                "properties": {
+                  "sourcePitchId": { "minLength": 1, "maxLength": 200, "type": "string" },
+                  "call": {
+                    "anyOf": [
+                      { "const": "ball", "type": "string" },
+                      { "const": "called_strike", "type": "string" },
+                      { "const": "swinging_strike", "type": "string" },
+                      { "const": "foul", "type": "string" },
+                      { "const": "foul_bunt", "type": "string" },
+                      { "const": "foul_tip", "type": "string" },
+                      { "const": "in_play", "type": "string" },
+                      { "const": "hit_by_pitch", "type": "string" },
+                      { "const": "automatic_ball", "type": "string" },
+                      { "const": "automatic_strike", "type": "string" },
+                      { "const": "no_pitch", "type": "string" }
+                    ]
+                  },
+                  "batterId": { "minLength": 1, "maxLength": 100, "type": "string" },
+                  "pitcherId": { "minLength": 1, "maxLength": 100, "type": "string" }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["identity", "sequence", "inning", "half", "kind", "payload"],
+            "properties": {
+              "identity": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": ["kind", "eventId", "endpoint", "blockIndex", "eventIndex"],
+                    "properties": {
+                      "kind": { "const": "source", "type": "string" },
+                      "eventId": { "minLength": 1, "maxLength": 200, "type": "string" },
+                      "endpoint": { "minLength": 1, "maxLength": 100, "type": "string" },
+                      "blockIndex": { "minimum": 0, "type": "integer" },
+                      "eventIndex": { "minimum": 0, "type": "integer" },
+                      "sourceEventId": { "minLength": 1, "maxLength": 200, "type": "string" }
+                    }
+                  },
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": ["kind", "eventId"],
+                    "properties": {
+                      "kind": { "const": "manual", "type": "string" },
+                      "eventId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              },
+              "sequence": { "minimum": 0, "type": "integer" },
+              "inning": { "minimum": 1, "maximum": 99, "type": "integer" },
+              "half": {
+                "anyOf": [
+                  { "const": "top", "type": "string" },
+                  { "const": "bottom", "type": "string" }
+                ]
+              },
+              "relayText": { "minLength": 1, "maxLength": 1000, "type": "string" },
+              "observedStateAfter": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "balls": { "minimum": 0, "type": "integer" },
+                  "strikes": { "minimum": 0, "type": "integer" },
+                  "outs": { "minimum": 0, "type": "integer" },
+                  "bases": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        { "minLength": 1, "maxLength": 100, "type": "string" },
+                        { "type": "boolean" },
+                        { "type": "null" }
+                      ]
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "awayScore": { "minimum": 0, "type": "integer" },
+                  "homeScore": { "minimum": 0, "type": "integer" }
+                }
+              },
+              "kind": { "const": "plate_result", "type": "string" },
+              "payload": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["result", "batterId", "pitcherId"],
+                "properties": {
+                  "result": {
+                    "anyOf": [
+                      { "const": "single", "type": "string" },
+                      { "const": "double", "type": "string" },
+                      { "const": "triple", "type": "string" },
+                      { "const": "home_run", "type": "string" },
+                      { "const": "walk", "type": "string" },
+                      { "const": "intentional_walk", "type": "string" },
+                      { "const": "hit_by_pitch", "type": "string" },
+                      { "const": "strikeout", "type": "string" },
+                      { "const": "field_out", "type": "string" },
+                      { "const": "sacrifice_bunt", "type": "string" },
+                      { "const": "sacrifice_fly", "type": "string" },
+                      { "const": "fielder_choice", "type": "string" },
+                      { "const": "reached_on_error", "type": "string" },
+                      { "const": "interference", "type": "string" },
+                      { "const": "double_play", "type": "string" },
+                      { "const": "triple_play", "type": "string" },
+                      { "const": "other", "type": "string" }
+                    ]
+                  },
+                  "batterId": { "minLength": 1, "maxLength": 100, "type": "string" },
+                  "pitcherId": { "minLength": 1, "maxLength": 100, "type": "string" },
+                  "creditedRbi": { "minimum": 0, "maximum": 4, "type": "integer" },
+                  "outsRecorded": { "minimum": 0, "maximum": 3, "type": "integer" },
+                  "batterDestination": { "minimum": 1, "maximum": 3, "type": "integer" },
+                  "battedBallType": {
+                    "anyOf": [
+                      { "const": "ground_ball", "type": "string" },
+                      { "const": "fly_ball", "type": "string" },
+                      { "const": "line_drive", "type": "string" },
+                      { "const": "popup", "type": "string" }
+                    ]
+                  },
+                  "isBunt": { "type": "boolean" }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["identity", "sequence", "inning", "half", "kind", "payload"],
+            "properties": {
+              "identity": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": ["kind", "eventId", "endpoint", "blockIndex", "eventIndex"],
+                    "properties": {
+                      "kind": { "const": "source", "type": "string" },
+                      "eventId": { "minLength": 1, "maxLength": 200, "type": "string" },
+                      "endpoint": { "minLength": 1, "maxLength": 100, "type": "string" },
+                      "blockIndex": { "minimum": 0, "type": "integer" },
+                      "eventIndex": { "minimum": 0, "type": "integer" },
+                      "sourceEventId": { "minLength": 1, "maxLength": 200, "type": "string" }
+                    }
+                  },
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": ["kind", "eventId"],
+                    "properties": {
+                      "kind": { "const": "manual", "type": "string" },
+                      "eventId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              },
+              "sequence": { "minimum": 0, "type": "integer" },
+              "inning": { "minimum": 1, "maximum": 99, "type": "integer" },
+              "half": {
+                "anyOf": [
+                  { "const": "top", "type": "string" },
+                  { "const": "bottom", "type": "string" }
+                ]
+              },
+              "relayText": { "minLength": 1, "maxLength": 1000, "type": "string" },
+              "observedStateAfter": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "balls": { "minimum": 0, "type": "integer" },
+                  "strikes": { "minimum": 0, "type": "integer" },
+                  "outs": { "minimum": 0, "type": "integer" },
+                  "bases": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        { "minLength": 1, "maxLength": 100, "type": "string" },
+                        { "type": "boolean" },
+                        { "type": "null" }
+                      ]
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "awayScore": { "minimum": 0, "type": "integer" },
+                  "homeScore": { "minimum": 0, "type": "integer" }
+                }
+              },
+              "kind": { "const": "runner_advance", "type": "string" },
+              "payload": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["runnerId", "fromBase", "toBase", "outcome", "context"],
+                "properties": {
+                  "runnerId": { "minLength": 1, "maxLength": 100, "type": "string" },
+                  "fromBase": { "minimum": 1, "maximum": 3, "type": "integer" },
+                  "toBase": { "minimum": 1, "maximum": 4, "type": "integer" },
+                  "outcome": {
+                    "anyOf": [
+                      { "const": "safe", "type": "string" },
+                      { "const": "out", "type": "string" },
+                      { "const": "scored", "type": "string" }
+                    ]
+                  },
+                  "outKind": {
+                    "anyOf": [
+                      { "const": "force", "type": "string" },
+                      { "const": "tag", "type": "string" },
+                      { "const": "batter_runner_before_first", "type": "string" },
+                      { "const": "strikeout", "type": "string" },
+                      { "const": "fly_catch", "type": "string" },
+                      { "const": "appeal_force", "type": "string" },
+                      { "const": "appeal_time", "type": "string" },
+                      { "const": "interference", "type": "string" },
+                      { "const": "abandonment", "type": "string" }
+                    ]
+                  },
+                  "supersedesThirdOut": { "type": "boolean" },
+                  "responsiblePitcherId": { "minLength": 1, "maxLength": 100, "type": "string" },
+                  "context": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": ["kind", "plateResultEventId"],
+                        "properties": {
+                          "kind": { "const": "plate_result", "type": "string" },
+                          "plateResultEventId": {
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "type": "string"
+                          }
+                        }
+                      },
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": ["kind", "reason"],
+                        "properties": {
+                          "kind": { "const": "independent", "type": "string" },
+                          "reason": {
+                            "anyOf": [
+                              { "const": "stolen_base", "type": "string" },
+                              { "const": "caught_stealing", "type": "string" },
+                              { "const": "pickoff", "type": "string" },
+                              { "const": "wild_pitch", "type": "string" },
+                              { "const": "passed_ball", "type": "string" },
+                              { "const": "balk", "type": "string" },
+                              { "const": "defensive_indifference", "type": "string" },
+                              { "const": "error", "type": "string" },
+                              { "const": "appeal", "type": "string" },
+                              { "const": "other", "type": "string" }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["identity", "sequence", "inning", "half", "kind", "payload"],
+            "properties": {
+              "identity": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": ["kind", "eventId", "endpoint", "blockIndex", "eventIndex"],
+                    "properties": {
+                      "kind": { "const": "source", "type": "string" },
+                      "eventId": { "minLength": 1, "maxLength": 200, "type": "string" },
+                      "endpoint": { "minLength": 1, "maxLength": 100, "type": "string" },
+                      "blockIndex": { "minimum": 0, "type": "integer" },
+                      "eventIndex": { "minimum": 0, "type": "integer" },
+                      "sourceEventId": { "minLength": 1, "maxLength": 200, "type": "string" }
+                    }
+                  },
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": ["kind", "eventId"],
+                    "properties": {
+                      "kind": { "const": "manual", "type": "string" },
+                      "eventId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              },
+              "sequence": { "minimum": 0, "type": "integer" },
+              "inning": { "minimum": 1, "maximum": 99, "type": "integer" },
+              "half": {
+                "anyOf": [
+                  { "const": "top", "type": "string" },
+                  { "const": "bottom", "type": "string" }
+                ]
+              },
+              "relayText": { "minLength": 1, "maxLength": 1000, "type": "string" },
+              "observedStateAfter": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "balls": { "minimum": 0, "type": "integer" },
+                  "strikes": { "minimum": 0, "type": "integer" },
+                  "outs": { "minimum": 0, "type": "integer" },
+                  "bases": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        { "minLength": 1, "maxLength": 100, "type": "string" },
+                        { "type": "boolean" },
+                        { "type": "null" }
+                      ]
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "awayScore": { "minimum": 0, "type": "integer" },
+                  "homeScore": { "minimum": 0, "type": "integer" }
+                }
+              },
+              "kind": { "const": "substitution", "type": "string" },
+              "payload": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["side", "role", "incomingPlayerId"],
+                "properties": {
+                  "side": {
+                    "anyOf": [
+                      { "const": "away", "type": "string" },
+                      { "const": "home", "type": "string" }
+                    ]
+                  },
+                  "role": {
+                    "anyOf": [
+                      { "const": "batter", "type": "string" },
+                      { "const": "runner", "type": "string" },
+                      { "const": "pitcher", "type": "string" },
+                      { "const": "fielder", "type": "string" }
+                    ]
+                  },
+                  "incomingPlayerId": { "minLength": 1, "maxLength": 100, "type": "string" },
+                  "outgoingPlayerId": { "minLength": 1, "maxLength": 100, "type": "string" },
+                  "battingOrder": { "minimum": 1, "maximum": 9, "type": "integer" },
+                  "fieldPosition": { "minLength": 1, "maxLength": 30, "type": "string" }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["identity", "sequence", "inning", "half", "kind", "payload"],
+            "properties": {
+              "identity": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": ["kind", "eventId", "endpoint", "blockIndex", "eventIndex"],
+                    "properties": {
+                      "kind": { "const": "source", "type": "string" },
+                      "eventId": { "minLength": 1, "maxLength": 200, "type": "string" },
+                      "endpoint": { "minLength": 1, "maxLength": 100, "type": "string" },
+                      "blockIndex": { "minimum": 0, "type": "integer" },
+                      "eventIndex": { "minimum": 0, "type": "integer" },
+                      "sourceEventId": { "minLength": 1, "maxLength": 200, "type": "string" }
+                    }
+                  },
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": ["kind", "eventId"],
+                    "properties": {
+                      "kind": { "const": "manual", "type": "string" },
+                      "eventId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              },
+              "sequence": { "minimum": 0, "type": "integer" },
+              "inning": { "minimum": 1, "maximum": 99, "type": "integer" },
+              "half": {
+                "anyOf": [
+                  { "const": "top", "type": "string" },
+                  { "const": "bottom", "type": "string" }
+                ]
+              },
+              "relayText": { "minLength": 1, "maxLength": 1000, "type": "string" },
+              "observedStateAfter": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "balls": { "minimum": 0, "type": "integer" },
+                  "strikes": { "minimum": 0, "type": "integer" },
+                  "outs": { "minimum": 0, "type": "integer" },
+                  "bases": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        { "minLength": 1, "maxLength": 100, "type": "string" },
+                        { "type": "boolean" },
+                        { "type": "null" }
+                      ]
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "awayScore": { "minimum": 0, "type": "integer" },
+                  "homeScore": { "minimum": 0, "type": "integer" }
+                }
+              },
+              "kind": { "const": "review", "type": "string" },
+              "payload": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "decision": {
+                    "anyOf": [
+                      { "const": "requested", "type": "string" },
+                      { "const": "upheld", "type": "string" },
+                      { "const": "overturned", "type": "string" },
+                      { "const": "inconclusive", "type": "string" }
+                    ]
+                  },
+                  "reviewedEventId": { "minLength": 1, "maxLength": 200, "type": "string" }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["identity", "sequence", "inning", "half", "kind", "payload"],
+            "properties": {
+              "identity": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": ["kind", "eventId", "endpoint", "blockIndex", "eventIndex"],
+                    "properties": {
+                      "kind": { "const": "source", "type": "string" },
+                      "eventId": { "minLength": 1, "maxLength": 200, "type": "string" },
+                      "endpoint": { "minLength": 1, "maxLength": 100, "type": "string" },
+                      "blockIndex": { "minimum": 0, "type": "integer" },
+                      "eventIndex": { "minimum": 0, "type": "integer" },
+                      "sourceEventId": { "minLength": 1, "maxLength": 200, "type": "string" }
+                    }
+                  },
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": ["kind", "eventId"],
+                    "properties": {
+                      "kind": { "const": "manual", "type": "string" },
+                      "eventId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              },
+              "sequence": { "minimum": 0, "type": "integer" },
+              "inning": { "minimum": 1, "maximum": 99, "type": "integer" },
+              "half": {
+                "anyOf": [
+                  { "const": "top", "type": "string" },
+                  { "const": "bottom", "type": "string" }
+                ]
+              },
+              "relayText": { "minLength": 1, "maxLength": 1000, "type": "string" },
+              "observedStateAfter": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "balls": { "minimum": 0, "type": "integer" },
+                  "strikes": { "minimum": 0, "type": "integer" },
+                  "outs": { "minimum": 0, "type": "integer" },
+                  "bases": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        { "minLength": 1, "maxLength": 100, "type": "string" },
+                        { "type": "boolean" },
+                        { "type": "null" }
+                      ]
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "awayScore": { "minimum": 0, "type": "integer" },
+                  "homeScore": { "minimum": 0, "type": "integer" }
+                }
+              },
+              "kind": { "const": "administrative", "type": "string" },
+              "payload": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["code"],
+                "properties": {
+                  "code": {
+                    "anyOf": [
+                      { "const": "announcement", "type": "string" },
+                      { "const": "mound_visit", "type": "string" },
+                      { "const": "break", "type": "string" },
+                      { "const": "footer", "type": "string" },
+                      { "const": "other", "type": "string" }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["identity", "sequence", "inning", "half", "kind", "payload"],
+            "properties": {
+              "identity": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": ["kind", "eventId", "endpoint", "blockIndex", "eventIndex"],
+                    "properties": {
+                      "kind": { "const": "source", "type": "string" },
+                      "eventId": { "minLength": 1, "maxLength": 200, "type": "string" },
+                      "endpoint": { "minLength": 1, "maxLength": 100, "type": "string" },
+                      "blockIndex": { "minimum": 0, "type": "integer" },
+                      "eventIndex": { "minimum": 0, "type": "integer" },
+                      "sourceEventId": { "minLength": 1, "maxLength": 200, "type": "string" }
+                    }
+                  },
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": ["kind", "eventId"],
+                    "properties": {
+                      "kind": { "const": "manual", "type": "string" },
+                      "eventId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              },
+              "sequence": { "minimum": 0, "type": "integer" },
+              "inning": { "minimum": 1, "maximum": 99, "type": "integer" },
+              "half": {
+                "anyOf": [
+                  { "const": "top", "type": "string" },
+                  { "const": "bottom", "type": "string" }
+                ]
+              },
+              "relayText": { "minLength": 1, "maxLength": 1000, "type": "string" },
+              "observedStateAfter": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "balls": { "minimum": 0, "type": "integer" },
+                  "strikes": { "minimum": 0, "type": "integer" },
+                  "outs": { "minimum": 0, "type": "integer" },
+                  "bases": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        { "minLength": 1, "maxLength": 100, "type": "string" },
+                        { "type": "boolean" },
+                        { "type": "null" }
+                      ]
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "awayScore": { "minimum": 0, "type": "integer" },
+                  "homeScore": { "minimum": 0, "type": "integer" }
+                }
+              },
+              "kind": { "const": "unresolved", "type": "string" },
+              "payload": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["sourceType"],
+                "properties": {
+                  "sourceType": { "minLength": 1, "maxLength": 100, "type": "string" },
+                  "suspectedKind": {
+                    "anyOf": [
+                      { "const": "half_inning_start", "type": "string" },
+                      { "const": "batter_start", "type": "string" },
+                      { "const": "pitch", "type": "string" },
+                      { "const": "plate_result", "type": "string" },
+                      { "const": "runner_advance", "type": "string" },
+                      { "const": "substitution", "type": "string" },
+                      { "const": "review", "type": "string" },
+                      { "const": "administrative", "type": "string" }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "trackingCandidates": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "trackingId",
+          "source",
+          "sourcePitchOrdinal",
+          "sequence",
+          "inning",
+          "half",
+          "resolution"
+        ],
+        "properties": {
+          "trackingId": { "minLength": 1, "maxLength": 200, "type": "string" },
+          "source": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["endpoint", "blockIndex", "rowIndex"],
+            "properties": {
+              "endpoint": { "minLength": 1, "maxLength": 100, "type": "string" },
+              "blockIndex": { "minimum": 0, "type": "integer" },
+              "rowIndex": { "minimum": 0, "type": "integer" }
+            }
+          },
+          "sourcePitchId": { "minLength": 1, "maxLength": 200, "type": "string" },
+          "sourcePitchOrdinal": {
+            "description": "Naver ptsOptions.ballcount 원천값. tracking 관측 순번일 수 있으며 PA 실제 투구 순번이 아니다.",
+            "anyOf": [{ "minimum": 1, "type": "integer" }, { "type": "null" }]
+          },
+          "sequence": { "minimum": 0, "type": "integer" },
+          "inning": { "minimum": 1, "maximum": 99, "type": "integer" },
+          "half": {
+            "anyOf": [
+              { "const": "top", "type": "string" },
+              { "const": "bottom", "type": "string" }
+            ]
+          },
+          "plateAppearanceEventId": { "minLength": 1, "maxLength": 200, "type": "string" },
+          "pitcherId": { "minLength": 1, "maxLength": 100, "type": "string" },
+          "batterId": { "minLength": 1, "maxLength": 100, "type": "string" },
+          "observedAt": {
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$",
+            "type": "string"
+          },
+          "stance": {
+            "anyOf": [
+              { "const": "L", "type": "string" },
+              { "const": "R", "type": "string" },
+              { "const": "S", "type": "string" }
+            ]
+          },
+          "x0": { "type": "number" },
+          "y0": { "type": "number" },
+          "z0": { "type": "number" },
+          "vx0": { "type": "number" },
+          "vy0": { "type": "number" },
+          "vz0": { "type": "number" },
+          "ax": { "type": "number" },
+          "ay": { "type": "number" },
+          "az": { "type": "number" },
+          "crossPlateX": { "type": "number" },
+          "crossPlateY": { "type": "number" },
+          "topSz": { "type": "number" },
+          "bottomSz": { "type": "number" },
+          "resolution": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind"],
+                "properties": { "kind": { "const": "pending", "type": "string" } }
+              },
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind", "pitchEventId"],
+                "properties": {
+                  "kind": { "const": "linked", "type": "string" },
+                  "pitchEventId": { "minLength": 1, "maxLength": 200, "type": "string" }
+                }
+              },
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind", "canonicalTrackingId"],
+                "properties": {
+                  "kind": { "const": "duplicate", "type": "string" },
+                  "canonicalTrackingId": { "minLength": 1, "maxLength": 200, "type": "string" }
+                }
+              },
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind", "reason"],
+                "properties": {
+                  "kind": { "const": "excluded", "type": "string" },
+                  "reason": {
+                    "anyOf": [
+                      { "const": "not_a_pitch", "type": "string" },
+                      { "const": "provider_conflict", "type": "string" },
+                      { "const": "invalid_measurement", "type": "string" },
+                      { "const": "manual_other", "type": "string" }
+                    ]
+                  },
+                  "note": { "minLength": 1, "maxLength": 500, "type": "string" }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "officialRecords": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["batters", "pitchers"],
+      "properties": {
+        "batters": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "playerId",
+              "side",
+              "atBats",
+              "runs",
+              "hits",
+              "homeRuns",
+              "runsBattedIn",
+              "walks",
+              "strikeouts"
+            ],
+            "properties": {
+              "playerId": { "minLength": 1, "maxLength": 100, "type": "string" },
+              "side": {
+                "anyOf": [
+                  { "const": "away", "type": "string" },
+                  { "const": "home", "type": "string" }
+                ]
+              },
+              "plateAppearances": { "minimum": 0, "type": "integer" },
+              "atBats": { "minimum": 0, "type": "integer" },
+              "runs": { "minimum": 0, "type": "integer" },
+              "hits": { "minimum": 0, "type": "integer" },
+              "doubles": { "minimum": 0, "type": "integer" },
+              "triples": { "minimum": 0, "type": "integer" },
+              "homeRuns": { "minimum": 0, "type": "integer" },
+              "runsBattedIn": { "minimum": 0, "type": "integer" },
+              "walks": { "minimum": 0, "type": "integer" },
+              "intentionalWalks": { "minimum": 0, "type": "integer" },
+              "hitByPitch": { "minimum": 0, "type": "integer" },
+              "strikeouts": { "minimum": 0, "type": "integer" },
+              "sacrificeBunts": { "minimum": 0, "type": "integer" },
+              "sacrificeFlies": { "minimum": 0, "type": "integer" }
+            }
+          }
+        },
+        "pitchers": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "playerId",
+              "side",
+              "battersFaced",
+              "outsRecorded",
+              "hits",
+              "runs",
+              "earnedRuns",
+              "walks",
+              "hitByPitch",
+              "strikeouts"
+            ],
+            "properties": {
+              "playerId": { "minLength": 1, "maxLength": 100, "type": "string" },
+              "side": {
+                "anyOf": [
+                  { "const": "away", "type": "string" },
+                  { "const": "home", "type": "string" }
+                ]
+              },
+              "battersFaced": { "minimum": 0, "type": "integer" },
+              "outsRecorded": { "minimum": 0, "type": "integer" },
+              "hits": { "minimum": 0, "type": "integer" },
+              "runs": { "minimum": 0, "type": "integer" },
+              "earnedRuns": { "minimum": 0, "type": "integer" },
+              "walks": { "minimum": 0, "type": "integer" },
+              "intentionalWalks": { "minimum": 0, "type": "integer" },
+              "hitByPitch": { "minimum": 0, "type": "integer" },
+              "strikeouts": { "minimum": 0, "type": "integer" },
+              "pitches": { "minimum": 0, "type": "integer" },
+              "strikes": { "minimum": 0, "type": "integer" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

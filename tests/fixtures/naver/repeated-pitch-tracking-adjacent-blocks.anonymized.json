@@ -1,0 +1,71 @@
+{
+  "blocks": [
+    {
+      "no": 10,
+      "inn": 1,
+      "homeOrAway": "0",
+      "textOptions": [
+        { "seqno": 100, "kind": "half_inning_start", "text": "1회초 시작" },
+        {
+          "seqno": 101,
+          "kind": "batter_start",
+          "text": "비식별 타자 타석",
+          "batterId": "A1",
+          "pitcherId": "HP"
+        },
+        {
+          "seqno": 102,
+          "kind": "pitch",
+          "text": "1구 스트라이크",
+          "call": "called_strike",
+          "sourcePitchId": "reused-source-pitch",
+          "batterId": "A1",
+          "pitcherId": "HP"
+        }
+      ],
+      "ptsOptions": [
+        {
+          "pitchId": "reused-source-pitch",
+          "ballcount": 1,
+          "batterId": "A1",
+          "pitcherId": "HP",
+          "crossPlateX": 0.1,
+          "crossPlateY": 2.4
+        }
+      ]
+    },
+    {
+      "no": 11,
+      "inn": 1,
+      "homeOrAway": "0",
+      "textOptions": [
+        {
+          "seqno": 101,
+          "kind": "batter_start",
+          "text": "비식별 타자 타석",
+          "batterId": "A1",
+          "pitcherId": "HP"
+        },
+        {
+          "seqno": 102,
+          "kind": "pitch",
+          "text": "1구 스트라이크",
+          "call": "called_strike",
+          "sourcePitchId": "reused-source-pitch",
+          "batterId": "A1",
+          "pitcherId": "HP"
+        }
+      ],
+      "ptsOptions": [
+        {
+          "pitchId": "reused-source-pitch",
+          "ballcount": 1,
+          "batterId": "A1",
+          "pitcherId": "HP",
+          "crossPlateX": 0.1,
+          "crossPlateY": 2.4
+        }
+      ]
+    }
+  ]
+}
