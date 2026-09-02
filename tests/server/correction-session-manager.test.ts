@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { parseStagingGameDocumentV2 } from "@kbo/contracts";
 import { applyCorrectionCommand } from "@kbo/correction";
-import { compileStagingGameDocumentV2, stagingDocumentHash } from "@kbo/game-core";
-import { StagingWorkspace } from "@kbo/persistence";
+import { compileStagingGameDocumentV2, stagingDocumentHash, type Finding } from "@kbo/game-core";
+import { StagingWorkspace, type StoredFinding } from "@kbo/persistence";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -21,6 +21,8 @@ describe("CorrectionSessionManager", () => {
     const document = await goldenDocument();
     await workspace.saveQuarantine(document, [
       {
+        producer: "collection",
+        lifecycle: "persistent",
         code: "source.pitch_unresolved",
         category: "source",
         severity: "blocking",
@@ -68,7 +70,7 @@ describe("CorrectionSessionManager", () => {
       ) as unknown,
     );
     const replay = compileStagingGameDocumentV2(document);
-    await workspace.saveQuarantine(document, replay.findings);
+    await workspace.saveQuarantine(document, compilerFindings(replay.findings));
     const manager = new CorrectionSessionManager(workspace, () => "session-records");
 
     const created = await manager.create({
@@ -131,22 +133,22 @@ describe("CorrectionSessionManager", () => {
       beforeEventId: "e2",
     };
 
-    const preview = manager.command(created.sessionId, 0, command, false);
+    const preview = await manager.command(created.sessionId, 0, command, false);
     expect(preview.session).toMatchObject({ sessionVersion: 0, dirty: false });
     expect(preview.preview.beforeDocumentHash).not.toBe(preview.preview.afterDocumentHash);
 
-    const applied = manager.command(created.sessionId, 0, command, true);
+    const applied = await manager.command(created.sessionId, 0, command, true);
     expect(applied.session).toMatchObject({
       sessionVersion: 1,
       canUndo: true,
       dirty: true,
     });
-    expect(() => manager.command(created.sessionId, 0, command, true)).toThrow(
+    await expect(manager.command(created.sessionId, 0, command, true)).rejects.toThrow(
       StaleCorrectionSessionError,
     );
-    const undone = manager.undo(created.sessionId, 1);
+    const undone = await manager.undo(created.sessionId, 1);
     expect(undone.session.draftDocumentHash).toBe(created.draftDocumentHash);
-    const redone = manager.redo(created.sessionId, 2);
+    const redone = await manager.redo(created.sessionId, 2);
     expect(redone.session.draftDocumentHash).toBe(applied.session.draftDocumentHash);
 
     const committed = await manager.commit(created.sessionId, {
@@ -198,7 +200,7 @@ describe("CorrectionSessionManager", () => {
       authority: "staging",
       gameId: document.metadata.gameId,
     });
-    manager.command(
+    await manager.command(
       created.sessionId,
       0,
       { commandId: "race-move", kind: "move_event", eventId: "e4", beforeEventId: "e2" },
@@ -210,18 +212,17 @@ describe("CorrectionSessionManager", () => {
       allowBlockingStaging: false,
     });
     await commitStarted;
-    expect(() =>
-      manager.command(
-        created.sessionId,
-        1,
-        { commandId: "concurrent-delete", kind: "delete_event", eventId: "e2" },
-        true,
-      ),
-    ).toThrow(StaleCorrectionSessionError);
+    const concurrent = manager.command(
+      created.sessionId,
+      1,
+      { commandId: "concurrent-delete", kind: "delete_event", eventId: "e2" },
+      true,
+    );
     releaseCommit?.();
     await expect(committing).resolves.toMatchObject({
       session: { sessionVersion: 2, dirty: false },
     });
+    await expect(concurrent).rejects.toThrow(StaleCorrectionSessionError);
     await workspace.close();
   });
 
@@ -256,16 +257,16 @@ describe("CorrectionSessionManager", () => {
       ],
     };
 
-    const applied = manager.command(created.sessionId, 0, command, true);
+    const applied = await manager.command(created.sessionId, 0, command, true);
     expect(applied.session.sessionVersion).toBe(1);
     expect(
       applied.session.draftDocument.events.slice(2, 4).map((event) => event.identity.eventId),
     ).toEqual([firstId, secondId]);
-    expect(() => manager.command(created.sessionId, 0, command, true)).toThrow(
+    await expect(manager.command(created.sessionId, 0, command, true)).rejects.toThrow(
       StaleCorrectionSessionError,
     );
 
-    const undone = manager.undo(created.sessionId, 1);
+    const undone = await manager.undo(created.sessionId, 1);
     expect(undone.session.sessionVersion).toBe(2);
     expect(undone.session.draftDocument.events).toHaveLength(document.events.length);
     expect(undone.session.draftDocumentHash).toBe(created.draftDocumentHash);
@@ -288,7 +289,10 @@ describe("CorrectionSessionManager", () => {
       targetAuthority: "staging",
       baseDocumentHash: stagingDocumentHash(original),
       document: current.document,
-      findings: current.replay.findings,
+      findingEnvelope: {
+        schemaVersion: 2,
+        findings: compilerFindings(current.replay.findings),
+      },
     });
     const manager = new CorrectionSessionManager(workspace, () => "session-original");
     const created = await manager.create({
@@ -304,7 +308,7 @@ describe("CorrectionSessionManager", () => {
       canUndo: true,
       dirty: true,
     });
-    const undone = manager.undo(created.sessionId, 1);
+    const undone = await manager.undo(created.sessionId, 1);
     expect(undone.session.draftDocument).toEqual(current.document);
     await workspace.close();
   });
@@ -329,7 +333,10 @@ describe("CorrectionSessionManager", () => {
       targetAuthority: "staging",
       baseDocumentHash: stagingDocumentHash(original),
       document: sealed,
-      findings: compileStagingGameDocumentV2(sealed).findings,
+      findingEnvelope: {
+        schemaVersion: 2,
+        findings: compilerFindings(compileStagingGameDocumentV2(sealed).findings),
+      },
     });
     const manager = new CorrectionSessionManager(workspace, () => "session-original-revision");
     const created = await manager.create({
@@ -355,7 +362,7 @@ describe("CorrectionSessionManager", () => {
       gameId: document.metadata.gameId,
     });
 
-    const deleted = manager.command(
+    const deleted = await manager.command(
       created.sessionId,
       0,
       {
@@ -379,7 +386,7 @@ describe("CorrectionSessionManager", () => {
       sessionVersion: 1,
     });
 
-    const undone = manager.undo(created.sessionId, 1);
+    const undone = await manager.undo(created.sessionId, 1);
     expect(
       undone.session.draftDocument.events.some((event) => event.identity.eventId === "e2"),
     ).toBe(true);
@@ -387,7 +394,7 @@ describe("CorrectionSessionManager", () => {
       kind: "linked",
       pitchEventId: "e2",
     });
-    const redone = manager.redo(created.sessionId, 2);
+    const redone = await manager.redo(created.sessionId, 2);
     expect(
       redone.session.draftDocument.events.some((event) => event.identity.eventId === "e2"),
     ).toBe(false);
@@ -410,6 +417,8 @@ describe("CorrectionSessionManager", () => {
     });
     await workspace.saveQuarantine(document, [
       {
+        producer: "collection",
+        lifecycle: "recomputed",
         code: "source.tracking.unlinked",
         category: "source",
         severity: "blocking",
@@ -417,6 +426,8 @@ describe("CorrectionSessionManager", () => {
         recordIdentity: "t1",
       },
       {
+        producer: "collection",
+        lifecycle: "recomputed",
         code: "source.tracking.pending",
         category: "source",
         severity: "blocking",
@@ -431,7 +442,7 @@ describe("CorrectionSessionManager", () => {
     });
 
     expect(created.findings.map((finding) => finding.code)).toContain("source.tracking.pending");
-    const corrected = manager.command(
+    const corrected = await manager.command(
       created.sessionId,
       0,
       {
@@ -487,6 +498,8 @@ describe("CorrectionSessionManager", () => {
     });
     await workspace.saveQuarantine(document, [
       {
+        producer: "collection",
+        lifecycle: "while_event_unresolved",
         code: "source.relay.entity.entity.wrong_team",
         category: "source",
         severity: "blocking",
@@ -504,7 +517,7 @@ describe("CorrectionSessionManager", () => {
     expect(created.findings.map((finding) => finding.code)).toContain(
       "source.relay.entity.entity.wrong_team",
     );
-    const deleted = manager.command(
+    const deleted = await manager.command(
       created.sessionId,
       0,
       { commandId: "delete-source-row", kind: "delete_event", eventId },
@@ -517,8 +530,8 @@ describe("CorrectionSessionManager", () => {
       "source.relay.entity.entity.wrong_team",
     );
 
-    const undone = manager.undo(created.sessionId, 1);
-    const replaced = manager.command(
+    const undone = await manager.undo(created.sessionId, 1);
+    const replaced = await manager.command(
       created.sessionId,
       undone.session.sessionVersion,
       {
@@ -551,7 +564,7 @@ describe("CorrectionSessionManager", () => {
       authority: "staging",
       gameId: document.metadata.gameId,
     });
-    const applied = manager.command(
+    const applied = await manager.command(
       created.sessionId,
       0,
       { commandId: "delete-half-start", kind: "delete_event", eventId: "e0" },
@@ -581,6 +594,8 @@ describe("CorrectionSessionManager", () => {
     const document = await goldenDocument();
     await workspace.saveQuarantine(document, [
       {
+        producer: "compiler",
+        lifecycle: "recomputed",
         code: "source_observation_mismatch",
         category: "source",
         severity: "blocking",
@@ -629,10 +644,10 @@ describe("CorrectionSessionManager", () => {
       workspace.readDocument("quarantine", 2026, document.metadata.gameId),
     ).rejects.toThrow();
     expect(
-      (await readdir(path.join(temporary.path, "quarantine", "2026"))).some((file) =>
-        file.startsWith(document.metadata.gameId),
+      (await readdir(path.join(temporary.path, "superseded", document.metadata.gameId))).filter(
+        (file) => file.endsWith(".document.json"),
       ),
-    ).toBe(false);
+    ).toHaveLength(1);
     await expect(
       manager.commit(created.sessionId, {
         expectedSessionVersion: 1,
@@ -641,7 +656,73 @@ describe("CorrectionSessionManager", () => {
     ).rejects.toThrow("저장할 보정 작업이 없습니다.");
     await workspace.close();
   });
+
+  it("superseded snapshot을 current 원장으로 원자 복구한다", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-superseded-session-"));
+    const workspace = await StagingWorkspace.open(temporary.path);
+    const document = await goldenDocument();
+    await workspace.saveReady(document, []);
+    await workspace.saveSourceFailure(
+      document.metadata.gameId,
+      [
+        {
+          producer: "collection",
+          lifecycle: "persistent",
+          code: "source.fetch_failed",
+          category: "source",
+          severity: "blocking",
+          message: "비식별 재수집 실패",
+        },
+      ],
+      document.metadata.season,
+    );
+    const snapshots = (
+      await readdir(path.join(temporary.path, "superseded", document.metadata.gameId))
+    ).filter((name) => name.endsWith(".document.json"));
+    expect(snapshots).toHaveLength(1);
+    const snapshotId = snapshots[0];
+    if (snapshotId === undefined) throw new Error("superseded fixture snapshot이 없습니다.");
+
+    const manager = new CorrectionSessionManager(workspace, () => "session-superseded");
+    const created = await manager.create({
+      authority: "superseded",
+      gameId: document.metadata.gameId,
+      snapshotId,
+    });
+    expect(created).toMatchObject({ authority: "superseded", snapshotId, dirty: false });
+
+    const committed = await manager.commit(created.sessionId, {
+      expectedSessionVersion: 0,
+      allowBlockingStaging: false,
+    });
+    expect(committed).toMatchObject({
+      committedAuthority: "staging",
+      session: { authority: "staging", dirty: false },
+    });
+    expect(committed.session).not.toHaveProperty("snapshotId");
+    expect(
+      await workspace.readDocument("staging", document.metadata.season, document.metadata.gameId),
+    ).toEqual(document);
+    await workspace.close();
+  });
 });
+
+function compilerFindings(findings: readonly Finding[]): StoredFinding[] {
+  return findings.map((finding) => ({
+    producer: "compiler",
+    lifecycle: "recomputed",
+    code: finding.code,
+    category: finding.category,
+    severity: finding.severity,
+    message: finding.message,
+    ...(finding.eventId === undefined ? {} : { eventId: finding.eventId }),
+    ...(finding.eventSequence === undefined ? {} : { eventSequence: finding.eventSequence }),
+    ...(finding.recordIdentity === undefined ? {} : { recordIdentity: finding.recordIdentity }),
+    ...(finding.details.length === 0
+      ? {}
+      : { details: finding.details.map((detail) => ({ ...detail })) }),
+  }));
+}
 
 async function goldenDocument() {
   const document = parseStagingGameDocumentV2(

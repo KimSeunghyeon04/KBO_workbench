@@ -12,6 +12,7 @@ import { compileStagingGameDocumentV2 } from "@kbo/game-core";
 import type { RouteContext } from "./context.js";
 import { sendCanonicalDocument } from "./http.js";
 import { GameParamsSchema, RevisionParamsSchema } from "./schemas.js";
+import { storedCompilerFindings } from "../source-projection.js";
 
 export const replayRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app, context) => {
   app.get(
@@ -45,10 +46,11 @@ export const replayRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app,
         request.params.revision,
       );
       const replay = compileStagingGameDocumentV2(document);
+      const findings = storedCompilerFindings(replay.findings);
       if (replay.findings.some((finding) => finding.severity === "blocking")) {
-        await context.runtime.workspace.saveQuarantine(document, replay.findings);
+        await context.runtime.workspace.saveQuarantine(document, findings);
       } else {
-        await context.runtime.workspace.saveReady(document, replay.findings);
+        await context.runtime.workspace.saveReady(document, findings);
       }
       reply.code(201);
       return sendCanonicalDocument(reply, document);

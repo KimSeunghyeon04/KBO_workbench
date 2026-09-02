@@ -45,6 +45,7 @@ export const ErrorCategorySchema = Type.Union([
   Type.Literal("source"),
   Type.Literal("domain"),
   Type.Literal("persistence"),
+  Type.Literal("internal"),
 ]);
 
 export const CollectionJobSummarySchema = Type.Object(
@@ -144,6 +145,7 @@ export const WorkspaceGameCatalogItemSchema = Type.Object(
       Type.Literal("quarantine"),
       Type.Literal("source_failure"),
     ]),
+    supersededCount: Type.Integer({ minimum: 0 }),
   },
   strict,
 );
@@ -179,11 +181,7 @@ export const ApiErrorSchema = Type.Object(
   {
     requestId: Type.String(),
     code: Type.String(),
-    category: Type.Union([
-      Type.Literal("source"),
-      Type.Literal("domain"),
-      Type.Literal("persistence"),
-    ]),
+    category: ErrorCategorySchema,
     message: Type.String(),
     retryable: Type.Boolean(),
     details: Type.Array(Type.Object({ field: Type.String(), message: Type.String() }, strict)),
@@ -206,9 +204,5 @@ export type GameCatalog = Static<typeof GameCatalogSchema>;
 export type ApiError = Static<typeof ApiErrorSchema>;
 
 export function parseCollectionJob(value: unknown): CollectionJob {
-  const compatible =
-    typeof value === "object" && value !== null && !("errorCategory" in value)
-      ? { ...value, errorCategory: null }
-      : value;
-  return Value.Decode(CollectionJobSchema, compatible);
+  return Value.Decode(CollectionJobSchema, value);
 }

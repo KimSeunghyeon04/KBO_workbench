@@ -19,7 +19,7 @@ import {
   type ReplayFrame,
   type ReplayResult,
 } from "@kbo/game-core";
-import type { Pool, PoolClient, QueryResultRow } from "pg";
+import type { Pool, PoolClient } from "pg";
 
 import {
   buildRelationalProjection,
@@ -30,6 +30,9 @@ import {
 } from "./projection.js";
 import { readProjection, writeProjection } from "./projection-repository.js";
 import { readDatabaseCatalog } from "./revision-catalog-repository.js";
+import { PersistenceIntegrityError } from "./errors.js";
+
+export { PersistenceIntegrityError } from "./errors.js";
 
 export type ImportFailurePoint = "after_manifest" | "after_facts" | "before_seal";
 export interface ImportOptions {
@@ -112,13 +115,7 @@ export class BlockingImportError extends Error {
     this.name = "BlockingImportError";
   }
 }
-export class PersistenceIntegrityError extends Error {
-  public constructor(message: string) {
-    super(message);
-    this.name = "PersistenceIntegrityError";
-  }
-}
-interface ManifestRow extends QueryResultRow {
+interface ManifestRow {
   readonly game_id: string;
   readonly revision: number;
   readonly schema_version: number;
@@ -178,13 +175,13 @@ export class GameRevisionStore {
     try {
       await client.query("BEGIN");
       await assertDatabaseContract(client, this.expectedMigrationVersion);
-      const existing = await client.query<{ readonly current_revision: number | null }>(
+      const existing = await client.query(
         "SELECT current_revision FROM workbench.games WHERE game_id=$1 FOR UPDATE",
         [document.metadata.gameId],
       );
-      const currentRevision = existing.rows[0]?.current_revision ?? null;
+      const currentRevision = decodeOptionalCurrentRevision(existing, "locked game row");
       let revision: number;
-      if ((existing.rowCount ?? 0) === 0) {
+      if (existing.rows.length === 0) {
         if (document.revisionBase.kind !== "new_game") {
           throw new RevisionConflictError("신규 경기는 revisionBase=new_game이어야 합니다.");
         }
@@ -313,17 +310,18 @@ export class GameRevisionStore {
   }
 
   public async countStoredGames(): Promise<number> {
-    const result = await this.pool.query<{ readonly count: string }>(
+    const result = await this.pool.query(
       "SELECT COUNT(*)::text AS count FROM workbench.games WHERE current_revision IS NOT NULL",
     );
-    return Number(result.rows[0]?.count ?? "0");
+    const row = requiredDatabaseResultRow(result, ["count"], "stored game count");
+    const count = text(row.count);
+    if (!/^\d+$/.test(count) || !Number.isSafeInteger(Number(count))) {
+      throw new PersistenceIntegrityError("stored game count가 safe integer가 아닙니다.");
+    }
+    return Number(count);
   }
   public async currentRevisionBase(gameId: string): Promise<CurrentRevisionBase | null> {
-    const result = await this.pool.query<{
-      readonly revision: number;
-      readonly document_hash: string;
-      readonly source_bundle_hash: string;
-    }>(
+    const result = await this.pool.query(
       `SELECT r.revision,r.document_hash,r.source_bundle_hash
        FROM workbench.games g
        JOIN workbench.game_revisions r
@@ -331,33 +329,48 @@ export class GameRevisionStore {
        WHERE g.game_id=$1 AND r.sealed`,
       [gameId],
     );
-    const row = result.rows[0];
-    return row === undefined
-      ? null
-      : {
-          revision: row.revision,
-          documentHash: row.document_hash,
-          sourceBundleHash: row.source_bundle_hash,
-        };
+    if (result.rows.length === 0) {
+      if (result.rowCount !== 0) {
+        throw new PersistenceIntegrityError("current revision base rowCount가 올바르지 않습니다.");
+      }
+      return null;
+    }
+    const row = requiredDatabaseResultRow(
+      result,
+      ["revision", "document_hash", "source_bundle_hash"],
+      "current revision base",
+    );
+    return {
+      revision: safeInteger(row.revision, "current revision"),
+      documentHash: hashText(row.document_hash, "current document_hash"),
+      sourceBundleHash: hashText(row.source_bundle_hash, "current source_bundle_hash"),
+    };
   }
   public async catalog(): Promise<readonly GameCatalogItem[]> {
     return readDatabaseCatalog(this.pool);
   }
   public async revisions(gameId: string): Promise<RevisionCatalog> {
-    const result = await this.pool.query<ManifestRow>(
+    const result = await this.pool.query(
       "SELECT r.* FROM workbench.game_revisions r WHERE r.game_id=$1 ORDER BY r.revision",
       [gameId],
     );
     if (result.rows.length === 0) throw new GameRevisionNotFoundError(gameId, null);
-    const current = await this.pool.query<{ readonly current_revision: number | null }>(
+    if (result.rowCount !== result.rows.length) {
+      throw new PersistenceIntegrityError("revision catalog rowCount가 실제 행 수와 다릅니다.");
+    }
+    const rows = result.rows.map((row) => decodeManifestRow(row, gameId));
+    if (new Set(rows.map((row) => row.revision)).size !== rows.length) {
+      throw new PersistenceIntegrityError("revision catalog에 중복 revision이 있습니다.");
+    }
+    const current = await this.pool.query(
       "SELECT current_revision FROM workbench.games WHERE game_id=$1",
       [gameId],
     );
-    const currentRevision = current.rows[0]?.current_revision ?? null;
+    const currentRevision = decodeOptionalCurrentRevision(current, "revision catalog current row");
     return {
       gameId,
       currentRevision,
-      revisions: result.rows.map((row) => ({
+      revisions: rows.map((row) => ({
         revision: row.revision,
         documentHash: row.document_hash,
         projectionHash: row.projection_hash,
@@ -477,28 +490,33 @@ async function assertDatabaseContract(
   client: PoolClient,
   expectedMigration: string,
 ): Promise<void> {
-  const major = await client.query<{ readonly major: number }>(
+  const major = await client.query(
     "SELECT current_setting('server_version_num')::int / 10000 AS major",
   );
-  if (major.rows[0]?.major !== 16) throw new DatabaseContractError("PostgreSQL 16만 지원합니다.");
-  const migration = await client.query<{ readonly version: string }>(
+  const majorRow = databaseContractRow(major, ["major"], "PostgreSQL version");
+  if (safeInteger(majorRow.major, "PostgreSQL major") !== 16)
+    throw new DatabaseContractError("PostgreSQL 16만 지원합니다.");
+  const migration = await client.query(
     "SELECT version FROM workbench.schema_migrations ORDER BY version DESC LIMIT 1",
   );
-  if (migration.rows[0]?.version !== expectedMigration)
+  const migrationRow = databaseContractRow(migration, ["version"], "migration head");
+  const migrationVersion = text(migrationRow.version);
+  if (migrationVersion !== expectedMigration)
     throw new DatabaseContractError(
-      `migration head 불일치: expected=${expectedMigration}, actual=${migration.rows[0]?.version ?? "없음"}`,
+      `migration head 불일치: expected=${expectedMigration}, actual=${migrationVersion}`,
     );
-  const contract = await client.query<{
-    readonly analytics_contract_version: number;
-    readonly projection_version: number;
-    readonly registry_contract_version: number;
-  }>(
+  const contract = await client.query(
     "SELECT analytics_contract_version, projection_version, registry_contract_version FROM workbench.contract_metadata WHERE singleton",
   );
+  const contractRow = databaseContractRow(
+    contract,
+    ["analytics_contract_version", "projection_version", "registry_contract_version"],
+    "contract metadata",
+  );
   if (
-    contract.rows[0]?.analytics_contract_version !== 3 ||
-    contract.rows[0]?.projection_version !== 3 ||
-    contract.rows[0]?.registry_contract_version !== 1
+    safeInteger(contractRow.analytics_contract_version, "analytics contract") !== 3 ||
+    safeInteger(contractRow.projection_version, "projection contract") !== 3 ||
+    safeInteger(contractRow.registry_contract_version, "registry contract") !== 1
   )
     throw new DatabaseContractError(
       "analytics/projection/registry contract version이 3/3/1이어야 합니다.",
@@ -569,58 +587,142 @@ async function loadManifest(
   gameId: string,
   revision: number,
 ): Promise<ManifestRow> {
-  const result = await client.query<ManifestRow>(
+  const result = await client.query(
     "SELECT * FROM workbench.game_revisions WHERE game_id=$1 AND revision=$2",
     [gameId, revision],
   );
-  const row = result.rows[0];
-  if (row === undefined) throw new GameRevisionNotFoundError(gameId, revision);
-  return row;
+  if (result.rows.length === 0) throw new GameRevisionNotFoundError(gameId, revision);
+  if (result.rowCount !== 1 || result.rows.length !== 1 || result.rows[0] === undefined) {
+    throw new PersistenceIntegrityError("game revision manifest는 정확히 한 행이어야 합니다.");
+  }
+  return decodeManifestRow(result.rows[0], gameId, revision);
+}
+
+const MANIFEST_COLUMNS = [
+  "game_id",
+  "revision",
+  "parent_revision",
+  "base_document_hash",
+  "schema_version",
+  "provider",
+  "source_game_id",
+  "source_bundle_hash",
+  "collected_at_text",
+  "season",
+  "game_date",
+  "scheduled_at_text",
+  "game_status",
+  "stadium",
+  "scheduled_innings",
+  "document_hash",
+  "projection_hash",
+  "projection_version",
+  "sealed",
+  "created_at",
+  "sealed_at",
+] as const;
+
+function decodeManifestRow(
+  value: unknown,
+  expectedGameId: string,
+  expectedRevision?: number,
+): ManifestRow {
+  const row = databaseRow(value, MANIFEST_COLUMNS, "game revision manifest");
+  const gameId = text(row.game_id);
+  const revision = safeInteger(row.revision, "manifest revision");
+  if (
+    gameId !== expectedGameId ||
+    (expectedRevision !== undefined && revision !== expectedRevision)
+  ) {
+    throw new PersistenceIntegrityError("game revision manifest 문맥이 요청과 다릅니다.");
+  }
+  const schemaVersion = safeInteger(row.schema_version, "manifest schema_version");
+  const projectionVersion = safeInteger(row.projection_version, "manifest projection_version");
+  if (schemaVersion !== 2 || projectionVersion !== 3) {
+    throw new PersistenceIntegrityError(
+      "game revision manifest contract version이 올바르지 않습니다.",
+    );
+  }
+  const provider = text(row.provider);
+  if (provider !== "naver") {
+    throw new PersistenceIntegrityError("game revision manifest provider가 올바르지 않습니다.");
+  }
+  const gameStatus = text(row.game_status);
+  if (!isGameStatus(gameStatus)) {
+    throw new PersistenceIntegrityError("game revision manifest status가 올바르지 않습니다.");
+  }
+  return {
+    game_id: gameId,
+    revision,
+    schema_version: schemaVersion,
+    provider,
+    source_game_id: text(row.source_game_id),
+    source_bundle_hash: hashText(row.source_bundle_hash, "source_bundle_hash"),
+    collected_at_text: isoText(row.collected_at_text, "collected_at_text"),
+    parent_revision: nullableSafeInteger(row.parent_revision, "parent_revision"),
+    base_document_hash: nullableHashText(row.base_document_hash, "base_document_hash"),
+    season: safeInteger(row.season, "season"),
+    game_date: dateValue(row.game_date, "game_date"),
+    scheduled_at_text: nullableIsoText(row.scheduled_at_text, "scheduled_at_text"),
+    game_status: gameStatus,
+    stadium: nullableDatabaseText(row.stadium, "stadium"),
+    scheduled_innings: safeInteger(row.scheduled_innings, "scheduled_innings"),
+    document_hash: hashText(row.document_hash, "document_hash"),
+    projection_hash: hashText(row.projection_hash, "projection_hash"),
+    projection_version: projectionVersion,
+    sealed: databaseBoolean(row.sealed, "sealed"),
+    created_at: timestampValue(row.created_at, "created_at"),
+    sealed_at: row.sealed_at === null ? null : timestampValue(row.sealed_at, "sealed_at"),
+  };
 }
 
 async function currentRevision(client: PoolClient, gameId: string): Promise<number> {
-  const result = await client.query<{ readonly current_revision: number | null }>(
+  const result = await client.query(
     "SELECT current_revision FROM workbench.games WHERE game_id=$1",
     [gameId],
   );
-  const revision = result.rows[0]?.current_revision ?? null;
+  const revision = decodeOptionalCurrentRevision(result, "current revision row");
   if (revision === null) throw new GameRevisionNotFoundError(gameId, null);
   return revision;
+}
+
+function teamsFromProjection(tables: ProjectionTables): StagingGameDocumentV2["teams"] {
+  if (tables.game_team_snapshots.length !== 2) {
+    throw new PersistenceIntegrityError("game_team_snapshots는 away/home 두 행이어야 합니다.");
+  }
+  const team = (teamSide: "away" | "home") => {
+    const rows = tables.game_team_snapshots.filter((row) => side(row.side) === teamSide);
+    const row = requiredSingle(rows, `game_team_snapshots.${teamSide}`);
+    return { teamId: text(row.team_id), name: text(row.team_name) };
+  };
+  return { away: team("away"), home: team("home") };
 }
 
 function replaySourceFromProjection(
   manifest: ManifestRow,
   tables: ProjectionTables,
 ): StoredReplaySource {
-  const teams = Object.fromEntries(
-    tables.game_team_snapshots.map((row) => [
-      text(row.side),
-      {
-        teamId: text(row.team_id),
-        name: text(row.team_name),
-      },
-    ]),
-  ) as StagingGameDocumentV2["teams"];
+  const teams = teamsFromProjection(tables);
   const positions = group(
     tables.game_roster_positions,
     (row) => `${text(row.side)}:${number(row.roster_index)}`,
   );
-  const rosters = Object.fromEntries(
-    (["away", "home"] as const).map((teamSide) => [
-      teamSide,
-      tables.game_roster_snapshots
-        .filter((row) => row.side === teamSide)
-        .map((row) => ({
-          playerId: text(row.player_id),
-          name: text(row.player_name),
-          battingOrder: row.batting_order === null ? null : number(row.batting_order),
-          starter: boolean(row.starter),
-          positions: (positions.get(`${teamSide}:${number(row.roster_index)}`) ?? []).map((item) =>
-            text(item.position),
-          ),
-        })),
-    ]),
-  ) as unknown as StoredReplaySource["rosters"];
+  const replayRoster = (teamSide: "away" | "home"): readonly StoredReplayRosterPlayer[] =>
+    tables.game_roster_snapshots
+      .filter((row) => row.side === teamSide)
+      .map((row) => ({
+        playerId: text(row.player_id),
+        name: text(row.player_name),
+        battingOrder: row.batting_order === null ? null : number(row.batting_order),
+        starter: boolean(row.starter),
+        positions: (positions.get(`${teamSide}:${number(row.roster_index)}`) ?? []).map((item) =>
+          text(item.position),
+        ),
+      }));
+  const rosters: StoredReplaySource["rosters"] = {
+    away: replayRoster("away"),
+    home: replayRoster("home"),
+  };
   const pitchById = new Map(tables.pitch_facts.map((row) => [text(row.pitch_id), row]));
   const trackingById = new Map(
     tables.tracking_observations.map((row) => [text(row.tracking_id), row]),
@@ -958,40 +1060,32 @@ function baserunnerLineFromRow(row: ProjectionRow): BaserunnerLine {
   };
 }
 
-const trackingNumberColumns = {
-  x0: "x0",
-  y0: "y0",
-  z0: "z0",
-  vx0: "vx0",
-  vy0: "vy0",
-  vz0: "vz0",
-  ax: "ax",
-  ay: "ay",
-  az: "az",
-  crossPlateX: "cross_plate_x",
-  crossPlateY: "cross_plate_y",
-  topSz: "top_sz",
-  bottomSz: "bottom_sz",
-} as const;
-
 function trackingNumbersFromRow(
   row: ProjectionRow,
-): Partial<
-  Pick<StagingGameDocumentV2["trackingCandidates"][number], keyof typeof trackingNumberColumns>
-> {
-  return Object.fromEntries(
-    Object.entries(trackingNumberColumns).flatMap(([field, column]) =>
-      row[column] === null ? [] : [[field, number(row[column])]],
-    ),
-  );
+): Partial<StagingGameDocumentV2["trackingCandidates"][number]> {
+  return {
+    ...(row.x0 === null ? {} : { x0: number(row.x0) }),
+    ...(row.y0 === null ? {} : { y0: number(row.y0) }),
+    ...(row.z0 === null ? {} : { z0: number(row.z0) }),
+    ...(row.vx0 === null ? {} : { vx0: number(row.vx0) }),
+    ...(row.vy0 === null ? {} : { vy0: number(row.vy0) }),
+    ...(row.vz0 === null ? {} : { vz0: number(row.vz0) }),
+    ...(row.ax === null ? {} : { ax: number(row.ax) }),
+    ...(row.ay === null ? {} : { ay: number(row.ay) }),
+    ...(row.az === null ? {} : { az: number(row.az) }),
+    ...(row.cross_plate_x === null ? {} : { crossPlateX: number(row.cross_plate_x) }),
+    ...(row.cross_plate_y === null ? {} : { crossPlateY: number(row.cross_plate_y) }),
+    ...(row.top_sz === null ? {} : { topSz: number(row.top_sz) }),
+    ...(row.bottom_sz === null ? {} : { bottomSz: number(row.bottom_sz) }),
+  };
 }
 function findingsFromProjection(gameId: string, tables: ProjectionTables): Finding[] {
   const details = group(tables.validation_issue_details, (row) => String(number(row.issue_index)));
   return tables.validation_issues.map((row) => ({
     gameId,
     code: text(row.code),
-    category: text(row.category) as Finding["category"],
-    severity: text(row.severity) as Finding["severity"],
+    category: findingCategory(row.category),
+    severity: findingSeverity(row.severity),
     message: text(row.message),
     ...(row.event_id === null ? {} : { eventId: text(row.event_id) }),
     ...(row.event_sequence === null ? {} : { eventSequence: number(row.event_sequence) }),
@@ -1036,35 +1130,29 @@ export function hydrateProjectionLedger(
   manifest: ProjectionLedgerManifest,
   tables: ProjectionTables,
 ): StagingGameDocumentV2 {
-  const teams = Object.fromEntries(
-    tables.game_team_snapshots.map((row) => [
-      text(row.side),
-      { teamId: text(row.team_id), name: text(row.team_name) },
-    ]),
-  ) as Record<"away" | "home", { teamId: string; name: string }>;
+  const teams = teamsFromProjection(tables);
   const positions = group(
     tables.game_roster_positions,
     (row) => `${text(row.side)}:${number(row.roster_index)}`,
   );
-  const rosters = Object.fromEntries(
-    (["away", "home"] as const).map((side) => [
-      side,
-      {
-        teamId: teams[side].teamId,
-        players: tables.game_roster_snapshots
-          .filter((row) => row.side === side)
-          .map((row) => ({
-            playerId: text(row.player_id),
-            name: text(row.player_name),
-            ...(row.batting_order === null ? {} : { battingOrder: number(row.batting_order) }),
-            starter: boolean(row.starter),
-            positions: (positions.get(`${side}:${number(row.roster_index)}`) ?? []).map((item) =>
-              text(item.position),
-            ),
-          })),
-      },
-    ]),
-  ) as StagingGameDocumentV2["rosters"];
+  const roster = (teamSide: "away" | "home") => ({
+    teamId: teams[teamSide].teamId,
+    players: tables.game_roster_snapshots
+      .filter((row) => row.side === teamSide)
+      .map((row) => ({
+        playerId: text(row.player_id),
+        name: text(row.player_name),
+        ...(row.batting_order === null ? {} : { battingOrder: number(row.batting_order) }),
+        starter: boolean(row.starter),
+        positions: (positions.get(`${teamSide}:${number(row.roster_index)}`) ?? []).map((item) =>
+          text(item.position),
+        ),
+      })),
+  });
+  const rosters: StagingGameDocumentV2["rosters"] = {
+    away: roster("away"),
+    home: roster("home"),
+  };
   const events = hydrateEvents(tables);
   const trackingCandidates = tables.tracking_observations.map((row) => {
     const resolutionKind = text(row.resolution_kind);
@@ -1473,6 +1561,132 @@ function half(value: unknown): "top" | "bottom" {
   if (item !== "top" && item !== "bottom")
     throw new PersistenceIntegrityError("DB half 값이 올바르지 않습니다.");
   return item;
+}
+function findingCategory(value: unknown): Finding["category"] {
+  const item = text(value);
+  if (item !== "source" && item !== "domain" && item !== "persistence") {
+    throw new PersistenceIntegrityError("DB finding category 값이 올바르지 않습니다.");
+  }
+  return item;
+}
+function findingSeverity(value: unknown): Finding["severity"] {
+  const item = text(value);
+  if (item !== "warning" && item !== "blocking") {
+    throw new PersistenceIntegrityError("DB finding severity 값이 올바르지 않습니다.");
+  }
+  return item;
+}
+function databaseRow(
+  value: unknown,
+  columns: readonly string[],
+  label: string,
+): Readonly<Record<string, unknown>> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new PersistenceIntegrityError(`${label}가 object가 아닙니다.`);
+  }
+  const row = value as Record<string, unknown>;
+  const expected = new Set(columns);
+  const missing = columns.filter((column) => !Object.hasOwn(row, column));
+  const extra = Object.keys(row).filter((column) => !expected.has(column));
+  if (missing.length > 0 || extra.length > 0) {
+    throw new PersistenceIntegrityError(
+      `${label} column 불일치: 누락=${missing.join(",") || "없음"}; 초과=${extra.join(",") || "없음"}`,
+    );
+  }
+  return row;
+}
+function requiredDatabaseResultRow(
+  result: { readonly rows: readonly unknown[]; readonly rowCount: number | null },
+  columns: readonly string[],
+  label: string,
+): Readonly<Record<string, unknown>> {
+  if (result.rowCount !== 1 || result.rows.length !== 1 || result.rows[0] === undefined) {
+    throw new PersistenceIntegrityError(`${label}은 정확히 한 행이어야 합니다.`);
+  }
+  return databaseRow(result.rows[0], columns, label);
+}
+function databaseContractRow(
+  result: { readonly rows: readonly unknown[]; readonly rowCount: number | null },
+  columns: readonly string[],
+  label: string,
+): Readonly<Record<string, unknown>> {
+  try {
+    return requiredDatabaseResultRow(result, columns, label);
+  } catch (error: unknown) {
+    throw new DatabaseContractError(
+      error instanceof Error ? error.message : `${label} 응답이 올바르지 않습니다.`,
+    );
+  }
+}
+function decodeOptionalCurrentRevision(
+  result: { readonly rows: readonly unknown[]; readonly rowCount: number | null },
+  label: string,
+): number | null {
+  if (result.rows.length === 0) {
+    if (result.rowCount !== 0) {
+      throw new PersistenceIntegrityError(`${label} rowCount가 올바르지 않습니다.`);
+    }
+    return null;
+  }
+  const row = requiredDatabaseResultRow(result, ["current_revision"], label);
+  return nullableSafeInteger(row.current_revision, `${label}.current_revision`);
+}
+function safeInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+    throw new PersistenceIntegrityError(`${label} 값이 safe integer가 아닙니다.`);
+  }
+  return value;
+}
+function nullableSafeInteger(value: unknown, label: string): number | null {
+  return value === null ? null : safeInteger(value, label);
+}
+function databaseBoolean(value: unknown, label: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new PersistenceIntegrityError(`${label} 값이 boolean이 아닙니다.`);
+  }
+  return value;
+}
+function hashText(value: unknown, label: string): string {
+  const result = text(value);
+  if (!/^[0-9a-f]{64}$/.test(result)) {
+    throw new PersistenceIntegrityError(`${label} 값이 SHA-256 hash가 아닙니다.`);
+  }
+  return result;
+}
+function nullableHashText(value: unknown, label: string): string | null {
+  return value === null ? null : hashText(value, label);
+}
+function nullableDatabaseText(value: unknown, label: string): string | null {
+  if (value === null) return null;
+  if (typeof value !== "string") {
+    throw new PersistenceIntegrityError(`${label} 값이 string 또는 null이 아닙니다.`);
+  }
+  return value;
+}
+function isoText(value: unknown, label: string): string {
+  const result = text(value);
+  if (!Number.isFinite(Date.parse(result))) {
+    throw new PersistenceIntegrityError(`${label} 값이 ISO timestamp가 아닙니다.`);
+  }
+  return result;
+}
+function nullableIsoText(value: unknown, label: string): string | null {
+  return value === null ? null : isoText(value, label);
+}
+function timestampValue(value: unknown, label: string): string | Date {
+  if (value instanceof Date && Number.isFinite(value.getTime())) return value;
+  return isoText(value, label);
+}
+function dateValue(value: unknown, label: string): string | Date {
+  if (value instanceof Date && Number.isFinite(value.getTime())) return value;
+  const result = text(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(result) || !Number.isFinite(Date.parse(`${result}T00:00:00Z`))) {
+    throw new PersistenceIntegrityError(`${label} 값이 ISO date가 아닙니다.`);
+  }
+  return result;
+}
+function isGameStatus(value: string): value is StagingGameDocumentV2["metadata"]["status"] {
+  return ["scheduled", "in_progress", "final", "suspended", "cancelled"].includes(value);
 }
 function dateText(value: string | Date): string {
   return value instanceof Date ? value.toISOString().slice(0, 10) : value.slice(0, 10);

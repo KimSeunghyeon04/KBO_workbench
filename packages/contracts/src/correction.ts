@@ -292,17 +292,35 @@ export const CorrectionCalculatedRecordsSchema = Type.Object(
   strict,
 );
 
-export const CorrectionSessionCreateRequestSchema = Type.Object(
-  {
-    authority: Type.Union([Type.Literal("staging"), Type.Literal("quarantine")]),
-    gameId: GameIdSchema,
-  },
-  strict,
-);
+export const CorrectionSessionCreateRequestSchema = Type.Union([
+  Type.Object(
+    {
+      authority: Type.Union([Type.Literal("staging"), Type.Literal("quarantine")]),
+      gameId: GameIdSchema,
+    },
+    strict,
+  ),
+  Type.Object(
+    {
+      authority: Type.Literal("superseded"),
+      gameId: GameIdSchema,
+      snapshotId: Type.String({
+        pattern: "^[0-9]+-[0-9a-f]{64}\\.document\\.json$",
+        maxLength: 200,
+      }),
+    },
+    strict,
+  ),
+]);
 export const CorrectionSessionSchema = Type.Object(
   {
     sessionId: IdSchema,
-    authority: Type.Union([Type.Literal("staging"), Type.Literal("quarantine")]),
+    authority: Type.Union([
+      Type.Literal("staging"),
+      Type.Literal("quarantine"),
+      Type.Literal("superseded"),
+    ]),
+    snapshotId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
     gameId: GameIdSchema,
     baseDocumentHash: HashSchema,
     sessionVersion: Type.Integer({ minimum: 0 }),

@@ -11,6 +11,11 @@ const DateTimeSchema = Type.String({
     "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$",
 });
 const AuthoritySchema = Type.Union([Type.Literal("staging"), Type.Literal("quarantine")]);
+const CurrentAuthoritySchema = Type.Union([
+  Type.Literal("ready"),
+  Type.Literal("quarantine"),
+  Type.Literal("source_failure"),
+]);
 const FindingValueSchema = Type.Union([Type.String(), Type.Number(), Type.Boolean(), Type.Null()]);
 
 export const StoredFindingDetailSchema = Type.Object(
@@ -24,6 +29,17 @@ export const StoredFindingDetailSchema = Type.Object(
 
 export const StoredFindingSchema = Type.Object(
   {
+    producer: Type.Union([
+      Type.Literal("collection"),
+      Type.Literal("compiler"),
+      Type.Literal("correction"),
+      Type.Literal("migration"),
+    ]),
+    lifecycle: Type.Union([
+      Type.Literal("persistent"),
+      Type.Literal("while_event_unresolved"),
+      Type.Literal("recomputed"),
+    ]),
     code: Type.String({ minLength: 1 }),
     category: Type.Union([
       Type.Literal("source"),
@@ -43,6 +59,14 @@ export const StoredFindingSchema = Type.Object(
 );
 
 export const StoredFindingsSchema = Type.Array(StoredFindingSchema);
+
+export const StoredFindingEnvelopeV2Schema = Type.Object(
+  {
+    schemaVersion: Type.Literal(2),
+    findings: StoredFindingsSchema,
+  },
+  strict,
+);
 
 export const SourceEndpointManifestSchema = Type.Object(
   {
@@ -69,8 +93,56 @@ export const SourceBundleManifestSchema = Type.Object(
 export const SourceFailureRecordSchema = Type.Object(
   {
     gameId: GameIdSchema,
+    season: Type.Union([Type.Integer({ minimum: 1982, maximum: 9999 }), Type.Null()]),
     recordedAt: DateTimeSchema,
-    findings: StoredFindingsSchema,
+    findingEnvelope: StoredFindingEnvelopeV2Schema,
+  },
+  strict,
+);
+
+export const ImmutableArtifactMetadataSchema = Type.Object(
+  {
+    schemaVersion: Type.Literal(1),
+    pageKind: Type.String({ minLength: 1, maxLength: 100 }),
+    requestKey: Type.String({ minLength: 1, maxLength: 500 }),
+    artifactKey: Type.String({
+      pattern: "^[A-Za-z0-9._/-]+$",
+      minLength: 1,
+      maxLength: 1000,
+    }),
+    contentHash: HashSchema,
+    collectedAt: DateTimeSchema,
+  },
+  strict,
+);
+
+export const CurrentWorkspaceEntrySchema = Type.Object(
+  {
+    schemaVersion: Type.Literal(1),
+    gameId: GameIdSchema,
+    season: Type.Union([Type.Integer({ minimum: 1982, maximum: 9999 }), Type.Null()]),
+    authority: CurrentAuthoritySchema,
+    generation: Type.Integer({ minimum: 1 }),
+    updatedAt: DateTimeSchema,
+    artifactPath: Type.String({
+      pattern: "^active/[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$",
+      minLength: 1,
+      maxLength: 500,
+    }),
+    contentHash: HashSchema,
+    documentHash: Type.Union([HashSchema, Type.Null()]),
+  },
+  strict,
+);
+
+export const WorkspaceTransitionJournalSchema = Type.Object(
+  {
+    schemaVersion: Type.Literal(1),
+    transitionId: Type.String({ minLength: 1, maxLength: 200 }),
+    gameId: GameIdSchema,
+    previous: Type.Union([CurrentWorkspaceEntrySchema, Type.Null()]),
+    target: Type.Union([CurrentWorkspaceEntrySchema, Type.Null()]),
+    createdAt: DateTimeSchema,
   },
   strict,
 );
@@ -85,30 +157,63 @@ export const WriterLockOwnerSchema = Type.Object(
   strict,
 );
 
-export const StagingCorrectionCommitSchema = Type.Object(
-  {
-    baseAuthority: AuthoritySchema,
-    targetAuthority: AuthoritySchema,
-    baseDocumentHash: HashSchema,
-    document: StagingGameDocumentV2Schema,
-    findings: StoredFindingsSchema,
-  },
-  strict,
-);
+const CorrectionCommitFields = {
+  targetAuthority: AuthoritySchema,
+  baseDocumentHash: HashSchema,
+  document: StagingGameDocumentV2Schema,
+  findingEnvelope: StoredFindingEnvelopeV2Schema,
+} as const;
 
-export const CorrectionJournalSchema = Type.Object(
-  {
-    baseAuthority: AuthoritySchema,
-    targetAuthority: AuthoritySchema,
-    baseDocumentHash: HashSchema,
-    document: StagingGameDocumentV2Schema,
-    findings: StoredFindingsSchema,
-    journalId: Type.Optional(Type.String({ minLength: 1 })),
-    beforeDocument: StagingGameDocumentV2Schema,
-    createdAt: DateTimeSchema,
-  },
-  strict,
-);
+export const StagingCorrectionCommitSchema = Type.Union([
+  Type.Object(
+    {
+      baseAuthority: AuthoritySchema,
+      ...CorrectionCommitFields,
+    },
+    strict,
+  ),
+  Type.Object(
+    {
+      baseAuthority: Type.Literal("superseded"),
+      baseSnapshotId: Type.String({
+        pattern: "^[0-9]+-[0-9a-f]{64}\\.document\\.json$",
+        maxLength: 200,
+      }),
+      baseCurrentContentHash: Type.Union([HashSchema, Type.Null()]),
+      ...CorrectionCommitFields,
+    },
+    strict,
+  ),
+]);
+
+const CorrectionJournalFields = {
+  ...CorrectionCommitFields,
+  journalId: Type.Optional(Type.String({ minLength: 1 })),
+  beforeDocument: StagingGameDocumentV2Schema,
+  createdAt: DateTimeSchema,
+} as const;
+
+export const CorrectionJournalSchema = Type.Union([
+  Type.Object(
+    {
+      baseAuthority: AuthoritySchema,
+      ...CorrectionJournalFields,
+    },
+    strict,
+  ),
+  Type.Object(
+    {
+      baseAuthority: Type.Literal("superseded"),
+      baseSnapshotId: Type.String({
+        pattern: "^[0-9]+-[0-9a-f]{64}\\.document\\.json$",
+        maxLength: 200,
+      }),
+      baseCurrentContentHash: Type.Union([HashSchema, Type.Null()]),
+      ...CorrectionJournalFields,
+    },
+    strict,
+  ),
+]);
 
 export interface StoredFindingDetail {
   readonly field: string;
@@ -117,6 +222,8 @@ export interface StoredFindingDetail {
 }
 
 export interface StoredFinding {
+  readonly producer: "collection" | "compiler" | "correction" | "migration";
+  readonly lifecycle: "persistent" | "while_event_unresolved" | "recomputed";
   readonly code: string;
   readonly category: "source" | "domain" | "persistence";
   readonly severity: "warning" | "blocking";
@@ -129,12 +236,16 @@ export interface StoredFinding {
   readonly details?: readonly StoredFindingDetail[];
 }
 
-export type SourceBundleManifest = Static<typeof SourceBundleManifestSchema>;
-export interface SourceFailureRecord {
-  readonly gameId: string;
-  readonly recordedAt: string;
+export interface StoredFindingEnvelopeV2 {
+  readonly schemaVersion: 2;
   readonly findings: readonly StoredFinding[];
 }
+
+export type SourceBundleManifest = Static<typeof SourceBundleManifestSchema>;
+export type SourceFailureRecord = Static<typeof SourceFailureRecordSchema>;
+export type ImmutableArtifactMetadata = Static<typeof ImmutableArtifactMetadataSchema>;
+export type CurrentWorkspaceEntry = Static<typeof CurrentWorkspaceEntrySchema>;
+export type WorkspaceTransitionJournal = Static<typeof WorkspaceTransitionJournalSchema>;
 export interface WriterLockOwner {
   readonly token: string;
   readonly pid: number;
@@ -142,22 +253,35 @@ export interface WriterLockOwner {
   readonly acquiredAt: string;
 }
 
-export interface StagingCorrectionCommit {
-  readonly baseAuthority: "staging" | "quarantine";
+interface StagingCorrectionCommitFields {
   readonly targetAuthority: "staging" | "quarantine";
   readonly baseDocumentHash: string;
   readonly document: StagingGameDocumentV2;
-  readonly findings: readonly StoredFinding[];
+  readonly findingEnvelope: StoredFindingEnvelopeV2;
 }
 
-export interface CorrectionJournal extends StagingCorrectionCommit {
+export type StagingCorrectionCommit = StagingCorrectionCommitFields &
+  (
+    | { readonly baseAuthority: "staging" | "quarantine" }
+    | {
+        readonly baseAuthority: "superseded";
+        readonly baseSnapshotId: string;
+        readonly baseCurrentContentHash: string | null;
+      }
+  );
+
+export type CorrectionJournal = StagingCorrectionCommit & {
   readonly journalId?: string;
   readonly beforeDocument: StagingGameDocumentV2;
   readonly createdAt: string;
-}
+};
 
 export function parseStoredFindings(value: unknown): StoredFinding[] {
   return Value.Decode(StoredFindingsSchema, value);
+}
+
+export function parseStoredFindingEnvelopeV2(value: unknown): StoredFindingEnvelopeV2 {
+  return Value.Decode(StoredFindingEnvelopeV2Schema, value);
 }
 
 export function parseSourceBundleManifest(value: unknown): SourceBundleManifest {
@@ -168,10 +292,26 @@ export function parseSourceFailureRecord(value: unknown): SourceFailureRecord {
   return Value.Decode(SourceFailureRecordSchema, value);
 }
 
+export function parseImmutableArtifactMetadata(value: unknown): ImmutableArtifactMetadata {
+  return Value.Decode(ImmutableArtifactMetadataSchema, value);
+}
+
+export function parseCurrentWorkspaceEntry(value: unknown): CurrentWorkspaceEntry {
+  return Value.Decode(CurrentWorkspaceEntrySchema, value);
+}
+
+export function parseWorkspaceTransitionJournal(value: unknown): WorkspaceTransitionJournal {
+  return Value.Decode(WorkspaceTransitionJournalSchema, value);
+}
+
 export function parseWriterLockOwner(value: unknown): WriterLockOwner {
   return Value.Decode(WriterLockOwnerSchema, value);
 }
 
 export function parseCorrectionJournal(value: unknown): CorrectionJournal {
   return Value.Decode(CorrectionJournalSchema, value);
+}
+
+export function parseStagingCorrectionCommit(value: unknown): StagingCorrectionCommit {
+  return Value.Decode(StagingCorrectionCommitSchema, value);
 }

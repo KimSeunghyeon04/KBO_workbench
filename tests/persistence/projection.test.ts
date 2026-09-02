@@ -6,6 +6,7 @@ import { parseStagingGameDocumentV2 } from "@kbo/contracts";
 import { compileStagingGameDocumentV2 } from "@kbo/game-core";
 import {
   buildRelationalProjection,
+  decodeProjectionRow,
   hashProjectionTables,
   PROJECTION_TABLE_COLUMNS,
 } from "@kbo/persistence";
@@ -73,6 +74,42 @@ describe("원장 + compiled fact 관계형 projection", () => {
         expect(Object.values(row), table).not.toContain(undefined);
       }
     }
+  });
+
+  it("모든 projection 값을 DB runtime descriptor로 strict decode한다", async () => {
+    const document = await golden();
+    const projection = buildRelationalProjection(
+      document,
+      compileStagingGameDocumentV2(document),
+      1,
+    );
+
+    for (const [table, rows] of Object.entries(projection.tables)) {
+      rows.forEach((row, rowIndex) => {
+        expect(() =>
+          decodeProjectionRow(table as keyof typeof projection.tables, rowIndex, row),
+        ).not.toThrow();
+      });
+    }
+  });
+
+  it("DB projection의 잘못된 enum, 정수와 nullability를 무결성 오류로 거부한다", () => {
+    const row = {
+      game_id: "sanitized-game",
+      revision: 1,
+      side: "away",
+      team_id: "team-a",
+      team_name: "비식별 팀",
+    };
+    expect(() =>
+      decodeProjectionRow("game_team_snapshots", 0, { ...row, side: "visitor" }),
+    ).toThrow(/enum/);
+    expect(() => decodeProjectionRow("game_team_snapshots", 0, { ...row, revision: 1.5 })).toThrow(
+      /safe integer/,
+    );
+    expect(() =>
+      decodeProjectionRow("game_team_snapshots", 0, { ...row, team_name: null }),
+    ).toThrow(/null/);
   });
 
   it("공급자가 PTS 순번을 주지 않은 linked tracking도 nullable 원천값으로 projection한다", async () => {

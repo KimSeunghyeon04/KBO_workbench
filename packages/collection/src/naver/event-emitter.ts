@@ -436,6 +436,7 @@ function sourceFinding(
   message: string,
 ): SourceFinding {
   return {
+    lifecycle: "while_event_unresolved",
     code,
     severity: "blocking",
     message,

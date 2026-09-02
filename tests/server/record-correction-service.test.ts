@@ -122,7 +122,7 @@ describe("RecordCorrectionService 매칭", () => {
     );
     expect(applied.session.sessionVersion).toBe(session.sessionVersion + 1);
     expect(fixture.markProposalApplied).toHaveBeenCalledOnce();
-    const undone = sessions.undo(session.sessionId, applied.session.sessionVersion);
+    const undone = await sessions.undo(session.sessionId, applied.session.sessionVersion);
     expect(resultOf(undone.session, "e10")).toBe("single");
     sessions.close();
     await workspace.close();

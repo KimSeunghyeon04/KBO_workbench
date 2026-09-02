@@ -149,6 +149,8 @@ describe("CollectionJobManager", () => {
     const { document } = mapNaverGame(bundle);
     await workspace.saveQuarantine(document, [
       {
+        producer: "collection",
+        lifecycle: "persistent",
         code: "source.needs_review",
         category: "source",
         severity: "blocking",

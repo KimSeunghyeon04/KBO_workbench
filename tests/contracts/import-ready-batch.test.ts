@@ -1,7 +1,7 @@
 import { ImportReadyBatchCreatedSchema, ImportReadyBatchCreateRequestSchema } from "@kbo/contracts";
 import { describe, expect, it } from "vitest";
 
-import { Value } from "../../packages/contracts/node_modules/@sinclair/typebox/build/cjs/value/index.js";
+import { Value } from "@sinclair/typebox/value";
 
 describe("적재 가능 문서 일괄 등록 계약", () => {
   it("strict 요청과 경기별 job 응답만 허용한다", () => {

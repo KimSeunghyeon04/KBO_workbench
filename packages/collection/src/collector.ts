@@ -41,6 +41,7 @@ export class NaverGameCollector {
         if (error instanceof NaverEndpointMissingError) {
           missingEndpoints.push(endpoint.name);
           findings.push({
+            lifecycle: "persistent",
             code: "source.endpoint_missing",
             severity: endpoint.required ? "blocking" : "warning",
             message: `Naver 자료 항목이 누락되었습니다: ${endpoint.name}`,
@@ -80,6 +81,7 @@ function sourceFailure(gameId: string, finding: SourceFinding): CollectedGame {
 function sourceFindingFor(error: unknown, endpoint: Endpoint["name"]): SourceFinding {
   if (error instanceof NaverEndpointMissingError) {
     return {
+      lifecycle: "persistent",
       code: "source.endpoint_missing",
       severity: "blocking",
       message: `Naver 자료 항목이 누락되었습니다: ${endpoint}`,
@@ -88,6 +90,7 @@ function sourceFindingFor(error: unknown, endpoint: Endpoint["name"]): SourceFin
   }
   if (error instanceof NaverSourceFormatError) {
     return {
+      lifecycle: "persistent",
       code: "source.shape_changed",
       severity: "blocking",
       message: error.message,
@@ -96,6 +99,7 @@ function sourceFindingFor(error: unknown, endpoint: Endpoint["name"]): SourceFin
   }
   if (error instanceof NaverTransportError || error instanceof NaverHttpError) {
     return {
+      lifecycle: "persistent",
       code: "source.transport_failure",
       severity: "blocking",
       message: error.message,
@@ -103,6 +107,7 @@ function sourceFindingFor(error: unknown, endpoint: Endpoint["name"]): SourceFin
     };
   }
   return {
+    lifecycle: "persistent",
     code: "source.transport_failure",
     severity: "blocking",
     message: "Naver 요청 중 알 수 없는 전송 오류가 발생했습니다.",

@@ -1,8 +1,10 @@
 export {
   buildRelationalProjection,
+  decodeProjectionRow,
   hashProjectionTables,
   projectionCounts,
   PROJECTION_TABLE_COLUMNS,
+  PROJECTION_TABLE_DESCRIPTORS,
   type ProjectionCounts,
   type ProjectionRow,
   type ProjectionScalar,
@@ -63,8 +65,15 @@ export {
 export {
   StagingWorkspace,
   StaleStagingDocumentError,
+  WorkspaceMigrationRequiredError,
+  WorkspacePersistenceBlockedError,
   type ImmutableSourceBundle,
+  type SupersededDocumentSnapshot,
 } from "./staging-workspace.js";
+export {
+  migrateWorkspaceLayout,
+  type WorkspaceMigrationConflict,
+  type WorkspaceMigrationOptions,
+  type WorkspaceMigrationReport,
+} from "./workspace-migration.js";
 export { type StagingCorrectionCommit, type StoredFinding } from "@kbo/contracts";
-
-export const PERSISTENCE_MODULE_VERSION = "0.3.0";

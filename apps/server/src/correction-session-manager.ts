@@ -30,14 +30,15 @@ interface InternalSession {
   readonly sessionId: string;
   readonly gameId: string;
   baseDocumentHash: string;
-  authority: "staging" | "quarantine";
+  authority: "staging" | "quarantine" | "superseded";
+  snapshotId?: string;
+  baseCurrentContentHash: string | null;
   document: StagingGameDocumentV2;
   replay: ReplayResult;
   storedFindings: StoredFinding[];
   sessionVersion: number;
   undoStack: HistoryEntry[];
   redoStack: HistoryEntry[];
-  operationInProgress: boolean;
 }
 type CorrectionWorkspace = Pick<
   StagingWorkspace,
@@ -47,6 +48,7 @@ type CorrectionWorkspace = Pick<
   | "readFindings"
   | "readOriginal"
   | "readSourceBundle"
+  | "readSupersededSnapshot"
 >;
 export type CorrectionSourceEvidenceExtractor = (input: {
   readonly event: StagingGameDocumentV2["events"][number];
@@ -60,6 +62,7 @@ export class CorrectionCommitBlockedError extends Error {}
 
 export class CorrectionSessionManager {
   private readonly sessions = new Map<string, InternalSession>();
+  private readonly mutexes = new Map<string, AsyncMutex>();
   public constructor(
     private readonly workspace: CorrectionWorkspace,
     private readonly newId: () => string = randomUUID,
@@ -69,6 +72,29 @@ export class CorrectionSessionManager {
   ) {}
 
   public async create(request: CorrectionSessionCreateRequest): Promise<CorrectionSession> {
+    if (request.authority === "superseded") {
+      const source = await this.workspace.readSupersededSnapshot(
+        request.gameId,
+        request.snapshotId,
+      );
+      const session: InternalSession = {
+        sessionId: this.newId(),
+        gameId: request.gameId,
+        baseDocumentHash: stagingDocumentHash(source.document),
+        authority: "superseded",
+        snapshotId: source.snapshotId,
+        baseCurrentContentHash: source.currentContentHash,
+        document: source.document,
+        replay: compileStagingGameDocumentV2(source.document),
+        storedFindings: [...source.findings],
+        sessionVersion: 0,
+        undoStack: [],
+        redoStack: [],
+      };
+      this.sessions.set(session.sessionId, session);
+      this.mutexes.set(session.sessionId, new AsyncMutex());
+      return snapshot(session);
+    }
     const catalog = await this.workspace.catalog();
     const item = catalog.games.find(
       (game) => game.gameId === request.gameId && game.authority === request.authority,
@@ -92,73 +118,78 @@ export class CorrectionSessionManager {
       gameId: request.gameId,
       baseDocumentHash: stagingDocumentHash(document),
       authority: item.authority,
+      baseCurrentContentHash: null,
       document,
       replay: compileStagingGameDocumentV2(document),
       storedFindings: [...storedFindings],
       sessionVersion: 0,
       undoStack: [],
       redoStack: [],
-      operationInProgress: false,
     };
     this.sessions.set(session.sessionId, session);
+    this.mutexes.set(session.sessionId, new AsyncMutex());
     return snapshot(session);
   }
   public get(sessionId: string): CorrectionSession {
     return snapshot(this.required(sessionId));
   }
-  public command(
+  public async command(
     sessionId: string,
     expected: number,
     command: CorrectionCommand,
     apply: boolean,
-  ): CorrectionMutationResult {
-    const session = this.requiredVersion(sessionId, expected);
-    const result = applyCorrectionCommand(session.document, command);
-    if (apply) {
-      session.undoStack.push({ before: session.document, after: result.document });
-      session.redoStack = [];
-      session.document = result.document;
-      session.replay = result.replay;
+  ): Promise<CorrectionMutationResult> {
+    return this.withSessionLock(sessionId, expected, (session) => {
+      const result = applyCorrectionCommand(session.document, command);
+      if (apply) {
+        session.undoStack.push({ before: session.document, after: result.document });
+        session.redoStack = [];
+        session.document = result.document;
+        session.replay = result.replay;
+        session.sessionVersion += 1;
+      }
+      return { session: snapshot(session), preview: result.preview };
+    });
+  }
+  public async undo(sessionId: string, expected: number): Promise<CorrectionMutationResult> {
+    return this.withSessionLock(sessionId, expected, (session) => {
+      const entry = session.undoStack.pop();
+      if (entry === undefined)
+        throw new CorrectionCommitBlockedError("실행 취소할 작업이 없습니다.");
+      const before = session.document;
+      const beforeReplay = session.replay;
+      session.redoStack.push(entry);
+      session.document = entry.before;
+      session.replay = compileStagingGameDocumentV2(entry.before);
       session.sessionVersion += 1;
-    }
-    return { session: snapshot(session), preview: result.preview };
+      return {
+        session: snapshot(session),
+        preview: buildCorrectionPreview(before, beforeReplay, session.document, session.replay),
+      };
+    });
   }
-  public undo(sessionId: string, expected: number): CorrectionMutationResult {
-    const session = this.requiredVersion(sessionId, expected);
-    const entry = session.undoStack.pop();
-    if (entry === undefined) throw new CorrectionCommitBlockedError("실행 취소할 작업이 없습니다.");
-    const before = session.document;
-    const beforeReplay = session.replay;
-    session.redoStack.push(entry);
-    session.document = entry.before;
-    session.replay = compileStagingGameDocumentV2(entry.before);
-    session.sessionVersion += 1;
-    return {
-      session: snapshot(session),
-      preview: buildCorrectionPreview(before, beforeReplay, session.document, session.replay),
-    };
-  }
-  public redo(sessionId: string, expected: number): CorrectionMutationResult {
-    const session = this.requiredVersion(sessionId, expected);
-    const entry = session.redoStack.pop();
-    if (entry === undefined) throw new CorrectionCommitBlockedError("다시 실행할 작업이 없습니다.");
-    const before = session.document;
-    const beforeReplay = session.replay;
-    session.undoStack.push(entry);
-    session.document = entry.after;
-    session.replay = compileStagingGameDocumentV2(entry.after);
-    session.sessionVersion += 1;
-    return {
-      session: snapshot(session),
-      preview: buildCorrectionPreview(before, beforeReplay, session.document, session.replay),
-    };
+  public async redo(sessionId: string, expected: number): Promise<CorrectionMutationResult> {
+    return this.withSessionLock(sessionId, expected, (session) => {
+      const entry = session.redoStack.pop();
+      if (entry === undefined)
+        throw new CorrectionCommitBlockedError("다시 실행할 작업이 없습니다.");
+      const before = session.document;
+      const beforeReplay = session.replay;
+      session.undoStack.push(entry);
+      session.document = entry.after;
+      session.replay = compileStagingGameDocumentV2(entry.after);
+      session.sessionVersion += 1;
+      return {
+        session: snapshot(session),
+        preview: buildCorrectionPreview(before, beforeReplay, session.document, session.replay),
+      };
+    });
   }
   public async commit(
     sessionId: string,
     request: CorrectionCommitRequest,
   ): Promise<CorrectionCommitResult> {
-    const session = this.beginOperation(sessionId, request.expectedSessionVersion);
-    try {
+    return this.withSessionLock(sessionId, request.expectedSessionVersion, async (session) => {
       const committedFindings = mergePersistentSourceFindings(
         session.storedFindings,
         session.replay.findings,
@@ -168,7 +199,8 @@ export class CorrectionSessionManager {
         (finding) => finding.severity === "blocking",
       ).length;
       const canPromoteCleanQuarantine = session.authority === "quarantine" && blocking === 0;
-      if (session.undoStack.length === 0 && !canPromoteCleanQuarantine) {
+      const canRestoreSuperseded = session.authority === "superseded";
+      if (session.undoStack.length === 0 && !canPromoteCleanQuarantine && !canRestoreSuperseded) {
         throw new CorrectionCommitBlockedError("저장할 보정 작업이 없습니다.");
       }
       if (blocking > 0 && !request.allowBlockingStaging)
@@ -177,24 +209,35 @@ export class CorrectionSessionManager {
         );
       const targetAuthority = blocking > 0 ? "quarantine" : "staging";
       const document = session.document;
-      const input: StagingCorrectionCommit = {
-        baseAuthority: session.authority,
-        targetAuthority,
-        baseDocumentHash: session.baseDocumentHash,
-        document,
-        findings: committedFindings,
-      };
+      const input: StagingCorrectionCommit =
+        session.authority === "superseded"
+          ? {
+              baseAuthority: "superseded",
+              baseSnapshotId: requiredSnapshotId(session),
+              baseCurrentContentHash: session.baseCurrentContentHash,
+              targetAuthority,
+              baseDocumentHash: session.baseDocumentHash,
+              document,
+              findingEnvelope: { schemaVersion: 2, findings: committedFindings },
+            }
+          : {
+              baseAuthority: session.authority,
+              targetAuthority,
+              baseDocumentHash: session.baseDocumentHash,
+              document,
+              findingEnvelope: { schemaVersion: 2, findings: committedFindings },
+            };
       await this.workspace.commitCorrection(input);
       session.baseDocumentHash = stagingDocumentHash(document);
       session.authority = targetAuthority;
+      delete session.snapshotId;
+      session.baseCurrentContentHash = null;
       session.storedFindings = committedFindings;
       session.undoStack = [];
       session.redoStack = [];
       session.sessionVersion += 1;
       return { session: snapshot(session), committedAuthority: targetAuthority };
-    } finally {
-      session.operationInProgress = false;
-    }
+    });
   }
   public async original(sessionId: string): Promise<StagingGameDocumentV2> {
     const session = this.required(sessionId);
@@ -230,8 +273,7 @@ export class CorrectionSessionManager {
     sessionId: string,
     expected: number,
   ): Promise<CorrectionMutationResult> {
-    const session = this.beginOperation(sessionId, expected);
-    try {
+    return this.withSessionLock(sessionId, expected, async (session) => {
       const original = await this.workspace.readOriginal(
         session.document.metadata.season,
         session.gameId,
@@ -252,16 +294,17 @@ export class CorrectionSessionManager {
         session: snapshot(session),
         preview: buildCorrectionPreview(before, beforeReplay, rebasedOriginal, replay),
       };
-    } finally {
-      session.operationInProgress = false;
-    }
+    });
   }
-  public delete(sessionId: string, expected: number): void {
-    this.requiredVersion(sessionId, expected);
-    this.sessions.delete(sessionId);
+  public async delete(sessionId: string, expected: number): Promise<void> {
+    await this.withSessionLock(sessionId, expected, () => {
+      this.sessions.delete(sessionId);
+    });
+    this.mutexes.delete(sessionId);
   }
   public close(): void {
     this.sessions.clear();
+    this.mutexes.clear();
   }
   private required(sessionId: string): InternalSession {
     const session = this.sessions.get(sessionId);
@@ -271,18 +314,40 @@ export class CorrectionSessionManager {
   }
   private requiredVersion(sessionId: string, expected: number): InternalSession {
     const session = this.required(sessionId);
-    if (session.operationInProgress)
-      throw new StaleCorrectionSessionError("session mutation이 이미 진행 중입니다.");
     if (session.sessionVersion !== expected)
       throw new StaleCorrectionSessionError(
         `stale session: expected=${String(expected)}, current=${String(session.sessionVersion)}`,
       );
     return session;
   }
-  private beginOperation(sessionId: string, expected: number): InternalSession {
-    const session = this.requiredVersion(sessionId, expected);
-    session.operationInProgress = true;
-    return session;
+  private async withSessionLock<Result>(
+    sessionId: string,
+    expected: number,
+    operation: (session: InternalSession) => Result | Promise<Result>,
+  ): Promise<Result> {
+    const mutex = this.mutexes.get(sessionId);
+    if (mutex === undefined) this.required(sessionId);
+    if (mutex === undefined)
+      throw new CorrectionSessionNotFoundError("보정 session을 찾을 수 없습니다.");
+    return mutex.run(() => operation(this.requiredVersion(sessionId, expected)));
+  }
+}
+
+class AsyncMutex {
+  private tail: Promise<void> = Promise.resolve();
+
+  public async run<Result>(operation: () => Result | Promise<Result>): Promise<Result> {
+    let release = (): void => undefined;
+    const previous = this.tail;
+    this.tail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+    }
   }
 }
 
@@ -300,6 +365,7 @@ function snapshot(session: InternalSession): CorrectionSession {
   return {
     sessionId: session.sessionId,
     authority: session.authority,
+    ...(session.snapshotId === undefined ? {} : { snapshotId: session.snapshotId }),
     gameId: session.gameId,
     baseDocumentHash: session.baseDocumentHash,
     sessionVersion: session.sessionVersion,
@@ -343,6 +409,13 @@ function snapshot(session: InternalSession): CorrectionSession {
     dirty: session.undoStack.length > 0,
   };
 }
+
+function requiredSnapshotId(session: InternalSession): string {
+  if (session.snapshotId === undefined) {
+    throw new CorrectionCommitBlockedError("superseded session snapshot ID가 없습니다.");
+  }
+  return session.snapshotId;
+}
 function storedFindingSnapshot(gameId: string, finding: StoredFinding): CorrectionFinding {
   return {
     code: finding.code,
@@ -366,8 +439,10 @@ function mergePersistentSourceFindings(
   document: StagingGameDocumentV2,
 ): StoredFinding[] {
   const findings: StoredFinding[] = [
-    ...stored.filter((finding) => isPersistentSourceFinding(finding, document)),
+    ...stored.filter((finding) => shouldRetainStoredFinding(finding, document)),
     ...current.map((finding) => ({
+      producer: "compiler" as const,
+      lifecycle: "recomputed" as const,
       code: finding.code,
       category: finding.category,
       severity: finding.severity,
@@ -382,36 +457,23 @@ function mergePersistentSourceFindings(
   ];
   const seen = new Set<string>();
   return findings.filter((finding) => {
-    const key = JSON.stringify([
-      finding.code,
-      finding.eventId ?? null,
-      finding.eventSequence ?? null,
-      finding.recordIdentity ?? null,
-      finding.endpoint ?? null,
-      finding.details ?? [],
-    ]);
+    const key = canonicalStringify(finding);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
 }
-function isPersistentSourceFinding(
+function shouldRetainStoredFinding(
   finding: StoredFinding,
   document: StagingGameDocumentV2,
 ): boolean {
-  const { code } = finding;
-  if (!code.startsWith("source.")) return false;
-  if (code.startsWith("source.relay.") && finding.eventId !== undefined) {
+  if (finding.lifecycle === "persistent") return true;
+  if (finding.lifecycle === "while_event_unresolved" && finding.eventId !== undefined) {
     return document.events.some(
       (event) => event.identity.eventId === finding.eventId && event.kind === "unresolved",
     );
   }
-  if (code === "source.unresolved_relay_row") return false;
-  if (code === "source.pitch_id.reused_within_game") return false;
-  if (code.startsWith("source.tracking.") && code !== "source.tracking.stance_unknown") {
-    return false;
-  }
-  return true;
+  return false;
 }
 function correctionState(state: GameState): CorrectionSession["eventContexts"][number]["after"] {
   return {

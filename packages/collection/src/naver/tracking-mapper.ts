@@ -53,6 +53,7 @@ export function mapNaverTrackingCandidates(
           sourceFinding(
             "source.tracking.stance_unknown",
             "warning",
+            "persistent",
             `알 수 없는 tracking 타석 방향입니다: ${stance}`,
             block.endpoint,
             block.endpointBlockIndex,
@@ -171,6 +172,7 @@ function resolveBlockTrackingCandidates(
         sourceFinding(
           "source.tracking.unlinked",
           "blocking",
+          "recomputed",
           "tracking 관측값에 대응하는 원천 투구 ID가 없습니다.",
           candidate.source.endpoint,
           candidate.source.blockIndex,
@@ -234,6 +236,7 @@ function resolveBlockTrackingCandidates(
               ? "source.tracking.unlinked"
               : "source.tracking.cardinality_mismatch",
           "blocking",
+          "recomputed",
           conflict
             ? "하나의 원천 투구 행에 서로 다른 tracking 관측값이 있습니다."
             : pitchEventIds.length === 0
@@ -280,12 +283,14 @@ function trackingFactFingerprint(candidate: TrackingCandidate): string {
 function sourceFinding(
   code: string,
   severity: "warning" | "blocking",
+  lifecycle: SourceFinding["lifecycle"],
   message: string,
   endpoint: string | null,
   blockIndex?: number,
   rowIndex?: number,
 ): SourceFinding {
   return {
+    lifecycle,
     code,
     severity,
     message,

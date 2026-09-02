@@ -1,13 +1,16 @@
-import { mkdtempDisposable, readFile, readdir, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { copyFile, mkdtempDisposable, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 import { describe, expect, it } from "vitest";
 
 import { mapNaverGame } from "@kbo/collection";
+import { canonicalStringify, parseCurrentWorkspaceEntry } from "@kbo/contracts";
 import { applyCorrectionCommand } from "@kbo/correction";
 import { stagingDocumentHash } from "@kbo/game-core";
-import { StagingWorkspace } from "@kbo/persistence";
+import { StagingWorkspace, WorkspacePersistenceBlockedError } from "@kbo/persistence";
 
 import { sanitizedNaverBundle } from "../helpers/naver.js";
 
@@ -17,25 +20,32 @@ describe("staging workspace", () => {
     const workspace = await StagingWorkspace.open(temporary.path);
     const { document } = mapNaverGame(await sanitizedNaverBundle());
     const finding = {
+      producer: "collection" as const,
+      lifecycle: "persistent" as const,
       code: "source.observation",
       category: "source" as const,
       severity: "warning" as const,
       message: "관측 차이",
     };
     await workspace.saveReady(document, [finding]);
-    const directory = path.join(temporary.path, "staging", String(document.metadata.season));
-    expect((await readdir(directory)).sort()).toEqual([
-      `${document.metadata.gameId}.findings.json`,
-      `${document.metadata.gameId}.json`,
-    ]);
-    expect(
-      JSON.parse(await readFile(path.join(directory, `${document.metadata.gameId}.json`), "utf8")),
-    ).not.toHaveProperty("findings");
-    expect(
+    const current = parseCurrentWorkspaceEntry(
       JSON.parse(
-        await readFile(path.join(directory, `${document.metadata.gameId}.findings.json`), "utf8"),
-      ),
-    ).toEqual([finding]);
+        await readFile(
+          path.join(temporary.path, "current", `${document.metadata.gameId}.json`),
+          "utf8",
+        ),
+      ) as unknown,
+    );
+    expect(current).toMatchObject({
+      gameId: document.metadata.gameId,
+      authority: "ready",
+      generation: 1,
+    });
+    const artifact = path.join(temporary.path, ...current.artifactPath.split("/"));
+    expect(JSON.parse(await readFile(artifact, "utf8"))).not.toHaveProperty("findings");
+    expect(
+      JSON.parse(await readFile(artifact.replace(".document.json", ".findings.json"), "utf8")),
+    ).toEqual({ schemaVersion: 2, findings: [finding] });
     expect(
       await workspace.readFindings("staging", document.metadata.season, document.metadata.gameId),
     ).toEqual([finding]);
@@ -55,12 +65,46 @@ describe("staging workspace", () => {
     await workspace.close();
   });
 
+  it("동일 canonical source는 gzip 압축 바이트가 달라도 immutable 재전송으로 인정한다", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-source-gzip-"));
+    const workspace = await StagingWorkspace.open(temporary.path);
+    const gameId = "20260715GZIP";
+    const payloads = { preview: { status: "final", score: 1 } };
+    const sourceBundleHash = createHash("sha256")
+      .update(canonicalStringify({ gameId, missingEndpoints: [], payloads }), "utf8")
+      .digest("hex");
+    const bundle = {
+      gameId,
+      season: 2026,
+      collectedAt: "2026-07-15T00:00:00.000Z",
+      sourceBundleHash,
+      payloads,
+      missingEndpoints: [],
+    };
+    await workspace.saveSourceBundle(bundle);
+    const target = path.join(
+      temporary.path,
+      "source",
+      "2026",
+      gameId,
+      sourceBundleHash,
+      "preview.json.gz",
+    );
+    const canonical = gunzipSync(await readFile(target));
+    await writeFile(target, gzipSync(canonical, { level: 1 }));
+
+    await expect(workspace.saveSourceBundle(bundle)).resolves.toBeUndefined();
+    await workspace.close();
+  });
+
   it("finding이 없으면 sidecar를 만들지 않고 기존 sidecar도 제거한다", async () => {
     await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-empty-findings-"));
     const workspace = await StagingWorkspace.open(temporary.path);
     const { document } = mapNaverGame(await sanitizedNaverBundle());
     await workspace.saveReady(document, [
       {
+        producer: "collection",
+        lifecycle: "persistent",
         code: "source.observation",
         category: "source",
         severity: "warning",
@@ -69,11 +113,14 @@ describe("staging workspace", () => {
     ]);
     await workspace.saveReady(document, []);
 
-    const directory = path.join(temporary.path, "staging", String(document.metadata.season));
-    expect(await readdir(directory)).toEqual([`${document.metadata.gameId}.json`]);
+    const active = path.join(temporary.path, "active", document.metadata.gameId);
+    expect(await readdir(active)).toEqual([
+      expect.stringMatching(/^2-[0-9a-f]{64}\.document\.json$/),
+    ]);
     expect((await workspace.catalog()).games[0]).toMatchObject({
       blockingFindings: 0,
       warningFindings: 0,
+      supersededCount: 1,
     });
     await workspace.close();
   });
@@ -110,6 +157,8 @@ describe("staging workspace", () => {
     const workspace = await StagingWorkspace.open(temporary.path);
     const { document } = mapNaverGame(await sanitizedNaverBundle());
     const originalFinding = {
+      producer: "collection" as const,
+      lifecycle: "persistent" as const,
       code: "source.original",
       category: "source" as const,
       severity: "warning" as const,
@@ -142,6 +191,8 @@ describe("staging workspace", () => {
     await expect(
       workspace.saveQuarantine(document, [
         {
+          producer: "collection",
+          lifecycle: "persistent",
           code: "source.observation",
           category: "source",
           severity: "warning",
@@ -167,6 +218,8 @@ describe("staging workspace", () => {
     const workspace = await StagingWorkspace.open(temporary.path);
     await workspace.saveSourceFailure("20260715FAIL", [
       {
+        producer: "collection",
+        lifecycle: "persistent",
         code: "source.endpoint_missing",
         category: "source",
         severity: "blocking",
@@ -175,7 +228,7 @@ describe("staging workspace", () => {
     ]);
     expect((await workspace.catalog()).games[0]).toMatchObject({
       gameId: "20260715FAIL",
-      season: 2026,
+      season: null,
       authority: "source_failure",
       blockingFindings: 1,
     });
@@ -187,6 +240,8 @@ describe("staging workspace", () => {
     const { document } = mapNaverGame(await sanitizedNaverBundle());
     await workspace.saveSourceFailure(document.metadata.gameId, [
       {
+        producer: "collection",
+        lifecycle: "persistent",
         code: "source.transport_failed",
         category: "source",
         severity: "blocking",
@@ -199,6 +254,7 @@ describe("staging workspace", () => {
       expect.objectContaining({
         gameId: document.metadata.gameId,
         authority: "staging",
+        supersededCount: 1,
       }),
     ]);
     await workspace.close();
@@ -220,6 +276,7 @@ describe("staging workspace", () => {
       currentGameId: "20260820AABB",
       summary: { ready: 1, quarantined: 1, sourceFailures: 0 },
       error: null,
+      errorCategory: null,
     });
     await first.close();
 
@@ -252,16 +309,16 @@ describe("staging workspace", () => {
     );
     const { document } = mapNaverGame(await sanitizedNaverBundle());
     await first.saveReady(document, []);
-    const movedEvent = document.events[2];
-    const targetEvent = document.events[1];
-    if (movedEvent === undefined || targetEvent === undefined) {
-      throw new Error("fixture correction events missing");
+    const player = document.rosters.away.players[0];
+    if (player === undefined) {
+      throw new Error("fixture correction roster missing");
     }
     const command = {
-      commandId: "staging-recovery-move",
-      kind: "move_event" as const,
-      eventId: movedEvent.identity.eventId,
-      beforeEventId: targetEvent.identity.eventId,
+      commandId: "staging-recovery-roster-position",
+      kind: "update_roster_position" as const,
+      side: "away" as const,
+      playerId: player.playerId,
+      positions: [...player.positions, "대체"],
     };
     const corrected = applyCorrectionCommand(document, command);
     await expect(
@@ -271,7 +328,14 @@ describe("staging workspace", () => {
           targetAuthority: "staging",
           baseDocumentHash: stagingDocumentHash(document),
           document: corrected.document,
-          findings: corrected.replay.findings,
+          findingEnvelope: {
+            schemaVersion: 2,
+            findings: corrected.replay.findings.map((finding) => ({
+              ...finding,
+              producer: "compiler" as const,
+              lifecycle: "recomputed" as const,
+            })),
+          },
         },
         "after_current",
       ),
@@ -304,6 +368,8 @@ describe("staging workspace", () => {
 
     await workspace.saveSourceFailure("20260715FAIL", [
       {
+        producer: "collection",
+        lifecycle: "persistent",
         code: "source.endpoint_missing",
         category: "source",
         severity: "blocking",
@@ -317,5 +383,99 @@ describe("staging workspace", () => {
       }),
     ]);
     await workspace.close();
+  });
+
+  it("중단된 workspace transition journal을 startup에서 결정론적으로 roll-forward한다", async () => {
+    await using temporary = await mkdtempDisposable(
+      path.join(tmpdir(), "kbo-transition-recovery-"),
+    );
+    const first = await StagingWorkspace.open(temporary.path);
+    const { document } = mapNaverGame(await sanitizedNaverBundle());
+    await first.saveReady(document, []);
+    const currentPath = path.join(temporary.path, "current", `${document.metadata.gameId}.json`);
+    const previous = parseCurrentWorkspaceEntry(JSON.parse(await readFile(currentPath, "utf8")));
+    const player = document.rosters.away.players[0];
+    if (player === undefined) throw new Error("transition fixture player가 없습니다.");
+    const changed = applyCorrectionCommand(document, {
+      commandId: "transition-recovery-change",
+      kind: "update_roster_position",
+      side: "away",
+      playerId: player.playerId,
+      positions: [...player.positions, "복구"],
+    }).document;
+    const envelope = { schemaVersion: 2 as const, findings: [] };
+    const contentHash = createHash("sha256")
+      .update(canonicalStringify({ document: changed, findingEnvelope: envelope }), "utf8")
+      .digest("hex");
+    const artifactPath = `active/${document.metadata.gameId}/2-${contentHash}.document.json`;
+    await writeFile(
+      path.join(temporary.path, ...artifactPath.split("/")),
+      `${canonicalStringify(changed)}\n`,
+    );
+    const target = {
+      schemaVersion: 1 as const,
+      gameId: document.metadata.gameId,
+      season: document.metadata.season,
+      authority: "ready" as const,
+      generation: 2,
+      updatedAt: "2026-08-20T04:00:00.000Z",
+      artifactPath,
+      contentHash,
+      documentHash: stagingDocumentHash(changed),
+    };
+    await writeFile(
+      path.join(
+        temporary.path,
+        "journals",
+        `workspace-${document.metadata.gameId}-test-transition.json`,
+      ),
+      `${canonicalStringify({
+        schemaVersion: 1,
+        transitionId: "test-transition",
+        gameId: document.metadata.gameId,
+        previous,
+        target,
+        createdAt: "2026-08-20T04:00:00.000Z",
+      })}\n`,
+    );
+    await first.close();
+
+    const restarted = await StagingWorkspace.open(temporary.path);
+    expect(
+      await restarted.readDocument("staging", document.metadata.season, document.metadata.gameId),
+    ).toEqual(changed);
+    expect(
+      (await readdir(path.join(temporary.path, "journals"))).filter((name) =>
+        name.startsWith("workspace-"),
+      ),
+    ).toEqual([]);
+    await restarted.close();
+  });
+
+  it("journal 없는 orphan active artifact를 startup에서 persistence-blocked로 거부한다", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-orphan-active-"));
+    const first = await StagingWorkspace.open(temporary.path);
+    const { document } = mapNaverGame(await sanitizedNaverBundle());
+    await first.saveReady(document, []);
+    const current = parseCurrentWorkspaceEntry(
+      JSON.parse(
+        await readFile(
+          path.join(temporary.path, "current", `${document.metadata.gameId}.json`),
+          "utf8",
+        ),
+      ),
+    );
+    const orphan = path.join(
+      temporary.path,
+      "active",
+      document.metadata.gameId,
+      `2-${"a".repeat(64)}.document.json`,
+    );
+    await copyFile(path.join(temporary.path, ...current.artifactPath.split("/")), orphan);
+    await first.close();
+
+    await expect(StagingWorkspace.open(temporary.path)).rejects.toThrow(
+      WorkspacePersistenceBlockedError,
+    );
   });
 });

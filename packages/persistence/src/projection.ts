@@ -9,9 +9,17 @@ import { applyPitchCall, type GameState, type ReplayResult } from "@kbo/game-cor
 
 export type ProjectionScalar = string | number | boolean | null;
 export type ProjectionRow = Readonly<Record<string, ProjectionScalar>>;
-import { PROJECTION_TABLE_COLUMNS, type ProjectionTableName } from "./projection-descriptor.js";
+import {
+  PROJECTION_TABLE_COLUMNS,
+  PROJECTION_TABLE_DESCRIPTORS,
+  type ProjectionTableName,
+} from "./projection-descriptor.js";
 
-export { PROJECTION_TABLE_COLUMNS } from "./projection-descriptor.js";
+export {
+  decodeProjectionRow,
+  PROJECTION_TABLE_COLUMNS,
+  PROJECTION_TABLE_DESCRIPTORS,
+} from "./projection-descriptor.js";
 export type { ProjectionTableName } from "./projection-descriptor.js";
 export type ProjectionTables = Readonly<Record<ProjectionTableName, readonly ProjectionRow[]>>;
 export type ProjectionVersion = 3;
@@ -392,7 +400,7 @@ export function buildRelationalProjection(
 }
 
 export function projectionCounts(tables: ProjectionTables): ProjectionCounts {
-  return Object.fromEntries(Object.entries(tables).map(([table, rows]) => [table, rows.length]));
+  return mapProjectionTables((table) => tables[table].length);
 }
 export function hashProjectionTables(tables: ProjectionTables): string {
   return hashNormalizedProjectionTables(normalizeProjectionTables(tables));
@@ -400,35 +408,19 @@ export function hashProjectionTables(tables: ProjectionTables): string {
 
 function hashNormalizedProjectionTables(tables: ProjectionTables): string {
   return createHash("sha256")
-    .update(
-      canonicalStringify(
-        Object.fromEntries(
-          (Object.keys(PROJECTION_TABLE_COLUMNS) as ProjectionTableName[]).map((table) => [
-            table,
-            tables[table],
-          ]),
-        ),
-      ),
-      "utf8",
-    )
+    .update(canonicalStringify(mapProjectionTables((table) => tables[table])), "utf8")
     .digest("hex");
 }
 
 export function normalizeProjectionTables(tables: ProjectionTables): ProjectionTables {
-  const entries = (Object.keys(PROJECTION_TABLE_COLUMNS) as ProjectionTableName[]).map(
-    (table): [ProjectionTableName, readonly ProjectionRow[]] => {
-      const columns = PROJECTION_TABLE_COLUMNS[table];
-      const rows = tables[table];
-      if (!Array.isArray(rows)) {
-        throw new ProjectionShapeError(`${table} projection table이 배열이 아닙니다.`);
-      }
-      return [
-        table,
-        rows.map((row, rowIndex) => normalizeProjectionRow(table, rowIndex, columns, row)),
-      ];
-    },
-  );
-  return Object.fromEntries(entries) as ProjectionTables;
+  return mapProjectionTables((table) => {
+    const columns = PROJECTION_TABLE_COLUMNS[table];
+    const rows = tables[table];
+    if (!Array.isArray(rows)) {
+      throw new ProjectionShapeError(`${table} projection table이 배열이 아닙니다.`);
+    }
+    return rows.map((row, rowIndex) => normalizeProjectionRow(table, rowIndex, columns, row));
+  });
 }
 
 function normalizeProjectionRow(
@@ -464,7 +456,54 @@ function normalizeProjectionRow(
       `${table}[${String(rowIndex)}] projection column 불일치: ${details.join("; ")}`,
     );
   }
-  return Object.fromEntries(columns.map((column) => [column, row[column] as ProjectionScalar]));
+  const normalized: Record<string, ProjectionScalar> = {};
+  for (const column of columns) {
+    const value = row[column];
+    if (!isProjectionScalar(value)) {
+      throw new ProjectionShapeError(
+        `${table}[${String(rowIndex)}] ${column} projection scalar가 올바르지 않습니다.`,
+      );
+    }
+    normalized[column] = value;
+  }
+  return normalized;
+}
+
+function mapProjectionTables<Value>(
+  mapper: (table: ProjectionTableName) => Value,
+): Record<ProjectionTableName, Value> {
+  return {
+    game_team_snapshots: mapper("game_team_snapshots"),
+    game_roster_snapshots: mapper("game_roster_snapshots"),
+    game_roster_positions: mapper("game_roster_positions"),
+    relay_event_facts: mapper("relay_event_facts"),
+    relay_half_inning_starts: mapper("relay_half_inning_starts"),
+    relay_batter_starts: mapper("relay_batter_starts"),
+    relay_pitches: mapper("relay_pitches"),
+    relay_plate_results: mapper("relay_plate_results"),
+    relay_runner_advances: mapper("relay_runner_advances"),
+    relay_substitutions: mapper("relay_substitutions"),
+    relay_reviews: mapper("relay_reviews"),
+    relay_administrative: mapper("relay_administrative"),
+    relay_unresolved: mapper("relay_unresolved"),
+    tracking_observations: mapper("tracking_observations"),
+    pitch_facts: mapper("pitch_facts"),
+    pitch_tracking_links: mapper("pitch_tracking_links"),
+    official_batter_lines: mapper("official_batter_lines"),
+    official_pitcher_lines: mapper("official_pitcher_lines"),
+    play_facts: mapper("play_facts"),
+    play_events: mapper("play_events"),
+    runner_movement_facts: mapper("runner_movement_facts"),
+    game_final_states: mapper("game_final_states"),
+    plate_appearance_facts: mapper("plate_appearance_facts"),
+    plate_appearance_events: mapper("plate_appearance_events"),
+    batter_game_facts: mapper("batter_game_facts"),
+    pitcher_game_facts: mapper("pitcher_game_facts"),
+    baserunner_game_facts: mapper("baserunner_game_facts"),
+    validation_runs: mapper("validation_runs"),
+    validation_issues: mapper("validation_issues"),
+    validation_issue_details: mapper("validation_issue_details"),
+  };
 }
 
 function isProjectionScalar(value: unknown): value is ProjectionScalar {

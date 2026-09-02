@@ -1,5 +1,5 @@
 import { mapNaverGame, type RawGameBundle, type SourceFinding } from "@kbo/collection";
-import type { StagingGameDocumentV2 } from "@kbo/contracts";
+import { canonicalStringify, type StagingGameDocumentV2 } from "@kbo/contracts";
 import { compileStagingGameDocumentV2 } from "@kbo/game-core";
 import type { CurrentRevisionBase, StoredFinding } from "@kbo/persistence";
 
@@ -32,6 +32,8 @@ export function projectNaverSourceBundle(
       ...providerFindings.map(storedSourceFinding),
       ...mapped.findings.map(storedSourceFinding),
       ...replay.findings.map((finding) => ({
+        producer: "compiler" as const,
+        lifecycle: "recomputed" as const,
         code: finding.code,
         category: finding.category,
         severity: finding.severity,
@@ -63,6 +65,8 @@ export function storedSourceFinding(finding: SourceFinding): StoredFinding {
       : [{ field: "source_text", actual: finding.sourceText }]),
   ];
   return {
+    producer: "collection",
+    lifecycle: finding.lifecycle,
     code: finding.code,
     category: "source",
     severity: finding.severity,
@@ -73,19 +77,29 @@ export function storedSourceFinding(finding: SourceFinding): StoredFinding {
   };
 }
 
+export function storedCompilerFindings(
+  findings: ReturnType<typeof compileStagingGameDocumentV2>["findings"],
+): StoredFinding[] {
+  return findings.map((finding) => ({
+    producer: "compiler",
+    lifecycle: "recomputed",
+    code: finding.code,
+    category: finding.category,
+    severity: finding.severity,
+    message: finding.message,
+    ...(finding.eventId === undefined ? {} : { eventId: finding.eventId }),
+    ...(finding.eventSequence === undefined ? {} : { eventSequence: finding.eventSequence }),
+    ...(finding.recordIdentity === undefined ? {} : { recordIdentity: finding.recordIdentity }),
+    ...(finding.details.length === 0
+      ? {}
+      : { details: finding.details.map((detail) => ({ ...detail })) }),
+  }));
+}
+
 function deduplicateStoredFindings(findings: readonly StoredFinding[]): StoredFinding[] {
   const seen = new Set<string>();
   return findings.filter((finding) => {
-    const key = JSON.stringify([
-      finding.code,
-      finding.category,
-      finding.severity,
-      finding.eventId ?? null,
-      finding.eventSequence ?? null,
-      finding.recordIdentity ?? null,
-      finding.endpoint ?? null,
-      finding.details ?? [],
-    ]);
+    const key = canonicalStringify(finding);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

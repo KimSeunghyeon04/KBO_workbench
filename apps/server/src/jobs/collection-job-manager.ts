@@ -341,14 +341,20 @@ export class CollectionJobManager {
         error instanceof NaverSourceFormatError || error instanceof Error
           ? error.message
           : "Naver mapping 중 알 수 없는 오류가 발생했습니다.";
-      await this.workspace.saveSourceFailure(gameId, [
-        {
-          code: "source.mapping_failed",
-          category: "source",
-          severity: "blocking",
-          message,
-        },
-      ]);
+      await this.workspace.saveSourceFailure(
+        gameId,
+        [
+          {
+            producer: "collection",
+            lifecycle: "persistent",
+            code: "source.mapping_failed",
+            category: "source",
+            severity: "blocking",
+            message,
+          },
+        ],
+        sourceSeason,
+      );
       return "source_failure";
     }
   }

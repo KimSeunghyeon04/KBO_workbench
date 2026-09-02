@@ -170,7 +170,7 @@ export const correctionRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (
       },
     },
     async (request, reply) => {
-      context.runtime.correctionSessions.delete(
+      await context.runtime.correctionSessions.delete(
         request.params.sessionId,
         request.query.expectedSessionVersion,
       );

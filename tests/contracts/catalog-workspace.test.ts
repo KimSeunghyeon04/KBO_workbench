@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 import {
+  parseCollectionJob,
   CorrectionJournalSchema,
   GameCatalogItemSchema,
   parseSourceBundleManifest,
@@ -9,8 +10,7 @@ import {
   parseWriterLockOwner,
 } from "@kbo/contracts";
 import { describe, expect, it } from "vitest";
-
-import { Value } from "../../packages/contracts/node_modules/@sinclair/typebox/build/cjs/value/index.js";
+import { Value } from "@sinclair/typebox/value";
 
 const base = {
   gameId: "anon-game-1",
@@ -22,7 +22,7 @@ const base = {
 
 describe("catalog authority union과 workspace file codec", () => {
   it("authority별 필수 필드와 금지 필드를 strict하게 구분한다", () => {
-    const workspace = { ...base, authority: "staging" };
+    const workspace = { ...base, authority: "staging", supersededCount: 0 };
     const database = {
       ...base,
       authority: "database",
@@ -48,6 +48,8 @@ describe("catalog authority union과 workspace file codec", () => {
       ]),
     ).toThrow();
     const finding = {
+      producer: "collection" as const,
+      lifecycle: "persistent" as const,
       code: "source.test",
       category: "source" as const,
       severity: "blocking" as const,
@@ -56,8 +58,9 @@ describe("catalog authority union과 workspace file codec", () => {
     expect(() =>
       parseSourceFailureRecord({
         gameId: "anon-game-1",
+        season: null,
         recordedAt: "2026-08-30T00:00:00.000Z",
-        findings: [finding],
+        findingEnvelope: { schemaVersion: 2, findings: [finding] },
         extra: true,
       }),
     ).toThrow();
@@ -85,11 +88,29 @@ describe("catalog authority union과 workspace file codec", () => {
       targetAuthority: "staging",
       baseDocumentHash: "a".repeat(64),
       document,
-      findings: [],
+      findingEnvelope: { schemaVersion: 2, findings: [] },
       beforeDocument: document,
       createdAt: "2026-08-30T00:00:00.000Z",
     };
     expect(Value.Check(CorrectionJournalSchema, journal)).toBe(true);
     expect(Value.Check(CorrectionJournalSchema, { ...journal, extra: true })).toBe(false);
+  });
+
+  it("오래된 collection journal의 누락 필드를 암묵적으로 backfill하지 않는다", () => {
+    expect(() =>
+      parseCollectionJob({
+        jobId: "legacy-job",
+        kind: "collection",
+        status: "running",
+        createdAt: "2026-08-30T00:00:00.000Z",
+        startedAt: null,
+        finishedAt: null,
+        completedItems: 0,
+        totalItems: null,
+        currentGameId: null,
+        summary: { ready: 0, quarantined: 0, sourceFailures: 0 },
+        error: null,
+      }),
+    ).toThrow();
   });
 });

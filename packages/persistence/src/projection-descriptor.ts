@@ -1,3 +1,5 @@
+import { PersistenceIntegrityError } from "./errors.js";
+
 function stateColumns(prefix: string): string[] {
   return [
     "inning",
@@ -473,7 +475,12 @@ export interface ProjectionTableDescriptor<Name extends ProjectionTableName = Pr
   readonly schema: "workbench" | "baseball";
   readonly columns: (typeof PROJECTION_TABLE_COLUMNS)[Name];
   readonly orderBy: string;
+  readonly uniqueBy: readonly string[];
+  readonly decodeRow: (row: unknown, rowIndex: number) => DecodedProjectionRow;
 }
+
+export type DecodedProjectionScalar = string | number | boolean | null;
+export type DecodedProjectionRow = Readonly<Record<string, DecodedProjectionScalar>>;
 
 export const PROJECTION_TABLE_DESCRIPTORS = (
   Object.keys(PROJECTION_TABLE_COLUMNS) as ProjectionTableName[]
@@ -504,4 +511,454 @@ export const PROJECTION_TABLE_DESCRIPTORS = (
     : "baseball",
   columns: PROJECTION_TABLE_COLUMNS[name],
   orderBy: PROJECTION_TABLE_ORDER[name],
+  uniqueBy: PROJECTION_TABLE_ORDER[name].split(", "),
+  decodeRow: (row, rowIndex) => decodeProjectionRow(name, rowIndex, row),
 }));
+
+const BOOLEAN_COLUMNS = new Set([
+  "starter",
+  "is_bunt",
+  "supersedes_third_out",
+  "actual",
+  "ball",
+  "called_strike",
+  "swing",
+  "whiff",
+  "foul",
+  "in_play",
+  "strike",
+  "csw",
+  "applied",
+  "before_half_active",
+  "after_half_active",
+  "final_half_active",
+  "derived",
+  "completed",
+  "counts_as_plate_appearance",
+  "counts_as_at_bat",
+  "counts_as_batter_faced",
+  "expected_boolean",
+  "actual_boolean",
+]);
+
+const FLOAT_COLUMNS = new Set([
+  "x0",
+  "y0",
+  "z0",
+  "vx0",
+  "vy0",
+  "vz0",
+  "ax",
+  "ay",
+  "az",
+  "cross_plate_x",
+  "cross_plate_y",
+  "top_sz",
+  "bottom_sz",
+  "expected_number",
+  "actual_number",
+]);
+
+const INTEGER_COLUMNS = new Set([
+  "revision",
+  "roster_index",
+  "batting_order",
+  "position_index",
+  "event_sequence",
+  "source_block_index",
+  "source_event_index",
+  "inning",
+  "observed_balls",
+  "observed_strikes",
+  "observed_outs",
+  "observed_away_score",
+  "observed_home_score",
+  "credited_rbi",
+  "outs_recorded",
+  "batter_destination",
+  "from_base",
+  "to_base",
+  "tracking_sequence",
+  "source_pitch_ordinal",
+  "source_row_index",
+  "record_index",
+  "play_sequence",
+  "source_sequence",
+  "relay_order",
+  "movement_sequence",
+  "plate_appearance_index",
+  "actual_pitch_count",
+  "event_number",
+  "pitch_event_number",
+  "pitch_number",
+  "pitch_sequence",
+  "actual_pitch_number",
+  "line_index",
+  "plate_appearances",
+  "at_bats",
+  "runs",
+  "hits",
+  "doubles",
+  "triples",
+  "home_runs",
+  "runs_batted_in",
+  "walks",
+  "intentional_walks",
+  "hit_by_pitch",
+  "strikeouts",
+  "sacrifice_bunts",
+  "sacrifice_flies",
+  "batters_faced",
+  "earned_runs",
+  "official_earned_runs",
+  "pitches",
+  "strikes",
+  "advances",
+  "extra_bases_taken",
+  "stolen_bases",
+  "caught_stealing",
+  "pickoffs",
+  "blocking_count",
+  "warning_count",
+  "issue_count",
+  "issue_index",
+  "detail_index",
+]);
+
+const NULLABLE_COLUMNS: Readonly<Partial<Record<ProjectionTableName, readonly string[]>>> = {
+  game_roster_snapshots: ["batting_order"],
+  relay_event_facts: [
+    "source_endpoint",
+    "source_block_index",
+    "source_event_index",
+    "source_event_id",
+    "relay_text",
+    "observed_balls",
+    "observed_strikes",
+    "observed_outs",
+    "observed_base1",
+    "observed_base2",
+    "observed_base3",
+    "observed_away_score",
+    "observed_home_score",
+  ],
+  relay_pitches: ["source_pitch_id", "batter_id", "pitcher_id"],
+  relay_plate_results: [
+    "credited_rbi",
+    "outs_recorded",
+    "batter_destination",
+    "batted_ball_type",
+    "is_bunt",
+  ],
+  relay_runner_advances: [
+    "runner_out_kind",
+    "supersedes_third_out",
+    "responsible_pitcher_id",
+    "plate_result_event_id",
+    "runner_reason",
+  ],
+  relay_substitutions: ["outgoing_player_id", "batting_order", "field_position"],
+  relay_reviews: ["review_decision", "reviewed_event_id"],
+  relay_unresolved: ["suspected_kind"],
+  tracking_observations: [
+    "source_pitch_id",
+    "source_pitch_ordinal",
+    "plate_appearance_event_id",
+    "pitcher_id",
+    "batter_id",
+    "observed_at",
+    "stance",
+    "x0",
+    "y0",
+    "z0",
+    "vx0",
+    "vy0",
+    "vz0",
+    "ax",
+    "ay",
+    "az",
+    "cross_plate_x",
+    "cross_plate_y",
+    "top_sz",
+    "bottom_sz",
+    "pitch_event_id",
+    "canonical_tracking_id",
+    "exclusion_reason",
+    "exclusion_note",
+  ],
+  official_batter_lines: [
+    "plate_appearances",
+    "doubles",
+    "triples",
+    "intentional_walks",
+    "hit_by_pitch",
+    "sacrifice_bunts",
+    "sacrifice_flies",
+  ],
+  official_pitcher_lines: ["intentional_walks", "pitches", "strikes"],
+  play_facts: stateNullableColumns("before", "after"),
+  play_events: ["relay_text"],
+  runner_movement_facts: ["source_event_id", "out_kind", "supersedes_third_out"],
+  game_final_states: stateNullableColumns("final"),
+  plate_appearance_facts: ["end_event_id", "result", "batted_ball_type", "is_bunt"],
+  plate_appearance_events: ["pitch_event_number", "pitch_number"],
+  pitch_facts: [
+    "plate_appearance_event_id",
+    "pitch_event_number",
+    "actual_pitch_number",
+    "batter_id",
+    "pitcher_id",
+    "source_pitch_id",
+    "before_base1_runner_id",
+    "before_base2_runner_id",
+    "before_base3_runner_id",
+    "after_base1_runner_id",
+    "after_base2_runner_id",
+    "after_base3_runner_id",
+  ],
+  pitcher_game_facts: ["official_earned_runs"],
+  validation_issues: ["event_id", "event_sequence", "record_identity"],
+  validation_issue_details: [
+    "expected_text",
+    "expected_number",
+    "expected_boolean",
+    "actual_text",
+    "actual_number",
+    "actual_boolean",
+  ],
+};
+
+const ENUM_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  side: ["away", "home"],
+  substitution_side: ["away", "home"],
+  half: ["top", "bottom"],
+  before_half: ["top", "bottom"],
+  after_half: ["top", "bottom"],
+  final_half: ["top", "bottom"],
+  identity_kind: ["source", "manual"],
+  pitch_call: [
+    "ball",
+    "called_strike",
+    "swinging_strike",
+    "foul",
+    "foul_bunt",
+    "foul_tip",
+    "in_play",
+    "hit_by_pitch",
+    "automatic_ball",
+    "automatic_strike",
+    "no_pitch",
+  ],
+  plate_result: plateResults(),
+  result: plateResults(),
+  batted_ball_type: ["ground_ball", "fly_ball", "line_drive", "popup"],
+  runner_outcome: ["safe", "out", "scored"],
+  outcome: ["safe", "out", "scored"],
+  runner_out_kind: runnerOutKinds(),
+  out_kind: runnerOutKinds(),
+  runner_context_kind: ["plate_result", "independent"],
+  runner_reason: runnerReasons(),
+  reason: [...runnerReasons(), "plate_result"],
+  substitution_role: ["batter", "runner", "pitcher", "fielder"],
+  review_decision: ["requested", "upheld", "overturned", "inconclusive"],
+  administrative_code: ["announcement", "mound_visit", "break", "footer", "other"],
+  suspected_kind: relayKinds().filter((value) => value !== "unresolved"),
+  stance: ["L", "R", "S"],
+  resolution_kind: ["pending", "linked", "duplicate", "excluded"],
+  exclusion_reason: ["not_a_pitch", "provider_conflict", "invalid_measurement", "manual_other"],
+  termination_reason: [
+    "plate_result",
+    "third_out",
+    "walk_off",
+    "called_game",
+    "forfeit",
+    "source_boundary",
+    "end_of_document",
+  ],
+  category: ["source", "domain", "persistence"],
+  severity: ["warning", "blocking"],
+  expected_type: ["string", "number", "boolean", "null"],
+  actual_type: ["string", "number", "boolean", "null"],
+};
+
+export function decodeProjectionRow(
+  table: ProjectionTableName,
+  rowIndex: number,
+  value: unknown,
+): DecodedProjectionRow {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw integrity(table, rowIndex, "행이 plain object가 아닙니다.");
+  }
+  const row = value as Record<string, unknown>;
+  const columns: readonly string[] = PROJECTION_TABLE_COLUMNS[table];
+  const expected = new Set(columns);
+  const missing = columns.filter((column) => !Object.hasOwn(row, column));
+  const extra = Object.keys(row).filter((column) => !expected.has(column));
+  if (missing.length > 0 || extra.length > 0) {
+    throw integrity(
+      table,
+      rowIndex,
+      `column 불일치: 누락=${missing.join(",") || "없음"}; 초과=${extra.join(",") || "없음"}`,
+    );
+  }
+  const decoded: Record<string, DecodedProjectionScalar> = {};
+  for (const column of columns) {
+    decoded[column] = decodeProjectionValue(table, rowIndex, column, row[column]);
+  }
+  return decoded;
+}
+
+function decodeProjectionValue(
+  table: ProjectionTableName,
+  rowIndex: number,
+  column: string,
+  value: unknown,
+): DecodedProjectionScalar {
+  if (value === null || value === undefined) {
+    if (value === null && (NULLABLE_COLUMNS[table] ?? []).includes(column)) return null;
+    throw integrity(table, rowIndex, `${column}은(는) null일 수 없습니다.`);
+  }
+  if (BOOLEAN_COLUMNS.has(column)) {
+    if (typeof value === "boolean") return value;
+    throw integrity(table, rowIndex, `${column}은(는) boolean이어야 합니다.`);
+  }
+  if (FLOAT_COLUMNS.has(column)) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    throw integrity(table, rowIndex, `${column}은(는) finite number여야 합니다.`);
+  }
+  if (isIntegerColumn(column)) {
+    const number = typeof value === "bigint" ? Number(value) : value;
+    if (typeof number === "number" && Number.isSafeInteger(number)) return number;
+    throw integrity(table, rowIndex, `${column}은(는) safe integer여야 합니다.`);
+  }
+  if (typeof value !== "string") {
+    throw integrity(table, rowIndex, `${column}은(는) string이어야 합니다.`);
+  }
+  const allowed = enumValues(table, column);
+  if (allowed !== undefined && !allowed.includes(value)) {
+    throw integrity(table, rowIndex, `${column} enum 값이 올바르지 않습니다: ${value}`);
+  }
+  return value;
+}
+
+function isIntegerColumn(column: string): boolean {
+  return (
+    INTEGER_COLUMNS.has(column) ||
+    /^(before|after|final)_(inning|balls|strikes|outs|away_score|home_score|pa_actual_pitch_count)$/.test(
+      column,
+    )
+  );
+}
+
+function enumValues(table: ProjectionTableName, column: string): readonly string[] | undefined {
+  if (column === "kind") {
+    const subtype = subtypeKind(table);
+    return subtype === null ? relayKinds() : [subtype];
+  }
+  return ENUM_COLUMNS[column];
+}
+
+function subtypeKind(table: ProjectionTableName): string | null {
+  const values: Partial<Record<ProjectionTableName, string>> = {
+    relay_half_inning_starts: "half_inning_start",
+    relay_batter_starts: "batter_start",
+    relay_pitches: "pitch",
+    relay_plate_results: "plate_result",
+    relay_runner_advances: "runner_advance",
+    relay_substitutions: "substitution",
+    relay_reviews: "review",
+    relay_administrative: "administrative",
+    relay_unresolved: "unresolved",
+  };
+  return values[table] ?? null;
+}
+
+function stateNullableColumns(...prefixes: readonly string[]): string[] {
+  return prefixes.flatMap((prefix) => [
+    `${prefix}_base1_runner_id`,
+    `${prefix}_base1_pitcher_id`,
+    `${prefix}_base2_runner_id`,
+    `${prefix}_base2_pitcher_id`,
+    `${prefix}_base3_runner_id`,
+    `${prefix}_base3_pitcher_id`,
+    `${prefix}_batter_id`,
+    `${prefix}_pitcher_id`,
+    `${prefix}_active_away_pitcher_id`,
+    `${prefix}_active_home_pitcher_id`,
+    `${prefix}_pa_start_event_id`,
+    `${prefix}_pa_start_batter_id`,
+    `${prefix}_pa_start_pitcher_id`,
+    `${prefix}_pa_walk_responsible_pitcher_id`,
+    `${prefix}_pa_strikeout_responsible_batter_id`,
+    `${prefix}_pa_actual_pitch_count`,
+  ]);
+}
+
+function relayKinds(): readonly string[] {
+  return [
+    "half_inning_start",
+    "batter_start",
+    "pitch",
+    "plate_result",
+    "runner_advance",
+    "substitution",
+    "review",
+    "administrative",
+    "unresolved",
+  ];
+}
+
+function plateResults(): readonly string[] {
+  return [
+    "single",
+    "double",
+    "triple",
+    "home_run",
+    "walk",
+    "intentional_walk",
+    "hit_by_pitch",
+    "strikeout",
+    "field_out",
+    "sacrifice_bunt",
+    "sacrifice_fly",
+    "fielder_choice",
+    "reached_on_error",
+    "interference",
+    "double_play",
+    "triple_play",
+    "other",
+  ];
+}
+
+function runnerOutKinds(): readonly string[] {
+  return [
+    "force",
+    "tag",
+    "batter_runner_before_first",
+    "strikeout",
+    "fly_catch",
+    "appeal_force",
+    "appeal_time",
+    "interference",
+    "abandonment",
+  ];
+}
+
+function runnerReasons(): readonly string[] {
+  return [
+    "stolen_base",
+    "caught_stealing",
+    "pickoff",
+    "wild_pitch",
+    "passed_ball",
+    "balk",
+    "defensive_indifference",
+    "error",
+    "appeal",
+    "other",
+  ];
+}
+
+function integrity(table: ProjectionTableName, rowIndex: number, message: string): Error {
+  return new PersistenceIntegrityError(`${table}[${String(rowIndex)}] ${message}`);
+}

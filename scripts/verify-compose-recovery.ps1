@@ -267,6 +267,34 @@ try {
     errorCategory = $null
   } | ConvertTo-Json -Depth 5
   Write-Utf8 (Join-Path $journalDirectory "collection-stage6-interrupted.json") "$interrupted`n"
+  $migrationBackup = Join-Path $workspacePath "e2e-migration-backup"
+  $null = New-Item -ItemType Directory -Force -Path $migrationBackup
+  $databaseBackup = Join-Path $migrationBackup "postgres.dump"
+  $workspaceBackup = Join-Path $migrationBackup "workspace.zip"
+  [IO.File]::WriteAllBytes($databaseBackup, [byte[]](1, 2, 3))
+  [IO.File]::WriteAllBytes($workspaceBackup, [byte[]](4, 5, 6))
+  $backupManifest = [ordered]@{
+    formatVersion = 1
+    database = [ordered]@{
+      file = "postgres.dump"
+      sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $databaseBackup).Hash.ToLowerInvariant()
+    }
+    workspace = [ordered]@{
+      file = "workspace.zip"
+      sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $workspaceBackup).Hash.ToLowerInvariant()
+    }
+  } | ConvertTo-Json -Depth 4
+  Write-Utf8 (Join-Path $migrationBackup "manifest.json") "$backupManifest`n"
+  Invoke-Compose -Arguments @(
+    "run", "--rm", "--no-deps", "api", "node",
+    "apps/server/dist/maintenance/migrate-workspace.js",
+    "--dry-run", "--workspace", "/var/lib/kbo"
+  )
+  Invoke-Compose -Arguments @(
+    "run", "--rm", "--no-deps", "api", "node",
+    "apps/server/dist/maintenance/migrate-workspace.js",
+    "--apply", "--workspace", "/var/lib/kbo", "--backup", "/var/lib/kbo/e2e-migration-backup"
+  )
   Invoke-Compose -Arguments @("start", "api", "web")
   Wait-Ready
 

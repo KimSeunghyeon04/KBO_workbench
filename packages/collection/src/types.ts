@@ -1,6 +1,7 @@
 import type { StagingGameDocumentV2 } from "@kbo/contracts";
 
 export interface SourceFinding {
+  readonly lifecycle: "persistent" | "while_event_unresolved" | "recomputed";
   readonly code: string;
   readonly severity: "warning" | "blocking";
   readonly message: string;

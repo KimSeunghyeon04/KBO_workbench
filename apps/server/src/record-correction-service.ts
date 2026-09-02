@@ -26,6 +26,7 @@ import type {
 } from "@kbo/persistence";
 
 import type { CorrectionSessionManager } from "./correction-session-manager.js";
+import { storedCompilerFindings } from "./source-projection.js";
 
 type RevisionStore = Pick<GameRevisionStore, "loadCorrectionDraft">;
 type SessionManager = Pick<CorrectionSessionManager, "command" | "create" | "get">;
@@ -223,8 +224,9 @@ export class RecordCorrectionService {
     const authority = replay.findings.some((finding) => finding.severity === "blocking")
       ? "quarantine"
       : "staging";
-    if (authority === "quarantine") await this.workspace.saveQuarantine(document, replay.findings);
-    else await this.workspace.saveReady(document, replay.findings);
+    const findings = storedCompilerFindings(replay.findings);
+    if (authority === "quarantine") await this.workspace.saveQuarantine(document, findings);
+    else await this.workspace.saveReady(document, findings);
     const session = await this.sessions.create({ gameId: item.gameId, authority });
     return { sessionId: session.sessionId, sessionVersion: session.sessionVersion, noticeId };
   }
@@ -250,7 +252,12 @@ export class RecordCorrectionService {
       throw new RecordCorrectionConflictError("KBO 정정 제안이 stale 상태입니다.");
     if (!proposal.eligible || proposal.batch === null)
       throw new RecordCorrectionConflictError("현재 제안은 적용할 수 없습니다.");
-    const result = this.sessions.command(sessionId, expectedSessionVersion, proposal.batch, true);
+    const result = await this.sessions.command(
+      sessionId,
+      expectedSessionVersion,
+      proposal.batch,
+      true,
+    );
     await this.repository.markProposalApplied({
       noticeId,
       caseVersion: item.caseVersion,
