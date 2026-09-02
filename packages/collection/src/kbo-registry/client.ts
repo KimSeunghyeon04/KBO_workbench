@@ -1,6 +1,12 @@
 import { load } from "cheerio";
 
-import { throwIfCancelled } from "../errors.js";
+import {
+  HttpStatusError,
+  readBoundedResponseText,
+  responseCookies,
+  RetryingHttpTransport,
+  type RetryingHttpTransportOptions,
+} from "../http-transport.js";
 
 const REGISTER_URL = "https://www.koreabaseball.com/Player/Register.aspx";
 const TRADE_PAGE_URL = "https://www.koreabaseball.com/Player/Trade.aspx";
@@ -9,12 +15,8 @@ const EVENT_TARGET = "ctl00$ctl00$ctl00$cphContents$cphContents$cphContents$btnC
 const TEAM_FIELD = "ctl00$ctl00$ctl00$cphContents$cphContents$cphContents$hfSearchTeam";
 const DATE_FIELD = "ctl00$ctl00$ctl00$cphContents$cphContents$cphContents$hfSearchDate";
 
-export interface KboRegistryHttpOptions {
-  readonly fetch?: typeof fetch;
-  readonly maxAttempts?: number;
-  readonly requestsPerSecond?: number;
-  readonly timeoutMs?: number;
-  readonly now?: () => number;
+export interface KboRegistryHttpOptions extends RetryingHttpTransportOptions {
+  readonly maxResponseBytes?: number;
 }
 
 export interface KboRegistryRawPage {
@@ -23,20 +25,15 @@ export interface KboRegistryRawPage {
 }
 
 export class KboRegistryHttpClient {
-  private readonly fetchImplementation: typeof fetch;
-  private readonly maxAttempts: number;
-  private readonly minimumIntervalMs: number;
-  private readonly timeoutMs: number;
-  private readonly now: () => number;
-  private nextRequestAt = 0;
-  private rateGate: Promise<void> = Promise.resolve();
+  private readonly transport: RetryingHttpTransport;
+  private readonly maxResponseBytes: number;
 
   public constructor(options: KboRegistryHttpOptions = {}) {
-    this.fetchImplementation = options.fetch ?? fetch;
-    this.maxAttempts = options.maxAttempts ?? 3;
-    this.minimumIntervalMs = 1_000 / (options.requestsPerSecond ?? 2);
-    this.timeoutMs = options.timeoutMs ?? 15_000;
-    this.now = options.now ?? Date.now;
+    this.transport = new RetryingHttpTransport(options);
+    this.maxResponseBytes = positiveInteger(
+      options.maxResponseBytes ?? 10 * 1024 * 1024,
+      "maxResponseBytes",
+    );
   }
 
   public async registerPage(
@@ -107,54 +104,24 @@ export class KboRegistryHttpClient {
     init: RequestInit,
     signal?: AbortSignal,
   ): Promise<KboRegistryRawPage & { readonly cookie: string | null }> {
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
-      if (signal !== undefined) throwIfCancelled(signal);
-      await this.waitForRateSlot(signal);
-      const timeout = AbortSignal.timeout(this.timeoutMs);
-      const requestSignal = signal === undefined ? timeout : AbortSignal.any([signal, timeout]);
-      try {
-        const response = await this.fetchImplementation(url, { ...init, signal: requestSignal });
-        if (!response.ok) throw new Error(`KBO HTTP ${String(response.status)}: ${url}`);
-        const body = (await response.text()).replace(/^\uFEFF/, "");
-        return {
-          body,
-          collectedAt: new Date(this.now()).toISOString(),
-          cookie: responseCookies(response.headers),
-        };
-      } catch (error: unknown) {
-        if (signal?.aborted === true) throw error;
-        lastError = error;
-        if (attempt < this.maxAttempts) await abortableDelay(250 * 2 ** (attempt - 1), signal);
-      }
-    }
-    throw lastError;
-  }
-
-  private async waitForRateSlot(signal?: AbortSignal): Promise<void> {
-    const previous = this.rateGate;
-    let release: (() => void) | undefined;
-    this.rateGate = new Promise<void>((resolve) => {
-      release = resolve;
+    assertKboUrl(url);
+    const result = await this.transport.request({
+      url,
+      init,
+      ...(signal === undefined ? {} : { signal }),
+      retryable: (error) =>
+        !(error instanceof HttpStatusError) || error.status === 429 || error.status >= 500,
+      decode: async (response) => ({
+        body: await readBoundedResponseText(
+          response,
+          this.maxResponseBytes,
+          () => new Error("KBO registry 응답 크기가 안전 제한을 초과했습니다."),
+        ),
+        cookie: responseCookies(response.headers),
+      }),
     });
-    await previous;
-    try {
-      if (signal !== undefined) throwIfCancelled(signal);
-      const waitMs = Math.max(0, this.nextRequestAt - this.now());
-      if (waitMs > 0) await abortableDelay(waitMs, signal);
-      this.nextRequestAt = this.now() + this.minimumIntervalMs;
-    } finally {
-      release?.();
-    }
+    return { ...result.value, collectedAt: result.receivedAt };
   }
-}
-
-function responseCookies(headers: Headers): string | null {
-  const values = headers.getSetCookie();
-  const cookies = values
-    .map((value) => value.split(";", 1)[0]?.trim())
-    .filter((value): value is string => value !== undefined && value.length > 0);
-  return cookies.length === 0 ? null : cookies.join("; ");
 }
 
 function hiddenFields(html: string): Record<string, string> {
@@ -168,14 +135,14 @@ function hiddenFields(html: string): Record<string, string> {
   return result;
 }
 
-async function abortableDelay(milliseconds: number, signal?: AbortSignal): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, milliseconds);
-    const abort = (): void => {
-      clearTimeout(timer);
-      reject(signal?.reason instanceof Error ? signal.reason : new Error("KBO 수집 취소"));
-    };
-    if (signal?.aborted === true) abort();
-    else signal?.addEventListener("abort", abort, { once: true });
-  });
+function assertKboUrl(url: string): void {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "https:" || parsed.hostname !== "www.koreabaseball.com") {
+    throw new Error("허용되지 않은 KBO registry endpoint입니다.");
+  }
+}
+
+function positiveInteger(value: number, name: string): number {
+  if (!Number.isInteger(value) || value <= 0) throw new Error(`${name}은 양의 정수여야 합니다.`);
+  return value;
 }
