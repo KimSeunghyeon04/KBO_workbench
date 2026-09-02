@@ -8,7 +8,7 @@ Naver KBO 문자중계를 수집·정리·보정하고, 검증된 원장을 Post
 ```text
 Naver 응답 -> immutable source bundle -> StagingGameDocumentV2 평면 원장
              -> tracking/원장 보정 -> 전체 compiler 검증
-             -> staging/quarantine -> V3 catalog + sealed PostgreSQL revision
+             -> versioned current(ready/quarantine/source_failure) -> V3 catalog + sealed PostgreSQL revision
              -> pitch/PA/play/runner/player-game 분석 fact와 replay
 
 KBO Register/Trade -> gzip 원문 증거 -> registry season revision
@@ -60,8 +60,8 @@ docker compose down
 선택 범위에 이미 `staging`으로 저장된 경기는 외부 요청 없이 건너뛴다. `quarantine`, 원천 실패와
 아직 수집되지 않은 경기는 다시 수집하여 현재 결과로 분류한다.
 
-- `적재 가능`: strict 계약과 전체 compile을 통과한 `staging/<season>/<gameId>.json`
-- `검토 필요`: 원장은 보존했지만 차단 finding이 있는 `quarantine/<season>/<gameId>.json`
+- `적재 가능`: current manifest가 가리키는 strict/compile 통과 `ready` artifact
+- `검토 필요`: current manifest가 가리키는 차단 finding 포함 `quarantine` artifact
 - `원천 실패`: 필수 endpoint 또는 전송 자체가 실패해 원장을 만들지 못한 기록
 
 공지·판독·휴식 같은 비상태 행도 원장에 남고, 안전하게 해석하지 못한 행은 원문과 원천 위치를
@@ -73,12 +73,15 @@ canonical로 연결한 뒤 나머지를 `duplicate`로 보존한다. 같은 `sou
 
 endpoint 원문은 canonical JSON을 gzip으로 압축해 `.data/source`에 불변 저장하고 manifest에 endpoint,
 응답 hash와 수집 시각을 남긴다. 최초 정리 원장과 당시 finding은 `.data/original`에 한 번만 저장한다.
-현재 작업본은 staging 또는 quarantine에 저장하고, finding이 없으면 빈 sidecar를 만들지 않는다. 자세한 내용은
+현재 권위는 `.data/current/<gameId>.json` 하나가 `.data/active`의 versioned artifact를 가리킨다.
+재수집으로 대체된 원장과 원천 실패는 `.data/superseded`에 generation/content-hash snapshot으로
+보존하고, finding이 없으면 빈 envelope sidecar를 만들지 않는다. 자세한 내용은
 [수집과 staging 운영](docs/collection-and-staging.md)을 참고한다.
 
 ## 경기 보정
 
-`/correct`는 staging·quarantine 원장만 연다. 기본 화면은 검토가 필요한 경기만 표시한다.
+`/correct`는 현재 staging·quarantine 원장과 명시적으로 선택한 superseded snapshot을 연다. 기본
+화면은 검토가 필요한 경기만 표시한다.
 이벤트 목록은 JSON 원장과 1:1이며 숨겨진 movement 하위 행이나 자동 생성 이벤트가 없다.
 
 - 한 행 또는 최대 100개의 서로 다른 행을 한 번에 추가하고, 수정·삭제·위/아래 이동·위치 지정 이동
@@ -129,6 +132,9 @@ endpoint 원문은 canonical JSON을 gzip으로 압축해 `.data/source`에 불�
 DB V3는 경기와 독립된 `catalog` 팀·선수 entity를 두고 sealed fact는 변하지 않는 Naver source
 identity를 참조한다. 이후 KBO 공식 ID에 연결해도 과거 projection hash는 바뀌지 않는다. tracking
 측정치는 `tracking_observations`에 한 번만 저장하고 pitch에는 link만 둔다.
+DB에서 다시 읽은 projection 행은 descriptor가 소유한 column 순서와 runtime decoder로 shape,
+nullability, enum, safe integer, row count, game/revision 문맥과 key uniqueness를 확인한 뒤에만 hydration과
+replay에 사용한다.
 
 분석은 `game_id`가 아니라 `analytics.current_pitches`, `current_plate_appearances`,
 `current_plays`, `current_runner_movements`, `current_player_game_*`,

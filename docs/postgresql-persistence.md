@@ -79,6 +79,12 @@ tracking scalar는 `workbench.tracking_observations`에 한 번만 저장되고
 거부한다. 공개 replay는 typed play/movement/PA/tracking fact에서 만들고 staging ledger hydration은
 import 무결성 검증에만 사용한다.
 
+projection descriptor는 각 table의 SQL column 순서뿐 아니라 runtime row decoder와 primary-order key를
+함께 소유한다. 재조회 행은 정확한 column shape, nullability, enum, boolean, finite number/safe integer,
+rowCount, 요청 game/revision과 key uniqueness를 통과해야 한다. manifest도 provider, contract version,
+hash, 날짜와 seal 타입을 decode한다. 위반은 `PersistenceIntegrityError`이며 partial replay나 seal을
+만들지 않는다.
+
 ## Registry provenance
 
 `pnpm registry:sync -- --season 2024`는 V3 DB의 해당 시즌 경기 최소·최대 날짜를 기본 범위로 삼는다.

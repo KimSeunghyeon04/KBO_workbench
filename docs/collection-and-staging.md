@@ -165,13 +165,13 @@ ball에서 일어난 폭투 진루·추가 진루·태그 아웃·득점을 서�
 
 ## 파일 배치
 
-| 상태      | 경로                                       | 의미                                |
-| --------- | ------------------------------------------ | ----------------------------------- |
-| 원천 증거 | `source/<season>/<gameId>/`                | gzip endpoint payload와 manifest    |
-| 적재 가능 | `staging/<season>/<gameId>.json`           | strict decode와 전체 compile 통과   |
-| 검토 필요 | `quarantine/<season>/<gameId>.json`        | 원장 보존, 차단 finding 존재        |
-| 원천 실패 | `quarantine/source-failures/<gameId>.json` | 원장을 만들기 전 endpoint·전송 실패 |
-| 최초 원장 | `original/<season>/<gameId>.json`          | 최초 정리 원장, 한 번만 기록        |
+| 상태          | 경로                                         | 의미                                      |
+| ------------- | -------------------------------------------- | ----------------------------------------- |
+| 원천 증거     | `source/<season>/<gameId>/`                  | gzip endpoint payload와 manifest          |
+| 현재 포인터   | `current/<gameId>.json`                      | ready/quarantine/source_failure 단일 권위 |
+| 현재 artifact | `active/<gameId>/<generation>-<hash>.*.json` | 포인터가 가리키는 immutable generation    |
+| 대체 이력     | `superseded/<gameId>/`                       | 이전 generation/content-hash snapshot     |
+| 최초 원장     | `original/<season>/<gameId>.json`            | 최초 정리 원장, 한 번만 기록              |
 
 KBO 선수 등록부는 경기 수집과 별도 권위다. `registry:sync`가 Register/Trade 원문을
 `registry/source/<season>/<run-id>/` 아래 HTML/JSON gzip과 strict hash metadata로 저장한다. DB에는
@@ -191,15 +191,23 @@ KBO 기록정정현황도 별도 source 권위다. 수집기는 landing HTML, �
 수집한다. 실제 KBO 호출은 운영 adapter에만 있고 테스트는 2024 공식 표 구조를 비식별화한 fixture만
 사용한다.
 
-finding은 `<gameId>.findings.json` sidecar로 분리하고 하나 이상일 때만 만든다. 문제가 해결되면 기존
-sidecar를 제거한다. 원본 finding도 같은 규칙을 따른다.
+finding은 `StoredFindingEnvelopeV2`로 저장한다. `producer`와 `lifecycle`이 영구 보존,
+`unresolved`가 남아 있는 동안의 보존, compiler 재계산 대상을 명시하며 문자열 code prefix로 수명을
+추측하지 않는다. envelope에 finding이 하나 이상일 때만 sidecar를 만들고 비면 제거한다.
 
 typed `unresolved` 행의 차단 finding은 compiler가 한 번만 생성한다. mapper와 compiler가 같은
 문제를 중복 기록하지 않으며, 보정 session은 sidecar의 비재현 가능 source finding과 현재 전체
 compile finding을 합쳐 저장 분류를 결정한다.
 
-현재 파일 교체는 temporary write·flush·atomic replace와 단일 writer lock을 사용한다. 중단 복구용
-journal은 성공 직후 삭제한다. command history, before/after snapshot, changes audit은 만들지 않는다.
+모든 current 전환은 writer lock 아래 target write/fsync, transition journal, current manifest atomic
+replace와 directory sync, 이전 artifact의 superseded 이동, journal 제거 순서로 수행한다. startup은
+journal을 idempotent하게 roll-forward하며 journal 없는 orphan active artifact나 hash 불일치는
+persistence-blocked로 중단한다. command history, before/after snapshot, changes audit은 만들지 않는다.
+
+legacy `staging/<season>`·`quarantine/<season>` 배치는 자동 추측하지 않는다. 먼저
+`pnpm workspace:migrate -- --dry-run`으로 충돌을 확인하고, API writer를 중지한 상태에서 검증된 DB와
+workspace 쌍 backup을 만든 뒤에만 `--apply --backup <verified-path>`를 실행한다. 둘 이상의 current
+후보가 있으면 명시적 resolution 파일 없이는 중단한다.
 
 현재 DB revision과 같은 `sourceBundleHash`로 명시적 재수집한 경우 draft와 새 revision을 만들지 않는다.
 hash가 달라졌을 때만 current revision 번호와 document hash를 `revisionBase`로 가진 새 작업 문서를
@@ -207,16 +215,16 @@ staging 또는 quarantine에 둔다.
 
 ## Immutable source에서 파생 원장 재생성
 
-원천 보존 규칙 자체의 구현 오류를 교정할 때만 `maintenance:rebuild-derived`를 사용한다. 이 작업은
+원천 보존 규칙 자체의 구현 오류를 조사할 때만 `maintenance:rebuild-derived`를 사용한다. 이 작업은
 Naver를 호출하지 않고 현재 staging/quarantine 문서가 가리키는 source manifest와 모든 endpoint
-hash를 검증한 뒤 임시 workspace에서 다시 map·compile한다. 기본 실행은 검증만 하고 임시 결과를
-제거한다. `--confirm-derived-replacement`를 명시한 실행만 해당 season의 `original`, `staging`,
-`quarantine` 디렉터리를 원자 교체한다.
+hash를 검증한 뒤 임시 workspace에서 다시 map·compile한다. 실행은 검증만 하고 임시 결과를 제거한다.
+과거의 `--confirm-derived-replacement` season 디렉터리 교체는 versioned current manifest 도입 후
+금지된다. 검증 결과의 적용은 경기별 correction 또는 검증 backup을 요구하는 workspace migration
+상태 머신을 통해야 한다.
 
-실행 전 API writer를 중지해야 하며 활성 journal이나 DB 적재 경기가 하나라도 있으면 거부한다. 교체
-중에는 rollback 디렉터리를 유지하고 새 원장의 개수·original 일치·source hash를 재검증한다. 성공한
-뒤에만 rollback과 임시 디렉터리를 제거한다. 재생성한 격리 경기 수가 현재 격리 경기 수보다 늘면
-주요 blocking code와 함께 교체 전에 중단한다. `.data/source`, `quarantine/source-failures`, `.env`와
+실행 전 API writer를 중지해야 하며 활성 journal이나 DB 적재 경기가 하나라도 있으면 거부한다. 새
+원장의 개수·original 일치·source hash를 재검증하고 재생성한 격리 경기 수가 현재 격리 경기 수보다
+늘면 주요 blocking code와 함께 중단한다. `.data/source`, current source-failure artifact, `.env`와
 PostgreSQL volume은 변경하지 않는다.
 
 수집 화면은 SSE마다 전체 catalog를 다시 읽지 않는다. staging 제외처럼 문서를 바꾸지 않는 진행

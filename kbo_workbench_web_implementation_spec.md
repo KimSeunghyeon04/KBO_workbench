@@ -125,20 +125,27 @@ tracking은 blocking이다. 실제 pitch의 tracking 누락은 warning이며 자
 .data/
   source/<season>/<gameId>/
   original/<season>/<gameId>.json
-  staging/<season>/<gameId>.json
-  quarantine/<season>/<gameId>.json
-  quarantine/source-failures/
+  current/<gameId>.json
+  active/<gameId>/<generation>-<contentHash>.document.json
+  active/<gameId>/<generation>-<contentHash>.failure.json
+  superseded/<gameId>/
   journals/
   exports/
   logs/
 ```
 
-source와 original은 불변이다. 현재 작업 문서는 staging 또는 quarantine 중 정확히 한 곳에 있다.
-파일 교체는 writer lock, temporary write, fsync, atomic rename, directory sync와 crash-recovery journal을
-사용한다. finding이 없으면 빈 sidecar를 두지 않는다.
+source와 original은 불변이다. versioned current manifest가 ready, quarantine, source_failure 중 하나의
+active artifact를 정확히 하나 가리킨다. 교체된 generation은 content hash와 함께 superseded에 보존한다.
+전환은 writer lock 아래 target fsync, transition journal, manifest atomic replace/directory sync, 이전
+artifact 이동, journal 제거 순서를 사용한다. startup은 journal을 roll-forward하고 journal 없는 dual
+active나 hash 불일치는 persistence-blocked로 중단한다. finding은 producer/lifecycle이 있는
+`StoredFindingEnvelopeV2`로 저장하며 비면 sidecar를 두지 않는다. legacy 배치는 검증된 DB/workspace 쌍
+backup과 명시적 migration 없이는 current로 해석하지 않는다.
 
 correction은 structured command만 허용한다. 매 command/batch 뒤 resequence하고 전체 compile한다.
-session version과 base document hash가 stale이면 거부하며, browser는 서버 응답 뒤 상태를 갱신한다.
+세션별 async mutex 안에서 session version과 base document hash를 검사해 stale이면 거부하며, browser는
+서버 응답 뒤 상태를 갱신한다. superseded snapshot 복구도 session 생성 시점 current content hash를
+확인한 뒤 동일 상태 머신으로 commit한다.
 기록정정 검토함에서 연 session은 보정 화면에 KBO 공지 원문과 전후 공식 기록을 함께 표시한다.
 이닝·타석 접기 또는 펼치기는 해당 그룹 시작 행을 선택한 뒤 가상 목록을 갱신한다.
 기록정정 공식 기록 비교는 field descriptor가 정한 생략 의미를 사용한다. 비발생 선택 계수는 0,
@@ -149,7 +156,7 @@ coverage 부재 가능 필드는 미제공으로 유지하며 원천 원장과 p
 blocking draft는 quarantine에만 commit할 수 있다. sealed revision은 직접 수정하지 않고 correction
 draft로 reopen한 뒤 새 revision으로 적재한다.
 
-원천 relay parsing finding은 대응 행이 현재도 `unresolved`일 때만 현재 차단으로 병합한다. 사람이
+`lifecycle=while_event_unresolved` finding은 대응 행이 현재도 `unresolved`일 때만 현재 차단으로 병합한다. 사람이
 typed 행으로 교체하거나 명시적으로 삭제한 행의 finding은 immutable original의 저장 당시 기록에는
 남지만 현재 작업본의 차단으로 승계하지 않는다.
 
@@ -170,6 +177,9 @@ ID가 확인되면 canonical player는 `kbo:<playerId>`다. sealed fact는 변�
 snapshot, typed ledger, official line, validation issue/detail, tracking 원천 관측과 manifest를 둔다.
 `baseball`에는 play/event/movement, PA/event, pitch/link, final state, player-game fact를 둔다. tracking
 측정값은 `tracking_observations`에 한 번만 저장하고 `pitch_tracking_links`는 key만 저장한다.
+projection descriptor는 SQL column 순서와 runtime decoder를 함께 소유한다. DB 재조회 행의 shape,
+nullability, enum, 정수, row count, game/revision 문맥과 key uniqueness를 검증하지 못하면
+`PersistenceIntegrityError`로 transaction/replay를 중단한다.
 
 `registry`에는 collection run, immutable season revision/current pointer, source page artifact provenance,
 일별 등록 snapshot, 이동 event, resolution issue, first-team registration과 organization affiliation stint를

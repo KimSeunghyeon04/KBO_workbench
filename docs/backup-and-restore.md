@@ -73,6 +73,25 @@ current game revision과 replay hash도 확인한다.
 이전 시점으로 되돌리거나 `.data/record-corrections/source`만 교체하면 provenance 쌍이 깨지므로 항상
 동일 backup 단위로 복원한다.
 
+## Workspace current manifest migration
+
+versioned current manifest가 없는 legacy workspace는 먼저 read-only로 검사한다.
+
+```powershell
+pnpm workspace:migrate -- --dry-run
+```
+
+적용은 API/writer를 멈추고 같은 시점에 만든 `manifest.json`, `postgres.dump`, `workspace.zip`의 hash가
+검증되는 backup 경로를 명시해야 한다. 실제 운영 workspace에는 별도 승인 없이 실행하지 않는다.
+
+```powershell
+pnpm workspace:migrate -- --apply --backup D:\KBO_Backups\kbo-workbench-<timestamp>
+```
+
+staging, quarantine, source-failure가 겹치거나 기존 current manifest와 충돌하면 도구는 우선순위를
+추측하지 않는다. dry-run 결과의 정확한 legacy 상대 경로를 선택한 resolution 파일이 있어야 진행한다.
+legacy 파일은 삭제하지 않고 `migration-archive`로 옮긴다.
+
 ## V2에서 V3로 전환할 때
 
 V2 current-only export를 시작하기 전에 이 backup을 먼저 만들고 결과 디렉터리를 그대로 보존한다.

@@ -196,7 +196,9 @@ side, 공식 기록과 roster 수정은 선택 팀을 사용한다. 이름·ID·
 
 ## Session, undo/redo, 저장
 
-모든 mutation은 `expectedSessionVersion`을 보내며 stale version은 `409`로 거부한다. 웹은 한 번의
+모든 mutation은 `expectedSessionVersion`을 보내며 세션별 async mutex가 command, batch, undo/redo,
+original load, 제안 적용과 commit을 순서대로 실행한다. expected version은 lock 안에서 검사하고 stale
+version은 `409`로 거부한다. 웹은 한 번의
 요청으로 즉시 적용하고 낙관적으로 화면만 먼저 바꾸지 않는다. 서버는 복사본에 명령을 적용하고
 strict decode·전체 compile이 끝난 결과로만 작업 사본과 finding을 교체한다.
 
@@ -213,20 +215,22 @@ session을 다시 열면 메모리 history가 초기화된다. 입력 필드에 
 - 차단 finding 있음 + 사용자가 허용: quarantine에 저장
 - 차단 finding 있음: staging 승격과 DB 적재 금지
 
-현재 파일 교체는 crash-recovery journal을 사용하고 성공하면 즉시 지운다. 최초 정리 원장과 당시
+현재 파일 교체는 versioned current 상태 머신과 crash-recovery journal을 사용하고 성공하면 즉시
+지운다. source_failure가 현재 권위가 된 뒤에도 명시적인 superseded snapshot ID로 복구 사본을 열 수
+있고, session을 연 시점의 current content hash가 유지된 경우에만 현재 원장으로 복귀한다. 최초 정리 원장과 당시
 finding은 `.data/original`에 한 번만 보존하며 보정으로 덮어쓰지 않는다.
 
 차단 finding이 남은 작업 사본은 저장 화면의 확인란으로 quarantine 저장을 명시적으로 허용한
 경우에만 저장할 수 있다. 확인 없이 API에 허용값을 자동 전송하지 않는다. 차단 finding이 없으면
 확인란 없이 staging에 저장한다.
 
-과거 sidecar의 재계산 가능한 compiler finding은 현재 compiler finding을 대신하지 않는다. 현재
+과거 envelope에서 `lifecycle=recomputed`인 compiler finding은 현재 compiler finding을 대신하지 않는다. 현재
 compile이 깨끗하면 과거 값은 `저장 당시 finding` 필터에서만 이력으로 확인한다. 이 때문에 변경하지
 않은 quarantine 문서가 `차단 0`이 될 수 있으며, 화면은 이때만 `staging 승격 가능`과
 `staging으로 승격` 버튼을 표시한다. 승격은 사용자가 명시적으로 실행해야 하고 자동 이동하지 않는다.
 staging의 변경 없는 문서와 차단이 남은 quarantine은 변경 없이 저장할 수 없다.
 
-`source.relay.*` parsing finding은 대응 event가 현재도 `unresolved`일 때만 현재 차단으로 유지한다.
+`lifecycle=while_event_unresolved` finding은 대응 event가 현재도 `unresolved`일 때만 현재 차단으로 유지한다.
 사람이 같은 identity를 typed event로 확정하거나 행 삭제를 명시적으로 적용하면 현재 finding에서는
 제외하고, 최초 원장과 최초 finding에는 원천 증거로 계속 보존한다.
 
