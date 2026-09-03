@@ -235,6 +235,10 @@ compile이 깨끗하면 과거 값은 `저장 당시 finding` 필터에서만 �
 `staging으로 승격` 버튼을 표시한다. 승격은 사용자가 명시적으로 실행해야 하고 자동 이동하지 않는다.
 staging의 변경 없는 문서와 차단이 남은 quarantine은 변경 없이 저장할 수 없다.
 
+저장이나 staging 승격이 성공하면 웹은 열린 작업 사본과 행 선택·필터·drawer 상태를 닫고 경기
+목록을 다시 읽는다. 완료 화면에는 경기 ID와 최종 현재 권위를 표시하며, 기록정정 링크로 연 session
+query도 제거해 이미 저장한 session이 자동으로 다시 열리지 않게 한다.
+
 `lifecycle=while_event_unresolved` finding은 대응 event가 현재도 `unresolved`일 때만 현재 차단으로 유지한다.
 사람이 같은 identity를 typed event로 확정하거나 행 삭제를 명시적으로 적용하면 현재 finding에서는
 제외하고, 최초 원장과 최초 finding에는 원천 증거로 계속 보존한다.

@@ -18,6 +18,12 @@ import {
 import { correctionOriginalQueryOptions, queryKeys } from "../api/query-options";
 import type { DrawerRequest } from "./event-editor-registry";
 
+export type CorrectionCommitCompletion = Readonly<{
+  sessionId: string;
+  gameId: string;
+  outcome: "promoted" | "staging_saved" | "quarantine_saved";
+}>;
+
 export function useCorrectionSessionController(selectedGame: CorrectionGameCatalogItem | null) {
   const queryClient = useQueryClient();
   const [session, setSession] = useState<CorrectionSession | null>(null);
@@ -25,6 +31,7 @@ export function useCorrectionSessionController(selectedGame: CorrectionGameCatal
   const [drawer, setDrawer] = useState<DrawerRequest | null>(null);
   const [notice, setNotice] = useState("");
   const [lastPreview, setLastPreview] = useState<CorrectionPreview | null>(null);
+  const [lastCommit, setLastCommit] = useState<CorrectionCommitCompletion | null>(null);
 
   const openSession = useMutation({
     mutationFn: async () => {
@@ -39,6 +46,7 @@ export function useCorrectionSessionController(selectedGame: CorrectionGameCatal
       setSelectedEventId(next.draftDocument.events[0]?.identity.eventId ?? null);
       setDrawer(null);
       setLastPreview(null);
+      setLastCommit(null);
       setNotice("작업 사본을 열었습니다.");
     },
   });
@@ -49,6 +57,7 @@ export function useCorrectionSessionController(selectedGame: CorrectionGameCatal
       setSelectedEventId(next.draftDocument.events[0]?.identity.eventId ?? null);
       setDrawer(null);
       setLastPreview(null);
+      setLastCommit(null);
       setNotice("KBO 기록정정 작업 사본을 열었습니다.");
     },
   });
@@ -91,15 +100,38 @@ export function useCorrectionSessionController(selectedGame: CorrectionGameCatal
   const commit = useMutation({
     mutationFn: async (allowQuarantine: boolean) => {
       if (session === null) throw new Error("열린 작업 사본이 없습니다.");
-      return commitCorrection(session.sessionId, session.sessionVersion, allowQuarantine);
+      const result = await commitCorrection(
+        session.sessionId,
+        session.sessionVersion,
+        allowQuarantine,
+      );
+      return {
+        result,
+        previousAuthority: session.authority,
+      };
     },
-    onSuccess(result) {
-      setSession(result.session);
+    onSuccess({ result, previousAuthority }) {
+      const outcome =
+        result.committedAuthority === "quarantine"
+          ? "quarantine_saved"
+          : previousAuthority === "quarantine"
+            ? "promoted"
+            : "staging_saved";
+      setLastCommit({
+        sessionId: result.session.sessionId,
+        gameId: result.session.gameId,
+        outcome,
+      });
+      setSession(null);
+      setSelectedEventId(null);
+      setDrawer(null);
       setLastPreview(null);
       setNotice(
-        result.committedAuthority === "staging"
-          ? "적재 가능한 현재 원장으로 저장했습니다."
-          : "차단 finding과 함께 격리 원장으로 저장했습니다.",
+        outcome === "promoted"
+          ? `${result.session.gameId}을 staging으로 승격했습니다. 작업 사본을 닫고 경기 목록을 갱신했습니다.`
+          : outcome === "staging_saved"
+            ? `${result.session.gameId}을 적재 가능한 현재 원장으로 저장했습니다. 작업 사본을 닫고 경기 목록을 갱신했습니다.`
+            : `${result.session.gameId}을 차단 finding과 함께 quarantine 현재 원장으로 저장했습니다. 작업 사본을 닫고 경기 목록을 갱신했습니다.`,
       );
       void queryClient.invalidateQueries({ queryKey: queryKeys.catalog });
       void queryClient.invalidateQueries({ queryKey: queryKeys.correction.games });
@@ -153,6 +185,7 @@ export function useCorrectionSessionController(selectedGame: CorrectionGameCatal
     notice,
     setNotice,
     lastPreview,
+    lastCommit,
     openSession,
     adoptSession,
     acceptExternalMutation,

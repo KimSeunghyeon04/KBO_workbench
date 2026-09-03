@@ -331,6 +331,22 @@
   font-size: 12px;
 }
 
+.correction-complete > div {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+
+.correction-complete strong {
+  color: #145c3e;
+  font-size: 16px;
+}
+
+.correction-complete span {
+  color: #69736d;
+  font-size: 11px;
+}
+
 .correction-game-summary {
   padding: 13px 18px;
 }

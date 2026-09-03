@@ -52,7 +52,7 @@ export { CorrectionDrawer } from "../correction/correction-drawer";
 type EventKindFilter = "all" | StagingRelayEventKind;
 
 export function CorrectPage(): React.JSX.Element {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const requestedSessionId = searchParams.get("sessionId");
   const recordCorrectionNoticeId = searchParams.get("noticeId");
   const catalog = useQuery(correctionGamesQueryOptions());
@@ -103,6 +103,7 @@ export function CorrectPage(): React.JSX.Element {
     setDrawer,
     notice,
     lastPreview,
+    lastCommit,
     openSession,
     adoptSession,
     acceptExternalMutation,
@@ -118,14 +119,27 @@ export function CorrectPage(): React.JSX.Element {
   useEffect(() => {
     if (
       requestedSessionId !== null &&
+      lastCommit?.sessionId !== requestedSessionId &&
       session?.sessionId !== requestedSessionId &&
       !adoptSession.isPending &&
       !adoptSession.isError
     )
       adoptSession.mutate(requestedSessionId);
-  }, [adoptSession, requestedSessionId, session?.sessionId]);
+  }, [adoptSession, lastCommit?.sessionId, requestedSessionId, session?.sessionId]);
 
   useEffect(() => {
+    if (lastCommit === null || requestedSessionId === null) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("sessionId");
+    next.delete("noticeId");
+    setSearchParams(next, { replace: true });
+  }, [lastCommit, requestedSessionId, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    setEventQuery("");
+    setEventKind("all");
+    setOnlyRelated(false);
+    setAllowQuarantine(false);
     setRecordView(null);
     setSelectedTrackingId(null);
     setCollapsedInningEventIds(new Set());
@@ -492,8 +506,24 @@ export function CorrectPage(): React.JSX.Element {
         </div>
       ) : null}
       {session === null ? (
-        <section className="panel correction-empty">
-          <p>파일 원장을 선택해 작업 사본을 여세요.</p>
+        <section
+          className={`panel correction-empty${lastCommit === null ? "" : " correction-complete"}`}
+        >
+          {lastCommit === null ? (
+            <p>파일 원장을 선택해 작업 사본을 여세요.</p>
+          ) : (
+            <div>
+              <strong>{lastCommit.gameId} 저장 완료</strong>
+              <p>
+                {lastCommit.outcome === "promoted"
+                  ? "staging으로 승격되어 DB 적재 가능한 현재 원장이 되었습니다."
+                  : lastCommit.outcome === "staging_saved"
+                    ? "DB 적재 가능한 staging 현재 원장으로 저장했습니다."
+                    : "차단 finding과 함께 quarantine 현재 원장으로 저장했습니다."}
+              </p>
+              <span>작업 사본을 닫았습니다. 목록에서 다음 경기를 열 수 있습니다.</span>
+            </div>
+          )}
         </section>
       ) : (
         <>
