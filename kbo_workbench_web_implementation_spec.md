@@ -136,11 +136,14 @@ tracking은 blocking이다. 실제 pitch의 tracking 누락은 warning이며 자
 
 source와 original은 불변이다. versioned current manifest가 ready, quarantine, source_failure 중 하나의
 active artifact를 정확히 하나 가리킨다. 교체된 generation은 content hash와 함께 superseded에 보존한다.
+current manifest V2에서 ready/quarantine은 strict 원장에서 만든 경기일과 원정·홈 팀 ID/이름의
+`displaySummary`를 필수로 가지며 source_failure는 관찰되지 않은 값을 만들지 않고 null을 가진다.
 전환은 writer lock 아래 target fsync, transition journal, manifest atomic replace/directory sync, 이전
 artifact 이동, journal 제거 순서를 사용한다. startup은 journal을 roll-forward하고 journal 없는 dual
 active나 hash 불일치는 persistence-blocked로 중단한다. finding은 producer/lifecycle이 있는
 `StoredFindingEnvelopeV2`로 저장하며 비면 sidecar를 두지 않는다. legacy 배치는 검증된 DB/workspace 쌍
-backup과 명시적 migration 없이는 current로 해석하지 않는다.
+backup과 명시적 migration 없이는 current로 해석하지 않는다. V1 current manifest도 자동 보완하지
+않으며 기존 `workspace:migrate` dry-run/apply와 manifest upgrade journal로만 V2가 된다.
 
 correction은 structured command만 허용한다. 매 command/batch 뒤 resequence하고 전체 compile한다.
 세션별 async mutex 안에서 session version과 base document hash를 검사해 stale이면 거부하며, browser는
@@ -226,15 +229,16 @@ replay route 경계를 유지한다. Database 화면은 revision history와 curr
 pitch를 나란히 보여준다. Replay는 current/과거 revision을 선택하며 pitch마다 최대 한 tracking만
 표시한다.
 
-`GET /api/v2/games`의 catalog item은 authority 기반 strict union이다. workspace 항목은 파일 상태를,
+`GET /api/v2/games`의 catalog item은 authority 기반 strict union이다. ready/quarantine workspace와
+database 항목은 경기일·대진을 제공하고 source failure는 관찰되지 않은 요약을 만들지 않는다.
+workspace 항목은 파일 상태를,
 database 항목은 relational fact에서 집계한 `gameDate`, `teams`, `currentRevision`, `revisionCount`를
-필수로 가진다. Database는 이 요약만으로 첫 화면을 그리고 특정 행을 펼칠 때만 revision 상세를 한 번
-조회한다. route page는 lazy chunk로 로드하며 고정 높이 catalog는 공통 viewport virtual list를,
-Database의 적재 작업 이력은 viewport virtual list를 사용한다. 수집은 결과와 작업 이력을,
-Database는 적재 대기·작업 이력·저장 경기를 하나의 고정 높이 tab workspace에서 전환한다. 저장
-경기의 가변 높이 revision 행은 작업공간 내부에서 50개 단위 progressive rendering을 사용한다.
-기록정정 검토함은 상태 요약·동기화 시각·검색 조건을 하나의 제어 영역에 두고 공지 목록과 상세를
-각각 독립 스크롤한다.
+필수로 가진다. Database는 이 요약만으로 목록을 그리고 선택한 경기의 revision 상세만 한 번 조회한다.
+route page는 lazy chunk로 로드하며 수집·기록정정·Database는 공통 운영 콘솔 shell과 선택 가능한 고정
+높이 virtual list를 사용한다. 상단에는 상태와 핵심 명령, 왼쪽에는 검색·범위 목록, 오른쪽에는 선택
+상세와 sticky action bar를 둔다. 900px 이하에서는 DOM의 목록 상태와 scroll을 유지한 채 목록과
+상세 중 하나만 표시한다. 검색어 변경은 URL history를 replace하고 범위·항목 선택은 history entry를
+추가한다. 기록정정 목록은 경량 DTO를 사용하고 원문·후보·통계 변경은 단건 endpoint에서만 읽는다.
 
 PostgreSQL은 `127.0.0.1:${KBO_DB_PORT:-5433}`에만 공개한다. 별도 analyst 계정은 `analytics` schema
 SELECT 권한만 가지며 기본 transaction이 read-only다. DBeaver, Jupyter, R 등은 직접 접속할 수 있지만

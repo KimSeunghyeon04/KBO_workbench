@@ -141,3 +141,9 @@ V2 volume을 별도로 열어야 할 때는 `compose.v2-legacy.yaml`과 명시�
 공개 game/replay/correction API와 `playerId` 의미는 기존 `/api/v2` 그대로다. 기록정정 전용 API와
 검토함만 추가한다. Registry API와 웹 화면,
 Savant식 wide search, RE24/WPA, percentile/qualification leaderboard는 이 버전에 포함하지 않는다.
+
+Database 운영 콘솔은 catalog 요약만으로 적재 대기·저장 경기·작업 기록을 공통 고정 높이 가상
+목록에 표시한다. 행에는 반복 행동 버튼을 두지 않으며 단건 적재, current 교정 초안, 원천 재수집,
+revision 선택과 작업 오류는 선택 상세에서 수행한다. 저장 경기 revision endpoint는 항목 선택 뒤에만
+호출한다. 검색·시즌·범위·선택은 URL 검색 파라미터가 정본이며 모바일에서는 목록과 상세를 번갈아
+표시한다.

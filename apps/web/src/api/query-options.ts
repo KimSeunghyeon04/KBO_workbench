@@ -15,7 +15,7 @@ import {
   getRecordCorrectionProposal,
   getRecordCorrectionSummary,
 } from "./record-correction-client";
-import type { RecordCorrectionCaseStatus } from "@kbo/contracts";
+import type { RecordCorrectionCaseStatus, RecordCorrectionQueue } from "@kbo/contracts";
 import { getDashboard, getDatabaseOverview, getSystemStatus } from "./system-client";
 
 export const queryKeys = {
@@ -43,6 +43,7 @@ export const queryKeys = {
     list: (filters: {
       readonly season?: number;
       readonly status?: RecordCorrectionCaseStatus;
+      readonly queue?: RecordCorrectionQueue;
       readonly search?: string;
     }) => ["record-corrections", "list", filters] as const,
     proposal: (sessionId: string, noticeId: string) =>
@@ -82,6 +83,7 @@ export const recordCorrectionJobsQueryOptions = () =>
 export const recordCorrectionCasesQueryOptions = (filters: {
   readonly season?: number;
   readonly status?: RecordCorrectionCaseStatus;
+  readonly queue?: RecordCorrectionQueue;
   readonly search?: string;
 }) =>
   queryOptions({

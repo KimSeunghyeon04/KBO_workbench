@@ -71,11 +71,13 @@ export class CollectionJobManager {
     const snapshot: CollectionJob = {
       jobId,
       kind: "collection",
+      scope: structuredClone(request.scope),
       status: "queued",
       createdAt: this.now().toISOString(),
       startedAt: null,
       finishedAt: null,
       completedItems: 0,
+      skippedItems: 0,
       totalItems: request.scope.kind === "game_ids" ? request.scope.gameIds.length : null,
       currentGameId: null,
       summary: { ready: 0, quarantined: 0, sourceFailures: 0 },
@@ -115,7 +117,7 @@ export class CollectionJobManager {
     for (const snapshot of jobs) {
       const internal: InternalJob = {
         request: {
-          scope: { kind: "game_ids", gameIds: [snapshot.jobId] },
+          scope: structuredClone(snapshot.scope),
           idempotencyKey: `recovered-${snapshot.jobId}`,
         },
         controller: new AbortController(),
@@ -239,6 +241,7 @@ export class CollectionJobManager {
       job.snapshot = {
         ...job.snapshot,
         completedItems: job.snapshot.completedItems + skippedItems,
+        skippedItems: job.snapshot.skippedItems + skippedItems,
         totalItems: gameIds.length,
       };
       this.emit(job, "progress", `${String(gameIds.length)}경기를 확인했습니다.`, null, "none");
@@ -427,7 +430,7 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
 }
 
 function cloneJob(job: CollectionJob): CollectionJob {
-  return { ...job, summary: { ...job.summary } };
+  return { ...job, scope: structuredClone(job.scope), summary: { ...job.summary } };
 }
 
 function validateScope(scope: CollectionJobCreateRequest["scope"]): void {

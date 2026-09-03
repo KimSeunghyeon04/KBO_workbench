@@ -8,16 +8,19 @@ import {
   canonicalStringify,
   compareCanonicalStrings,
   parseCurrentWorkspaceEntry,
+  parseLegacyCurrentWorkspaceEntryV1,
   parseSourceFailureRecord,
   parseStagingGameDocumentV2,
   parseStoredFindingEnvelopeV2,
   parseStoredFindings,
   type CurrentWorkspaceEntry,
+  type LegacyCurrentWorkspaceEntryV1,
   type SourceFailureRecord,
   type StagingGameDocumentV2,
   type StoredFinding,
   type StoredFindingEnvelopeV2,
   type WorkspaceTransitionJournal,
+  type WorkspaceManifestUpgradeJournal,
   type WriterLockOwner,
 } from "@kbo/contracts";
 import { compileStagingGameDocumentV2, stagingDocumentHash, type Finding } from "@kbo/game-core";
@@ -72,6 +75,14 @@ export interface WorkspaceMigrationReport {
   readonly legacyArtifactCount: number;
   readonly gameCount: number;
   readonly migratedCount: number;
+  readonly currentManifestV1Count: number;
+  readonly upgradedManifestCount: number;
+  readonly sourceFailureManifestCount: number;
+  readonly derivableDisplaySummaryCount: number;
+  readonly manifestValidationFailures: readonly {
+    readonly gameId: string;
+    readonly message: string;
+  }[];
   readonly conflicts: readonly WorkspaceMigrationConflict[];
 }
 
@@ -88,11 +99,17 @@ interface MigrationResolution {
   readonly selections: ReadonlyMap<string, string>;
 }
 
+interface PreparedManifestUpgrade {
+  readonly previous: LegacyCurrentWorkspaceEntryV1;
+  readonly target: CurrentWorkspaceEntry;
+}
+
 export async function migrateWorkspaceLayout(
   options: WorkspaceMigrationOptions,
 ): Promise<WorkspaceMigrationReport> {
   const root = path.resolve(options.root);
   await access(root, fsConstants.R_OK | (options.apply ? fsConstants.W_OK : 0));
+  const manifestScan = await scanCurrentManifestUpgrades(root);
   const candidates = await scanLegacyCandidates(root);
   const grouped = groupCandidates(candidates);
   const resolution =
@@ -106,6 +123,13 @@ export async function migrateWorkspaceLayout(
       legacyArtifactCount: candidates.length,
       gameCount: grouped.size,
       migratedCount: 0,
+      currentManifestV1Count: manifestScan.v1Count,
+      upgradedManifestCount: 0,
+      sourceFailureManifestCount: manifestScan.sourceFailureCount,
+      derivableDisplaySummaryCount: manifestScan.upgrades.filter(
+        (upgrade) => upgrade.target.authority !== "source_failure",
+      ).length,
+      manifestValidationFailures: manifestScan.failures,
       conflicts,
     };
   }
@@ -116,6 +140,11 @@ export async function migrateWorkspaceLayout(
   if (conflicts.length > 0) {
     throw new Error(
       `권위 충돌 ${String(conflicts.length)}건을 증명 없이 해결할 수 없습니다. --resolution 파일이 필요합니다.`,
+    );
+  }
+  if (manifestScan.failures.length > 0) {
+    throw new Error(
+      `current manifest 검증 실패 ${String(manifestScan.failures.length)}건을 해결해야 합니다.`,
     );
   }
 
@@ -132,6 +161,11 @@ export async function migrateWorkspaceLayout(
   try {
     for (const directory of ["active", "current", "journals", "migration-archive"]) {
       await mkdir(path.join(root, directory), { recursive: true });
+    }
+    for (const upgrade of manifestScan.upgrades.sort((left, right) =>
+      compareCanonicalStrings(left.target.gameId, right.target.gameId),
+    )) {
+      await applyManifestUpgrade(root, upgrade, now);
     }
     for (const candidate of selected.sort((left, right) =>
       compareCanonicalStrings(left.gameId, right.gameId),
@@ -153,8 +187,147 @@ export async function migrateWorkspaceLayout(
     legacyArtifactCount: candidates.length,
     gameCount: grouped.size,
     migratedCount,
+    currentManifestV1Count: manifestScan.v1Count,
+    upgradedManifestCount: manifestScan.upgrades.length,
+    sourceFailureManifestCount: manifestScan.sourceFailureCount,
+    derivableDisplaySummaryCount: manifestScan.upgrades.filter(
+      (upgrade) => upgrade.target.authority !== "source_failure",
+    ).length,
+    manifestValidationFailures: [],
     conflicts: [],
   };
+}
+
+async function scanCurrentManifestUpgrades(root: string): Promise<{
+  readonly v1Count: number;
+  readonly sourceFailureCount: number;
+  readonly upgrades: PreparedManifestUpgrade[];
+  readonly failures: { readonly gameId: string; readonly message: string }[];
+}> {
+  let v1Count = 0;
+  let sourceFailureCount = 0;
+  const upgrades: PreparedManifestUpgrade[] = [];
+  const failures: { gameId: string; message: string }[] = [];
+  for (const file of await readDirectoryIfPresent(path.join(root, "current"))) {
+    if (!file.isFile() || !file.name.endsWith(".json")) continue;
+    const gameId = file.name.slice(0, -5);
+    try {
+      assertGameId(gameId);
+      const value = JSON.parse(
+        await readFile(path.join(root, "current", file.name), "utf8"),
+      ) as unknown;
+      try {
+        parseCurrentWorkspaceEntry(value);
+        continue;
+      } catch {
+        // A V1 entry is accepted only by the explicit migration decoder below.
+      }
+      const previous = parseLegacyCurrentWorkspaceEntryV1(value);
+      if (previous.gameId !== gameId) {
+        throw new Error("manifest gameId가 파일 이름과 다릅니다.");
+      }
+      v1Count += 1;
+      if (previous.authority === "source_failure") sourceFailureCount += 1;
+      upgrades.push(await prepareManifestUpgrade(root, previous));
+    } catch (error: unknown) {
+      failures.push({ gameId, message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return { v1Count, sourceFailureCount, upgrades, failures };
+}
+
+async function prepareManifestUpgrade(
+  root: string,
+  previous: LegacyCurrentWorkspaceEntryV1,
+): Promise<PreparedManifestUpgrade> {
+  const artifact = path.join(root, ...previous.artifactPath.split("/"));
+  if (previous.authority === "source_failure") {
+    const record = parseSourceFailureRecord(
+      JSON.parse(await readFile(artifact, "utf8")) as unknown,
+    );
+    if (
+      previous.documentHash !== null ||
+      record.gameId !== previous.gameId ||
+      record.season !== previous.season ||
+      sha256(canonicalStringify(record)) !== previous.contentHash
+    ) {
+      throw new Error("source failure artifact hash 또는 문맥이 current manifest와 다릅니다.");
+    }
+    return {
+      previous,
+      target: {
+        ...previous,
+        schemaVersion: 2,
+        authority: "source_failure",
+        documentHash: null,
+        displaySummary: null,
+      },
+    };
+  }
+  if (previous.season === null || previous.documentHash === null) {
+    throw new Error("원장 current manifest에 season 또는 document hash가 없습니다.");
+  }
+  const document = parseStagingGameDocumentV2(
+    JSON.parse(await readFile(artifact, "utf8")) as unknown,
+  );
+  const envelope = await readCurrentFindingEnvelope(artifact);
+  if (
+    document.metadata.gameId !== previous.gameId ||
+    document.metadata.season !== previous.season ||
+    stagingDocumentHash(document) !== previous.documentHash ||
+    sha256(canonicalStringify({ document, findingEnvelope: envelope })) !== previous.contentHash
+  ) {
+    throw new Error("원장 artifact hash 또는 문맥이 current manifest와 다릅니다.");
+  }
+  return {
+    previous,
+    target: {
+      ...previous,
+      schemaVersion: 2,
+      season: previous.season,
+      authority: previous.authority,
+      documentHash: previous.documentHash,
+      displaySummary: displaySummary(document),
+    },
+  };
+}
+
+async function readCurrentFindingEnvelope(artifact: string): Promise<StoredFindingEnvelopeV2> {
+  const target = artifact.replace(".document.json", ".findings.json");
+  try {
+    return parseStoredFindingEnvelopeV2(JSON.parse(await readFile(target, "utf8")) as unknown);
+  } catch (error: unknown) {
+    if (isMissing(error)) return findingEnvelope([]);
+    throw error;
+  }
+}
+
+async function applyManifestUpgrade(
+  root: string,
+  upgrade: PreparedManifestUpgrade,
+  now: () => Date,
+): Promise<void> {
+  const transitionId = randomUUID();
+  const journal: WorkspaceManifestUpgradeJournal = {
+    schemaVersion: 1,
+    kind: "manifest_upgrade",
+    transitionId,
+    gameId: upgrade.target.gameId,
+    previous: upgrade.previous,
+    target: upgrade.target,
+    createdAt: now().toISOString(),
+  };
+  const journalPath = path.join(
+    root,
+    "journals",
+    `manifest-upgrade-${upgrade.target.gameId}-${transitionId}.json`,
+  );
+  await atomicWrite(journalPath, `${canonicalStringify(journal)}\n`);
+  await atomicWrite(
+    path.join(root, "current", `${upgrade.target.gameId}.json`),
+    `${canonicalStringify(upgrade.target)}\n`,
+  );
+  await unlink(journalPath);
 }
 
 async function scanLegacyCandidates(root: string): Promise<readonly LegacyCandidate[]> {
@@ -259,17 +432,32 @@ async function migrateCandidate(
       ? `1-${prepared.contentHash}.failure.json`
       : `1-${prepared.contentHash}.document.json`;
   const artifactPath = path.posix.join("active", prepared.gameId, artifactName);
-  const target: CurrentWorkspaceEntry = {
-    schemaVersion: 1,
-    gameId: prepared.gameId,
-    season: prepared.season,
-    authority: prepared.authority === "staging" ? "ready" : prepared.authority,
-    generation: 1,
-    updatedAt: now().toISOString(),
-    artifactPath,
-    contentHash: prepared.contentHash,
-    documentHash: prepared.authority === "source_failure" ? null : prepared.documentHash,
-  };
+  const target: CurrentWorkspaceEntry =
+    prepared.authority === "source_failure"
+      ? {
+          schemaVersion: 2,
+          gameId: prepared.gameId,
+          season: prepared.season,
+          authority: "source_failure",
+          generation: 1,
+          updatedAt: now().toISOString(),
+          artifactPath,
+          contentHash: prepared.contentHash,
+          documentHash: null,
+          displaySummary: null,
+        }
+      : {
+          schemaVersion: 2,
+          gameId: prepared.gameId,
+          season: prepared.season,
+          authority: prepared.authority === "staging" ? "ready" : "quarantine",
+          generation: 1,
+          updatedAt: now().toISOString(),
+          artifactPath,
+          contentHash: prepared.contentHash,
+          documentHash: prepared.documentHash,
+          displaySummary: displaySummary(prepared.document),
+        };
   if (existing !== null && !sameMigrationTarget(existing, target)) {
     throw new Error(`기존 current manifest와 legacy artifact가 충돌합니다: ${prepared.gameId}`);
   }
@@ -586,6 +774,16 @@ function findingFingerprint(finding: StoredFinding | Finding): string {
 
 function findingEnvelope(findings: readonly StoredFinding[]): StoredFindingEnvelopeV2 {
   return parseStoredFindingEnvelopeV2({ schemaVersion: 2, findings });
+}
+
+function displaySummary(document: StagingGameDocumentV2) {
+  return {
+    gameDate: document.metadata.gameDate,
+    teams: {
+      away: { teamId: document.teams.away.teamId, name: document.teams.away.name },
+      home: { teamId: document.teams.home.teamId, name: document.teams.home.name },
+    },
+  };
 }
 
 function toWorkspaceRelativePath(root: string, target: string): string {

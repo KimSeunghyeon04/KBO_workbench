@@ -32,6 +32,8 @@ describe("보정 저장 완료 UI", () => {
                   gameId: document.metadata.gameId,
                   season: document.metadata.season,
                   authority: "quarantine",
+                  gameDate: document.metadata.gameDate,
+                  teams: document.teams,
                   updatedAt: "2026-09-03T00:00:00.000Z",
                 },
               ],

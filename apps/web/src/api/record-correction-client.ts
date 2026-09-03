@@ -10,6 +10,8 @@ import {
   type CorrectionMutationResult,
   type RecordCorrectionCase,
   type RecordCorrectionCaseStatus,
+  type RecordCorrectionListItem,
+  type RecordCorrectionQueue,
   type RecordCorrectionJob,
   type RecordCorrectionJobCreated,
   type RecordCorrectionProposal,
@@ -30,11 +32,13 @@ export async function getRecordCorrectionSummary(): Promise<RecordCorrectionSumm
 export async function getRecordCorrectionCases(filters: {
   readonly season?: number;
   readonly status?: RecordCorrectionCaseStatus;
+  readonly queue?: RecordCorrectionQueue;
   readonly search?: string;
-}): Promise<readonly RecordCorrectionCase[]> {
+}): Promise<readonly RecordCorrectionListItem[]> {
   const query = new URLSearchParams();
   if (filters.season !== undefined) query.set("season", String(filters.season));
   if (filters.status !== undefined) query.set("status", filters.status);
+  if (filters.queue !== undefined) query.set("queue", filters.queue);
   if (filters.search !== undefined && filters.search.trim().length > 0)
     query.set("search", filters.search.trim());
   const suffix = query.size === 0 ? "" : `?${query.toString()}`;

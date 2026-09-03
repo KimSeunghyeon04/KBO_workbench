@@ -65,6 +65,69 @@ function Assert-BrowserUi {
   $browserSmoke = @'
 import { chromium } from "playwright";
 
+async function assertNoHorizontalOverflow(page, selector) {
+  const overflows = await page.locator(selector).evaluate(
+    (element) => element.scrollWidth > element.clientWidth + 1,
+  );
+  if (overflows) throw new Error(`${selector} overflows its content width.`);
+}
+
+async function assertOperationConsole(page, options) {
+  const { path, heading, listName, hasRows } = options;
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(`http://web${path}`, { waitUntil: "networkidle" });
+  await page.getByRole("heading", { name: heading }).waitFor();
+  const list = page.getByRole("listbox", { name: listName });
+  await list.waitFor();
+  await assertNoHorizontalOverflow(page, ".operation-page");
+  const documentScrolls = await page.locator("html").evaluate(
+    (element) => element.scrollHeight > element.clientHeight + 1,
+  );
+  if (documentScrolls) {
+    throw new Error(`${path} stacks below the 1280x720 desktop viewport.`);
+  }
+  if ((await list.locator('[role="option"] button').count()) !== 0) {
+    throw new Error(`${path} repeats action buttons inside list rows.`);
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`http://web${path}`, { waitUntil: "networkidle" });
+  const mobileList = page.getByRole("listbox", { name: listName });
+  await mobileList.waitFor();
+  await assertNoHorizontalOverflow(page, ".operation-page");
+  if (hasRows) {
+    const firstRow = mobileList.locator('[role="option"]').first();
+    await firstRow.click();
+    const detail = page.locator(".operation-console.has-selection .operation-console-detail");
+    await detail.waitFor();
+    const back = page.getByRole("button", { name: /\uBAA9\uB85D\uC73C\uB85C/ });
+    if (!(await back.isVisible())) throw new Error(`${path} mobile detail has no back action.`);
+    const actions = detail.locator(".operation-detail-actions");
+    if ((await actions.count()) > 0) {
+      const [detailBox, actionBox] = await Promise.all([detail.boundingBox(), actions.boundingBox()]);
+      if (
+        detailBox === null ||
+        actionBox === null ||
+        actionBox.y + actionBox.height > detailBox.y + detailBox.height + 1
+      ) {
+        throw new Error(`${path} mobile actions are buried outside the detail viewport.`);
+      }
+    }
+    const selectedUrl = page.url();
+    await page.reload({ waitUntil: "networkidle" });
+    await detail.waitFor();
+    await page.goBack({ waitUntil: "networkidle" });
+    await mobileList.waitFor();
+    if (!(await mobileList.isVisible())) throw new Error(`${path} history back did not restore list.`);
+    await page.goForward({ waitUntil: "networkidle" });
+    await detail.waitFor();
+    if (page.url() !== selectedUrl) throw new Error(`${path} history forward lost the selection.`);
+    await back.click();
+    await mobileList.waitFor();
+    if (!(await mobileList.isVisible())) throw new Error(`${path} mobile back did not restore list.`);
+  }
+}
+
 const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage();
@@ -149,17 +212,26 @@ try {
     throw new Error("Replay page overflows its mobile content width.");
   }
 
-  await page.goto("http://web/database", { waitUntil: "networkidle" });
-  await page.locator("h1").waitFor();
-  const readyTab = page.getByRole("tab", {
-    name: /\uC801\uC7AC \uB300\uAE30 0/,
+  await assertOperationConsole(page, {
+    path: "/collect",
+    heading: "\uACBD\uAE30 \uC218\uC9D1",
+    listName: "\uC218\uC9D1 \uACBD\uAE30 \uBAA9\uB85D",
+    hasRows: true,
   });
-  if ((await readyTab.count()) !== 1) {
-    throw new Error("Database workspace tabs are missing.");
-  }
-  await readyTab.click();
+  await page.getByRole("button", { name: /\uD65C\uB3D9 \uAE30\uB85D/ }).click();
+  await page.getByRole("complementary", { name: "\uC218\uC9D1 \uD65C\uB3D9 \uAE30\uB85D" }).waitFor();
+  await page.getByRole("button", { name: "\uB2EB\uAE30", exact: true }).click();
+
+  await assertOperationConsole(page, {
+    path: "/database?scope=stored",
+    heading: "\uB370\uC774\uD130\uBCA0\uC774\uC2A4",
+    listName: "\uC800\uC7A5\uB41C \uACBD\uAE30",
+    hasRows: true,
+  });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("http://web/database?scope=ready", { waitUntil: "networkidle" });
   const batchButton = page.getByRole("button", {
-    name: /\uC801\uC7AC \uAC00\uB2A5\uD55C 0\uACBD\uAE30 \uC77C\uAD04 \uC801\uC7AC/,
+    name: /0\uACBD\uAE30 \uC77C\uAD04 \uC801\uC7AC/,
   });
   if ((await batchButton.count()) !== 1 || !(await batchButton.isDisabled())) {
     throw new Error("Database batch import browser assertion failed.");
@@ -186,22 +258,17 @@ try {
     throw new Error(`Browser page error: ${pageErrors.join(" | ")}`);
   }
 
-  await page.goto("http://web/record-corrections", { waitUntil: "networkidle" });
-  await page.locator("h1").waitFor();
-  if (
-    (await page.locator("h1").innerText()) !==
-    "KBO \uAE30\uB85D\uC815\uC815 \uAC80\uD1A0\uD568"
-  ) {
-    throw new Error("Record correction inbox heading assertion failed.");
-  }
-  if (
-    (await page.getByRole("region", { name: "\uAE30\uB85D\uC815\uC815 \uC0C1\uD0DC \uC694\uC57D" }).count()) !==
-    1
-  ) {
-    throw new Error("Record correction summary is missing.");
+  await assertOperationConsole(page, {
+    path: "/record-corrections",
+    heading: "KBO \uAE30\uB85D\uC815\uC815",
+    listName: "\uAE30\uB85D\uC815\uC815 \uACF5\uC9C0 \uBAA9\uB85D",
+    hasRows: false,
+  });
+  if ((await page.getByLabel("\uAE30\uB85D\uC815\uC815 \uD050").getByRole("button").count()) !== 3) {
+    throw new Error("Record correction queues are missing.");
   }
   await page
-    .getByText("\uC870\uAC74\uC5D0 \uB9DE\uB294 \uACF5\uC9C0\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.")
+    .getByText("\uC774 \uD050\uC5D0 \uB0A8\uC740 \uACF5\uC9C0\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.")
     .waitFor();
   if (pageErrors.length > 0) {
     throw new Error(`Browser page error: ${pageErrors.join(" | ")}`);
@@ -210,6 +277,7 @@ try {
     JSON.stringify({
       settings: "ok",
       replay: "ok",
+      collection: "ok",
       database: "ok",
       correction: "ok",
       recordCorrection: "ok",
@@ -282,6 +350,8 @@ try {
     completedItems = 1
     totalItems = 2
     currentGameId = "golden-game-1"
+    scope = [ordered]@{ kind = "game_ids"; gameIds = @("golden-game-1", "golden-game-2") }
+    skippedItems = 0
     summary = [ordered]@{ ready = 1; quarantined = 0; sourceFailures = 0 }
     error = $null
     errorCategory = $null

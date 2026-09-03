@@ -22,6 +22,7 @@ import {
   type StoredFindingEnvelopeV2,
   type WriterLockOwner,
   type WorkspaceTransitionJournal,
+  type WorkspaceManifestUpgradeJournal,
   parseCurrentWorkspaceEntry,
   parseCorrectionJournal,
   parseSourceBundleManifest,
@@ -32,6 +33,7 @@ import {
   parseStoredFindings,
   parseStoredFindingEnvelopeV2,
   parseWorkspaceTransitionJournal,
+  parseWorkspaceManifestUpgradeJournal,
 } from "@kbo/contracts";
 import { compileStagingGameDocumentV2, stagingDocumentHash } from "@kbo/game-core";
 
@@ -125,6 +127,7 @@ export class StagingWorkspace {
     try {
       await workspace.initializeDirectories();
       await workspace.recoverTemporaryFiles();
+      await workspace.recoverManifestUpgradeJournals();
       await workspace.recoverWorkspaceTransitions();
       await workspace.assertNoUnmigratedCurrentFiles();
       await workspace.recoverCorrectionJournals();
@@ -195,7 +198,7 @@ export class StagingWorkspace {
     );
     await atomicWrite(this.absoluteArtifactPath(artifactPath), `${canonical}\n`);
     await this.transitionCurrent(previous, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       gameId,
       season,
       authority: "source_failure",
@@ -204,6 +207,7 @@ export class StagingWorkspace {
       artifactPath,
       contentHash,
       documentHash: null,
+      displaySummary: null,
     });
   }
 
@@ -384,14 +388,21 @@ export class StagingWorkspace {
         this.readCatalogFindings(current),
         this.supersededCount(gameId),
       ]);
-      return {
+      const common = {
         gameId,
         season: current.season,
-        authority: catalogAuthority(current.authority),
         updatedAt: current.updatedAt,
         blockingFindings: findings.filter((finding) => finding.severity === "blocking").length,
         warningFindings: findings.filter((finding) => finding.severity === "warning").length,
         supersededCount,
+      };
+      if (current.authority === "source_failure") {
+        return { ...common, authority: "source_failure" as const } satisfies GameCatalogItem;
+      }
+      return {
+        ...common,
+        authority: catalogAuthority(current.authority),
+        ...current.displaySummary,
       } satisfies GameCatalogItem;
     });
     items.sort(compareCatalogItems);
@@ -412,6 +423,7 @@ export class StagingWorkspace {
           season: current.season,
           authority: current.authority === "ready" ? ("staging" as const) : ("quarantine" as const),
           updatedAt: current.updatedAt,
+          ...current.displaySummary,
         };
       })
     ).filter((game) => game !== null);
@@ -658,7 +670,7 @@ export class StagingWorkspace {
       }
     }
     await this.transitionCurrent(previous, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       gameId: document.metadata.gameId,
       season: document.metadata.season,
       authority: currentDocumentAuthority(authority),
@@ -667,6 +679,7 @@ export class StagingWorkspace {
       artifactPath,
       contentHash,
       documentHash,
+      displaySummary: workspaceDisplaySummary(document),
     });
   }
 
@@ -773,9 +786,19 @@ export class StagingWorkspace {
   private async readCurrentEntry(gameId: string): Promise<CurrentWorkspaceEntry | null> {
     assertGameId(gameId);
     try {
-      const current = parseCurrentWorkspaceEntry(
-        JSON.parse(await readFile(this.currentEntryPath(gameId), "utf8")) as unknown,
-      );
+      const value = JSON.parse(await readFile(this.currentEntryPath(gameId), "utf8")) as unknown;
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        !Array.isArray(value) &&
+        "schemaVersion" in value &&
+        value.schemaVersion === 1
+      ) {
+        throw new WorkspaceMigrationRequiredError(
+          `current manifest V1이 남아 있습니다: ${gameId}. pnpm workspace:migrate -- --dry-run으로 먼저 검증하세요.`,
+        );
+      }
+      const current = parseCurrentWorkspaceEntry(value);
       this.assertCurrentEntryContext(current, gameId);
       return current;
     } catch (error: unknown) {
@@ -825,7 +848,9 @@ export class StagingWorkspace {
     if (
       document.metadata.gameId !== current.gameId ||
       document.metadata.season !== current.season ||
-      stagingDocumentHash(document) !== current.documentHash
+      stagingDocumentHash(document) !== current.documentHash ||
+      canonicalStringify(workspaceDisplaySummary(document)) !==
+        canonicalStringify(current.displaySummary)
     ) {
       throw new Error(`current 원장 artifact 무결성 검증에 실패했습니다: ${current.gameId}`);
     }
@@ -972,6 +997,46 @@ export class StagingWorkspace {
       await this.rollForwardWorkspaceTransition(journal);
       await unlink(journalPath);
     }
+  }
+
+  private async recoverManifestUpgradeJournals(): Promise<void> {
+    const directory = path.join(this.root, "journals");
+    const entries = (await readdir(directory, { withFileTypes: true }))
+      .filter(
+        (entry) =>
+          entry.isFile() &&
+          entry.name.startsWith("manifest-upgrade-") &&
+          entry.name.endsWith(".json"),
+      )
+      .sort((left, right) => compareCanonicalStrings(left.name, right.name));
+    for (const entry of entries) {
+      const journalPath = path.join(directory, entry.name);
+      const journal = parseWorkspaceManifestUpgradeJournal(
+        JSON.parse(await readFile(journalPath, "utf8")) as unknown,
+      );
+      await this.rollForwardManifestUpgrade(journal);
+      await unlink(journalPath);
+    }
+  }
+
+  private async rollForwardManifestUpgrade(
+    journal: WorkspaceManifestUpgradeJournal,
+  ): Promise<void> {
+    this.assertCurrentEntryContext(journal.target, journal.gameId);
+    const raw = JSON.parse(
+      await readFile(this.currentEntryPath(journal.gameId), "utf8"),
+    ) as unknown;
+    const canonical = canonicalStringify(raw);
+    if (
+      canonical !== canonicalStringify(journal.previous) &&
+      canonical !== canonicalStringify(journal.target)
+    ) {
+      throw new WorkspacePersistenceBlockedError(
+        `manifest upgrade 중 current가 변경되었습니다: ${journal.gameId}`,
+      );
+    }
+    await this.readCurrentFindings(journal.target);
+    await this.writeCurrentEntry(journal.gameId, journal.target);
   }
 
   private async supersededCount(gameId: string): Promise<number> {
@@ -1226,6 +1291,16 @@ async function readFindingEnvelope(target: string): Promise<StoredFindingEnvelop
 
 function findingEnvelope(findings: readonly StoredFinding[]): StoredFindingEnvelopeV2 {
   return parseStoredFindingEnvelopeV2({ schemaVersion: 2, findings });
+}
+
+function workspaceDisplaySummary(document: StagingGameDocumentV2) {
+  return {
+    gameDate: document.metadata.gameDate,
+    teams: {
+      away: { teamId: document.teams.away.teamId, name: document.teams.away.name },
+      home: { teamId: document.teams.home.teamId, name: document.teams.home.name },
+    },
+  };
 }
 
 function compareCatalogItems(left: GameCatalogItem, right: GameCatalogItem): number {

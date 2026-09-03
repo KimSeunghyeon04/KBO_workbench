@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 
 import { loadReplay } from "../api/client";
 import { catalogQueryOptions, revisionCatalogQueryOptions } from "../api/query-options";
@@ -17,15 +18,22 @@ interface RevisionSelection {
 }
 
 export function useReplayPageController() {
+  const [searchParams] = useSearchParams();
+  const requestedGameId = searchParams.get("gameId");
+  const requestedRevision = parseRequestedRevision(searchParams.get("revision"));
   const games = useQuery(catalogQueryOptions());
   const stored = useMemo(
     () => games.data?.games.filter((item) => item.authority === "database") ?? [],
     [games.data],
   );
   const [search, setSearch] = useState("");
-  const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
+  const [selectedGameId, setSelectedGameId] = useState<string | null>(requestedGameId);
   const gameId = selectedGameId ?? stored[0]?.gameId ?? "";
-  const [revisionSelection, setRevisionSelection] = useState<RevisionSelection | null>(null);
+  const [revisionSelection, setRevisionSelection] = useState<RevisionSelection | null>(
+    requestedGameId === null || requestedRevision === null
+      ? null
+      : { gameId: requestedGameId, revision: requestedRevision },
+  );
   const revisions = useQuery({
     ...revisionCatalogQueryOptions(gameId),
     enabled: gameId !== "",
@@ -155,4 +163,10 @@ export function useReplayPageController() {
     frame,
     state,
   };
+}
+
+function parseRequestedRevision(value: string | null): number | null {
+  if (value === null || !/^\d+$/.test(value)) return null;
+  const revision = Number(value);
+  return Number.isSafeInteger(revision) && revision >= 1 ? revision : null;
 }

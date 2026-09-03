@@ -6,6 +6,7 @@ import {
   type CorrectionMutationResult,
   type CorrectionSession,
   type RecordCorrectionCase,
+  type RecordCorrectionListItem,
   type RecordCorrectionMatchCandidate,
   type RecordCorrectionNotice,
   type RecordCorrectionProposal,
@@ -37,6 +38,7 @@ type Repository = Pick<
   | "case"
   | "gameCandidates"
   | "listCases"
+  | "listCaseSummaries"
   | "markProposalApplied"
   | "markResolvedAfterReassessment"
   | "markResolvedIfImported"
@@ -200,6 +202,12 @@ export class RecordCorrectionService {
     filters: Parameters<RecordCorrectionRepository["listCases"]>[0] = {},
   ): Promise<RecordCorrectionCase[]> {
     return (await this.repository.listCases(filters)).map(normalizeCase);
+  }
+
+  public async listCaseSummaries(
+    filters: Parameters<RecordCorrectionRepository["listCaseSummaries"]>[0] = {},
+  ): Promise<RecordCorrectionListItem[]> {
+    return this.repository.listCaseSummaries(filters);
   }
 
   public async case(noticeId: string): Promise<RecordCorrectionCase | null> {

@@ -18,6 +18,26 @@ const CurrentAuthoritySchema = Type.Union([
 ]);
 const FindingValueSchema = Type.Union([Type.String(), Type.Number(), Type.Boolean(), Type.Null()]);
 
+export const WorkspaceDisplaySummarySchema = Type.Object(
+  {
+    gameDate: Type.String({ pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }),
+    teams: Type.Object(
+      {
+        away: Type.Object(
+          { teamId: Type.String({ minLength: 1 }), name: Type.String({ minLength: 1 }) },
+          strict,
+        ),
+        home: Type.Object(
+          { teamId: Type.String({ minLength: 1 }), name: Type.String({ minLength: 1 }) },
+          strict,
+        ),
+      },
+      strict,
+    ),
+  },
+  strict,
+);
+
 export const StoredFindingDetailSchema = Type.Object(
   {
     field: Type.String(),
@@ -116,24 +136,57 @@ export const ImmutableArtifactMetadataSchema = Type.Object(
   strict,
 );
 
-export const CurrentWorkspaceEntrySchema = Type.Object(
+const CurrentWorkspaceEntryCommonFields = {
+  gameId: GameIdSchema,
+  generation: Type.Integer({ minimum: 1 }),
+  updatedAt: DateTimeSchema,
+  artifactPath: Type.String({
+    pattern: "^active/[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$",
+    minLength: 1,
+    maxLength: 500,
+  }),
+  contentHash: HashSchema,
+} as const;
+
+export const LegacyCurrentWorkspaceEntryV1Schema = Type.Object(
   {
     schemaVersion: Type.Literal(1),
-    gameId: GameIdSchema,
+    ...CurrentWorkspaceEntryCommonFields,
     season: Type.Union([Type.Integer({ minimum: 1982, maximum: 9999 }), Type.Null()]),
     authority: CurrentAuthoritySchema,
-    generation: Type.Integer({ minimum: 1 }),
-    updatedAt: DateTimeSchema,
-    artifactPath: Type.String({
-      pattern: "^active/[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$",
-      minLength: 1,
-      maxLength: 500,
-    }),
-    contentHash: HashSchema,
     documentHash: Type.Union([HashSchema, Type.Null()]),
   },
   strict,
 );
+
+export const CurrentWorkspaceDocumentEntryV2Schema = Type.Object(
+  {
+    schemaVersion: Type.Literal(2),
+    ...CurrentWorkspaceEntryCommonFields,
+    season: Type.Integer({ minimum: 1982, maximum: 9999 }),
+    authority: Type.Union([Type.Literal("ready"), Type.Literal("quarantine")]),
+    documentHash: HashSchema,
+    displaySummary: WorkspaceDisplaySummarySchema,
+  },
+  strict,
+);
+
+export const CurrentWorkspaceSourceFailureEntryV2Schema = Type.Object(
+  {
+    schemaVersion: Type.Literal(2),
+    ...CurrentWorkspaceEntryCommonFields,
+    season: Type.Union([Type.Integer({ minimum: 1982, maximum: 9999 }), Type.Null()]),
+    authority: Type.Literal("source_failure"),
+    documentHash: Type.Null(),
+    displaySummary: Type.Null(),
+  },
+  strict,
+);
+
+export const CurrentWorkspaceEntrySchema = Type.Union([
+  CurrentWorkspaceDocumentEntryV2Schema,
+  CurrentWorkspaceSourceFailureEntryV2Schema,
+]);
 
 export const WorkspaceTransitionJournalSchema = Type.Object(
   {
@@ -142,6 +195,19 @@ export const WorkspaceTransitionJournalSchema = Type.Object(
     gameId: GameIdSchema,
     previous: Type.Union([CurrentWorkspaceEntrySchema, Type.Null()]),
     target: Type.Union([CurrentWorkspaceEntrySchema, Type.Null()]),
+    createdAt: DateTimeSchema,
+  },
+  strict,
+);
+
+export const WorkspaceManifestUpgradeJournalSchema = Type.Object(
+  {
+    schemaVersion: Type.Literal(1),
+    kind: Type.Literal("manifest_upgrade"),
+    transitionId: Type.String({ minLength: 1, maxLength: 200 }),
+    gameId: GameIdSchema,
+    previous: LegacyCurrentWorkspaceEntryV1Schema,
+    target: CurrentWorkspaceEntrySchema,
     createdAt: DateTimeSchema,
   },
   strict,
@@ -244,8 +310,11 @@ export interface StoredFindingEnvelopeV2 {
 export type SourceBundleManifest = Static<typeof SourceBundleManifestSchema>;
 export type SourceFailureRecord = Static<typeof SourceFailureRecordSchema>;
 export type ImmutableArtifactMetadata = Static<typeof ImmutableArtifactMetadataSchema>;
+export type WorkspaceDisplaySummary = Static<typeof WorkspaceDisplaySummarySchema>;
+export type LegacyCurrentWorkspaceEntryV1 = Static<typeof LegacyCurrentWorkspaceEntryV1Schema>;
 export type CurrentWorkspaceEntry = Static<typeof CurrentWorkspaceEntrySchema>;
 export type WorkspaceTransitionJournal = Static<typeof WorkspaceTransitionJournalSchema>;
+export type WorkspaceManifestUpgradeJournal = Static<typeof WorkspaceManifestUpgradeJournalSchema>;
 export interface WriterLockOwner {
   readonly token: string;
   readonly pid: number;
@@ -300,8 +369,18 @@ export function parseCurrentWorkspaceEntry(value: unknown): CurrentWorkspaceEntr
   return Value.Decode(CurrentWorkspaceEntrySchema, value);
 }
 
+export function parseLegacyCurrentWorkspaceEntryV1(value: unknown): LegacyCurrentWorkspaceEntryV1 {
+  return Value.Decode(LegacyCurrentWorkspaceEntryV1Schema, value);
+}
+
 export function parseWorkspaceTransitionJournal(value: unknown): WorkspaceTransitionJournal {
   return Value.Decode(WorkspaceTransitionJournalSchema, value);
+}
+
+export function parseWorkspaceManifestUpgradeJournal(
+  value: unknown,
+): WorkspaceManifestUpgradeJournal {
+  return Value.Decode(WorkspaceManifestUpgradeJournalSchema, value);
 }
 
 export function parseWriterLockOwner(value: unknown): WriterLockOwner {

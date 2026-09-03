@@ -86,7 +86,7 @@ export const recordCorrectionRoutes: FastifyPluginAsyncTypebox<RouteContext> = a
       },
     },
     async (request) => ({
-      cases: await service.listCases(request.query),
+      cases: await service.listCaseSummaries(request.query),
     }),
   );
 

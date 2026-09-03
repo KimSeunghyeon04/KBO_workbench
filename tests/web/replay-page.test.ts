@@ -7,6 +7,7 @@ import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import { ReplayPage } from "../../apps/web/src/pages/replay-page.js";
 
 afterEach(() => {
@@ -21,7 +22,13 @@ describe("경기 재생 UI", () => {
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
     const user = userEvent.setup();
-    render(createElement(QueryClientProvider, { client: queryClient }, createElement(ReplayPage)));
+    render(
+      createElement(
+        MemoryRouter,
+        null,
+        createElement(QueryClientProvider, { client: queryClient }, createElement(ReplayPage)),
+      ),
+    );
 
     const august30 = await screen.findByRole("button", {
       name: "2026년 8월 30일, 경기 2개",
@@ -51,7 +58,13 @@ describe("경기 재생 UI", () => {
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
     const user = userEvent.setup();
-    render(createElement(QueryClientProvider, { client: queryClient }, createElement(ReplayPage)));
+    render(
+      createElement(
+        MemoryRouter,
+        null,
+        createElement(QueryClientProvider, { client: queryClient }, createElement(ReplayPage)),
+      ),
+    );
 
     const search = await screen.findByPlaceholderText("게임 ID 또는 시즌");
     await user.type(search, "2025");
@@ -176,6 +189,11 @@ function replayFetchMock(): ReturnType<typeof vi.fn> {
             gameId: "anon-staging",
             season: 2026,
             authority: "staging",
+            gameDate: "2026-08-30",
+            teams: {
+              away: { teamId: "away", name: "비식별 원정" },
+              home: { teamId: "home", name: "비식별 홈" },
+            },
             updatedAt: "2026-08-30T00:00:00.000Z",
             blockingFindings: 0,
             warningFindings: 0,

@@ -165,13 +165,13 @@ ball에서 일어난 폭투 진루·추가 진루·태그 아웃·득점을 서�
 
 ## 파일 배치
 
-| 상태          | 경로                                         | 의미                                      |
-| ------------- | -------------------------------------------- | ----------------------------------------- |
-| 원천 증거     | `source/<season>/<gameId>/`                  | gzip endpoint payload와 manifest          |
-| 현재 포인터   | `current/<gameId>.json`                      | ready/quarantine/source_failure 단일 권위 |
-| 현재 artifact | `active/<gameId>/<generation>-<hash>.*.json` | 포인터가 가리키는 immutable generation    |
-| 대체 이력     | `superseded/<gameId>/`                       | 이전 generation/content-hash snapshot     |
-| 최초 원장     | `original/<season>/<gameId>.json`            | 최초 정리 원장, 한 번만 기록              |
+| 상태          | 경로                                         | 의미                                                     |
+| ------------- | -------------------------------------------- | -------------------------------------------------------- |
+| 원천 증거     | `source/<season>/<gameId>/`                  | gzip endpoint payload와 manifest                         |
+| 현재 포인터   | `current/<gameId>.json`                      | V2 ready/quarantine/source_failure 단일 권위와 표시 요약 |
+| 현재 artifact | `active/<gameId>/<generation>-<hash>.*.json` | 포인터가 가리키는 immutable generation                   |
+| 대체 이력     | `superseded/<gameId>/`                       | 이전 generation/content-hash snapshot                    |
+| 최초 원장     | `original/<season>/<gameId>.json`            | 최초 정리 원장, 한 번만 기록                             |
 
 KBO 선수 등록부는 경기 수집과 별도 권위다. `registry:sync`가 Register/Trade 원문을
 `registry/source/<season>/<run-id>/` 아래 HTML/JSON gzip과 strict hash metadata로 저장한다. DB에는
@@ -209,6 +209,13 @@ legacy `staging/<season>`·`quarantine/<season>` 배치는 자동 추측하지 �
 workspace 쌍 backup을 만든 뒤에만 `--apply --backup <verified-path>`를 실행한다. 둘 이상의 current
 후보가 있으면 명시적 resolution 파일 없이는 중단한다.
 
+V2 current manifest의 ready/quarantine entry는 원장의 `metadata.gameDate`와 `teams`에서 만든 strict
+`displaySummary`를 가진다. source failure는 season·날짜·팀을 game ID에서 추론하지 않고
+`displaySummary: null`을 유지한다. V1 manifest가 남아 있으면 startup은 persistence-blocked로 중단하고
+같은 `workspace:migrate`가 artifact/document/content hash를 검증한 뒤 upgrade journal과 atomic replace로
+승격한다. dry-run은 V1 수, source failure 수, 파생 가능한 요약과 검증 실패를 보고할 뿐 파일을 바꾸지
+않는다.
+
 현재 DB revision과 같은 `sourceBundleHash`로 명시적 재수집한 경우 draft와 새 revision을 만들지 않는다.
 hash가 달라졌을 때만 current revision 번호와 document hash를 `revisionBase`로 가진 새 작업 문서를
 staging 또는 quarantine에 둔다.
@@ -232,8 +239,10 @@ PostgreSQL volume은 변경하지 않는다.
 갱신한다. 동시에 진행 중인 같은 query를 새 이벤트가 취소·재시작하지 않게 한다.
 catalog 행은 고정 높이 viewport virtual list로 표시해 전체 경기 수와 무관하게 화면에는 보이는 구간과
 overscan만 둔다. canonical catalog 순서와 서버 문서 identity는 렌더링 구간과 분리한다.
-수집 결과와 진행·작업 기록은 같은 고정 높이 tab workspace를 공유한다. 선택한 pane만 표시하고
-내부에서 스크롤하므로 작업 수가 늘어나도 문서 높이를 누적하지 않는다.
+수집 화면은 상단 명령 바, 실행 중 상태 banner, 왼쪽 경기 가상 목록과 오른쪽 상세로 구성한다.
+목록 행에는 날짜·대진·현재 권위·갱신 시각만 두고 finding 수와 행동은 상세로 옮긴다. 과거 작업은
+활동 기록 drawer에서 선택하고 요청 scope, 성공·검토·원천 실패·건너뜀을 상세에 표시한다. 화면
+상태는 URL 검색 파라미터를 사용하며 모바일은 목록→상세 방식으로 전환한다.
 catalog 조회는 startup과 실제 원장 사용 시 수행하는 전체 artifact 무결성 검사를 반복하지 않는다.
 current manifest와 strict finding envelope만 bounded concurrency로 투영하며, 보정·적재처럼 원장을
 사용하는 경계에서는 선택한 current document와 content hash를 다시 검증한다.

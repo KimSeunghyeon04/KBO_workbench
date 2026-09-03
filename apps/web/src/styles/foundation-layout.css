@@ -87,6 +87,16 @@ dd {
   border-left: 1px solid #dfe3e0;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mobile-menu-button {
+  display: none;
+}
+
 .body-grid {
   display: grid;
   min-height: calc(100vh - 56px);

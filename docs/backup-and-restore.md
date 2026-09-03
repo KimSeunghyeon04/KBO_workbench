@@ -75,7 +75,7 @@ current game revision과 replay hash도 확인한다.
 
 ## Workspace current manifest migration
 
-versioned current manifest가 없는 legacy workspace는 먼저 read-only로 검사한다.
+versioned current manifest가 없는 legacy workspace와 V1 current manifest는 먼저 read-only로 검사한다.
 
 ```powershell
 pnpm workspace:migrate -- --dry-run
@@ -91,6 +91,13 @@ pnpm workspace:migrate -- --apply --backup D:\KBO_Backups\kbo-workbench-<timesta
 staging, quarantine, source-failure가 겹치거나 기존 current manifest와 충돌하면 도구는 우선순위를
 추측하지 않는다. dry-run 결과의 정확한 legacy 상대 경로를 선택한 resolution 파일이 있어야 진행한다.
 legacy 파일은 삭제하지 않고 `migration-archive`로 옮긴다.
+
+dry-run은 legacy artifact 외에 V1 manifest 수, source failure 수, 파생 가능한 표시 요약 수와 manifest
+검증 실패를 보고한다.
+ready/quarantine V1은 가리키는 artifact와 finding envelope의 content/document hash를 확인하고 strict
+원장에서 경기일·대진 요약을 만든다. source failure는 표시 요약을 null로 유지한다. apply는 manifest
+upgrade journal을 먼저 쓰고 current를 atomic replace한 뒤 journal을 제거하므로 startup에서
+idempotent하게 roll-forward할 수 있다. artifact bytes와 hash는 바꾸지 않는다.
 
 ## V2에서 V3로 전환할 때
 

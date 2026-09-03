@@ -74,8 +74,13 @@ seal/current pointer, catalog identity FK, tracking 단일 저장, registry snap
 - 차단 draft는 quarantine에만 저장되고 DB import가 거부됨
 - tracking link/duplicate/exclude/unlink와 중복 그룹 batch가 실제 pitch 1:tracking 0..1을 보장함
 - 수집 SSE의 비변경 진행은 작업 목록만 갱신하고 catalog query 폭주를 만들지 않음
-- 784개 DB catalog의 첫 화면은 revision 상세 요청 0회와 2,000 미만 DOM node를 유지하고, 행 하나를
-  펼치면 해당 경기 revision endpoint만 한 번 호출함
+- 784개 DB·기록정정·작업 목록은 2,000 미만 DOM node를 유지하고, 선택 전 revision/공지 상세 요청은
+  0회이며 선택한 항목 endpoint만 한 번 호출함
+- 수집·기록정정·Database의 URL 직접 진입, 새로고침과 뒤로/앞으로가 검색·범위·선택을 복원함
+- 운영 콘솔 목록 행에 finding 수나 반복 행동 버튼이 없고, 기록정정 처리 뒤 다음 미처리 항목과 남은
+  수를 표시함
+- 1280×720에서 목록·상세가 한 화면 작업영역에 있고 390×844에서는 목록→상세→뒤로로 전환하며
+  가로 scroll과 상세 끝에 묻힌 주요 행동이 없음
 - 수집·재생 catalog는 viewport와 overscan만 렌더링하고, 재생 listbox는 canonical filtered index와
   `aria-activedescendant`, `aria-setsize`, `aria-posinset`을 유지함
 - production build는 route별 lazy chunk를 만들고 500KB 초과 chunk 경고가 없음

@@ -65,6 +65,8 @@ describe("staging workspace", () => {
           gameId: document.metadata.gameId,
           season: document.metadata.season,
           authority: "staging",
+          gameDate: document.metadata.gameDate,
+          teams: document.teams,
           updatedAt: current.updatedAt,
         },
       ],
@@ -139,6 +141,30 @@ describe("staging workspace", () => {
       ],
     });
     await expect(workspace.readCurrentDocumentSnapshot(document.metadata.gameId)).rejects.toThrow();
+    await workspace.close();
+  });
+
+  it("current 표시 요약이 원장과 다르면 권위 문서 읽기를 차단한다", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-summary-integrity-"));
+    const workspace = await StagingWorkspace.open(temporary.path);
+    const { document } = mapNaverGame(await sanitizedNaverBundle());
+    await workspace.saveReady(document, []);
+    const currentPath = path.join(temporary.path, "current", `${document.metadata.gameId}.json`);
+    const current = parseCurrentWorkspaceEntry(
+      JSON.parse(await readFile(currentPath, "utf8")) as unknown,
+    );
+    if (current.authority === "source_failure") throw new Error("테스트 전제 위반");
+    await writeFile(
+      currentPath,
+      `${canonicalStringify({
+        ...current,
+        displaySummary: { ...current.displaySummary, gameDate: "2026-01-01" },
+      })}\n`,
+    );
+
+    await expect(workspace.readCurrentDocumentSnapshot(document.metadata.gameId)).rejects.toThrow(
+      "artifact 무결성",
+    );
     await workspace.close();
   });
 
@@ -319,7 +345,9 @@ describe("staging workspace", () => {
       completedItems: 2,
       totalItems: 5,
       currentGameId: "20260820AABB",
+      scope: { kind: "game_ids", gameIds: ["20260820AABB"] },
       summary: { ready: 1, quarantined: 1, sourceFailures: 0 },
+      skippedItems: 0,
       error: null,
       errorCategory: null,
     });
@@ -458,7 +486,7 @@ describe("staging workspace", () => {
       `${canonicalStringify(changed)}\n`,
     );
     const target = {
-      schemaVersion: 1 as const,
+      schemaVersion: 2 as const,
       gameId: document.metadata.gameId,
       season: document.metadata.season,
       authority: "ready" as const,
@@ -467,6 +495,10 @@ describe("staging workspace", () => {
       artifactPath,
       contentHash,
       documentHash: stagingDocumentHash(changed),
+      displaySummary: {
+        gameDate: changed.metadata.gameDate,
+        teams: changed.teams,
+      },
     };
     await writeFile(
       path.join(
@@ -492,6 +524,56 @@ describe("staging workspace", () => {
     expect(
       (await readdir(path.join(temporary.path, "journals"))).filter((name) =>
         name.startsWith("workspace-"),
+      ),
+    ).toEqual([]);
+    await restarted.close();
+  });
+
+  it("중단된 manifest V1→V2 upgrade journal을 startup에서 roll-forward한다", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-upgrade-recovery-"));
+    const first = await StagingWorkspace.open(temporary.path);
+    const { document } = mapNaverGame(await sanitizedNaverBundle());
+    await first.saveReady(document, []);
+    await first.close();
+
+    const currentPath = path.join(temporary.path, "current", `${document.metadata.gameId}.json`);
+    const target = parseCurrentWorkspaceEntry(JSON.parse(await readFile(currentPath, "utf8")));
+    const previous = {
+      schemaVersion: 1 as const,
+      gameId: target.gameId,
+      season: target.season,
+      authority: target.authority,
+      generation: target.generation,
+      updatedAt: target.updatedAt,
+      artifactPath: target.artifactPath,
+      contentHash: target.contentHash,
+      documentHash: target.documentHash,
+    };
+    await writeFile(currentPath, `${canonicalStringify(previous)}\n`);
+    await writeFile(
+      path.join(
+        temporary.path,
+        "journals",
+        `manifest-upgrade-${document.metadata.gameId}-test-upgrade.json`,
+      ),
+      `${canonicalStringify({
+        schemaVersion: 1,
+        kind: "manifest_upgrade",
+        transitionId: "test-upgrade",
+        gameId: document.metadata.gameId,
+        previous,
+        target,
+        createdAt: "2026-09-04T01:00:00.000Z",
+      })}\n`,
+    );
+
+    const restarted = await StagingWorkspace.open(temporary.path);
+    expect(parseCurrentWorkspaceEntry(JSON.parse(await readFile(currentPath, "utf8")))).toEqual(
+      target,
+    );
+    expect(
+      (await readdir(path.join(temporary.path, "journals"))).filter((name) =>
+        name.startsWith("manifest-upgrade-"),
       ),
     ).toEqual([]);
     await restarted.close();

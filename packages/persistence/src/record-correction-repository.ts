@@ -4,11 +4,13 @@ import {
   type RecordCorrectionCase,
   type RecordCorrectionCaseStatus,
   type RecordCorrectionJob,
+  type RecordCorrectionListItem,
   type RecordCorrectionMatchCandidate,
   type RecordCorrectionNotice,
   type RecordCorrectionReviewActionRequest,
   type RecordCorrectionSeasonDataset,
   type RecordCorrectionSummary,
+  type RecordCorrectionQueue,
 } from "@kbo/contracts";
 import type { Pool, PoolClient } from "pg";
 
@@ -789,6 +791,78 @@ export class RecordCorrectionRepository {
         return item;
       }),
     );
+  }
+
+  public async listCaseSummaries(
+    filters: {
+      readonly season?: number;
+      readonly status?: RecordCorrectionCaseStatus;
+      readonly queue?: RecordCorrectionQueue;
+      readonly search?: string;
+    } = {},
+  ): Promise<RecordCorrectionListItem[]> {
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    if (filters.season !== undefined) {
+      values.push(filters.season);
+      conditions.push(`a.season=$${String(values.length)}`);
+    }
+    if (filters.status !== undefined) {
+      values.push(filters.status);
+      conditions.push(`a.status=$${String(values.length)}`);
+    }
+    if (filters.queue === "needs_action") {
+      conditions.push(`a.status IN ('action_required','manual_review','unmatched')`);
+    } else if (filters.queue === "completed") {
+      conditions.push(`a.status IN ('already_applied','out_of_scope','resolved','dismissed')`);
+    }
+    if (filters.search !== undefined && filters.search.trim().length > 0) {
+      values.push(`%${filters.search.trim()}%`);
+      conditions.push(
+        `(n.away_team_name ILIKE $${String(values.length)} OR n.home_team_name ILIKE $${String(values.length)} OR n.content_text ILIKE $${String(values.length)})`,
+      );
+    }
+    const result = await this.pool.query<{
+      readonly notice_id: string;
+      readonly case_version: number;
+      readonly status: RecordCorrectionCaseStatus;
+      readonly season: number;
+      readonly game_id: string | null;
+      readonly assessed_at: Date | string;
+      readonly game_date: string;
+      readonly away_team_name: string;
+      readonly home_team_name: string;
+      readonly venue_name: string;
+      readonly before_record_text: string;
+      readonly after_record_text: string;
+    }>(
+      `SELECT a.notice_id,a.case_version,a.status,a.season,a.game_id,a.assessed_at,
+              n.game_date::text AS game_date,n.away_team_name,n.home_team_name,n.venue_name,
+              n.before_record_text,n.after_record_text
+       FROM record_correction.match_assessments a
+       JOIN record_correction.season_current_revisions c
+         ON c.season=a.season AND c.current_revision=a.source_revision
+       JOIN record_correction.notices n
+         ON n.season=a.season AND n.revision=a.source_revision
+        AND n.notice_sequence=a.notice_sequence
+       ${conditions.length === 0 ? "" : `WHERE ${conditions.join(" AND ")}`}
+       ORDER BY n.game_date DESC,n.record_number DESC,a.notice_id`,
+      values,
+    );
+    return result.rows.map((row) => ({
+      noticeId: row.notice_id,
+      caseVersion: row.case_version,
+      status: row.status,
+      season: row.season,
+      gameId: row.game_id,
+      assessedAt: iso(row.assessed_at),
+      gameDate: row.game_date,
+      awayTeamName: row.away_team_name,
+      homeTeamName: row.home_team_name,
+      venueName: row.venue_name,
+      beforeRecordText: row.before_record_text,
+      afterRecordText: row.after_record_text,
+    }));
   }
 
   public async case(noticeId: string): Promise<RecordCorrectionCase | null> {

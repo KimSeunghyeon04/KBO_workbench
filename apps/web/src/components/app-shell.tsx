@@ -1,5 +1,5 @@
-import type { PropsWithChildren } from "react";
-import { NavLink } from "react-router-dom";
+import { useEffect, useState, type PropsWithChildren } from "react";
+import { NavLink, useLocation } from "react-router-dom";
 
 const navigation = [
   { to: "/", label: "대시보드", end: true },
@@ -12,14 +12,32 @@ const navigation = [
 ] as const;
 
 export function AppShell({ children }: PropsWithChildren): React.JSX.Element {
+  const location = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => setMenuOpen(false), [location.pathname]);
   return (
     <div className="app-shell">
       <header className="topbar">
         <strong className="brand-name">KBO Workbench</strong>
-        <span className="environment-label">로컬</span>
+        <div className="topbar-actions">
+          <span className="environment-label">로컬</span>
+          <button
+            type="button"
+            className="mobile-menu-button"
+            aria-expanded={menuOpen}
+            aria-controls="primary-navigation"
+            onClick={() => setMenuOpen((current) => !current)}
+          >
+            메뉴
+          </button>
+        </div>
       </header>
       <div className="body-grid">
-        <nav className="sidebar" aria-label="주 메뉴">
+        <nav
+          id="primary-navigation"
+          className={menuOpen ? "sidebar open" : "sidebar"}
+          aria-label="주 메뉴"
+        >
           {navigation.map((item) => (
             <NavLink
               key={item.to}

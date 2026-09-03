@@ -169,6 +169,12 @@ export const RecordCorrectionCaseStatusSchema = Type.Union([
   Type.Literal("dismissed"),
 ]);
 
+export const RecordCorrectionQueueSchema = Type.Union([
+  Type.Literal("needs_action"),
+  Type.Literal("completed"),
+  Type.Literal("all"),
+]);
+
 export const RecordCorrectionMatchCandidateSchema = Type.Object(
   {
     candidateId: IdSchema,
@@ -230,13 +236,32 @@ export const RecordCorrectionListQuerySchema = Type.Object(
   {
     season: Type.Optional(Type.Integer({ minimum: 1982, maximum: 9999 })),
     status: Type.Optional(RecordCorrectionCaseStatusSchema),
+    queue: Type.Optional(RecordCorrectionQueueSchema),
     search: Type.Optional(Type.String({ maxLength: 100 })),
   },
   strict,
 );
 
+export const RecordCorrectionListItemSchema = Type.Object(
+  {
+    noticeId: IdSchema,
+    caseVersion: Type.Integer({ minimum: 1 }),
+    status: RecordCorrectionCaseStatusSchema,
+    season: Type.Integer({ minimum: 1982 }),
+    gameId: NullableIdSchema,
+    assessedAt: DateTimeSchema,
+    gameDate: DateSchema,
+    awayTeamName: Type.String({ minLength: 1, maxLength: 200 }),
+    homeTeamName: Type.String({ minLength: 1, maxLength: 200 }),
+    venueName: Type.String({ minLength: 1, maxLength: 200 }),
+    beforeRecordText: Type.String({ minLength: 1, maxLength: 1000 }),
+    afterRecordText: Type.String({ minLength: 1, maxLength: 1000 }),
+  },
+  strict,
+);
+
 export const RecordCorrectionListSchema = Type.Object(
-  { cases: Type.Array(RecordCorrectionCaseSchema) },
+  { cases: Type.Array(RecordCorrectionListItemSchema) },
   strict,
 );
 
@@ -375,8 +400,10 @@ export type RecordCorrectionStatChange = Static<typeof RecordCorrectionStatChang
 export type RecordCorrectionNotice = Static<typeof RecordCorrectionNoticeSchema>;
 export type RecordCorrectionSeasonDataset = Static<typeof RecordCorrectionSeasonDatasetSchema>;
 export type RecordCorrectionCaseStatus = Static<typeof RecordCorrectionCaseStatusSchema>;
+export type RecordCorrectionQueue = Static<typeof RecordCorrectionQueueSchema>;
 export type RecordCorrectionMatchCandidate = Static<typeof RecordCorrectionMatchCandidateSchema>;
 export type RecordCorrectionCase = Static<typeof RecordCorrectionCaseSchema>;
+export type RecordCorrectionListItem = Static<typeof RecordCorrectionListItemSchema>;
 export type RecordCorrectionSummary = Static<typeof RecordCorrectionSummarySchema>;
 export type RecordCorrectionReviewActionRequest = Static<
   typeof RecordCorrectionReviewActionRequestSchema

@@ -61,11 +61,13 @@ export const CollectionJobSchema = Type.Object(
   {
     jobId: IdSchema,
     kind: Type.Literal("collection"),
+    scope: CollectionScopeSchema,
     status: JobStatusSchema,
     createdAt: DateTimeSchema,
     startedAt: Type.Union([DateTimeSchema, Type.Null()]),
     finishedAt: Type.Union([DateTimeSchema, Type.Null()]),
     completedItems: Type.Integer({ minimum: 0 }),
+    skippedItems: Type.Integer({ minimum: 0 }),
     totalItems: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
     currentGameId: Type.Union([GameIdSchema, Type.Null()]),
     summary: CollectionJobSummarySchema,
@@ -137,19 +139,6 @@ const CatalogItemFields = {
   warningFindings: Type.Integer({ minimum: 0 }),
 } as const;
 
-export const WorkspaceGameCatalogItemSchema = Type.Object(
-  {
-    ...CatalogItemFields,
-    authority: Type.Union([
-      Type.Literal("staging"),
-      Type.Literal("quarantine"),
-      Type.Literal("source_failure"),
-    ]),
-    supersededCount: Type.Integer({ minimum: 0 }),
-  },
-  strict,
-);
-
 export const CatalogTeamSchema = Type.Object(
   {
     teamId: IdSchema,
@@ -158,12 +147,40 @@ export const CatalogTeamSchema = Type.Object(
   strict,
 );
 
+const CatalogGameSummaryFields = {
+  gameDate: IsoDateSchema,
+  teams: Type.Object({ away: CatalogTeamSchema, home: CatalogTeamSchema }, strict),
+} as const;
+
+export const WorkspaceDocumentGameCatalogItemSchema = Type.Object(
+  {
+    ...CatalogItemFields,
+    ...CatalogGameSummaryFields,
+    authority: Type.Union([Type.Literal("staging"), Type.Literal("quarantine")]),
+    supersededCount: Type.Integer({ minimum: 0 }),
+  },
+  strict,
+);
+
+export const WorkspaceSourceFailureGameCatalogItemSchema = Type.Object(
+  {
+    ...CatalogItemFields,
+    authority: Type.Literal("source_failure"),
+    supersededCount: Type.Integer({ minimum: 0 }),
+  },
+  strict,
+);
+
+export const WorkspaceGameCatalogItemSchema = Type.Union([
+  WorkspaceDocumentGameCatalogItemSchema,
+  WorkspaceSourceFailureGameCatalogItemSchema,
+]);
+
 export const DatabaseGameCatalogItemSchema = Type.Object(
   {
     ...CatalogItemFields,
+    ...CatalogGameSummaryFields,
     authority: Type.Literal("database"),
-    gameDate: IsoDateSchema,
-    teams: Type.Object({ away: CatalogTeamSchema, home: CatalogTeamSchema }, strict),
     currentRevision: Type.Integer({ minimum: 1 }),
     revisionCount: Type.Integer({ minimum: 1 }),
   },
@@ -199,6 +216,12 @@ export type JobEvent = Static<typeof JobEventSchema>;
 export type CatalogAuthority = Static<typeof CatalogAuthoritySchema>;
 export type GameCatalogItem = Static<typeof GameCatalogItemSchema>;
 export type WorkspaceGameCatalogItem = Static<typeof WorkspaceGameCatalogItemSchema>;
+export type WorkspaceDocumentGameCatalogItem = Static<
+  typeof WorkspaceDocumentGameCatalogItemSchema
+>;
+export type WorkspaceSourceFailureGameCatalogItem = Static<
+  typeof WorkspaceSourceFailureGameCatalogItemSchema
+>;
 export type DatabaseGameCatalogItem = Static<typeof DatabaseGameCatalogItemSchema>;
 export type GameCatalog = Static<typeof GameCatalogSchema>;
 export type ApiError = Static<typeof ApiErrorSchema>;

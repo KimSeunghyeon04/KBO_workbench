@@ -322,6 +322,20 @@ export const CorrectionGameCatalogItemSchema = Type.Object(
     season: Type.Integer({ minimum: 1982, maximum: 9999 }),
     authority: Type.Union([Type.Literal("staging"), Type.Literal("quarantine")]),
     updatedAt: DateTimeSchema,
+    gameDate: Type.String({ pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }),
+    teams: Type.Object(
+      {
+        away: Type.Object(
+          { teamId: IdSchema, name: Type.String({ minLength: 1, maxLength: 200 }) },
+          strict,
+        ),
+        home: Type.Object(
+          { teamId: IdSchema, name: Type.String({ minLength: 1, maxLength: 200 }) },
+          strict,
+        ),
+      },
+      strict,
+    ),
   },
   strict,
 );
