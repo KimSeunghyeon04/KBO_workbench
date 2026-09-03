@@ -58,6 +58,9 @@ describe("collection HTTP API", () => {
     expect(catalog.json()).toEqual({
       games: [expect.objectContaining({ gameId: bundle.gameId, authority: "staging" })],
     });
+    const catalogRead = vi
+      .spyOn(workspace, "catalog")
+      .mockRejectedValue(new Error("단일 경기 조회에서 전체 catalog를 읽으면 안 됩니다."));
     const document = await app.inject({
       method: "GET",
       url: `/api/v2/games/${bundle.gameId}`,
@@ -67,6 +70,7 @@ describe("collection HTTP API", () => {
       schemaVersion: 2,
       metadata: { gameId: bundle.gameId },
     });
+    expect(catalogRead).not.toHaveBeenCalled();
     await app.close();
     expect(pool.end).toHaveBeenCalledOnce();
   }, 10_000);

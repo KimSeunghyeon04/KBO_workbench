@@ -410,7 +410,7 @@ export function CorrectPage(): React.JSX.Element {
                 aria-pressed={scope === value}
                 onClick={() => setScope(value)}
               >
-                {label} <span>{String(scopeCounts[value])}</span>
+                {label} <span>{catalog.isPending ? "…" : String(scopeCounts[value])}</span>
               </button>
             ))}
           </div>
@@ -455,6 +455,11 @@ export function CorrectPage(): React.JSX.Element {
             KBO 문자중계
           </a>
         </div>
+        {catalog.isPending ? (
+          <div className="notice-panel" role="status" aria-live="polite">
+            수집한 경기 목록을 확인하고 있습니다.
+          </div>
+        ) : null}
         {confirmOpen ? (
           <div className="open-session-confirmation" role="alert">
             <span>현재 작업 사본의 저장하지 않은 변경을 버리고 선택한 경기를 여시겠습니까?</span>

@@ -39,16 +39,10 @@ export const catalogRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app
       },
     },
     async (request, reply) => {
-      const workspaceCatalog = await context.runtime.workspace.catalog();
-      const item = workspaceCatalog.games.find(
-        (game) => game.gameId === request.params.gameId && game.authority !== "source_failure",
+      const current = await context.runtime.workspace.readCurrentDocumentSnapshot(
+        request.params.gameId,
       );
-      if (
-        item === undefined ||
-        item.season === null ||
-        item.authority === "source_failure" ||
-        item.authority === "database"
-      ) {
+      if (current === null) {
         return reply
           .code(404)
           .send(
@@ -61,10 +55,7 @@ export const catalogRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app
             ),
           );
       }
-      return sendCanonicalDocument(
-        reply,
-        await context.runtime.workspace.readDocument(item.authority, item.season, item.gameId),
-      );
+      return sendCanonicalDocument(reply, current.document);
     },
   );
 };

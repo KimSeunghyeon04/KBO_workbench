@@ -69,6 +69,7 @@ export interface CurrentDocumentSnapshot {
 
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
+const CATALOG_READ_CONCURRENCY = 16;
 
 export class StaleStagingDocumentError extends Error {
   public constructor(message: string) {
@@ -372,23 +373,26 @@ export class StagingWorkspace {
 
   public async catalog(): Promise<GameCatalog> {
     this.assertOpen();
-    const items: GameCatalogItem[] = [];
-    for (const file of await readDirectoryIfPresent(path.join(this.root, "current"))) {
-      if (!file.isFile() || !file.name.endsWith(".json")) continue;
+    const files = (await readDirectoryIfPresent(path.join(this.root, "current"))).filter(
+      (file) => file.isFile() && file.name.endsWith(".json") && isGameId(file.name.slice(0, -5)),
+    );
+    const items = await mapInBatches(files, CATALOG_READ_CONCURRENCY, async (file) => {
       const gameId = file.name.slice(0, -5);
-      if (!isGameId(gameId)) continue;
       const current = await this.requiredCurrentEntry(gameId);
-      const findings = await this.readCurrentFindings(current);
-      items.push({
+      const [findings, supersededCount] = await Promise.all([
+        this.readCatalogFindings(current),
+        this.supersededCount(gameId),
+      ]);
+      return {
         gameId,
         season: current.season,
         authority: catalogAuthority(current.authority),
         updatedAt: current.updatedAt,
         blockingFindings: findings.filter((finding) => finding.severity === "blocking").length,
         warningFindings: findings.filter((finding) => finding.severity === "warning").length,
-        supersededCount: await this.supersededCount(gameId),
-      });
-    }
+        supersededCount,
+      } satisfies GameCatalogItem;
+    });
     items.sort(compareCatalogItems);
     return { games: items };
   }
@@ -825,6 +829,13 @@ export class StagingWorkspace {
     return this.readDocumentFindings(current, document);
   }
 
+  private async readCatalogFindings(
+    current: CurrentWorkspaceEntry,
+  ): Promise<readonly StoredFinding[]> {
+    if (current.authority === "source_failure") return this.readCurrentFindings(current);
+    return readFindings(this.findingsArtifactPath(current.artifactPath));
+  }
+
   private async readDocumentFindings(
     current: CurrentWorkspaceEntry,
     document: StagingGameDocumentV2,
@@ -1162,6 +1173,18 @@ export class StagingWorkspace {
 
 async function readFindings(target: string): Promise<readonly StoredFinding[]> {
   return (await readFindingEnvelope(target)).findings;
+}
+
+async function mapInBatches<Input, Output>(
+  values: readonly Input[],
+  concurrency: number,
+  operation: (value: Input) => Promise<Output>,
+): Promise<Output[]> {
+  const output: Output[] = [];
+  for (let offset = 0; offset < values.length; offset += concurrency) {
+    output.push(...(await Promise.all(values.slice(offset, offset + concurrency).map(operation))));
+  }
+  return output;
 }
 
 async function readFindingEnvelope(target: string): Promise<StoredFindingEnvelopeV2> {

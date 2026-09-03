@@ -103,6 +103,35 @@ describe("staging workspace", () => {
     await workspace.close();
   });
 
+  it("catalog는 current 요약만 투영하고 원장을 사용하는 경계에서 artifact를 재검증한다", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-catalog-projection-"));
+    const workspace = await StagingWorkspace.open(temporary.path);
+    const { document } = mapNaverGame(await sanitizedNaverBundle());
+    await workspace.saveReady(document, []);
+    const current = parseCurrentWorkspaceEntry(
+      JSON.parse(
+        await readFile(
+          path.join(temporary.path, "current", `${document.metadata.gameId}.json`),
+          "utf8",
+        ),
+      ) as unknown,
+    );
+    await writeFile(path.join(temporary.path, ...current.artifactPath.split("/")), "{}\n");
+
+    await expect(workspace.catalog()).resolves.toEqual({
+      games: [
+        expect.objectContaining({
+          gameId: document.metadata.gameId,
+          authority: "staging",
+          blockingFindings: 0,
+          warningFindings: 0,
+        }),
+      ],
+    });
+    await expect(workspace.readCurrentDocumentSnapshot(document.metadata.gameId)).rejects.toThrow();
+    await workspace.close();
+  });
+
   it("finding이 없으면 sidecar를 만들지 않고 기존 sidecar도 제거한다", async () => {
     await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-empty-findings-"));
     const workspace = await StagingWorkspace.open(temporary.path);
