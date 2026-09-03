@@ -17,6 +17,8 @@ import {
   revisionCatalogQueryOptions,
 } from "../api/query-options";
 import { StatusBadge } from "../components/status-badge";
+import { useFixedVirtualList } from "../components/use-fixed-virtual-list";
+import { WorkspaceTabs } from "../components/workspace-tabs";
 
 const terminal = new Set<ImportJob["status"]>(["cancelled", "succeeded", "failed"]);
 
@@ -25,6 +27,7 @@ export function DatabasePage(): React.JSX.Element {
   const [confirmBatch, setConfirmBatch] = useState(false);
   const [batchResult, setBatchResult] = useState<ImportReadyBatchCreated | null>(null);
   const [storedLimit, setStoredLimit] = useState(50);
+  const [selectedView, setSelectedView] = useState<"ready" | "jobs" | "stored" | null>(null);
   const overview = useQuery(databaseOverviewQueryOptions());
   const catalog = useQuery(catalogQueryOptions());
   const jobs = useQuery({
@@ -35,6 +38,7 @@ export function DatabasePage(): React.JSX.Element {
   const singleMutation = useMutation({
     mutationFn: createImportJob,
     onSuccess: async () => {
+      setSelectedView("jobs");
       await queryClient.invalidateQueries({ queryKey: queryKeys.jobs.import });
     },
   });
@@ -43,6 +47,7 @@ export function DatabasePage(): React.JSX.Element {
     onSuccess: async (result) => {
       setBatchResult(result);
       setConfirmBatch(false);
+      setSelectedView("jobs");
       await queryClient.invalidateQueries({ queryKey: queryKeys.jobs.import });
     },
   });
@@ -57,6 +62,8 @@ export function DatabasePage(): React.JSX.Element {
     }) ?? []),
   ]);
   const batchCandidates = ready.filter((game) => !activeGameIds.has(game.gameId));
+  const activeView =
+    selectedView ?? (activeGameIds.size > 0 ? "jobs" : ready.length > 0 ? "ready" : "stored");
   const batchProgress = summarizeBatch(batchResult, jobsById);
   const completedSignature =
     jobs.data
@@ -107,156 +114,217 @@ export function DatabasePage(): React.JSX.Element {
         </article>
       </section>
 
-      <section className="panel">
-        <div className="section-heading import-ready-heading">
-          <div>
-            <h2>적재 대기</h2>
-            <p className="muted-text">차단 finding이 없는 신규 경기와 revision 교정 초안을 표시</p>
-          </div>
-          <button
-            className="primary-button"
-            type="button"
-            disabled={
-              batchCandidates.length === 0 ||
-              batchMutation.isPending ||
-              overview.data?.database.healthy !== true
-            }
-            onClick={() => setConfirmBatch(true)}
+      <section className="panel operation-workspace database-workspace">
+        <WorkspaceTabs
+          activeTab={activeView}
+          ariaLabel="데이터베이스 작업공간"
+          idPrefix="database"
+          onChange={setSelectedView}
+          tabs={[
+            { id: "ready", label: "적재 대기", count: ready.length },
+            { id: "jobs", label: "적재 작업", count: jobs.data?.length ?? 0 },
+            { id: "stored", label: "저장된 경기", count: stored.length },
+          ]}
+        />
+
+        {activeView === "ready" ? (
+          <div
+            className="operation-workspace-panel operation-workspace-scroll"
+            id="database-panel-ready"
+            role="tabpanel"
+            aria-labelledby="database-tab-ready"
           >
-            적재 가능한 {String(batchCandidates.length)}경기 일괄 적재
-          </button>
-        </div>
-        {confirmBatch ? (
-          <div className="import-batch-confirmation" role="alert">
-            <div>
-              <strong>{String(batchCandidates.length)}경기를 일괄 적재하시겠습니까?</strong>
-              <p>
-                서버가 실행 시점의 적재 가능 문서를 다시 확인합니다. 각 경기는 독립 transaction으로
-                처리되어 한 경기의 실패가 나머지 작업을 중단하지 않습니다.
+            <div className="section-heading import-ready-heading">
+              <p className="muted-text">
+                차단 finding이 없는 신규 경기와 revision 교정 초안을 표시합니다.
               </p>
+              <button
+                className="primary-button"
+                type="button"
+                disabled={
+                  batchCandidates.length === 0 ||
+                  batchMutation.isPending ||
+                  overview.data?.database.healthy !== true
+                }
+                onClick={() => setConfirmBatch(true)}
+              >
+                적재 가능한 {String(batchCandidates.length)}경기 일괄 적재
+              </button>
             </div>
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={batchMutation.isPending}
-              onClick={() => setConfirmBatch(false)}
-            >
-              취소
-            </button>
-            <button
-              type="button"
-              className="primary-button"
-              disabled={batchMutation.isPending || batchCandidates.length === 0}
-              onClick={() => batchMutation.mutate()}
-            >
-              {batchMutation.isPending ? "작업 등록 중" : "일괄 적재 시작"}
-            </button>
-          </div>
-        ) : null}
-        {batchProgress !== null ? (
-          <div className="import-batch-progress" role="status" aria-live="polite">
-            <strong>최근 일괄 적재</strong>
-            <span>등록 {String(batchProgress.total)}</span>
-            <span>완료 {String(batchProgress.succeeded)}</span>
-            <span>실패 {String(batchProgress.failed)}</span>
-            <span>진행·대기 {String(batchProgress.pending)}</span>
-            {batchProgress.skipped > 0 ? (
-              <span>이미 저장·진행 중 제외 {String(batchProgress.skipped)}</span>
+            {confirmBatch ? (
+              <div className="import-batch-confirmation" role="alert">
+                <div>
+                  <strong>{String(batchCandidates.length)}경기를 일괄 적재하시겠습니까?</strong>
+                  <p>
+                    서버가 실행 시점의 적재 가능 문서를 다시 확인합니다. 각 경기는 독립
+                    transaction으로 처리되어 한 경기의 실패가 나머지 작업을 중단하지 않습니다.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={batchMutation.isPending}
+                  onClick={() => setConfirmBatch(false)}
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={batchMutation.isPending || batchCandidates.length === 0}
+                  onClick={() => batchMutation.mutate()}
+                >
+                  {batchMutation.isPending ? "작업 등록 중" : "일괄 적재 시작"}
+                </button>
+              </div>
+            ) : null}
+            <div className="database-list">
+              {ready.map((game) => {
+                const active = activeGameIds.has(game.gameId);
+                return (
+                  <article className="database-row" key={game.gameId}>
+                    <div>
+                      <strong className="mono-text database-game-id">{game.gameId}</strong>
+                      <span>{game.season ?? "시즌 미상"}</span>
+                    </div>
+                    <span>경고 {game.warningFindings}</span>
+                    <time dateTime={game.updatedAt}>{formatDateTime(game.updatedAt)}</time>
+                    <button
+                      className="primary-button"
+                      type="button"
+                      disabled={
+                        active ||
+                        singleMutation.isPending ||
+                        batchMutation.isPending ||
+                        overview.data?.database.healthy !== true
+                      }
+                      onClick={() => singleMutation.mutate(game.gameId)}
+                    >
+                      {active ? "적재 중" : "새 revision 적재"}
+                    </button>
+                  </article>
+                );
+              })}
+              {ready.length === 0 ? (
+                <p className="muted-text list-message">적재할 경기가 없습니다.</p>
+              ) : null}
+            </div>
+            {singleMutation.error !== null ? (
+              <div className="inline-error">{singleMutation.error.message}</div>
+            ) : null}
+            {batchMutation.error !== null ? (
+              <div className="inline-error">{batchMutation.error.message}</div>
             ) : null}
           </div>
         ) : null}
-        <div className="database-list">
-          {ready.map((game) => {
-            const active = activeGameIds.has(game.gameId);
-            return (
-              <article className="database-row" key={game.gameId}>
-                <div>
-                  <strong className="mono-text database-game-id">{game.gameId}</strong>
-                  <span>{game.season ?? "시즌 미상"}</span>
+
+        {activeView === "jobs" ? (
+          <div
+            className="operation-workspace-panel database-jobs-panel"
+            id="database-panel-jobs"
+            role="tabpanel"
+            aria-labelledby="database-tab-jobs"
+          >
+            <div>
+              {batchProgress !== null ? (
+                <div className="import-batch-progress" role="status" aria-live="polite">
+                  <strong>최근 일괄 적재</strong>
+                  <span>등록 {String(batchProgress.total)}</span>
+                  <span>완료 {String(batchProgress.succeeded)}</span>
+                  <span>실패 {String(batchProgress.failed)}</span>
+                  <span>진행·대기 {String(batchProgress.pending)}</span>
+                  {batchProgress.skipped > 0 ? (
+                    <span>이미 저장·진행 중 제외 {String(batchProgress.skipped)}</span>
+                  ) : null}
                 </div>
-                <span>경고 {game.warningFindings}</span>
-                <time dateTime={game.updatedAt}>{formatDateTime(game.updatedAt)}</time>
-                <button
-                  className="primary-button"
-                  type="button"
-                  disabled={
-                    active ||
-                    singleMutation.isPending ||
-                    batchMutation.isPending ||
-                    overview.data?.database.healthy !== true
-                  }
-                  onClick={() => singleMutation.mutate(game.gameId)}
-                >
-                  {active ? "적재 중" : "새 revision 적재"}
-                </button>
+              ) : null}
+            </div>
+            <ImportJobList jobs={jobs.data ?? []} />
+          </div>
+        ) : null}
+
+        {activeView === "stored" ? (
+          <div
+            className="operation-workspace-panel operation-workspace-scroll database-stored-panel"
+            id="database-panel-stored"
+            role="tabpanel"
+            aria-labelledby="database-tab-stored"
+          >
+            <p className="muted-text database-workspace-note">seal된 current revision</p>
+            <div className="database-list">
+              {stored.slice(0, storedLimit).map((game) => (
+                <StoredGameRow key={game.gameId} game={game} />
+              ))}
+              {stored.length === 0 ? (
+                <p className="muted-text list-message">저장된 경기가 없습니다.</p>
+              ) : null}
+            </div>
+            {storedLimit < stored.length ? (
+              <button
+                type="button"
+                className="secondary-button progressive-list-more"
+                onClick={() => setStoredLimit((current) => Math.min(current + 50, stored.length))}
+              >
+                50경기 더 보기 ({String(stored.length - storedLimit)}경기 남음)
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
+function ImportJobList({ jobs }: { readonly jobs: readonly ImportJob[] }): React.JSX.Element {
+  const rowHeight = 72;
+  const virtualList = useFixedVirtualList({
+    itemCount: jobs.length,
+    rowHeight,
+    initialViewportHeight: 480,
+  });
+  const visible = jobs.slice(virtualList.window.start, virtualList.window.end);
+  return (
+    <div
+      ref={virtualList.containerRef}
+      className="database-list virtual-import-job-list operation-workspace-list"
+      role="list"
+      aria-label="적재 작업 목록"
+      onScroll={virtualList.onScroll}
+    >
+      {jobs.length === 0 ? (
+        <p className="muted-text list-message">적재 작업이 없습니다.</p>
+      ) : (
+        <div className="database-virtual-spacer" style={{ height: virtualList.window.totalHeight }}>
+          {visible.map((job, offset) => {
+            const index = virtualList.window.start + offset;
+            return (
+              <article
+                className="database-row import-job-row database-virtual-row"
+                role="listitem"
+                key={job.jobId}
+                style={{ transform: `translateY(${String(index * rowHeight)}px)` }}
+              >
+                <div>
+                  <strong>{importStatusLabel(job.status)}</strong>
+                  <span className="mono-text">{job.gameId}</span>
+                </div>
+                <span>
+                  {job.revision === null ? "revision -" : `revision ${String(job.revision)}`}
+                </span>
+                <time dateTime={job.createdAt}>{formatDateTime(job.createdAt)}</time>
+                <span className="mono-text hash-cell">
+                  {job.projectionHash === null ? "-" : job.projectionHash.slice(0, 12)}
+                </span>
+                {job.error !== null ? (
+                  <div className="inline-error row-error" title={job.error}>
+                    {job.error}
+                  </div>
+                ) : null}
               </article>
             );
           })}
-          {ready.length === 0 ? (
-            <p className="muted-text list-message">적재할 경기가 없습니다.</p>
-          ) : null}
         </div>
-        {singleMutation.error !== null ? (
-          <div className="inline-error">{singleMutation.error.message}</div>
-        ) : null}
-        {batchMutation.error !== null ? (
-          <div className="inline-error">{batchMutation.error.message}</div>
-        ) : null}
-      </section>
-
-      <section className="panel">
-        <div className="section-heading">
-          <h2>적재 작업</h2>
-          <span className="muted-text">{jobs.data?.length ?? 0}개</span>
-        </div>
-        <div className="database-list">
-          {jobs.data?.map((job) => (
-            <article className="database-row import-job-row" key={job.jobId}>
-              <div>
-                <strong>{importStatusLabel(job.status)}</strong>
-                <span className="mono-text">{job.gameId}</span>
-              </div>
-              <span>
-                {job.revision === null ? "revision -" : `revision ${String(job.revision)}`}
-              </span>
-              <time dateTime={job.createdAt}>{formatDateTime(job.createdAt)}</time>
-              <span className="mono-text hash-cell">
-                {job.projectionHash === null ? "-" : job.projectionHash.slice(0, 12)}
-              </span>
-              {job.error !== null ? (
-                <div className="inline-error row-error">{job.error}</div>
-              ) : null}
-            </article>
-          ))}
-          {jobs.data?.length === 0 ? (
-            <p className="muted-text list-message">적재 작업이 없습니다.</p>
-          ) : null}
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="section-heading">
-          <h2>저장된 경기</h2>
-          <span className="muted-text">seal된 current revision</span>
-        </div>
-        <div className="database-list">
-          {stored.slice(0, storedLimit).map((game) => (
-            <StoredGameRow key={game.gameId} game={game} />
-          ))}
-          {stored.length === 0 ? (
-            <p className="muted-text list-message">저장된 경기가 없습니다.</p>
-          ) : null}
-        </div>
-        {storedLimit < stored.length ? (
-          <button
-            type="button"
-            className="secondary-button progressive-list-more"
-            onClick={() => setStoredLimit((current) => Math.min(current + 50, stored.length))}
-          >
-            50경기 더 보기 ({String(stored.length - storedLimit)}경기 남음)
-          </button>
-        ) : null}
-      </section>
+      )}
     </div>
   );
 }

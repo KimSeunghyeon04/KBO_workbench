@@ -124,6 +124,34 @@ describe("데이터베이스 일괄 적재 UI", () => {
     expect(revisionRequests(fetchMock)).toHaveLength(1);
     queryClient.clear();
   });
+
+  it("적재 작업 784개는 작업 탭 안에서 보이는 행만 렌더링한다", async () => {
+    const importJobs = Array.from({ length: 784 }, (_, index) => importJob(index));
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const requestPath = String(input);
+      if (requestPath === "/api/v2/database/status") {
+        return Response.json({ ...databaseOverview(), counts: { readyToImport: 0, stored: 0 } });
+      }
+      if (requestPath === "/api/v2/games") return Response.json({ games: [] });
+      if (requestPath === "/api/v2/import-jobs") return Response.json({ jobs: importJobs });
+      throw new Error(`unexpected request: ${requestPath}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const { container } = render(
+      createElement(QueryClientProvider, { client: queryClient }, createElement(DatabasePage)),
+    );
+
+    const jobsTab = await screen.findByRole("tab", { name: "적재 작업 784" });
+    expect(container.querySelectorAll(".import-job-row")).toHaveLength(0);
+    await userEvent.setup().click(jobsTab);
+    expect(await screen.findByText("anon-import-game-000")).toBeTruthy();
+    expect(container.querySelectorAll(".import-job-row").length).toBeLessThan(30);
+    expect(screen.queryByText("anon-import-game-783")).toBeNull();
+    queryClient.clear();
+  });
 });
 
 function batchRequests(fetchMock: ReturnType<typeof vi.fn>) {
@@ -165,6 +193,23 @@ function databaseOverview() {
       message: "정상",
     },
     counts: { readyToImport: 2, stored: 0 },
+  };
+}
+
+function importJob(index: number) {
+  return {
+    jobId: `anon-import-job-${String(index).padStart(3, "0")}`,
+    kind: "import",
+    status: "succeeded",
+    gameId: `anon-import-game-${String(index).padStart(3, "0")}`,
+    createdAt: "2026-08-30T00:00:02.000Z",
+    startedAt: "2026-08-30T00:00:03.000Z",
+    finishedAt: "2026-08-30T00:00:04.000Z",
+    revision: 1,
+    documentHash: "a".repeat(64),
+    projectionHash: "b".repeat(64),
+    error: null,
+    errorCategory: null,
   };
 }
 

@@ -56,6 +56,8 @@ docker compose down
 
 `/collect`에서 날짜 범위 또는 시즌을 선택한다. 수집기는 일정, preview, relay, record를 읽고 모든
 의미 있는 중계 행을 평면 typed 원장으로 보존한다.
+수집 결과와 진행·작업 기록은 같은 고정 높이 작업공간의 탭으로 전환하며, 경기 결과는 보이는 행만
+렌더링한다. 작업 이력이 늘어나도 페이지 아래로 계속 이어 붙이지 않는다.
 
 선택 범위에 이미 `staging`으로 저장된 경기는 외부 요청 없이 건너뛴다. `quarantine`, 원천 실패와
 아직 수집되지 않은 경기는 다시 수집하여 현재 결과로 분류한다.
@@ -117,6 +119,10 @@ endpoint 원문은 canonical JSON을 gzip으로 압축해 `.data/source`에 불�
 선별해 최대 2개씩 처리하며, 각 경기는 독립 transaction과
 독립 job이어서 한 경기의 실패가 다른 경기를 중단하지 않는다. 각 적재 transaction은 다음 경계를
 한 번에 수행한다.
+
+화면은 `적재 대기`, `적재 작업`, `저장된 경기`를 하나의 고정 높이 작업공간에서 전환한다. 대량의
+적재 작업 이력은 viewport 가상 목록으로 표시하고, 저장 경기의 revision 상세는 행을 펼칠 때만
+조회한다.
 
 1. 원장 strict decode와 전체 compile
 2. Naver source identity와 경기 당시 팀·선수 이름 snapshot upsert

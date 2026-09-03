@@ -232,6 +232,8 @@ PostgreSQL volume은 변경하지 않는다.
 갱신한다. 동시에 진행 중인 같은 query를 새 이벤트가 취소·재시작하지 않게 한다.
 catalog 행은 고정 높이 viewport virtual list로 표시해 전체 경기 수와 무관하게 화면에는 보이는 구간과
 overscan만 둔다. canonical catalog 순서와 서버 문서 identity는 렌더링 구간과 분리한다.
+수집 결과와 진행·작업 기록은 같은 고정 높이 tab workspace를 공유한다. 선택한 pane만 표시하고
+내부에서 스크롤하므로 작업 수가 늘어나도 문서 높이를 누적하지 않는다.
 catalog 조회는 startup과 실제 원장 사용 시 수행하는 전체 artifact 무결성 검사를 반복하지 않는다.
 current manifest와 strict finding envelope만 bounded concurrency로 투영하며, 보정·적재처럼 원장을
 사용하는 경계에서는 선택한 current document와 content hash를 다시 검증한다.

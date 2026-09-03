@@ -80,6 +80,89 @@
   border-top: 1px solid #e6e9e7;
 }
 
+.operation-workspace {
+  display: grid;
+  min-height: 0;
+  padding: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.collect-workspace,
+.database-workspace {
+  height: clamp(360px, calc(100vh - 330px), 600px);
+}
+
+.workspace-tabs {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  padding: 0 18px;
+  gap: 2px;
+  border-bottom: 1px solid #dfe3e0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.workspace-tabs button {
+  display: inline-flex;
+  min-width: max-content;
+  height: 48px;
+  align-items: center;
+  padding: 0 12px;
+  gap: 8px;
+  border-bottom: 2px solid transparent;
+  color: #69736d;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.workspace-tabs button:hover {
+  color: #27322b;
+  background: #f7f9f7;
+}
+
+.workspace-tabs button.selected {
+  border-bottom-color: #18794e;
+  color: #145c3e;
+  font-weight: 700;
+}
+
+.workspace-tabs strong {
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: #536059;
+  background: #edf1ee;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.workspace-tabs button.selected strong {
+  color: #145c3e;
+  background: #e2f1e7;
+}
+
+.operation-workspace-panel {
+  min-height: 0;
+  padding: 0 22px 18px;
+}
+
+.operation-workspace-scroll,
+.operation-workspace-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.operation-workspace-list {
+  height: 100%;
+  max-height: none;
+  margin-top: 0;
+}
+
 .job-row {
   padding: 16px 0;
   border-bottom: 1px solid #e6e9e7;
@@ -150,7 +233,8 @@
 }
 
 .virtual-catalog-table {
-  max-height: 440px;
+  height: 100%;
+  max-height: none;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -184,9 +268,37 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.database-metrics .metric-card {
+  min-height: 72px;
+  align-items: center;
+  flex-direction: row;
+  padding: 14px 18px;
+}
+
+.database-metrics .metric-card strong {
+  font-size: 24px;
+}
+
 .database-list {
   margin-top: 14px;
   border-top: 1px solid #e6e9e7;
+}
+
+.database-workspace .operation-workspace-panel {
+  padding-top: 14px;
+}
+
+.database-jobs-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.database-jobs-panel .import-batch-progress {
+  margin: 0 0 10px;
+}
+
+.database-workspace-note {
+  margin: 0;
 }
 
 .import-ready-heading {
@@ -289,6 +401,25 @@
     minmax(100px, 0.5fr);
 }
 
+.virtual-import-job-list {
+  position: relative;
+  height: 100%;
+  margin-top: 0;
+  border-top: 0;
+}
+
+.database-virtual-spacer {
+  position: relative;
+}
+
+.database-virtual-row {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 72px;
+  min-height: 72px;
+  box-sizing: border-box;
+}
+
 .stored-game-row {
   grid-template-columns:
     minmax(210px, 1.4fr) minmax(80px, 0.5fr) minmax(80px, 0.5fr)
@@ -297,5 +428,21 @@
 
 .row-error {
   grid-column: 1 / -1;
-  margin: -4px 0 12px;
+  min-width: 0;
+  margin: -7px 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 860px) {
+  .collect-workspace,
+  .database-workspace {
+    height: clamp(440px, calc(100vh - 250px), 620px);
+  }
+
+  .operation-workspace-panel {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
 }

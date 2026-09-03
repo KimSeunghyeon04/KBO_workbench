@@ -230,7 +230,11 @@ pitch를 나란히 보여준다. Replay는 current/과거 revision을 선택하�
 database 항목은 relational fact에서 집계한 `gameDate`, `teams`, `currentRevision`, `revisionCount`를
 필수로 가진다. Database는 이 요약만으로 첫 화면을 그리고 특정 행을 펼칠 때만 revision 상세를 한 번
 조회한다. route page는 lazy chunk로 로드하며 고정 높이 catalog는 공통 viewport virtual list를,
-Database의 가변 높이 행은 50개 단위 progressive rendering을 사용한다.
+Database의 적재 작업 이력은 viewport virtual list를 사용한다. 수집은 결과와 작업 이력을,
+Database는 적재 대기·작업 이력·저장 경기를 하나의 고정 높이 tab workspace에서 전환한다. 저장
+경기의 가변 높이 revision 행은 작업공간 내부에서 50개 단위 progressive rendering을 사용한다.
+기록정정 검토함은 상태 요약·동기화 시각·검색 조건을 하나의 제어 영역에 두고 공지 목록과 상세를
+각각 독립 스크롤한다.
 
 PostgreSQL은 `127.0.0.1:${KBO_DB_PORT:-5433}`에만 공개한다. 별도 analyst 계정은 `analytics` schema
 SELECT 권한만 가지며 기본 transaction이 read-only다. DBeaver, Jupyter, R 등은 직접 접속할 수 있지만

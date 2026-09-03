@@ -20,6 +20,7 @@ import {
   decodeCollectionJobEvent,
 } from "../collection/job-event-refresh";
 import { useFixedVirtualList } from "../components/use-fixed-virtual-list";
+import { WorkspaceTabs } from "../components/workspace-tabs";
 
 const terminal = new Set<CollectionJob["status"]>(["cancelled", "succeeded", "failed"]);
 
@@ -30,6 +31,7 @@ export function CollectPage(): React.JSX.Element {
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
   const [season, setSeason] = useState(today.slice(0, 4));
+  const [activeView, setActiveView] = useState<"jobs" | "results">("results");
   const jobs = useQuery({
     ...collectionJobsQueryOptions(),
     refetchInterval: (query) =>
@@ -56,6 +58,7 @@ export function CollectPage(): React.JSX.Element {
   const createMutation = useMutation({
     mutationFn: createCollectionJob,
     onSuccess: async () => {
+      setActiveView("jobs");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.jobs.collection }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
@@ -150,29 +153,49 @@ export function CollectPage(): React.JSX.Element {
         )}
       </section>
 
-      <section className="panel">
-        <div className="section-heading">
-          <h2>수집 작업</h2>
-          <span className="muted-text">{jobs.data?.length ?? 0}개</span>
-        </div>
-        {jobs.isLoading ? <p className="muted-text list-message">불러오는 중</p> : null}
-        {jobs.error !== null ? <div className="inline-error">{jobs.error.message}</div> : null}
-        <div className="job-list">
-          {jobs.data?.map((job) => (
-            <JobRow key={job.jobId} job={job} onCancel={() => cancelMutation.mutate(job.jobId)} />
-          ))}
-          {jobs.data?.length === 0 ? (
-            <p className="muted-text list-message">아직 실행한 작업이 없습니다.</p>
-          ) : null}
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="section-heading">
-          <h2>수집 결과</h2>
-          <span className="muted-text">{catalog.data?.games.length ?? 0}경기</span>
-        </div>
-        <CatalogResults games={catalog.data?.games ?? []} />
+      <section className="panel operation-workspace collect-workspace">
+        <WorkspaceTabs
+          activeTab={activeView}
+          ariaLabel="수집 작업공간"
+          idPrefix="collection"
+          onChange={setActiveView}
+          tabs={[
+            { id: "results", label: "수집 결과", count: catalog.data?.games.length ?? 0 },
+            { id: "jobs", label: "진행·작업 기록", count: jobs.data?.length ?? 0 },
+          ]}
+        />
+        {activeView === "results" ? (
+          <div
+            className="operation-workspace-panel"
+            id="collection-panel-results"
+            role="tabpanel"
+            aria-labelledby="collection-tab-results"
+          >
+            <CatalogResults games={catalog.data?.games ?? []} />
+          </div>
+        ) : (
+          <div
+            className="operation-workspace-panel operation-workspace-scroll"
+            id="collection-panel-jobs"
+            role="tabpanel"
+            aria-labelledby="collection-tab-jobs"
+          >
+            {jobs.isLoading ? <p className="muted-text list-message">불러오는 중</p> : null}
+            {jobs.error !== null ? <div className="inline-error">{jobs.error.message}</div> : null}
+            <div className="job-list">
+              {jobs.data?.map((job) => (
+                <JobRow
+                  key={job.jobId}
+                  job={job}
+                  onCancel={() => cancelMutation.mutate(job.jobId)}
+                />
+              ))}
+              {jobs.data?.length === 0 ? (
+                <p className="muted-text list-message">아직 실행한 작업이 없습니다.</p>
+              ) : null}
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );
@@ -189,7 +212,7 @@ function CatalogResults({ games }: { readonly games: readonly GameCatalogItem[] 
   return (
     <div
       ref={virtualList.containerRef}
-      className="catalog-table virtual-catalog-table"
+      className="catalog-table virtual-catalog-table operation-workspace-list"
       role="table"
       aria-label="수집 경기 목록"
       onScroll={virtualList.onScroll}

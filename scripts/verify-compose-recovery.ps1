@@ -151,6 +151,13 @@ try {
 
   await page.goto("http://web/database", { waitUntil: "networkidle" });
   await page.locator("h1").waitFor();
+  const readyTab = page.getByRole("tab", {
+    name: /\uC801\uC7AC \uB300\uAE30 0/,
+  });
+  if ((await readyTab.count()) !== 1) {
+    throw new Error("Database workspace tabs are missing.");
+  }
+  await readyTab.click();
   const batchButton = page.getByRole("button", {
     name: /\uC801\uC7AC \uAC00\uB2A5\uD55C 0\uACBD\uAE30 \uC77C\uAD04 \uC801\uC7AC/,
   });

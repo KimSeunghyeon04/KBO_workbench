@@ -18,6 +18,7 @@ import {
   recordCorrectionJobsQueryOptions,
   recordCorrectionSummaryQueryOptions,
 } from "../api/query-options";
+import { useFixedVirtualList } from "../components/use-fixed-virtual-list";
 
 const STATUS_OPTIONS: readonly [RecordCorrectionCaseStatus, string][] = [
   ["action_required", "미반영"],
@@ -100,6 +101,10 @@ export function RecordCorrectionsPage(): React.JSX.Element {
   });
   const error =
     summary.error ?? jobs.error ?? cases.error ?? sync.error ?? review.error ?? draft.error;
+  const summaryTotal = STATUS_OPTIONS.reduce(
+    (total, [value]) => total + statusCount(summary.data, value),
+    0,
+  );
 
   return (
     <div className="page-stack record-correction-page">
@@ -123,105 +128,78 @@ export function RecordCorrectionsPage(): React.JSX.Element {
 
       {error !== null ? <div className="error-panel">{error.message}</div> : null}
 
-      <section className="record-correction-summary" aria-label="기록정정 상태 요약">
-        {STATUS_OPTIONS.map(([value, label]) => (
+      <section className="panel record-correction-controls">
+        <div className="record-correction-summary" role="region" aria-label="기록정정 상태 요약">
           <button
             type="button"
-            key={value}
-            className={status === value ? "metric-card selected" : "metric-card"}
-            onClick={() => setStatus(value)}
+            className={status === "all" ? "selected" : undefined}
+            onClick={() => setStatus("all")}
           >
-            <span>{label}</span>
-            <strong>{String(statusCount(summary.data, value))}</strong>
+            <span>전체</span>
+            <strong>{String(summaryTotal)}</strong>
           </button>
-        ))}
-      </section>
-
-      <section className="panel record-correction-schedule">
-        <span>마지막 성공: {formatDateTime(summary.data?.lastSuccessfulAt ?? null)}</span>
-        <span>다음 예정: {formatDateTime(summary.data?.nextScheduledAt ?? null)}</span>
-        <span>
-          최근 job: {jobs.data?.[0] === undefined ? "없음" : jobStatusLabel(jobs.data[0].status)}
-        </span>
-      </section>
-
-      <section className="panel record-correction-filters">
-        <label>
-          <span>시즌</span>
-          <input
-            inputMode="numeric"
-            value={seasonText}
-            placeholder="전체"
-            onChange={(event) => setSeasonText(event.target.value.replace(/\D/g, "").slice(0, 4))}
-          />
-        </label>
-        <label>
-          <span>상태</span>
-          <select
-            value={status}
-            onChange={(event) => setStatus(event.target.value as typeof status)}
-          >
-            <option value="all">전체</option>
-            {STATUS_OPTIONS.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="record-correction-search">
-          <span>팀·선수</span>
-          <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} />
-        </label>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => {
-            setSeasonText("");
-            setStatus("all");
-            setSearch("");
-          }}
-        >
-          필터 초기화
-        </button>
+          {STATUS_OPTIONS.map(([value, label]) => (
+            <button
+              type="button"
+              key={value}
+              className={status === value ? "selected" : undefined}
+              onClick={() => setStatus(value)}
+            >
+              <span>{label}</span>
+              <strong>{String(statusCount(summary.data, value))}</strong>
+            </button>
+          ))}
+        </div>
+        <div className="record-correction-control-row">
+          <div className="record-correction-schedule">
+            <span>최근 성공 {formatDateTime(summary.data?.lastSuccessfulAt ?? null)}</span>
+            <span>다음 예정 {formatDateTime(summary.data?.nextScheduledAt ?? null)}</span>
+            <span>
+              최근 job {jobs.data?.[0] === undefined ? "없음" : jobStatusLabel(jobs.data[0].status)}
+            </span>
+          </div>
+          <div className="record-correction-filters">
+            <label>
+              <span>시즌</span>
+              <input
+                inputMode="numeric"
+                value={seasonText}
+                placeholder="전체"
+                onChange={(event) =>
+                  setSeasonText(event.target.value.replace(/\D/g, "").slice(0, 4))
+                }
+              />
+            </label>
+            <label className="record-correction-search">
+              <span>팀·선수</span>
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                setSeasonText("");
+                setStatus("all");
+                setSearch("");
+              }}
+            >
+              필터 초기화
+            </button>
+          </div>
+        </div>
       </section>
 
       <div className="record-correction-layout">
-        <section className="panel record-correction-list" aria-label="기록정정 공지 목록">
-          <div className="panel-title-row">
-            <h2>공지</h2>
-            <span>{String(cases.data?.length ?? 0)}건</span>
-          </div>
-          {(cases.data ?? []).map((item) => (
-            <button
-              type="button"
-              key={item.noticeId}
-              className={
-                selected?.noticeId === item.noticeId
-                  ? "record-correction-row selected"
-                  : "record-correction-row"
-              }
-              onClick={() => setSelectedNoticeId(item.noticeId)}
-            >
-              <span className={`record-correction-status ${item.status}`}>
-                {statusLabel(item.status)}
-              </span>
-              <strong>
-                {item.notice.awayTeamName} vs {item.notice.homeTeamName}
-              </strong>
-              <span>
-                {item.notice.gameDate} · {item.notice.venueName}
-              </span>
-              <small>
-                {item.notice.beforeRecordText} → {item.notice.afterRecordText}
-              </small>
-            </button>
-          ))}
-          {cases.isLoading ? <p className="muted-text">공지를 불러오는 중입니다.</p> : null}
-          {!cases.isLoading && cases.data?.length === 0 ? (
-            <p className="muted-text">조건에 맞는 공지가 없습니다.</p>
-          ) : null}
-        </section>
+        <RecordCorrectionList
+          items={cases.data ?? []}
+          loading={cases.isLoading}
+          selectedNoticeId={selected?.noticeId ?? null}
+          onSelect={setSelectedNoticeId}
+        />
 
         <section className="panel record-correction-detail">
           {selected === null ? (
@@ -257,6 +235,82 @@ export function RecordCorrectionsPage(): React.JSX.Element {
         </section>
       </div>
     </div>
+  );
+}
+
+function RecordCorrectionList({
+  items,
+  loading,
+  onSelect,
+  selectedNoticeId,
+}: {
+  readonly items: readonly RecordCorrectionCase[];
+  readonly loading: boolean;
+  readonly onSelect: (noticeId: string) => void;
+  readonly selectedNoticeId: string | null;
+}): React.JSX.Element {
+  const rowHeight = 104;
+  const selectedIndex = items.findIndex((item) => item.noticeId === selectedNoticeId);
+  const virtualList = useFixedVirtualList({
+    itemCount: items.length,
+    rowHeight,
+    selectedIndex: selectedIndex < 0 ? null : selectedIndex,
+    initialViewportHeight: 520,
+  });
+  const visible = items.slice(virtualList.window.start, virtualList.window.end);
+  return (
+    <section className="panel record-correction-list" aria-label="기록정정 공지 목록">
+      <div className="panel-title-row">
+        <h2>공지</h2>
+        <span>{String(items.length)}건</span>
+      </div>
+      <div
+        ref={virtualList.containerRef}
+        className="record-correction-list-scroll"
+        onScroll={virtualList.onScroll}
+      >
+        {loading ? <p className="muted-text">공지를 불러오는 중입니다.</p> : null}
+        {!loading && items.length === 0 ? (
+          <p className="muted-text">조건에 맞는 공지가 없습니다.</p>
+        ) : null}
+        {items.length > 0 ? (
+          <div
+            className="record-correction-virtual-spacer"
+            style={{ height: virtualList.window.totalHeight }}
+          >
+            {visible.map((item, offset) => {
+              const index = virtualList.window.start + offset;
+              return (
+                <button
+                  type="button"
+                  key={item.noticeId}
+                  className={
+                    selectedNoticeId === item.noticeId
+                      ? "record-correction-row record-correction-virtual-row selected"
+                      : "record-correction-row record-correction-virtual-row"
+                  }
+                  style={{ transform: `translateY(${String(index * rowHeight)}px)` }}
+                  onClick={() => onSelect(item.noticeId)}
+                >
+                  <span className={`record-correction-status ${item.status}`}>
+                    {statusLabel(item.status)}
+                  </span>
+                  <strong>
+                    {item.notice.awayTeamName} vs {item.notice.homeTeamName}
+                  </strong>
+                  <span>
+                    {item.notice.gameDate} · {item.notice.venueName}
+                  </span>
+                  <small>
+                    {item.notice.beforeRecordText} → {item.notice.afterRecordText}
+                  </small>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    </section>
   );
 }
 

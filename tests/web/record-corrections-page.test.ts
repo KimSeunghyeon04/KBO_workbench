@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -74,6 +74,62 @@ describe("KBO 기록정정 검토함", () => {
           (init as RequestInit | undefined)?.method === "POST",
       ),
     ).toBe(true);
+    queryClient.clear();
+  });
+
+  it("공지 784건은 목록 pane에서 보이는 행만 렌더링한다", async () => {
+    const correctionCases = Array.from({ length: 784 }, (_, index) => {
+      const item = structuredClone(recordCorrectionCase());
+      const recordNumber = index + 1;
+      const suffix = String(recordNumber).padStart(3, "0");
+      item.noticeId = `2024:0:${String(recordNumber)}`;
+      item.notice.noticeId = item.noticeId;
+      item.notice.recordNumber = recordNumber;
+      const candidate = item.candidates[0];
+      if (candidate === undefined) throw new Error("비식별 후보 fixture가 없습니다.");
+      candidate.candidateId = `anon-candidate-${suffix}`;
+      return item;
+    });
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const requestPath = String(input);
+      if (requestPath === "/api/v2/record-corrections/summary") {
+        return Response.json({
+          counts: {
+            actionRequired: 0,
+            alreadyApplied: 0,
+            manualReview: 784,
+            outOfScope: 0,
+            unmatched: 0,
+            resolved: 0,
+            dismissed: 0,
+          },
+          alertCount: 784,
+          lastSuccessfulAt: "2026-09-01T00:00:00.000Z",
+          nextScheduledAt: "2026-09-02T00:00:00.000Z",
+        });
+      }
+      if (requestPath === "/api/v2/record-correction-jobs") return Response.json({ jobs: [] });
+      if (requestPath.startsWith("/api/v2/record-corrections")) {
+        return Response.json({ cases: correctionCases });
+      }
+      throw new Error(`unexpected request: ${requestPath}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const { container } = render(
+      createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(MemoryRouter, null, createElement(RecordCorrectionsPage)),
+      ),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("공지").parentElement?.textContent).toContain("784"),
+    );
+    expect(container.querySelectorAll(".record-correction-row").length).toBeLessThan(30);
     queryClient.clear();
   });
 });
