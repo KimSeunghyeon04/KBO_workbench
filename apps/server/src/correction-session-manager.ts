@@ -42,10 +42,8 @@ interface InternalSession {
 }
 type CorrectionWorkspace = Pick<
   StagingWorkspace,
-  | "catalog"
   | "commitCorrection"
-  | "readDocument"
-  | "readFindings"
+  | "readCurrentDocumentSnapshot"
   | "readOriginal"
   | "readSourceBundle"
   | "readSupersededSnapshot"
@@ -95,29 +93,18 @@ export class CorrectionSessionManager {
       this.mutexes.set(session.sessionId, new AsyncMutex());
       return snapshot(session);
     }
-    const catalog = await this.workspace.catalog();
-    const item = catalog.games.find(
-      (game) => game.gameId === request.gameId && game.authority === request.authority,
-    );
-    if (
-      item === undefined ||
-      item.season === null ||
-      (item.authority !== "staging" && item.authority !== "quarantine")
-    )
+    const current = await this.workspace.readCurrentDocumentSnapshot(request.gameId);
+    if (current === null || current.authority !== request.authority)
       throw new CorrectionSourceNotFoundError(
         `보정할 파일 원장을 찾을 수 없습니다: ${request.gameId}`,
       );
-    const document = await this.workspace.readDocument(item.authority, item.season, item.gameId);
-    const storedFindings = await this.workspace.readFindings(
-      item.authority,
-      item.season,
-      item.gameId,
-    );
+    const document = current.document;
+    const storedFindings = current.findings;
     const session: InternalSession = {
       sessionId: this.newId(),
       gameId: request.gameId,
       baseDocumentHash: stagingDocumentHash(document),
-      authority: item.authority,
+      authority: current.authority,
       baseCurrentContentHash: null,
       document,
       replay: compileStagingGameDocumentV2(document),

@@ -7,6 +7,9 @@
 경로에서 교정하고 current+1 revision으로 적재한다. 브라우저는 정본이 아니며 API가 session 작업
 사본을 소유한다.
 
+작업 사본 생성은 선택한 경기의 versioned current manifest와 그 manifest가 가리키는 원장·finding만
+검증해 읽는다. 전체 경기 catalog 재스캔은 session 생성 경로에 포함하지 않는다.
+
 자유 JSON 편집기는 두지 않는다. 다음 구조화 명령만 지원한다.
 
 - 원장 행 추가·삭제·전체 교체·한 칸 이동·위치 지정 이동

@@ -6,7 +6,7 @@ import { parseStagingGameDocumentV2 } from "@kbo/contracts";
 import { applyCorrectionCommand } from "@kbo/correction";
 import { compileStagingGameDocumentV2, stagingDocumentHash, type Finding } from "@kbo/game-core";
 import { StagingWorkspace, type StoredFinding } from "@kbo/persistence";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   CorrectionCommitBlockedError,
@@ -15,6 +15,34 @@ import {
 } from "../../apps/server/src/correction-session-manager.js";
 
 describe("CorrectionSessionManager", () => {
+  it("단일 current 원장만 읽고 전체 catalog 스캔 없이 작업 사본을 연다", async () => {
+    await using temporary = await mkdtempDisposable(
+      path.join(tmpdir(), "kbo-correction-current-snapshot-"),
+    );
+    const workspace = await StagingWorkspace.open(temporary.path);
+    const document = parseStagingGameDocumentV2(
+      JSON.parse(
+        await readFile("tests/fixtures/correction-record-mismatch.anonymized.json", "utf8"),
+      ) as unknown,
+    );
+    const replay = compileStagingGameDocumentV2(document);
+    await workspace.saveQuarantine(document, compilerFindings(replay.findings));
+    const catalog = vi
+      .spyOn(workspace, "catalog")
+      .mockRejectedValue(new Error("전체 catalog 조회는 session 생성 경로가 아닙니다."));
+    const manager = new CorrectionSessionManager(workspace, () => "session-current-snapshot");
+
+    await expect(
+      manager.create({ authority: "quarantine", gameId: document.metadata.gameId }),
+    ).resolves.toMatchObject({
+      sessionId: "session-current-snapshot",
+      authority: "quarantine",
+      gameId: document.metadata.gameId,
+    });
+    expect(catalog).not.toHaveBeenCalled();
+    await workspace.close();
+  });
+
   it("격리 당시 finding과 reducer event 상태를 보정 session에 함께 제공한다", async () => {
     await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-correction-context-"));
     const workspace = await StagingWorkspace.open(temporary.path);
@@ -180,11 +208,9 @@ describe("CorrectionSessionManager", () => {
       releaseCommit = resolve;
     });
     const delayedWorkspace = {
-      catalog: () => workspace.catalog(),
-      readDocument: (...args: Parameters<StagingWorkspace["readDocument"]>) =>
-        workspace.readDocument(...args),
-      readFindings: (...args: Parameters<StagingWorkspace["readFindings"]>) =>
-        workspace.readFindings(...args),
+      readCurrentDocumentSnapshot: (
+        ...args: Parameters<StagingWorkspace["readCurrentDocumentSnapshot"]>
+      ) => workspace.readCurrentDocumentSnapshot(...args),
       readOriginal: (...args: Parameters<StagingWorkspace["readOriginal"]>) =>
         workspace.readOriginal(...args),
       readSourceBundle: (...args: Parameters<StagingWorkspace["readSourceBundle"]>) =>

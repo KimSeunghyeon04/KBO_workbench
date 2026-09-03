@@ -439,9 +439,10 @@ export function CorrectPage(): React.JSX.Element {
             type="button"
             className="primary-button correction-open-button"
             disabled={selectedGame === null || busy}
+            aria-busy={openSession.isPending}
             onClick={requestOpenSession}
           >
-            작업 사본 열기
+            {openSession.isPending ? "작업 사본 여는 중…" : "작업 사본 열기"}
           </button>
           <a
             className="secondary-button correction-live-button"

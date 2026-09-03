@@ -67,6 +67,7 @@ export {
   StaleStagingDocumentError,
   WorkspaceMigrationRequiredError,
   WorkspacePersistenceBlockedError,
+  type CurrentDocumentSnapshot,
   type ImmutableSourceBundle,
   type SupersededDocumentSnapshot,
 } from "./staging-workspace.js";

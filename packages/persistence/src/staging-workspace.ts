@@ -60,6 +60,13 @@ export interface SupersededDocumentSnapshot {
   readonly currentContentHash: string | null;
 }
 
+export interface CurrentDocumentSnapshot {
+  readonly authority: "staging" | "quarantine";
+  readonly season: number;
+  readonly document: StagingGameDocumentV2;
+  readonly findings: readonly StoredFinding[];
+}
+
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
@@ -384,6 +391,26 @@ export class StagingWorkspace {
     }
     items.sort(compareCatalogItems);
     return { games: items };
+  }
+
+  public async readCurrentDocumentSnapshot(
+    gameId: string,
+  ): Promise<CurrentDocumentSnapshot | null> {
+    this.assertOpen();
+    assertGameId(gameId);
+    const current = await this.readCurrentEntry(gameId);
+    if (current === null || current.authority === "source_failure") return null;
+    if (current.season === null) {
+      throw new Error(`원장 current manifest에 season이 없습니다: ${gameId}`);
+    }
+    const document = await this.readCurrentDocument(current);
+    const findings = await this.readDocumentFindings(current, document);
+    return {
+      authority: current.authority === "ready" ? "staging" : "quarantine",
+      season: current.season,
+      document,
+      findings,
+    };
   }
 
   public async readDocument(
@@ -795,6 +822,16 @@ export class StagingWorkspace {
       return record.findingEnvelope.findings;
     }
     const document = await this.readCurrentDocument(current);
+    return this.readDocumentFindings(current, document);
+  }
+
+  private async readDocumentFindings(
+    current: CurrentWorkspaceEntry,
+    document: StagingGameDocumentV2,
+  ): Promise<readonly StoredFinding[]> {
+    if (current.authority === "source_failure") {
+      throw new Error(`source failure에는 원장 finding이 없습니다: ${current.gameId}`);
+    }
     const envelope = await readFindingEnvelope(this.findingsArtifactPath(current.artifactPath));
     if (
       sha256(canonicalStringify({ document, findingEnvelope: envelope })) !== current.contentHash

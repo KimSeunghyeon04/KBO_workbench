@@ -62,6 +62,12 @@ describe("staging workspace", () => {
     expect(await workspace.readDocument("staging", 2026, document.metadata.gameId)).toEqual(
       document,
     );
+    await expect(workspace.readCurrentDocumentSnapshot(document.metadata.gameId)).resolves.toEqual({
+      authority: "staging",
+      season: document.metadata.season,
+      document,
+      findings: [finding],
+    });
     await workspace.close();
   });
 
