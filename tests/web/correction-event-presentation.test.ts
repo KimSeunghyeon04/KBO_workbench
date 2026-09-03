@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 
 import {
   type CorrectionEventContext,
-  type GameCatalogItem,
+  type CorrectionGameCatalogItem,
   parseStagingGameDocumentV2,
 } from "@kbo/contracts";
 import { compileStagingGameDocumentV2, type GameState } from "@kbo/game-core";
@@ -16,17 +16,17 @@ import {
 } from "../../apps/web/src/correction/event-presentation.js";
 
 describe("보정 원장 행 표시", () => {
-  it("파일 원장만 보정 대상으로 고르고 authority와 finding 수를 표시한다", () => {
-    const games: GameCatalogItem[] = [
-      catalogItem("20240404LTHH02024", "quarantine", 2),
-      catalogItem("20240405OBLT02024", "staging", 0),
-      catalogItem("20240406LGKT02024", "database", 0),
+  it("보정 후보를 authority로 고르고 목록에는 finding 수를 표시하지 않는다", () => {
+    const games: CorrectionGameCatalogItem[] = [
+      catalogItem("20240404LTHH02024", "quarantine"),
+      catalogItem("20240405OBLT02024", "staging"),
     ];
     expect(filterCorrectionGames(games, "review", "").map((game) => game.gameId)).toEqual([
       "20240404LTHH02024",
     ]);
-    expect(correctionGameLabel(games[0] as GameCatalogItem)).toContain("20240404LTHH02024");
-    expect(correctionGameLabel(games[0] as GameCatalogItem)).toContain("2");
+    expect(correctionGameLabel(games[0] as CorrectionGameCatalogItem)).toBe(
+      "20240404LTHH02024 · 검토 필요",
+    );
   });
 
   it("JSON 원장과 1:1인 행에 원문·구조 요약·compiler 상태를 표시한다", async () => {
@@ -113,15 +113,12 @@ function state(value: GameState): CorrectionEventContext["after"] {
 
 function catalogItem(
   gameId: string,
-  authority: GameCatalogItem["authority"],
-  blockingFindings: number,
-): GameCatalogItem {
+  authority: CorrectionGameCatalogItem["authority"],
+): CorrectionGameCatalogItem {
   return {
     gameId,
     season: 2024,
     authority,
     updatedAt: "2026-08-22T00:00:00.000Z",
-    blockingFindings,
-    warningFindings: 0,
   };
 }

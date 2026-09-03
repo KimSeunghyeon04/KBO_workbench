@@ -2,7 +2,7 @@ import {
   compareCanonicalStrings,
   type CatalogAuthority,
   type CorrectionEventContext,
-  type GameCatalogItem,
+  type CorrectionGameCatalogItem,
   type StagingGameDocumentV2,
   type StagingRelayEvent,
 } from "@kbo/contracts";
@@ -83,15 +83,15 @@ const runnerReasons: Readonly<Record<string, string>> = {
   other: "기타",
 };
 
-export function correctionGameKey(game: GameCatalogItem): string {
+export function correctionGameKey(game: CorrectionGameCatalogItem): string {
   return `${game.authority}:${game.gameId}`;
 }
 
 export function filterCorrectionGames(
-  games: readonly GameCatalogItem[],
+  games: readonly CorrectionGameCatalogItem[],
   scope: CorrectionGameScope,
   query: string,
-): GameCatalogItem[] {
+): CorrectionGameCatalogItem[] {
   const normalized = query.trim().toLocaleLowerCase("ko-KR");
   return games
     .filter((game) => game.authority === "staging" || game.authority === "quarantine")
@@ -108,19 +108,13 @@ export function filterCorrectionGames(
     .sort(
       (left, right) =>
         Number(right.authority === "quarantine") - Number(left.authority === "quarantine") ||
-        right.blockingFindings - left.blockingFindings ||
+        compareCanonicalStrings(right.updatedAt, left.updatedAt) ||
         compareCanonicalStrings(left.gameId, right.gameId),
     );
 }
 
-export function correctionGameLabel(game: GameCatalogItem): string {
-  const counts = [
-    game.blockingFindings > 0 ? `차단 ${String(game.blockingFindings)}` : "",
-    game.warningFindings > 0 ? `경고 ${String(game.warningFindings)}` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  return `${game.gameId} · ${catalogAuthorityLabel(game.authority)}${counts === "" ? "" : ` · ${counts}`}`;
+export function correctionGameLabel(game: CorrectionGameCatalogItem): string {
+  return `${game.gameId} · ${catalogAuthorityLabel(game.authority)}`;
 }
 
 export function catalogAuthorityLabel(authority: CatalogAuthority | string): string {

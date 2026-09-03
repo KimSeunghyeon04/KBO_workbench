@@ -2,9 +2,9 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CorrectionCommand,
+  CorrectionGameCatalogItem,
   CorrectionPreview,
   CorrectionSession,
-  GameCatalogItem,
 } from "@kbo/contracts";
 
 import {
@@ -18,7 +18,7 @@ import {
 import { correctionOriginalQueryOptions, queryKeys } from "../api/query-options";
 import type { DrawerRequest } from "./event-editor-registry";
 
-export function useCorrectionSessionController(selectedGame: GameCatalogItem | null) {
+export function useCorrectionSessionController(selectedGame: CorrectionGameCatalogItem | null) {
   const queryClient = useQueryClient();
   const [session, setSession] = useState<CorrectionSession | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -102,6 +102,7 @@ export function useCorrectionSessionController(selectedGame: GameCatalogItem | n
           : "차단 finding과 함께 격리 원장으로 저장했습니다.",
       );
       void queryClient.invalidateQueries({ queryKey: queryKeys.catalog });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.correction.games });
     },
   });
   const original = useQuery({

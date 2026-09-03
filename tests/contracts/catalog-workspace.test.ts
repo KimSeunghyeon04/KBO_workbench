@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 import {
+  CorrectionGameCatalogItemSchema,
   parseCollectionJob,
   CorrectionJournalSchema,
   GameCatalogItemSchema,
@@ -21,6 +22,19 @@ const base = {
 };
 
 describe("catalog authority union과 workspace file codec", () => {
+  it("보정 후보 요약은 finding count 없이 strict하게 검증한다", () => {
+    const candidate = {
+      gameId: "20260715AABB0",
+      season: 2026,
+      authority: "quarantine",
+      updatedAt: "2026-08-20T03:00:00.000Z",
+    };
+    expect(Value.Check(CorrectionGameCatalogItemSchema, candidate)).toBe(true);
+    expect(
+      Value.Check(CorrectionGameCatalogItemSchema, { ...candidate, blockingFindings: 1 }),
+    ).toBe(false);
+  });
+
   it("authority별 필수 필드와 금지 필드를 strict하게 구분한다", () => {
     const workspace = { ...base, authority: "staging", supersededCount: 0 };
     const database = {

@@ -3,7 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import type { CorrectionCommand, StagingRelayEventKind } from "@kbo/contracts";
 import { useSearchParams } from "react-router-dom";
 
-import { catalogQueryOptions, correctionSourceEvidenceQueryOptions } from "../api/query-options";
+import {
+  correctionGamesQueryOptions,
+  correctionSourceEvidenceQueryOptions,
+} from "../api/query-options";
 import {
   applyEventCollapse,
   buildEventCollapseModel,
@@ -52,7 +55,7 @@ export function CorrectPage(): React.JSX.Element {
   const [searchParams] = useSearchParams();
   const requestedSessionId = searchParams.get("sessionId");
   const recordCorrectionNoticeId = searchParams.get("noticeId");
-  const catalog = useQuery(catalogQueryOptions());
+  const catalog = useQuery(correctionGamesQueryOptions());
   const [scope, setScope] = useState<CorrectionGameScope>("review");
   const [gameQuery, setGameQuery] = useState("");
   const [selectedKey, setSelectedKey] = useState("");
@@ -74,13 +77,7 @@ export function CorrectPage(): React.JSX.Element {
     readonly selectedRecordIdentity: string | null;
   } | null>(null);
 
-  const catalogGames = useMemo(
-    () =>
-      (catalog.data?.games ?? []).filter(
-        (game) => game.authority === "staging" || game.authority === "quarantine",
-      ),
-    [catalog.data],
-  );
+  const catalogGames = useMemo(() => catalog.data?.games ?? [], [catalog.data]);
   const scopeCounts = {
     review: catalogGames.filter((game) => game.authority === "quarantine").length,
     ready: catalogGames.filter((game) => game.authority === "staging").length,

@@ -59,6 +59,16 @@ describe("staging workspace", () => {
         }),
       ],
     });
+    expect(await workspace.correctionGameCatalog()).toEqual({
+      games: [
+        {
+          gameId: document.metadata.gameId,
+          season: document.metadata.season,
+          authority: "staging",
+          updatedAt: current.updatedAt,
+        },
+      ],
+    });
     expect(await workspace.readDocument("staging", 2026, document.metadata.gameId)).toEqual(
       document,
     );

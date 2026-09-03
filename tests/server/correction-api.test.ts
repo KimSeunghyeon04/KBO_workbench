@@ -82,6 +82,17 @@ describe("correction HTTP API", () => {
       },
     });
 
+    const candidates = await app.inject({ method: "GET", url: "/api/v2/correction-games" });
+    expect(candidates.statusCode).toBe(200);
+    expect(candidates.json()).toEqual({
+      games: [
+        expect.objectContaining({
+          gameId: document.metadata.gameId,
+          authority: "staging",
+        }),
+      ],
+    });
+
     const created = await app.inject({
       method: "POST",
       url: "/api/v2/correction-sessions",

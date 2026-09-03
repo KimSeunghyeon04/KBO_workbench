@@ -21,6 +21,10 @@ const GameIdSchema = Type.String({
 });
 const HashSchema = Type.String({ pattern: "^[0-9a-f]{64}$" });
 const EventIdSchema = Type.String({ minLength: 1, maxLength: 200 });
+const DateTimeSchema = Type.String({
+  pattern:
+    "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$",
+});
 
 const CommandBase = { commandId: IdSchema } as const;
 
@@ -312,6 +316,19 @@ export const CorrectionSessionCreateRequestSchema = Type.Union([
     strict,
   ),
 ]);
+export const CorrectionGameCatalogItemSchema = Type.Object(
+  {
+    gameId: GameIdSchema,
+    season: Type.Integer({ minimum: 1982, maximum: 9999 }),
+    authority: Type.Union([Type.Literal("staging"), Type.Literal("quarantine")]),
+    updatedAt: DateTimeSchema,
+  },
+  strict,
+);
+export const CorrectionGameCatalogSchema = Type.Object(
+  { games: Type.Array(CorrectionGameCatalogItemSchema) },
+  strict,
+);
 export const CorrectionSessionSchema = Type.Object(
   {
     sessionId: IdSchema,
@@ -424,6 +441,8 @@ export type CorrectionCalculatedPitcherRecord = Static<
   typeof CorrectionCalculatedPitcherRecordSchema
 >;
 export type CorrectionCalculatedRecords = Static<typeof CorrectionCalculatedRecordsSchema>;
+export type CorrectionGameCatalogItem = Static<typeof CorrectionGameCatalogItemSchema>;
+export type CorrectionGameCatalog = Static<typeof CorrectionGameCatalogSchema>;
 export type CorrectionSessionCreateRequest = Static<typeof CorrectionSessionCreateRequestSchema>;
 export type CorrectionSession = Static<typeof CorrectionSessionSchema>;
 export type CorrectionCommandRequest = Static<typeof CorrectionCommandRequestSchema>;

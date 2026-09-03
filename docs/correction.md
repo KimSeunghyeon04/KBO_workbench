@@ -9,6 +9,8 @@
 
 작업 사본 생성은 선택한 경기의 versioned current manifest와 그 manifest가 가리키는 원장·finding만
 검증해 읽는다. 전체 경기 catalog 재스캔은 session 생성 경로에 포함하지 않는다.
+보정 목록은 별도 경량 API에서 current manifest의 경기 ID·시즌·권위·갱신 시각만 읽는다. finding
+개수는 목록에서 계산하거나 표시하지 않고, 선택한 작업 사본을 연 뒤 현재 compiler 결과로 표시한다.
 
 자유 JSON 편집기는 두지 않는다. 다음 구조화 명령만 지원한다.
 

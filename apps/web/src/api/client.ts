@@ -7,6 +7,7 @@ export {
 export {
   commitCorrection,
   createCorrectionSession,
+  getCorrectionGameCatalog,
   getCorrectionSession,
   getCorrectionOriginal,
   getCorrectionSourceEvidence,

@@ -3,6 +3,7 @@ import {
   CorrectionCommandRequestSchema,
   CorrectionCommitRequestSchema,
   CorrectionCommitResultSchema,
+  CorrectionGameCatalogSchema,
   CorrectionMutationResultSchema,
   CorrectionSessionCreateRequestSchema,
   CorrectionSessionSchema,
@@ -22,6 +23,12 @@ import {
 } from "./schemas.js";
 
 export const correctionRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app, context) => {
+  app.get(
+    "/api/v2/correction-games",
+    { schema: { response: { 200: CorrectionGameCatalogSchema } } },
+    async () => context.runtime.workspace.correctionGameCatalog(),
+  );
+
   app.post(
     "/api/v2/correction-sessions",
     {

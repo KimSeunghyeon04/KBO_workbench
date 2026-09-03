@@ -1,11 +1,13 @@
 import {
   CorrectionCommitResultSchema,
+  CorrectionGameCatalogSchema,
   CorrectionMutationResultSchema,
   CorrectionSessionSchema,
   CorrectionSourceEvidenceSchema,
   StagingGameDocumentV2Schema,
   type CorrectionCommand,
   type CorrectionCommitResult,
+  type CorrectionGameCatalog,
   type CorrectionMutationResult,
   type CorrectionSession,
   type CorrectionSourceEvidence,
@@ -14,6 +16,10 @@ import {
 import { Value } from "@sinclair/typebox/value";
 
 import { requestJson } from "./transport";
+
+export async function getCorrectionGameCatalog(): Promise<CorrectionGameCatalog> {
+  return Value.Decode(CorrectionGameCatalogSchema, await requestJson("/api/v2/correction-games"));
+}
 
 export async function createCorrectionSession(
   authority: "staging" | "quarantine",

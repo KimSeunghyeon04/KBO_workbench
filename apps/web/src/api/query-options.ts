@@ -1,7 +1,11 @@
 import { queryOptions, type QueryKey } from "@tanstack/react-query";
 
 import { getCollectionJobs, getGameCatalog } from "./collection-client";
-import { getCorrectionOriginal, getCorrectionSourceEvidence } from "./correction-client";
+import {
+  getCorrectionGameCatalog,
+  getCorrectionOriginal,
+  getCorrectionSourceEvidence,
+} from "./correction-client";
 import { getImportJobs } from "./import-client";
 import { getRevisionCatalog } from "./replay-client";
 import {
@@ -27,6 +31,7 @@ export const queryKeys = {
   revisions: (gameId: string) => ["games", gameId, "revisions"] as const,
   systemStatus: ["system", "status"] as const,
   correction: {
+    games: ["correction", "games"] as const,
     original: (sessionId: string) => ["correction", sessionId, "original"] as const,
     sourceEvidence: (sessionId: string, eventId: string) =>
       ["correction", sessionId, "source-evidence", eventId] as const,
@@ -47,6 +52,8 @@ export const queryKeys = {
 
 export const catalogQueryOptions = () =>
   queryOptions({ queryKey: queryKeys.catalog, queryFn: getGameCatalog });
+export const correctionGamesQueryOptions = () =>
+  queryOptions({ queryKey: queryKeys.correction.games, queryFn: getCorrectionGameCatalog });
 export const dashboardQueryOptions = () =>
   queryOptions({ queryKey: queryKeys.dashboard, queryFn: getDashboard });
 export const systemStatusQueryOptions = () =>

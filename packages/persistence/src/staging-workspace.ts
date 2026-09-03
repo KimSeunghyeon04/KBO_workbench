@@ -10,6 +10,7 @@ import {
   canonicalStringify,
   compareCanonicalStrings,
   type CollectionJob,
+  type CorrectionGameCatalog,
   type CorrectionJournal,
   type CurrentWorkspaceEntry,
   type GameCatalog,
@@ -395,6 +396,32 @@ export class StagingWorkspace {
     });
     items.sort(compareCatalogItems);
     return { games: items };
+  }
+
+  public async correctionGameCatalog(): Promise<CorrectionGameCatalog> {
+    this.assertOpen();
+    const files = (await readDirectoryIfPresent(path.join(this.root, "current"))).filter(
+      (file) => file.isFile() && file.name.endsWith(".json") && isGameId(file.name.slice(0, -5)),
+    );
+    const games = (
+      await mapInBatches(files, CATALOG_READ_CONCURRENCY, async (file) => {
+        const current = await this.requiredCurrentEntry(file.name.slice(0, -5));
+        if (current.authority === "source_failure" || current.season === null) return null;
+        return {
+          gameId: current.gameId,
+          season: current.season,
+          authority: current.authority === "ready" ? ("staging" as const) : ("quarantine" as const),
+          updatedAt: current.updatedAt,
+        };
+      })
+    ).filter((game) => game !== null);
+    games.sort(
+      (left, right) =>
+        Number(right.authority === "quarantine") - Number(left.authority === "quarantine") ||
+        compareCanonicalStrings(right.updatedAt, left.updatedAt) ||
+        compareCanonicalStrings(left.gameId, right.gameId),
+    );
+    return { games };
   }
 
   public async readCurrentDocumentSnapshot(
