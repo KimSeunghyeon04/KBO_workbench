@@ -190,11 +190,11 @@ async function assertRegistryContract(
   );
   if (
     migration.rows[0]?.version !== expectedMigration ||
-    contract.rows[0]?.analytics_contract_version !== 3 ||
-    contract.rows[0]?.projection_version !== 3 ||
+    contract.rows[0]?.analytics_contract_version !== 4 ||
+    contract.rows[0]?.projection_version !== 4 ||
     contract.rows[0]?.registry_contract_version !== 1
   ) {
-    throw new Error("registry DB contract가 V3 3/3/1과 일치하지 않습니다.");
+    throw new Error("registry DB contract가 4/4/1과 일치하지 않습니다.");
   }
 }
 

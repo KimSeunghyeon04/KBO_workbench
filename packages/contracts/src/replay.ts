@@ -3,6 +3,7 @@ import { Value } from "@sinclair/typebox/value";
 
 import {
   ContractValidationError,
+  PitchMetadataSchema,
   StagingRelayEventKindSchema,
   HalfSchema,
   RunnerOutKindSchema,
@@ -138,6 +139,7 @@ export const ReplayFrameSchema = Type.Object(
           sequence: Type.Integer({ minimum: 0 }),
           kind: StagingRelayEventKindSchema,
           relayText: Type.Union([Type.String({ minLength: 1, maxLength: 1_000 }), Type.Null()]),
+          pitch: Type.Optional(PitchMetadataSchema),
         },
         strict,
       ),

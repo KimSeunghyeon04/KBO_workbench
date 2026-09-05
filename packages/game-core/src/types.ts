@@ -97,6 +97,8 @@ export interface CompiledRunnerMovement {
 }
 
 export interface CompiledPitchFact {
+  readonly speedKph?: number;
+  readonly pitchType?: string;
   readonly pitchId: string;
   readonly sequence: number;
   readonly inning: number;

@@ -420,7 +420,7 @@ function storedFindingSnapshot(gameId: string, finding: StoredFinding): Correcti
   };
 }
 
-function mergePersistentSourceFindings(
+export function mergePersistentSourceFindings(
   stored: readonly StoredFinding[],
   current: ReplayResult["findings"],
   document: StagingGameDocumentV2,

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
 export const EXPECTED_POSTGRES_MAJOR_VERSION = 16;
-export const EXPECTED_MIGRATION_VERSION = "0003_record_correction_scope_classification";
+export const EXPECTED_MIGRATION_VERSION = "0004_pitch_metadata";
 
 export interface AppConfig {
   readonly apiVersion: string;

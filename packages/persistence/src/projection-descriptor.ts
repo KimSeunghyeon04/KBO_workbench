@@ -42,7 +42,7 @@ function pitchStateColumns(prefix: string): string[] {
   ];
 }
 
-export const PROJECTION_TABLE_COLUMNS = {
+export const PROJECTION_TABLE_COLUMNS_V3 = {
   game_team_snapshots: ["game_id", "revision", "side", "team_id", "team_name"],
   game_roster_snapshots: [
     "game_id",
@@ -435,7 +435,19 @@ export const PROJECTION_TABLE_COLUMNS = {
   ],
 } as const;
 
+export const PROJECTION_TABLE_COLUMNS = {
+  ...PROJECTION_TABLE_COLUMNS_V3,
+  relay_pitches: [...PROJECTION_TABLE_COLUMNS_V3.relay_pitches, "speed_kph", "pitch_type"],
+  pitch_facts: [...PROJECTION_TABLE_COLUMNS_V3.pitch_facts, "speed_kph", "pitch_type"],
+} as const;
+export type ProjectionVersion = 3 | 4;
 export type ProjectionTableName = keyof typeof PROJECTION_TABLE_COLUMNS;
+export function projectionTableColumns(
+  table: ProjectionTableName,
+  version: ProjectionVersion,
+): readonly string[] {
+  return version === 3 ? PROJECTION_TABLE_COLUMNS_V3[table] : PROJECTION_TABLE_COLUMNS[table];
+}
 
 const PROJECTION_TABLE_ORDER: Readonly<Record<ProjectionTableName, string>> = {
   game_team_snapshots: "side",
@@ -473,7 +485,7 @@ const PROJECTION_TABLE_ORDER: Readonly<Record<ProjectionTableName, string>> = {
 export interface ProjectionTableDescriptor<Name extends ProjectionTableName = ProjectionTableName> {
   readonly name: Name;
   readonly schema: "workbench" | "baseball";
-  readonly columns: (typeof PROJECTION_TABLE_COLUMNS)[Name];
+  readonly columns: readonly string[];
   readonly orderBy: string;
   readonly uniqueBy: readonly string[];
   readonly decodeRow: (row: unknown, rowIndex: number) => DecodedProjectionRow;
@@ -514,6 +526,18 @@ export const PROJECTION_TABLE_DESCRIPTORS = (
   uniqueBy: PROJECTION_TABLE_ORDER[name].split(", "),
   decodeRow: (row, rowIndex) => decodeProjectionRow(name, rowIndex, row),
 }));
+
+export function projectionTableDescriptors(
+  version: ProjectionVersion,
+): readonly ProjectionTableDescriptor[] {
+  if (version === 4) return PROJECTION_TABLE_DESCRIPTORS;
+  return PROJECTION_TABLE_DESCRIPTORS.map((descriptor) => ({
+    ...descriptor,
+    columns: projectionTableColumns(descriptor.name, version),
+    decodeRow: (row: unknown, rowIndex: number) =>
+      decodeProjectionRow(descriptor.name, rowIndex, row, version),
+  }));
+}
 
 const BOOLEAN_COLUMNS = new Set([
   "starter",
@@ -851,12 +875,13 @@ export function decodeProjectionRow(
   table: ProjectionTableName,
   rowIndex: number,
   value: unknown,
+  version: ProjectionVersion = 4,
 ): DecodedProjectionRow {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw integrity(table, rowIndex, "행이 plain object가 아닙니다.");
   }
   const row = value as Record<string, unknown>;
-  const columns: readonly string[] = PROJECTION_TABLE_COLUMNS[table];
+  const columns = projectionTableColumns(table, version);
   const expected = new Set(columns);
   const missing = columns.filter((column) => !Object.hasOwn(row, column));
   const extra = Object.keys(row).filter((column) => !expected.has(column));
@@ -880,6 +905,19 @@ function decodeProjectionValue(
   column: string,
   value: unknown,
 ): DecodedProjectionScalar {
+  if (column === "speed_kph") {
+    if (value === null || (typeof value === "number" && Number.isFinite(value) && value > 0))
+      return value;
+    throw integrity(table, rowIndex, "speed_kph은 양의 finite number여야 합니다.");
+  }
+  if (column === "pitch_type") {
+    if (
+      value === null ||
+      (typeof value === "string" && value.trim().length > 0 && value.length <= 100)
+    )
+      return value;
+    throw integrity(table, rowIndex, "pitch_type은 비어 있지 않은 구종 명칭이어야 합니다.");
+  }
   if (value === null || value === undefined) {
     if (value === null && (NULLABLE_COLUMNS[table] ?? []).includes(column)) return null;
     throw integrity(table, rowIndex, `${column}은(는) null일 수 없습니다.`);

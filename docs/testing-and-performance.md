@@ -28,6 +28,11 @@ seal/current pointer, catalog identity FK, tracking 단일 저장, registry snap
 
 ## 필수 회귀 범위
 
+투구 metadata 회귀는 저장 원문 비식별 사례, 문자열·숫자 구속과 빈/잘못된 값, 좌표·ID 누락,
+수동 값 보존, 삭제·재정렬, hash 실패, 보정 왕복과 undo/redo, 일회 보완 재실행을 포함한다.
+격리 DB는 V3 DDL과 V3 컬럼으로 봉인 기록을 만든 뒤 0004 migration을 적용해 과거 manifest/hash와
+replay를 비교하고 V4 append, stale base, rollback, sealed 보호와 분석 view를 확인한다.
+
 ### 수집 원장
 
 - Naver 의미 행 하나가 평면 원장 행 하나로 보존됨

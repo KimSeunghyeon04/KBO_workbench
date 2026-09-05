@@ -411,7 +411,9 @@ function withEvents(
 ): StagingGameDocumentV2 {
   return {
     ...document,
-    events: events.map((event, sequence) => parseStagingRelayEvent({ ...event, sequence })),
+    // Commands and replacements are decoded at entry. Decode the entire draft once after the
+    // atomic batch; decoding every unchanged row per child makes large pitch edits quadratic.
+    events: events.map((event, sequence) => ({ ...event, sequence })),
   };
 }
 function resequence(document: StagingGameDocumentV2): StagingGameDocumentV2 {

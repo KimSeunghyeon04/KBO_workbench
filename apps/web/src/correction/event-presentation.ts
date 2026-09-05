@@ -214,7 +214,7 @@ function eventSummary(
   if (event.kind === "batter_start")
     return `${player(event.payload.batterId)} · 투수 ${player(event.payload.pitcherId)}`;
   if (event.kind === "pitch")
-    return `${event.payload.call.replaceAll("_", " ")} · ${sourcePitchIdLabel(event.payload.sourcePitchId)}`;
+    return `${event.payload.call.replaceAll("_", " ")} · ${event.payload.pitchType ?? "구종 미제공"} · ${event.payload.speedKph === undefined ? "구속 미제공" : `${String(event.payload.speedKph)} km/h`} · ${sourcePitchIdLabel(event.payload.sourcePitchId)}`;
   if (event.kind === "plate_result")
     return [
       results[event.payload.result] ?? event.payload.result,

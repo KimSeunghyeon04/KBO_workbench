@@ -47,6 +47,14 @@ export const PitchCallSchema = Type.Union([
   Type.Literal("no_pitch"),
 ]);
 export type PitchCall = Static<typeof PitchCallSchema>;
+export const PitchMetadataSchema = Type.Object(
+  {
+    speedKph: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
+    pitchType: Type.Optional(Type.String({ minLength: 1, maxLength: 100, pattern: "\\S" })),
+  },
+  strict,
+);
+export type PitchMetadata = Static<typeof PitchMetadataSchema>;
 export const PitchEventSchema = Type.Object(
   {
     ...LedgerEventBase,
@@ -54,6 +62,7 @@ export const PitchEventSchema = Type.Object(
     payload: Type.Object(
       {
         sourcePitchId: Type.Optional(IdentifierSchema),
+        ...PitchMetadataSchema.properties,
         call: PitchCallSchema,
         batterId: Type.Optional(PlayerIdSchema),
         pitcherId: Type.Optional(PlayerIdSchema),

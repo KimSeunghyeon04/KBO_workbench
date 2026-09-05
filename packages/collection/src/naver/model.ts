@@ -61,6 +61,8 @@ export interface CanonicalNaverRow {
   readonly sourceType: string;
   readonly relayText: string | null;
   readonly pitchCallCode: string | null;
+  readonly pitchSpeed: unknown;
+  readonly pitchType: unknown;
   readonly resultCode: string | null;
   readonly outcomeCode: string | null;
   readonly reasonCode: string | null;

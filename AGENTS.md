@@ -191,7 +191,7 @@ Canonical JSON은 해시, fingerprint, idempotency의 기반이다.
 ### Persistence와 Replay
 
 - PostgreSQL 스키마는 typed relational fact를 사용한다. JSON/JSONB/ARRAY 컬럼을 도입하지 않는다.
-- 현재 계약은 analytics contract 2, projection version 2다. 신규 경기는 revision 1이고 이후 교정·기록정정은 append-only revision을 추가한다. 이를 바꾸려면 migration과 명시적인 계약 결정을 먼저 한다.
+- 현재 계약은 analytics contract 4, projection version 4이며 V3 sealed revision의 읽기·해시 규칙을 보존한다. 신규 경기는 revision 1이고 이후 교정·기록정정은 append-only revision을 추가한다. 이를 바꾸려면 migration과 명시적인 계약 결정을 먼저 한다.
 - projection column descriptor가 write, read, hash 순서의 공통 권위다. 컬럼 변경은 migration, descriptor, projection, hydration, 내부 recompile, 테스트와 문서를 함께 수정한다.
 - import는 하나의 트랜잭션에서 strict decode, compile, blocking 거부, document/projection hash, DB contract 확인, manifest/fact 저장, 재조회 projection hash, 내부 typed ledger 재구성과 recompile, seal, current pointer 갱신을 끝낸다.
 - 어느 단계든 실패하면 전체 import를 rollback한다.

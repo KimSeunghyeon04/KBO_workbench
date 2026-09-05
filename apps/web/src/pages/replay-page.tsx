@@ -426,7 +426,18 @@ function FrameView({ frame }: { readonly frame: ReplayFrame | null }): React.JSX
                 <small>
                   원장 #{String(item.sequence + 1)} · {kindLabel(item.kind)}
                 </small>
-                <span>{item.relayText ?? "원문 없음"}</span>
+                <span>
+                  {item.relayText ?? "원문 없음"}
+                  {item.kind === "pitch" ? (
+                    <small>
+                      {" "}
+                      · {item.pitch?.pitchType ?? "구종 미제공"} ·{" "}
+                      {item.pitch?.speedKph === undefined
+                        ? "구속 미제공"
+                        : String(item.pitch.speedKph) + " km/h"}
+                    </small>
+                  ) : null}
+                </span>
               </li>
             ))}
           </ol>

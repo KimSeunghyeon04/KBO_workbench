@@ -71,6 +71,8 @@ function decodeRow(
     numericType,
     relayText,
     pitchCallCode: optionalText(first(raw, ["call", "pitchResult"]))?.toLowerCase() ?? null,
+    pitchSpeed: raw.speed ?? null,
+    pitchType: raw.stuff ?? null,
     resultCode: optionalText(first(raw, ["result", "plateResult"]))?.toLowerCase() ?? null,
     outcomeCode: optionalText(raw.outcome)?.toLowerCase() ?? null,
     reasonCode: optionalText(first(raw, ["reason", "runnerReason"]))?.toLowerCase() ?? null,

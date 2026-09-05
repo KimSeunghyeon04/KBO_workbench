@@ -29,7 +29,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
 
   beforeAll(() => {
     pool = new Pool({ connectionString: dsn });
-    store = new GameRevisionStore(pool, "0003_record_correction_scope_classification");
+    store = new GameRevisionStore(pool, "0004_pitch_metadata");
   });
   beforeEach(async () => {
     await pool.query(
@@ -83,10 +83,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
   });
 
   it("기록정정 source revision을 봉인하고 no-change와 append-only 검토 이력을 보장한다", async () => {
-    const repository = new RecordCorrectionRepository(
-      pool,
-      "0003_record_correction_scope_classification",
-    );
+    const repository = new RecordCorrectionRepository(pool, "0004_pitch_metadata");
     const importedGame = await store.importRevision(await golden());
     const dataset = parseRecordCorrectionSeasonDataset({
       season: 2024,
@@ -452,7 +449,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
   it("registry는 공식 KBO identity, snapshot 공백, 비소속 event와 모호성을 보존한다", async () => {
     const document = await golden();
     await store.importRevision(document);
-    const repository = new RegistryRepository(pool, "0003_record_correction_scope_classification");
+    const repository = new RegistryRepository(pool, "0004_pitch_metadata");
     expect(await repository.seasonDateRange(2026)).toEqual({
       dateFrom: document.metadata.gameDate,
       dateTo: document.metadata.gameDate,
@@ -579,7 +576,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
   });
 
   it("구조적으로 완전한 개막 전 빈 등록 snapshot을 season revision으로 seal한다", async () => {
-    const repository = new RegistryRepository(pool, "0003_record_correction_scope_classification");
+    const repository = new RegistryRepository(pool, "0004_pitch_metadata");
     const dataset = parseRegistrySeasonDataset({
       season: 2024,
       dateFrom: "2024-03-09",
@@ -614,8 +611,8 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     );
     expect(contract.rows).toEqual([
       {
-        analytics_contract_version: 3,
-        projection_version: 3,
+        analytics_contract_version: 4,
+        projection_version: 4,
         registry_contract_version: 1,
         record_correction_contract_version: 2,
       },

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { copyFile, mkdtempDisposable, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import path from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 
@@ -282,6 +282,28 @@ describe("staging workspace", () => {
     await first.close();
     const reopened = await StagingWorkspace.open(temporary.path);
     await reopened.close();
+  });
+
+  it("재시작한 컨테이너가 같은 hostname과 PID를 재사용해도 이전 잠금을 복구한다", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-restarted-lock-"));
+    await writeFile(
+      path.join(temporary.path, ".writer.lock"),
+      canonicalStringify({
+        token: "previous-container-process",
+        pid: process.pid,
+        hostname: hostname(),
+        acquiredAt: "2020-01-01T00:00:00.000Z",
+      }),
+    );
+    const workspace = await StagingWorkspace.open(
+      temporary.path,
+      () => new Date("2020-01-02T00:00:00Z"),
+    );
+    try {
+      await expect(StagingWorkspace.open(temporary.path)).rejects.toThrow(/writer process/);
+    } finally {
+      await workspace.close();
+    }
   });
 
   it("strict 문서가 없는 원천 실패도 별도 catalog 항목으로 남긴다", async () => {

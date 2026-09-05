@@ -691,7 +691,7 @@ async function readMigrationResolution(target: string): Promise<MigrationResolut
   return { schemaVersion: 1, selections };
 }
 
-async function verifyBackupDirectory(directory: string): Promise<void> {
+export async function verifyBackupDirectory(directory: string): Promise<void> {
   const resolved = path.resolve(directory);
   const manifest = JSON.parse(
     await readFile(path.join(resolved, "manifest.json"), "utf8"),

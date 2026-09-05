@@ -491,7 +491,14 @@ try {
     throw "revision 2 replay의 frame 수 또는 revision-bound hash가 올바르지 않습니다."
   }
 
+  Invoke-Compose -Arguments @("stop", "web", "api")
   & (Join-Path $PSScriptRoot "backup.ps1") -DestinationRoot $backupRoot
+  $runningAfterOfflineBackup = @(& docker compose ps --status running --services)
+  if ($runningAfterOfflineBackup -contains "api" -or $runningAfterOfflineBackup -contains "web") {
+    throw "이미 중지된 writer를 backup이 다시 시작했습니다."
+  }
+  Invoke-Compose -Arguments @("start", "api", "web")
+  Wait-Ready
   $backupDirectory = Get-ChildItem -LiteralPath $backupRoot -Directory |
     Sort-Object Name -Descending |
     Select-Object -First 1

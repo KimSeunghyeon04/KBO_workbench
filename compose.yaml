@@ -1,7 +1,7 @@
 name: kbo-workbench
 
 x-api-environment: &api-environment
-  EXPECTED_MIGRATION_VERSION: "0003_record_correction_scope_classification"
+  EXPECTED_MIGRATION_VERSION: "0004_pitch_metadata"
   MIGRATIONS_DIR: "/app/database/v3"
   KBO_DATA_DIR: "/var/lib/kbo"
   KBO_COLLECTION_CONCURRENCY: "${KBO_COLLECTION_CONCURRENCY:-1}"

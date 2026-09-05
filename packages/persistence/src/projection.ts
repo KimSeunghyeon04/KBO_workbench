@@ -9,7 +9,11 @@ import { applyPitchCall, type GameState, type ReplayResult } from "@kbo/game-cor
 
 export type ProjectionScalar = string | number | boolean | null;
 export type ProjectionRow = Readonly<Record<string, ProjectionScalar>>;
-import { PROJECTION_TABLE_COLUMNS, type ProjectionTableName } from "./projection-descriptor.js";
+import {
+  projectionTableColumns,
+  type ProjectionTableName,
+  type ProjectionVersion,
+} from "./projection-descriptor.js";
 
 export {
   decodeProjectionRow,
@@ -18,7 +22,7 @@ export {
 } from "./projection-descriptor.js";
 export type { ProjectionTableName } from "./projection-descriptor.js";
 export type ProjectionTables = Readonly<Record<ProjectionTableName, readonly ProjectionRow[]>>;
-export type ProjectionVersion = 3;
+export type { ProjectionVersion } from "./projection-descriptor.js";
 type RelaySubtypeTableName =
   | "relay_half_inning_starts"
   | "relay_batter_starts"
@@ -50,7 +54,18 @@ export function buildRelationalProjection(
   document: StagingGameDocumentV2,
   replay: ReplayResult,
   revision: number,
+  version: ProjectionVersion = 4,
 ): RelationalProjection {
+  if (
+    version === 3 &&
+    document.events.some(
+      (event) =>
+        event.kind === "pitch" &&
+        (event.payload.speedKph !== undefined || event.payload.pitchType !== undefined),
+    )
+  ) {
+    throw new ProjectionShapeError("V3 projection에는 투구 metadata를 저장할 수 없습니다.");
+  }
   const gameId = document.metadata.gameId;
   const teams: ProjectionRow[] = (["away", "home"] as const).map((side) => ({
     game_id: gameId,
@@ -98,7 +113,7 @@ export function buildRelationalProjection(
     relay_unresolved: [],
   };
   for (const event of document.events) {
-    const subtype = relaySubtypeRow(gameId, revision, event);
+    const subtype = relaySubtypeRow(gameId, revision, event, version);
     relaySubtypes[subtype.table].push(subtype.row);
   }
   const pitchFacts: ProjectionRow[] = replay.pitchFacts.map((pitch, pitchSequence) => ({
@@ -114,6 +129,9 @@ export function buildRelationalProjection(
     batter_id: pitch.batterId,
     pitcher_id: pitch.pitcherId,
     source_pitch_id: pitch.sourcePitchId,
+    ...(version === 3
+      ? {}
+      : { speed_kph: pitch.speedKph ?? null, pitch_type: pitch.pitchType ?? null }),
     pitch_call: pitch.call,
     actual: pitch.actual,
     ball: pitch.ball,
@@ -359,47 +377,54 @@ export function buildRelationalProjection(
       }),
     );
   });
-  const tables = normalizeProjectionTables({
-    game_team_snapshots: teams,
-    game_roster_snapshots: rosters,
-    game_roster_positions: positions,
-    relay_event_facts: relay,
-    ...relaySubtypes,
-    tracking_observations: trackingCandidates,
-    pitch_facts: pitchFacts,
-    pitch_tracking_links: tracking,
-    official_batter_lines: officialBatters,
-    official_pitcher_lines: officialPitchers,
-    play_facts: playFacts,
-    play_events: playEvents,
-    runner_movement_facts: movements,
-    game_final_states: [{ game_id: gameId, revision, ...stateRow("final", replay.finalState) }],
-    plate_appearance_facts: plateAppearances,
-    plate_appearance_events: plateEvents,
-    batter_game_facts: computedBatters,
-    pitcher_game_facts: computedPitchers,
-    baserunner_game_facts: baserunners,
-    validation_runs: [
-      {
-        game_id: gameId,
-        revision,
-        blocking_count: replay.findings.filter((finding) => finding.severity === "blocking").length,
-        warning_count: replay.findings.filter((finding) => finding.severity === "warning").length,
-        issue_count: replay.findings.length,
-      },
-    ],
-    validation_issues: validationIssues,
-    validation_issue_details: validationDetails,
-  });
+  const tables = normalizeProjectionTables(
+    {
+      game_team_snapshots: teams,
+      game_roster_snapshots: rosters,
+      game_roster_positions: positions,
+      relay_event_facts: relay,
+      ...relaySubtypes,
+      tracking_observations: trackingCandidates,
+      pitch_facts: pitchFacts,
+      pitch_tracking_links: tracking,
+      official_batter_lines: officialBatters,
+      official_pitcher_lines: officialPitchers,
+      play_facts: playFacts,
+      play_events: playEvents,
+      runner_movement_facts: movements,
+      game_final_states: [{ game_id: gameId, revision, ...stateRow("final", replay.finalState) }],
+      plate_appearance_facts: plateAppearances,
+      plate_appearance_events: plateEvents,
+      batter_game_facts: computedBatters,
+      pitcher_game_facts: computedPitchers,
+      baserunner_game_facts: baserunners,
+      validation_runs: [
+        {
+          game_id: gameId,
+          revision,
+          blocking_count: replay.findings.filter((finding) => finding.severity === "blocking")
+            .length,
+          warning_count: replay.findings.filter((finding) => finding.severity === "warning").length,
+          issue_count: replay.findings.length,
+        },
+      ],
+      validation_issues: validationIssues,
+      validation_issue_details: validationDetails,
+    },
+    version,
+  );
   const counts = projectionCounts(tables);
-  return { version: 3, tables, counts, projectionHash: hashNormalizedProjectionTables(tables) };
+  return { version, tables, counts, projectionHash: hashNormalizedProjectionTables(tables) };
 }
 
 export function projectionCounts(tables: ProjectionTables): ProjectionCounts {
   return mapProjectionTables((table) => tables[table].length);
 }
-export function hashProjectionTables(tables: ProjectionTables): string {
-  return hashNormalizedProjectionTables(normalizeProjectionTables(tables));
+export function hashProjectionTables(
+  tables: ProjectionTables,
+  version: ProjectionVersion = 4,
+): string {
+  return hashNormalizedProjectionTables(normalizeProjectionTables(tables, version));
 }
 
 function hashNormalizedProjectionTables(tables: ProjectionTables): string {
@@ -408,9 +433,12 @@ function hashNormalizedProjectionTables(tables: ProjectionTables): string {
     .digest("hex");
 }
 
-export function normalizeProjectionTables(tables: ProjectionTables): ProjectionTables {
+export function normalizeProjectionTables(
+  tables: ProjectionTables,
+  version: ProjectionVersion = 4,
+): ProjectionTables {
   return mapProjectionTables((table) => {
-    const columns = PROJECTION_TABLE_COLUMNS[table];
+    const columns = projectionTableColumns(table, version);
     const rows = tables[table];
     if (!Array.isArray(rows)) {
       throw new ProjectionShapeError(`${table} projection table이 배열이 아닙니다.`);
@@ -542,6 +570,7 @@ function relaySubtypeRow(
   gameId: string,
   revision: number,
   event: StagingRelayEvent,
+  version: ProjectionVersion,
 ): { readonly table: RelaySubtypeTableName; readonly row: ProjectionRow } {
   const key = {
     game_id: gameId,
@@ -565,6 +594,12 @@ function relaySubtypeRow(
       row: {
         ...key,
         source_pitch_id: event.payload.sourcePitchId ?? null,
+        ...(version === 3
+          ? {}
+          : {
+              speed_kph: event.payload.speedKph ?? null,
+              pitch_type: event.payload.pitchType ?? null,
+            }),
         pitch_call: event.payload.call,
         batter_id: event.payload.batterId ?? null,
         pitcher_id: event.payload.pitcherId ?? null,

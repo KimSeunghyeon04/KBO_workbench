@@ -1,0 +1,12 @@
+{
+  "provenance": "저장된 2024 시범·정규 경기 textOptions 행에서 투구 문구와 speed/stuff만 발췌. 선수·팀·경기 ID는 제거했다. 숫자/오류/빈 값은 경계 검증용 변형이다.",
+  "observed": [
+    { "speed": "122", "stuff": "커브", "type": 1, "text": "1구 파울" },
+    { "speed": "133", "stuff": "직구", "type": 1, "text": "2구 스트라이크" },
+    { "speed": "121", "stuff": "커브", "type": 1, "text": "3구 헛스윙" },
+    { "speed": "130", "stuff": "투심", "type": 1, "text": "2구 파울" },
+    { "speed": "133", "stuff": "포크", "type": 1, "text": "1구 볼" },
+    { "speed": "134", "stuff": "슬라이더", "type": 1, "text": "1구 볼" },
+    { "speed": "144", "stuff": "직구", "type": 1, "text": "3구 스트라이크" }
+  ]
+}

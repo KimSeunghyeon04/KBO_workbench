@@ -68,6 +68,8 @@ export function compilePitchFacts(
         batterId: event.payload.batterId ?? beforePlateAppearance?.currentBatterId ?? null,
         pitcherId: event.payload.pitcherId ?? beforePlateAppearance?.currentPitcherId ?? null,
         sourcePitchId: event.payload.sourcePitchId ?? null,
+        ...(event.payload.speedKph === undefined ? {} : { speedKph: event.payload.speedKph }),
+        ...(event.payload.pitchType === undefined ? {} : { pitchType: event.payload.pitchType }),
         call: event.payload.call,
         actual,
         ball: event.payload.call === "ball",

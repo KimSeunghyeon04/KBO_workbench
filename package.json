@@ -15,6 +15,7 @@
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "maintenance:rebuild-derived": "pnpm build:server && node apps/server/dist/maintenance/rebuild-derived-workspace.js",
+    "maintenance:enrich-pitch-metadata": "pnpm build:server && node apps/server/dist/maintenance/enrich-pitch-metadata.js",
     "workspace:migrate": "pnpm build:server && node apps/server/dist/maintenance/migrate-workspace.js",
     "schema:game:check": "node scripts/game-document-schema.mjs --check",
     "schema:game:write": "node scripts/game-document-schema.mjs --write",

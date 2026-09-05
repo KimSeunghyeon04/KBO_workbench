@@ -73,6 +73,7 @@ export {
 } from "./staging-workspace.js";
 export {
   migrateWorkspaceLayout,
+  verifyBackupDirectory,
   type WorkspaceMigrationConflict,
   type WorkspaceMigrationOptions,
   type WorkspaceMigrationReport,

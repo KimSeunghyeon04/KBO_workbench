@@ -3,7 +3,7 @@ import type { PoolClient } from "pg";
 import { canonicalStringify } from "@kbo/contracts";
 
 import { PersistenceIntegrityError } from "./errors.js";
-import { PROJECTION_TABLE_DESCRIPTORS } from "./projection-descriptor.js";
+import { projectionTableDescriptors, type ProjectionVersion } from "./projection-descriptor.js";
 import {
   normalizeProjectionTables,
   type ProjectionRow,
@@ -11,9 +11,13 @@ import {
   type ProjectionTables,
 } from "./projection.js";
 
-export async function writeProjection(client: PoolClient, tables: ProjectionTables): Promise<void> {
-  const normalized = normalizeProjectionTables(tables);
-  for (const descriptor of PROJECTION_TABLE_DESCRIPTORS) {
+export async function writeProjection(
+  client: PoolClient,
+  tables: ProjectionTables,
+  version: ProjectionVersion = 4,
+): Promise<void> {
+  const normalized = normalizeProjectionTables(tables, version);
+  for (const descriptor of projectionTableDescriptors(version)) {
     const { columns, name, schema } = descriptor;
     for (const [rowIndex, row] of normalized[name].entries()) {
       const decoded = descriptor.decodeRow(row, rowIndex);
@@ -29,9 +33,10 @@ export async function readProjection(
   client: PoolClient,
   gameId: string,
   revision: number,
+  version: ProjectionVersion = 4,
 ): Promise<ProjectionTables> {
   const tables: Record<ProjectionTableName, ProjectionRow[]> = emptyProjectionTables();
-  for (const descriptor of PROJECTION_TABLE_DESCRIPTORS) {
+  for (const descriptor of projectionTableDescriptors(version)) {
     const { columns, name, orderBy, schema } = descriptor;
     const result = await client.query(
       `SELECT ${columns.join(",")} FROM ${schema}.${name} WHERE game_id=$1 AND revision=$2 ORDER BY ${orderBy}`,

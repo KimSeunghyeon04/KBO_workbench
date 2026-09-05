@@ -26,6 +26,36 @@ describe("DB typed fact replay builder", () => {
     expect(first.frames.some((frame) => frame.relayEvents.length > 1)).toBe(true);
   });
 
+  it("metadata가 없는 과거 frame의 속성을 유지하고 좌표 없는 투구도 metadata를 제공한다", () => {
+    const old = bundle(document);
+    expect(
+      old.frames.flatMap((frame) => frame.relayEvents).every((event) => !("pitch" in event)),
+    ).toBe(true);
+    const enriched = parseStagingGameDocumentV2({
+      ...document,
+      events: document.events.map((event) =>
+        event.kind === "pitch"
+          ? { ...event, payload: { ...event.payload, speedKph: 144.5, pitchType: "직구" } }
+          : event,
+      ),
+    });
+    const current = bundle(enriched);
+    expect(
+      current.frames
+        .flatMap((frame) => frame.relayEvents)
+        .filter((event) => event.kind === "pitch")
+        .every((event) => event.pitch?.speedKph === 144.5 && event.pitch.pitchType === "직구"),
+    ).toBe(true);
+    expect(
+      current.frames.some(
+        (frame) =>
+          frame.tracking.length === 0 &&
+          frame.relayEvents.some((event) => event.pitch !== undefined),
+      ),
+    ).toBe(true);
+    expect(bundle(document)).toEqual(old);
+  });
+
   it("DB typed movement를 선수 정보와 source/derived provenance를 보존해 frame에 싣는다", () => {
     const replay = bundle(document);
     const movements = replay.frames.flatMap((frame) => frame.movements);

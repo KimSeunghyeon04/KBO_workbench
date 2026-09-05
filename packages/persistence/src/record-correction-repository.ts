@@ -1026,12 +1026,12 @@ async function assertContract(client: PoolClient, expectedMigrationVersion: stri
   const row = contract.rows[0];
   if (
     migration.rows[0]?.version !== expectedMigrationVersion ||
-    row?.analytics_contract_version !== 3 ||
-    row.projection_version !== 3 ||
+    row?.analytics_contract_version !== 4 ||
+    row.projection_version !== 4 ||
     row.registry_contract_version !== 1 ||
     row.record_correction_contract_version !== 2
   )
-    throw new Error("record correction DB contract가 V3 3/3/1/2와 일치하지 않습니다.");
+    throw new Error("record correction DB contract가 4/4/1/2와 일치하지 않습니다.");
 }
 
 function assertDatasetComplete(dataset: RecordCorrectionSeasonDataset): void {

@@ -66,6 +66,11 @@ docker compose ps
 
 ## 깨끗한 환경 확인
 
+Windows/Docker 재시작 뒤 API가 writer lock 오류로 반복 재시작하면 `docker compose logs api`와
+실행 중인 writer를 확인한다. 잠금은 hostname·PID 외에 프로세스 시작 시각도 기록하므로 재시작된
+컨테이너가 같은 PID를 재사용해도 자신의 오래된 잠금을 복구한다. 살아 있는 동일 프로세스의
+두 번째 writer는 계속 거부한다. writer가 동작하는 동안 `.writer.lock`을 수동 삭제하지 않는다.
+
 개발 또는 배포 검증 환경에서는 다음 명령으로 사용자 data와 분리된 전체 recovery E2E를 실행할
 수 있다.
 

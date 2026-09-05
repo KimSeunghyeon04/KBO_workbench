@@ -7,15 +7,15 @@ PostgreSQL은 검증된 `StagingGameDocumentV2`를 typed fact로 투영해 봉�
 
 - PostgreSQL 16
 - fresh baseline: `database/v3/0001_v3_initial.sql`
-- migration head: `database/v3/0003_record_correction_scope_classification.sql`
-- analytics/projection/registry/record correction contract: `3/3/1/2`
+- migration head: `database/v3/0004_pitch_metadata.sql`
+- analytics/projection/registry/record correction contract: `4/4/1/2`
 - schema: `catalog`, `workbench`, `baseball`, `registry`, `record_correction`, `analytics`
 - JSON, JSONB, ARRAY, tracking EAV 컬럼 없음
 
 V3 baseline은 빈 DB에만 적용한다. `database/migrations`의 V2 SQL은 backup 복구와 current export
 검증용 legacy이며 V2 DB에 V3 DDL을 적용하지 않는다. Compose의 V3 volume은
 `kbo-workbench-postgres-v3`, legacy 기본 volume은 `kbo-workbench_postgres-data`라 동시에 보존된다.
-기존 V3 volume에는 `0002`만 transaction으로 추가 적용하며 실패하면 API를 시작하지 않는다.
+기존 V3 volume에는 미적용 migration을 순서대로 transaction으로 추가 적용하며 실패하면 API를 시작하지 않는다.
 
 ## Record correction provenance
 
@@ -63,6 +63,13 @@ tracking scalar는 `workbench.tracking_observations`에 한 번만 저장되고
 계산되고 지원되지 않는 profile은 `NULL`이다.
 
 ## Game revision import
+
+`0004_pitch_metadata`는 `workbench.relay_pitches`와 `baseball.pitch_facts`에 nullable
+`speed_kph`, `pitch_type`을 추가한다. 신규 revision은 projection 4로 봉인하고 V3는 고정된 이전
+descriptor 컬럼 목록으로 read/hash/hydration한다. compiler는 하나이며 기존 manifest와 sealed 행은
+변경하지 않는다. metadata가 없는 V4 행은 SQL NULL, 원장 hydration에서는 선택 속성 생략이다.
+`analytics.current_pitches`와 `all_revision_pitches`에 두 컬럼이 노출되고
+`database/examples/pitch-type-distribution.sql`은 구종별 투구·구속 표본·평균·헛스윙률을 계산한다.
 
 한 import transaction은 다음을 모두 수행한다.
 

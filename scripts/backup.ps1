@@ -91,7 +91,7 @@ try {
     --username $dbUser --dbname $dbName --tuples-only --no-align `
     --command "SELECT analytics_contract_version::text || '/' || projection_version::text || '/' || registry_contract_version::text || COALESCE('/' || (to_jsonb(contract_metadata) ->> 'record_correction_contract_version'), '') FROM workbench.contract_metadata WHERE singleton") -join "`n").Trim()
   Assert-NativeSuccess "실행 중인 DB contract 확인"
-  $stoppedServices = @("web", "api") | Where-Object { $runningServices -contains $_ }
+  $stoppedServices = @(@("web", "api") | Where-Object { $runningServices -contains $_ })
   if ($stoppedServices.Count -gt 0) {
     Invoke-Compose -Arguments (@("stop") + $stoppedServices)
   }

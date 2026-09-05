@@ -141,6 +141,12 @@ current 교정 초안, Naver 재수집, revision 선택과 오류 확인은 오�
 DB V3는 경기와 독립된 `catalog` 팀·선수 entity를 두고 sealed fact는 변하지 않는 Naver source
 identity를 참조한다. 이후 KBO 공식 ID에 연결해도 과거 projection hash는 바뀌지 않는다. tracking
 측정치는 `tracking_observations`에 한 번만 저장하고 pitch에는 link만 둔다.
+
+구속·구종은 Naver 투구 행의 `speed`·`stuff`에서 수집해 원장, pitch fact와 재생까지 전달한다.
+tracking이나 원천 pitch ID가 없어도 저장하며, `직구` 등 제공 명칭을 그대로 유지한다.
+DB migration `0004_pitch_metadata`부터 analytics/projection 계약은 `4/4`다. V3 봉인 기록은 기존
+컬럼·hash로 읽으며 과거 revision을 다시 쓰지 않는다. 기존 기록의 일회 보완은
+[구속·구종 보완 운영](docs/pitch-metadata-enrichment.md)을 따른다.
 DB에서 다시 읽은 projection 행은 descriptor가 소유한 column 순서와 runtime decoder로 shape,
 nullability, enum, safe integer, row count, game/revision 문맥과 key uniqueness를 확인한 뒤에만 hydration과
 replay에 사용한다.

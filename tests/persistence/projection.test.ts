@@ -19,7 +19,7 @@ describe("원장 + compiled fact 관계형 projection", () => {
       compileStagingGameDocumentV2(document),
       1,
     );
-    expect(projection.version).toBe(3);
+    expect(projection.version).toBe(4);
     expect(projection.tables.tracking_observations).toHaveLength(
       document.trackingCandidates.length,
     );

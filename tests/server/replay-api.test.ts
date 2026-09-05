@@ -163,7 +163,7 @@ function testConfig(workspacePath: string): AppConfig {
     },
     recordCorrection: testRecordCorrectionConfig(),
     database: { database: "test", host: "db", password: "test", port: 5432, user: "test" },
-    expectedMigrationVersion: "0003_record_correction_scope_classification",
+    expectedMigrationVersion: "0004_pitch_metadata",
     host: "127.0.0.1",
     port: 3000,
     workspacePath,

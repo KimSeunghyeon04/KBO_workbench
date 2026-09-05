@@ -56,6 +56,11 @@ export {
 } from "./kbo-record-correction/parser.js";
 export { hashRawGameBundle, mapNaverGame, sourceSeasonFromNaverBundle } from "./mapper.js";
 export {
+  buildNaverPitchMetadataEnrichment,
+  type PitchMetadataEnrichment,
+  type PitchMetadataEnrichmentIssue,
+} from "./pitch-metadata-enrichment.js";
+export {
   extractNaverSourceEvidence,
   NaverSourceEvidenceError,
   type NaverSourceEvidenceInput,

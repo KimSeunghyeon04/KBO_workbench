@@ -3,5 +3,6 @@ node_modules
 dist
 coverage
 .data
+.backups
 pnpm-lock.yaml
 kbo_workbench_web_implementation_spec.md

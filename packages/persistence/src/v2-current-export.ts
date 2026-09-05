@@ -12,7 +12,7 @@ import {
 } from "@kbo/game-core";
 import type { Pool, PoolClient, QueryResultRow } from "pg";
 
-import { PROJECTION_TABLE_DESCRIPTORS } from "./projection-descriptor.js";
+import { projectionTableDescriptors } from "./projection-descriptor.js";
 import type { ProjectionRow, ProjectionTableName, ProjectionTables } from "./projection.js";
 import {
   DatabaseContractError,
@@ -210,7 +210,7 @@ async function readLegacyProjection(
 ): Promise<LegacyProjectionRead> {
   const tables = emptyProjectionTables();
   const legacyEntries: [string, readonly ProjectionRow[]][] = [];
-  for (const descriptor of PROJECTION_TABLE_DESCRIPTORS) {
+  for (const descriptor of projectionTableDescriptors(3)) {
     const sourceName = sourceTableName(descriptor.name);
     const sourceSchema = descriptor.schema === "baseball" ? "analytics" : "workbench";
     const sourceColumns = sourceProjectionColumns(descriptor.name, descriptor.columns);

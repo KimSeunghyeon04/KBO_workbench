@@ -31,8 +31,8 @@ describe("dashboard system status", () => {
             healthy: true,
             serverMajorVersion: 16,
             expectedServerMajorVersion: 16,
-            migrationVersion: "0003_record_correction_scope_classification",
-            expectedMigrationVersion: "0003_record_correction_scope_classification",
+            migrationVersion: "0004_pitch_metadata",
+            expectedMigrationVersion: "0004_pitch_metadata",
             message: "정상",
           },
           workspace: {

@@ -27,6 +27,8 @@ export interface FormState {
   readonly pitcherId: string;
   readonly call: string;
   readonly sourcePitchId: string;
+  readonly speedKph: string;
+  readonly pitchType: string;
   readonly result: string;
   readonly creditedRbi: string;
   readonly outsRecorded: string;
@@ -101,6 +103,8 @@ export function formFrom(request: DrawerRequest, event: StagingRelayEvent | unde
       ...common,
       call: event.payload.call,
       sourcePitchId: event.payload.sourcePitchId ?? "",
+      speedKph: optionalNumber(event.payload.speedKph),
+      pitchType: event.payload.pitchType ?? "",
       batterId: event.payload.batterId ?? "",
       pitcherId: event.payload.pitcherId ?? "",
     };
@@ -170,6 +174,8 @@ export function emptyForm(inning: number, half: Half): FormState {
     pitcherId: "",
     call: "ball",
     sourcePitchId: "",
+    speedKph: "",
+    pitchType: "",
     result: "field_out",
     creditedRbi: "",
     outsRecorded: "",
@@ -285,6 +291,10 @@ export function eventFromForm(
       kind: "pitch",
       payload: {
         call: form.call,
+        ...(form.speedKph.trim() === "" ? {} : { speedKph: Number(form.speedKph) }),
+        ...(form.pitchType.trim() === ""
+          ? {}
+          : { pitchType: form.pitchType.trim().normalize("NFC") }),
         ...(optional(form.sourcePitchId, String) === undefined
           ? {}
           : { sourcePitchId: form.sourcePitchId.trim() }),
@@ -426,6 +436,14 @@ export function validateForm(
       !optionalPlayerValid(form.side, form.outgoingPlayerId))
   )
     return "교체 선수는 선택한 팀 명단에서 선택하세요.";
+  if (
+    form.kind === "pitch" &&
+    form.speedKph.trim() !== "" &&
+    (!Number.isFinite(Number(form.speedKph)) || Number(form.speedKph) <= 0)
+  )
+    return "구속은 양수여야 합니다.";
+  if (form.kind === "pitch" && form.pitchType.trim().length > 100)
+    return "구종은 100자 이하여야 합니다.";
   if (form.kind === "pitch" && !enumIncludes(PITCH_CALLS, form.call))
     return "유효한 투구 판정을 선택하세요.";
   if (form.kind === "plate_result") {

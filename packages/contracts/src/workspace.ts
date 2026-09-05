@@ -219,6 +219,7 @@ export const WriterLockOwnerSchema = Type.Object(
     pid: Type.Integer({ minimum: 0 }),
     hostname: Type.String({ minLength: 1 }),
     acquiredAt: DateTimeSchema,
+    processStartedAt: Type.Optional(DateTimeSchema),
   },
   strict,
 );
@@ -320,6 +321,7 @@ export interface WriterLockOwner {
   readonly pid: number;
   readonly hostname: string;
   readonly acquiredAt: string;
+  readonly processStartedAt?: string;
 }
 
 interface StagingCorrectionCommitFields {

@@ -387,6 +387,13 @@
                 "required": ["call"],
                 "properties": {
                   "sourcePitchId": { "minLength": 1, "maxLength": 200, "type": "string" },
+                  "speedKph": { "exclusiveMinimum": 0, "type": "number" },
+                  "pitchType": {
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
                   "call": {
                     "anyOf": [
                       { "const": "ball", "type": "string" },

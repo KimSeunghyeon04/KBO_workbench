@@ -4,6 +4,7 @@ import {
   canonicalStringify,
   compareCanonicalStrings,
   type ReplayFielder,
+  type PitchMetadata,
   type ReplayFrame,
   type ReplayManifest,
   type ReplayPlayer,
@@ -65,6 +66,14 @@ export function buildReplayBundle(input: ReplayBundleInput): ReplayBundle {
   const tracking = buildTracking(input.source, players);
   const active = initialFielders(input.source);
   const events = new Map(input.source.relayEvents.map((event) => [event.eventId, event]));
+  const pitchMetadata = new Map<string, PitchMetadata>();
+  for (const pitch of input.compiled.pitchFacts) {
+    if (pitch.speedKph !== undefined || pitch.pitchType !== undefined)
+      pitchMetadata.set(pitch.pitchId, {
+        ...(pitch.speedKph === undefined ? {} : { speedKph: pitch.speedKph }),
+        ...(pitch.pitchType === undefined ? {} : { pitchType: pitch.pitchType }),
+      });
+  }
   const frames = input.compiled.plays.map((play, index) => {
     const relayEvents = play.relayEventIds.map((eventId) => requiredEvent(events, eventId));
     const substitution = relayEvents.find((event) => event.substitution !== null)?.substitution;
@@ -82,12 +91,16 @@ export function buildReplayBundle(input: ReplayBundleInput): ReplayBundle {
       inning: play.inning,
       half: play.half,
       applied: play.applied,
-      relayEvents: relayEvents.map((event) => ({
-        eventId: event.eventId,
-        sequence: event.sequence,
-        kind: event.kind,
-        relayText: event.relayText,
-      })),
+      relayEvents: relayEvents.map((event) => {
+        const pitch = pitchMetadata.get(event.eventId);
+        return {
+          eventId: event.eventId,
+          sequence: event.sequence,
+          kind: event.kind,
+          relayText: event.relayText,
+          ...(pitch === undefined ? {} : { pitch }),
+        };
+      }),
       before: replayState(play.before, players),
       after,
       movements: play.movements.map((movement) => ({

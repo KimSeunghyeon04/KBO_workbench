@@ -101,6 +101,13 @@ tracking은 blocking이다. 실제 pitch의 tracking 누락은 warning이며 자
 
 ## 6. 평면 원장과 compiler
 
+pitch payload의 선택 필드 `speedKph`는 유한 양수, `pitchType`은 제공 구종 명칭이다. Naver
+`textOptions[].speed/stuff`에서 해당 투구에 직접 귀속하고 tracking/ID 누락과 독립적으로 보존한다.
+compiler는 metadata를 pitch fact로 전달하며 기존 경기 계산 규칙을 바꾸지 않는다. 보정 입력의
+왕복·삭제·undo/redo와 DB typed replay relay event의 선택 `pitch` 속성까지 같은 계약을 사용한다.
+값 없는 과거 replay에는 새 속성을 생략한다. 기존 current만 일회 보완하는 CLI와 검증·운영 절차는
+[구속·구종 보완](docs/pitch-metadata-enrichment.md)에 정의한다. 웹 보완 기능과 스케줄러는 없다.
+
 `plate_result`에는 타석 결과와 타자에게 직접 귀속되는 정보만 둔다. 기존 주자의 진루·아웃·득점은
 별도 `runner_advance`다. 타석 play의 movement는 `plateResultEventId`를 참조하고 독립 movement는
 명시적 reason을 가진다.
@@ -166,8 +173,8 @@ typed 행으로 교체하거나 명시적으로 삭제한 행의 finding은 immu
 ## 8. PostgreSQL V3
 
 활성 DB는 PostgreSQL 16에 `database/v3/0001_v3_initial.sql`을 적용하고 migration head
-`database/v3/0003_record_correction_scope_classification.sql`까지 올린다.
-analytics/projection/registry/record correction contract는 `3/3/1/2`이다. V2 SQL은
+`database/v3/0004_pitch_metadata.sql`까지 올린다.
+analytics/projection/registry/record correction contract는 `4/4/1/2`이다. V2 SQL은
 `database/migrations`에 복구용 legacy로
 보존하며 V2 DB에 V3 DDL을 적용하지 않는다. JSON, JSONB, ARRAY와 tracking EAV 컬럼은 사용하지 않는다.
 

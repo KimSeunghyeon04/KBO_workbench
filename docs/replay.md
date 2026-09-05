@@ -36,6 +36,10 @@ PA bridge에 섞이지 않는다.
 
 ## API
 
+relay event의 선택 속성 `pitch`는 DB `baseball.pitch_facts`에서 읽은 `speedKph`·`pitchType`을
+제공한다. 둘 다 없는 V3/과거 투구에는 `pitch` 자체를 생략해 기존 frame hash를 유지한다.
+재생 화면은 tracking이 없는 투구에도 두 값을 표시하며 없는 항목은 `미제공`으로 표시한다.
+
 - `GET /api/v2/games/{gameId}/revisions/{revision}/replay-manifest`
 - `GET /api/v2/games/{gameId}/revisions/{revision}/replay-frames?limit=250&cursor=...`
 

@@ -694,6 +694,24 @@ function EventFields({
           </select>
         </label>
         <label>
+          구속 km/h (선택)
+          <input
+            type="number"
+            min="0"
+            step="any"
+            value={form.speedKph}
+            onChange={(event) => update({ speedKph: event.target.value })}
+          />
+        </label>
+        <label>
+          구종 (선택)
+          <input
+            value={form.pitchType}
+            maxLength={100}
+            onChange={(event) => update({ pitchType: event.target.value })}
+          />
+        </label>
+        <label>
           원천 투구 ID (선택)
           <input
             value={form.sourcePitchId}

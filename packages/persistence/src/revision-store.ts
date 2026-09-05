@@ -31,6 +31,7 @@ import {
   type ProjectionRow,
   type ProjectionTables,
   type RelationalProjection,
+  type ProjectionVersion,
 } from "./projection.js";
 import { readProjection, writeProjection } from "./projection-repository.js";
 import { PROJECTION_ENUM_VALUES } from "./projection-descriptor.js";
@@ -139,7 +140,7 @@ interface ManifestRow {
   readonly scheduled_innings: number;
   readonly document_hash: string;
   readonly projection_hash: string;
-  readonly projection_version: number;
+  readonly projection_version: ProjectionVersion;
   readonly sealed: boolean;
   readonly created_at: Date | string;
   readonly sealed_at: Date | string | null;
@@ -257,8 +258,13 @@ export class GameRevisionStore {
       const manifest = await loadManifest(client, gameId, resolvedRevision);
       if (!manifest.sealed)
         throw new PersistenceIntegrityError("seal되지 않은 revision은 재생할 수 없습니다.");
-      const tables = await readProjection(client, gameId, resolvedRevision);
-      const projectionHash = hashProjectionTables(tables);
+      const tables = await readProjection(
+        client,
+        gameId,
+        resolvedRevision,
+        manifest.projection_version,
+      );
+      const projectionHash = hashProjectionTables(tables, manifest.projection_version);
       if (projectionHash !== manifest.projection_hash) {
         throw new PersistenceIntegrityError("DB typed projection hash가 manifest와 다릅니다.");
       }
@@ -294,8 +300,8 @@ export class GameRevisionStore {
           "seal되지 않은 revision은 교정 초안으로 열 수 없습니다.",
         );
       }
-      const tables = await readProjection(client, gameId, revision);
-      if (hashProjectionTables(tables) !== manifest.projection_hash) {
+      const tables = await readProjection(client, gameId, revision, manifest.projection_version);
+      if (hashProjectionTables(tables, manifest.projection_version) !== manifest.projection_hash) {
         throw new PersistenceIntegrityError("DB typed projection hash가 manifest와 다릅니다.");
       }
       const stored = hydrateProjectionLedger(manifest, tables);
@@ -513,12 +519,12 @@ async function assertDatabaseContract(
     "contract metadata",
   );
   if (
-    safeInteger(contractRow.analytics_contract_version, "analytics contract") !== 3 ||
-    safeInteger(contractRow.projection_version, "projection contract") !== 3 ||
+    safeInteger(contractRow.analytics_contract_version, "analytics contract") !== 4 ||
+    safeInteger(contractRow.projection_version, "projection contract") !== 4 ||
     safeInteger(contractRow.registry_contract_version, "registry contract") !== 1
   )
     throw new DatabaseContractError(
-      "analytics/projection/registry contract version이 3/3/1이어야 합니다.",
+      "analytics/projection/registry contract version이 4/4/1이어야 합니다.",
     );
 }
 
@@ -532,7 +538,7 @@ async function insertManifest(
   await client.query(
     `INSERT INTO workbench.game_revisions
      (game_id,revision,parent_revision,base_document_hash,schema_version,provider,source_game_id,source_bundle_hash,collected_at_text,season,game_date,scheduled_at_text,game_status,stadium,scheduled_innings,document_hash,projection_hash,projection_version)
-     VALUES ($1,$2,$3,$4,2,'naver',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,3)`,
+     VALUES ($1,$2,$3,$4,2,'naver',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,4)`,
     [
       document.metadata.gameId,
       revision,
@@ -558,8 +564,8 @@ async function verifyStoredProjection(
   revision: number,
   projection: RelationalProjection,
 ): Promise<void> {
-  const stored = await readProjection(client, gameId, revision);
-  const hash = hashProjectionTables(stored);
+  const stored = await readProjection(client, gameId, revision, projection.version);
+  const hash = hashProjectionTables(stored, projection.version);
   if (hash !== projection.projectionHash)
     throw new PersistenceIntegrityError(
       `DB projection hash 검증 실패: expected=${projection.projectionHash}, actual=${hash}`,
@@ -573,12 +579,15 @@ async function verifyRecompile(
   projectionHash: string,
 ): Promise<void> {
   const storedManifest = await loadManifest(client, gameId, revision);
-  const tables = await readProjection(client, gameId, revision);
+  const tables = await readProjection(client, gameId, revision, storedManifest.projection_version);
   const document = hydrateProjectionLedger(storedManifest, tables);
   if (stagingDocumentHash(document) !== documentHash)
     throw new PersistenceIntegrityError("DB 원장 fact의 문서 hash가 원본 staging 원장과 다릅니다.");
   const replay = compileStagingGameDocumentV2(document);
-  if (buildRelationalProjection(document, replay, revision).projectionHash !== projectionHash)
+  if (
+    buildRelationalProjection(document, replay, revision, storedManifest.projection_version)
+      .projectionHash !== projectionHash
+  )
     throw new PersistenceIntegrityError("DB 원장 재compile 결과가 저장 projection과 다릅니다.");
 }
 async function loadManifest(
@@ -637,7 +646,7 @@ function decodeManifestRow(
   }
   const schemaVersion = safeInteger(row.schema_version, "manifest schema_version");
   const projectionVersion = safeInteger(row.projection_version, "manifest projection_version");
-  if (schemaVersion !== 2 || projectionVersion !== 3) {
+  if (schemaVersion !== 2 || (projectionVersion !== 3 && projectionVersion !== 4)) {
     throw new PersistenceIntegrityError(
       "game revision manifest contract version이 올바르지 않습니다.",
     );
@@ -902,6 +911,7 @@ function replayFromProjection(gameId: string, tables: ProjectionTables): ReplayR
       batterId: row.batter_id === null ? null : text(row.batter_id),
       pitcherId: row.pitcher_id === null ? null : text(row.pitcher_id),
       sourcePitchId: row.source_pitch_id === null ? null : text(row.source_pitch_id),
+      ...pitchMetadataFromRow(row),
       call: pitchCall(row.pitch_call),
       actual: boolean(row.actual),
       ball: boolean(row.ball),
@@ -1313,6 +1323,17 @@ function hydrateEvents(tables: ProjectionTables): StagingRelayEvent[] {
   });
 }
 
+function pitchMetadataFromRow(row: ProjectionRow): { speedKph?: number; pitchType?: string } {
+  return {
+    ...(row.speed_kph === undefined || row.speed_kph === null
+      ? {}
+      : { speedKph: number(row.speed_kph) }),
+    ...(row.pitch_type === undefined || row.pitch_type === null
+      ? {}
+      : { pitchType: text(row.pitch_type) }),
+  };
+}
+
 function hydrateEvent(row: ProjectionRow): StagingRelayEvent {
   const identity =
     row.identity_kind === "source"
@@ -1348,6 +1369,7 @@ function hydrateEvent(row: ProjectionRow): StagingRelayEvent {
         ...base,
         kind: "pitch",
         payload: {
+          ...pitchMetadataFromRow(row),
           call: text(row.pitch_call),
           ...(row.source_pitch_id === null ? {} : { sourcePitchId: text(row.source_pitch_id) }),
           ...(row.batter_id === null ? {} : { batterId: text(row.batter_id) }),

@@ -23,6 +23,11 @@ strict 평면 원장이다. `schemaVersion`은 `2`이며 V1 경기 문서와 호
 
 ## 수집 흐름
 
+투구 payload는 선택적인 `speedKph`(유한 양수)와 `pitchType`(제공 구종명)을 가진다. collection은
+`textOptions` 투구 행의 `speed`와 `stuff`를 해석하며 `ptsOptions`, tracking 좌표와 pitch ID 유무에
+의존하지 않는다. 빈 값은 속성을 생략하고, 잘못된 값은 endpoint/block/row/event ID와 원문을 포함한
+`source.pitch_metadata.invalid_speed` 또는 `invalid_stuff` warning을 남긴다. 구종 재분류는 하지 않는다.
+
 1. 격리된 Playwright context가 완료·미취소 경기 ID를 탐색한다.
 2. 현재 workspace에서 이미 `staging`인 경기 ID는 외부 요청 없이 완료 처리한다. `quarantine`,
    원천 실패와 미수집 경기는 계속 처리한다. staging 제외 진행은 경기별 파일 쓰기나 SSE 행을 만들지

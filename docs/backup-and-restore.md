@@ -65,10 +65,10 @@ docker compose ps
 Invoke-RestMethod http://127.0.0.1:8080/health/ready
 ```
 
-Settings의 PostgreSQL major/V3 `3/3/1/2` 계약, 경기 catalog, 기록정정 current source revision,
+Settings의 PostgreSQL major/V3 `4/4/1/2` 계약, 경기 catalog, 기록정정 current source revision,
 current game revision과 replay hash도 확인한다.
 
-`0003_record_correction_scope_classification` 배포 전에도 API writer를 멈춘 같은 시점의 DB와 workspace backup을 먼저
+`0004_pitch_metadata` 배포 전에도 API writer를 멈춘 같은 시점의 DB와 workspace backup을 먼저
 만든다. migration은 transaction으로 적용하며 실패하면 rollback하고 API를 시작하지 않는다. DB만
 이전 시점으로 되돌리거나 `.data/record-corrections/source`만 교체하면 provenance 쌍이 깨지므로 항상
 동일 backup 단위로 복원한다.

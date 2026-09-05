@@ -40,17 +40,17 @@ try {
     -v "${repositoryRoot}:/source:ro" -v "${workspaceVolume}:/workspace" -w /workspace `
     -e PGHOST=$containerName -e PGPORT=5432 -e PGUSER=kbo_test `
     -e PGPASSWORD=kbo_integration_password -e PGDATABASE=kbo_test `
-    -e EXPECTED_MIGRATION_VERSION=0003_record_correction_scope_classification `
+    -e EXPECTED_MIGRATION_VERSION=0004_pitch_metadata `
     -e MIGRATIONS_DIR=database/v3 `
     -e KBO_ANALYST_USER=kbo_analyst_test `
     -e KBO_ANALYST_PASSWORD=kbo_analyst_test_password `
-    node:24-bookworm sh -lc "tar -C /source --exclude=.git --exclude=.data --exclude=node_modules --exclude=dist -cf - . | tar -xf - && corepack enable >/dev/null && pnpm install --frozen-lockfile && pnpm build:server && node apps/server/dist/migrate.js"
+    node:24-bookworm sh -lc "tar -C /source --exclude=.git --exclude=.data --exclude=.backups --exclude=.env --exclude=node_modules --exclude=dist -cf - . | tar -xf - && corepack enable >/dev/null && pnpm install --frozen-lockfile && pnpm build:server && node apps/server/dist/migrate.js"
   Assert-NativeSuccess "integration migration"
 
   & docker run --rm --network $networkName `
     -v "${workspaceVolume}:/workspace" -w /workspace `
     -e KBO_TEST_POSTGRES_DSN=$dsn `
-    node:24-bookworm sh -lc "corepack enable >/dev/null && pnpm exec vitest run tests/persistence/postgres-revision-store.test.ts"
+    node:24-bookworm sh -lc "corepack enable >/dev/null && pnpm exec vitest run tests/persistence/postgres-revision-store.test.ts tests/persistence/postgres-pitch-metadata.test.ts"
   Assert-NativeSuccess "PostgreSQL integration test"
 }
 finally {

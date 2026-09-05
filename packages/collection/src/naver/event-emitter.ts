@@ -26,6 +26,7 @@ import {
 } from "./lexicon.js";
 import type { CanonicalNaverRow, ParseContext } from "./model.js";
 import { pendingPitchClockAward } from "./normalization-context.js";
+import { parseNaverPitchMetadata } from "./pitch-metadata.js";
 import {
   battingOrderForPlayer,
   battingSide,
@@ -138,11 +139,20 @@ function emitPitch(
   if (hasExplicitPitcherEvidence(row) && pitcher.status !== "matched") {
     return unresolvedRow(base, row, "entity", pitcher, "pitch");
   }
+  const metadata = parseNaverPitchMetadata(row.pitchSpeed, row.pitchType, {
+    endpoint: row.source.endpoint,
+    blockIndex: row.source.endpointBlockIndex,
+    rowIndex: row.rawIndex,
+    eventId: base.identity.eventId,
+    ...(row.sourceEventId === null ? {} : { sourceEventId: row.sourceEventId }),
+    ...(row.relayText === null ? {} : { sourceText: row.relayText }),
+  });
   const event: Extract<StagingRelayEvent, { kind: "pitch" }> = {
     ...base,
     kind: "pitch",
     payload: {
       call,
+      ...metadata.metadata,
       ...(row.sourcePitchId === null ? {} : { sourcePitchId: row.sourcePitchId }),
       ...(batter.status === "matched" ? { batterId: batter.value } : {}),
       ...(pitcher.status === "matched" ? { pitcherId: pitcher.value } : {}),
@@ -156,7 +166,7 @@ function emitPitch(
     byId.set(row.sourcePitchId, candidates);
     context.pitchEventIdsByBlock.set(row.source.sourceBlockIndex, byId);
   }
-  return { event, findings: [] };
+  return { event, findings: metadata.findings };
 }
 
 function emitPlateResult(

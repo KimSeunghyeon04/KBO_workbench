@@ -2,25 +2,39 @@ import type { Dirent } from "node:fs";
 import { mkdir, open, readFile, readdir, rename, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
+import { performance } from "node:perf_hooks";
 import path from "node:path";
 
 import { canonicalStringify, parseWriterLockOwner, type WriterLockOwner } from "@kbo/contracts";
 
 export async function acquireWriterLock(lockPath: string, owner: WriterLockOwner): Promise<void> {
+  const startedAt = new Date(performance.timeOrigin).toISOString();
+  const contents = `${canonicalStringify({ ...owner, processStartedAt: startedAt })}\n`;
   try {
-    await writeExclusive(lockPath, `${canonicalStringify(owner)}\n`);
+    await writeExclusive(lockPath, contents);
     return;
   } catch (error: unknown) {
     if (!isAlreadyExists(error)) throw error;
   }
   const existing = await readWriterLock(lockPath);
-  if (existing !== null && existing.hostname === hostname() && isProcessAlive(existing.pid)) {
+  // A restarted container reuses both hostname and PID. Its own old lock is not a live writer.
+  const reusedOwnPid =
+    existing?.pid === process.pid &&
+    (existing.processStartedAt === undefined
+      ? Date.parse(existing.acquiredAt) < performance.timeOrigin
+      : existing.processStartedAt !== startedAt);
+  if (
+    existing !== null &&
+    existing.hostname === hostname() &&
+    isProcessAlive(existing.pid) &&
+    !reusedOwnPid
+  ) {
     throw new Error("같은 workspace를 사용하는 writer process가 이미 실행 중입니다.");
   }
   const recovered = `${lockPath}.recovered-${randomUUID()}`;
   await rename(lockPath, recovered);
   try {
-    await writeExclusive(lockPath, `${canonicalStringify(owner)}\n`);
+    await writeExclusive(lockPath, contents);
   } finally {
     await unlink(recovered).catch(() => undefined);
   }
