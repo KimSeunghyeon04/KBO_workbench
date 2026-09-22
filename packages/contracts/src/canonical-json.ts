@@ -85,7 +85,9 @@ function serializeObject(value: object, path: string, ancestors: WeakSet<object>
     }
 
     return `{${[...normalizedKeys.entries()]
-      .sort(([left], [right]) => compareCanonicalStrings(left, right))
+      // Keys have already been normalized above; sorting must not normalize them
+      // again on every comparison of every pitch/model row.
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
       .map(([normalizedKey, originalKey]) => {
         const item = record[originalKey];
         if (item === undefined) {
