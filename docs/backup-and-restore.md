@@ -4,7 +4,18 @@ backup은 PostgreSQL만 또는 staging 파일만 따로 복사하지 않는다. 
 상태는 workspace에 있고, 적재 후 최종 typed revision은 PostgreSQL에 있으므로 두 저장소를 한
 backup 단위로 묶는다.
 
+`.data/collection`의 일정 원문·정규화 결과·확정 선택·작업 요약·경기별 결과도 workspace ZIP에 포함한다.
+별도 export 없이 기존 전체 workspace 백업/복원 경로를 사용한다. 재시작/복원 시 중단된 수집 작업은
+완료 결과와 요청 키를 유지한 채 중단으로 표시하며 자동 재실행하지 않는다. hash 검증에 실패한
+수집 기록은 임의로 고치거나 재작성하지 말고 해당 파일과 정상 백업을 확인한다.
+
 ## Backup 만들기
+
+`.data/imports`도 전체 workspace 백업에 포함한다. `selections`는 확정 문서 hash/base 집합,
+`batches`는 한 번 기록한 전체 대기 의도, `jobs`는 경기별 진행·결과·idempotency다. 복구 시 실행 중
+작업의 정확한 DB revision/hash를 확인해 저장 성공 또는 중단으로 기록한다. DB 저장 뒤 파일 정리만
+남았다면 정리만 재시도한다. 업그레이드 직전 조회한 실제 완료 이력은 `retained`에 불변 보존할 수 있다.
+이전 서버의 알 수 없는 요청 키나 이미 사라진 결과는 추정하지 않는다. 이력 hash 손상은 시작을 차단한다.
 
 저장소 root에서 실행한다.
 
@@ -27,6 +38,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/backup.ps1 `
 3. PostgreSQL custom-format dump와 workspace ZIP을 생성한다.
 4. 각 파일의 SHA-256, app/migration version과 생성 시각을 `manifest.json`에 기록한다.
 5. backup 전 실행 중이던 서비스만 다시 시작한다.
+
+Windows bind mount에 원문과 과거 artifact가 많이 쌓이면 재시작 시 디렉터리 점검에 시간이
+걸린다. API healthcheck의 시작 유예는 180초이며, 실제 무결성 검사가 끝나기 전의 readiness는
+503을 유지한다. 백업 후 서비스 재시작만 실패한 경우에도 백업 manifest와 두 파일의 hash를
+먼저 확인하고, 백업 생성 실패와 재시작 실패를 구분해 진단한다.
 
 backup 디렉터리에는 다음 세 파일이 있어야 한다.
 

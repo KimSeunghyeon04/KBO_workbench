@@ -1,0 +1,1613 @@
+{
+  "kind": "analytics-fixture-query-benchmark",
+  "node": "v24.18.0",
+  "note": "Small sanitized fixture only; first query is not a cold PostgreSQL cache; network and hydration included in database time",
+  "maxSampledRssBytes": 92852224,
+  "results": [
+    {
+      "label": "batting",
+      "repetitions": 30,
+      "queries": 6,
+      "total": {
+        "firstMs": 7.162577999999996,
+        "warmMeanMs": 3.542967344827587,
+        "warmP95Ms": 4.123701000000011
+      },
+      "database": {
+        "firstMs": 5.221497999999968,
+        "warmMeanMs": 3.1775814482758586,
+        "warmP95Ms": 3.6377490000000137
+      },
+      "processing": {
+        "firstMs": 1.941080000000028,
+        "warmMeanMs": 0.3653858965517282,
+        "warmP95Ms": 0.6239650000000552
+      },
+      "serialization": {
+        "firstMs": 0.018214999999997872,
+        "warmMeanMs": 0.010638758620685928,
+        "warmP95Ms": 0.01655199999999013
+      },
+      "responseBytes": 1786
+    },
+    {
+      "label": "pitching",
+      "repetitions": 30,
+      "queries": 6,
+      "total": {
+        "firstMs": 3.690643999999992,
+        "warmMeanMs": 3.075869344827582,
+        "warmP95Ms": 3.64928900000001
+      },
+      "database": {
+        "firstMs": 3.2505940000000066,
+        "warmMeanMs": 2.824288068965539,
+        "warmP95Ms": 3.340257000000065
+      },
+      "processing": {
+        "firstMs": 0.4400499999999852,
+        "warmMeanMs": 0.25158127586204293,
+        "warmP95Ms": 0.47536700000000565
+      },
+      "serialization": {
+        "firstMs": 0.007804999999990514,
+        "warmMeanMs": 0.009143655172417492,
+        "warmP95Ms": 0.01658199999997123
+      },
+      "responseBytes": 652
+    },
+    {
+      "label": "quality-input",
+      "repetitions": 30,
+      "queries": 6,
+      "total": {
+        "firstMs": 10.026226000000008,
+        "warmMeanMs": 7.571908,
+        "warmP95Ms": 8.444309000000032
+      },
+      "database": {
+        "firstMs": 9.622646999999972,
+        "warmMeanMs": 7.382270586206893,
+        "warmP95Ms": 8.183826999999951
+      },
+      "processing": {
+        "firstMs": 0.4035790000000361,
+        "warmMeanMs": 0.1896374137931071,
+        "warmP95Ms": 0.2742889999999534
+      },
+      "serialization": {
+        "firstMs": 0.00249500000001035,
+        "warmMeanMs": 0.003446620689654255,
+        "warmP95Ms": 0.004829000000029282
+      },
+      "responseBytes": 213
+    },
+    {
+      "label": "park-environment",
+      "repetitions": 30,
+      "queries": 6,
+      "total": {
+        "firstMs": 3.2785499999999956,
+        "warmMeanMs": 2.7288207931034445,
+        "warmP95Ms": 3.207418999999959
+      },
+      "database": {
+        "firstMs": 2.738506000000143,
+        "warmMeanMs": 2.5571974482758857,
+        "warmP95Ms": 2.991014000000064
+      },
+      "processing": {
+        "firstMs": 0.5400439999998525,
+        "warmMeanMs": 0.17162334482755906,
+        "warmP95Ms": 0.2384999999998172
+      },
+      "serialization": {
+        "firstMs": 0.0044389999999339125,
+        "warmMeanMs": 0.0036190344827555865,
+        "warmP95Ms": 0.006241999999929249
+      },
+      "responseBytes": 338
+    },
+    {
+      "label": "pitch-sequences",
+      "repetitions": 30,
+      "queries": 6,
+      "total": {
+        "firstMs": 8.058928000000037,
+        "warmMeanMs": 6.627356655172403,
+        "warmP95Ms": 7.531051000000048
+      },
+      "database": {
+        "firstMs": 6.659935000000019,
+        "warmMeanMs": 6.183263206896554,
+        "warmP95Ms": 7.121462000000065
+      },
+      "processing": {
+        "firstMs": 1.3989930000000186,
+        "warmMeanMs": 0.4440934482758488,
+        "warmP95Ms": 0.7054930000000468
+      },
+      "serialization": {
+        "firstMs": 0.023163999999951557,
+        "warmMeanMs": 0.02306075862068626,
+        "warmP95Ms": 0.04088899999999285
+      },
+      "responseBytes": 6384
+    }
+  ],
+  "plans": [
+    {
+      "sqlHash": "d8566660e960420b8ad0949276f74ea4ed747c7dc07ee2d13a7f916a9aabacf8",
+      "planningMs": 0.145,
+      "executionMs": 0.032,
+      "nodes": [
+        {
+          "node": "Sort",
+          "relation": null,
+          "rows": 5,
+          "loops": 1,
+          "sharedHits": 16,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 5,
+          "loops": 1,
+          "sharedHits": 16,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 5,
+          "loops": 1,
+          "sharedHits": 16,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 5,
+          "loops": 1,
+          "sharedHits": 6,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_revisions",
+          "rows": 5,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "games",
+          "rows": 5,
+          "loops": 5,
+          "sharedHits": 5,
+          "sharedReads": 0
+        },
+        {
+          "node": "Index Scan",
+          "relation": "current_competition_datasets",
+          "rows": 0,
+          "loops": 5,
+          "sharedHits": 10,
+          "sharedReads": 0
+        },
+        {
+          "node": "Index Scan",
+          "relation": "game_competitions",
+          "rows": 0,
+          "loops": 5,
+          "sharedHits": 0,
+          "sharedReads": 0
+        }
+      ]
+    },
+    {
+      "sqlHash": "44e97426fdef69d4f57f0dc547a6875d5fa3dc53e9a50a12651392000618a317",
+      "planningMs": 0.017,
+      "executionMs": 0.006,
+      "nodes": [
+        {
+          "node": "Index Scan",
+          "relation": "current_competition_datasets",
+          "rows": 0,
+          "loops": 1,
+          "sharedHits": 2,
+          "sharedReads": 0
+        }
+      ]
+    },
+    {
+      "sqlHash": "2fa3d3833878cd514b64c6c3f7ae4713db4055c247c8d484fbacf28edac6d4f3",
+      "planningMs": 1.256,
+      "executionMs": 0.661,
+      "nodes": [
+        {
+          "node": "Sort",
+          "relation": null,
+          "rows": 4,
+          "loops": 1,
+          "sharedHits": 838,
+          "sharedReads": 0
+        },
+        {
+          "node": "Aggregate",
+          "relation": null,
+          "rows": 4,
+          "loops": 1,
+          "sharedHits": 838,
+          "sharedReads": 0
+        },
+        {
+          "node": "Sort",
+          "relation": null,
+          "rows": 20,
+          "loops": 1,
+          "sharedHits": 838,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 20,
+          "loops": 1,
+          "sharedHits": 838,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 20,
+          "loops": 1,
+          "sharedHits": 818,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 48,
+          "loops": 1,
+          "sharedHits": 50,
+          "sharedReads": 0
+        },
+        {
+          "node": "Hash Join",
+          "relation": null,
+          "rows": 48,
+          "loops": 1,
+          "sharedHits": 2,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "batter_game_facts",
+          "rows": 52,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Hash",
+          "relation": null,
+          "rows": 12,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "games",
+          "rows": 12,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_team_snapshots",
+          "rows": 14,
+          "loops": 48,
+          "sharedHits": 48,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 5,
+          "loops": 48,
+          "sharedHits": 768,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 5,
+          "loops": 48,
+          "sharedHits": 288,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_revisions",
+          "rows": 5,
+          "loops": 48,
+          "sharedHits": 48,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "games",
+          "rows": 5,
+          "loops": 240,
+          "sharedHits": 240,
+          "sharedReads": 0
+        },
+        {
+          "node": "Index Scan",
+          "relation": "current_competition_datasets",
+          "rows": 0,
+          "loops": 240,
+          "sharedHits": 480,
+          "sharedReads": 0
+        },
+        {
+          "node": "Aggregate",
+          "relation": null,
+          "rows": 1,
+          "loops": 20,
+          "sharedHits": 20,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_roster_snapshots",
+          "rows": 1,
+          "loops": 20,
+          "sharedHits": 20,
+          "sharedReads": 0
+        }
+      ]
+    },
+    {
+      "sqlHash": "8f183a0ab27f1354d2e36e4b58a1fd8ed886c3dde05d5fe571fdabebd9cb729c",
+      "planningMs": 1.183,
+      "executionMs": 0.13,
+      "nodes": [
+        {
+          "node": "Sort",
+          "relation": null,
+          "rows": 1,
+          "loops": 1,
+          "sharedHits": 36,
+          "sharedReads": 0
+        },
+        {
+          "node": "Aggregate",
+          "relation": null,
+          "rows": 1,
+          "loops": 1,
+          "sharedHits": 36,
+          "sharedReads": 0
+        },
+        {
+          "node": "Aggregate",
+          "relation": null,
+          "rows": 5,
+          "loops": 1,
+          "sharedHits": 36,
+          "sharedReads": 0
+        },
+        {
+          "node": "Sort",
+          "relation": null,
+          "rows": 5,
+          "loops": 1,
+          "sharedHits": 36,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 5,
+          "loops": 1,
+          "sharedHits": 36,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 5,
+          "loops": 1,
+          "sharedHits": 31,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 5,
+          "loops": 1,
+          "sharedHits": 26,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 5,
+          "loops": 1,
+          "sharedHits": 16,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 5,
+          "loops": 1,
+          "sharedHits": 11,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 5,
+          "loops": 1,
+          "sharedHits": 6,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_revisions",
+          "rows": 5,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "pitcher_game_facts",
+          "rows": 13,
+          "loops": 5,
+          "sharedHits": 5,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "games",
+          "rows": 5,
+          "loops": 5,
+          "sharedHits": 5,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "games",
+          "rows": 5,
+          "loops": 5,
+          "sharedHits": 5,
+          "sharedReads": 0
+        },
+        {
+          "node": "Index Scan",
+          "relation": "current_competition_datasets",
+          "rows": 0,
+          "loops": 5,
+          "sharedHits": 10,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_team_snapshots",
+          "rows": 12,
+          "loops": 5,
+          "sharedHits": 5,
+          "sharedReads": 0
+        },
+        {
+          "node": "Aggregate",
+          "relation": null,
+          "rows": 1,
+          "loops": 5,
+          "sharedHits": 5,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_roster_snapshots",
+          "rows": 1,
+          "loops": 5,
+          "sharedHits": 5,
+          "sharedReads": 0
+        }
+      ]
+    },
+    {
+      "sqlHash": "f5ac43c84f3ec923134ab8e080695a65a5a0dd4fc05f6fd28f07c7d00c98af25",
+      "planningMs": 2.238,
+      "executionMs": 4.584,
+      "nodes": [
+        {
+          "node": "Sort",
+          "relation": null,
+          "rows": 0,
+          "loops": 1,
+          "sharedHits": 4585,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 0,
+          "loops": 1,
+          "sharedHits": 4585,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 0,
+          "loops": 1,
+          "sharedHits": 4585,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 0,
+          "loops": 1,
+          "sharedHits": 4585,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 30,
+          "loops": 1,
+          "sharedHits": 4555,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 30,
+          "loops": 1,
+          "sharedHits": 261,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 30,
+          "loops": 1,
+          "sharedHits": 231,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 30,
+          "loops": 1,
+          "sharedHits": 201,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 30,
+          "loops": 1,
+          "sharedHits": 171,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 30,
+          "loops": 1,
+          "sharedHits": 141,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 30,
+          "loops": 1,
+          "sharedHits": 111,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 30,
+          "loops": 1,
+          "sharedHits": 81,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "pitch_facts",
+          "rows": 78,
+          "loops": 1,
+          "sharedHits": 3,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_revisions",
+          "rows": 4,
+          "loops": 78,
+          "sharedHits": 78,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "games",
+          "rows": 5,
+          "loops": 30,
+          "sharedHits": 30,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_team_snapshots",
+          "rows": 6,
+          "loops": 30,
+          "sharedHits": 30,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_team_snapshots",
+          "rows": 6,
+          "loops": 30,
+          "sharedHits": 30,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "pitch_tracking_links",
+          "rows": 21,
+          "loops": 30,
+          "sharedHits": 30,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "tracking_observations",
+          "rows": 21,
+          "loops": 30,
+          "sharedHits": 30,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "tracking_measurement_profiles",
+          "rows": 1,
+          "loops": 30,
+          "sharedHits": 30,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 52,
+          "loops": 30,
+          "sharedHits": 4294,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 52,
+          "loops": 30,
+          "sharedHits": 4294,
+          "sharedReads": 0
+        },
+        {
+          "node": "Hash Join",
+          "relation": null,
+          "rows": 52,
+          "loops": 30,
+          "sharedHits": 4,
+          "sharedReads": 0
+        },
+        {
+          "node": "Aggregate",
+          "relation": null,
+          "rows": 52,
+          "loops": 30,
+          "sharedHits": 3,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "pitch_facts",
+          "rows": 78,
+          "loops": 1,
+          "sharedHits": 3,
+          "sharedReads": 0
+        },
+        {
+          "node": "Hash",
+          "relation": null,
+          "rows": 13,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_revisions",
+          "rows": 13,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Index Scan",
+          "relation": "game_player_height_choices",
+          "rows": 7,
+          "loops": 1560,
+          "sharedHits": 4290,
+          "sharedReads": 0
+        },
+        {
+          "node": "Aggregate",
+          "relation": null,
+          "rows": 1,
+          "loops": 1560,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Result",
+          "relation": null,
+          "rows": 0,
+          "loops": 1560,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_player_height_observations",
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_height_bundles",
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_height_bundles",
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 0,
+          "loops": 30,
+          "sharedHits": 30,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 0,
+          "loops": 30,
+          "sharedHits": 30,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_revisions",
+          "rows": 0,
+          "loops": 30,
+          "sharedHits": 30,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "games",
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Index Scan",
+          "relation": "current_competition_datasets",
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "tracking_observations",
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "plate_appearance_facts",
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        }
+      ]
+    },
+    {
+      "sqlHash": "970bfd0ecd6d5789ad38f0cbbd511252d5e07469617384957e1e7b07156af5d1",
+      "planningMs": 0.836,
+      "executionMs": 0.08,
+      "nodes": [
+        {
+          "node": "Sort",
+          "relation": null,
+          "rows": 0,
+          "loops": 1,
+          "sharedHits": 2,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 0,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 0,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 0,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 0,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_revisions",
+          "rows": 0,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "games",
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Index Scan",
+          "relation": "current_competition_datasets",
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Index Scan",
+          "relation": "game_competitions",
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_final_states",
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "relay_administrative",
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "plate_appearance_facts",
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 0,
+          "loops": 1,
+          "sharedHits": 2,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 0,
+          "loops": 1,
+          "sharedHits": 2,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 0,
+          "loops": 1,
+          "sharedHits": 2,
+          "sharedReads": 0
+        },
+        {
+          "node": "Hash Join",
+          "relation": null,
+          "rows": 0,
+          "loops": 1,
+          "sharedHits": 2,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_team_snapshots",
+          "rows": 1,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Hash",
+          "relation": null,
+          "rows": 0,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "CTE Scan",
+          "relation": null,
+          "rows": 0,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Aggregate",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Sort",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Hash Join",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "plate_appearance_facts",
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Hash",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "CTE Scan",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_team_snapshots",
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Aggregate",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Merge Join",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Sort",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Subquery Scan",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Unique",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Sort",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Hash Join",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "play_facts",
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Hash",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "CTE Scan",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Sort",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Subquery Scan",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Unique",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Sort",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Hash Join",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "play_facts",
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "Hash",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "CTE Scan",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        },
+        {
+          "node": "CTE Scan",
+          "relation": null,
+          "rows": 0,
+          "loops": 0,
+          "sharedHits": 0,
+          "sharedReads": 0
+        }
+      ]
+    },
+    {
+      "sqlHash": "65f408f3e971ac3eb8d47a7763be4d8ffc3858c6b668bcdb0b516c5062214644",
+      "planningMs": 2.416,
+      "executionMs": 1.235,
+      "nodes": [
+        {
+          "node": "Sort",
+          "relation": null,
+          "rows": 35,
+          "loops": 1,
+          "sharedHits": 875,
+          "sharedReads": 0
+        },
+        {
+          "node": "Hash Join",
+          "relation": null,
+          "rows": 35,
+          "loops": 1,
+          "sharedHits": 875,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 35,
+          "loops": 1,
+          "sharedHits": 813,
+          "sharedReads": 0
+        },
+        {
+          "node": "WindowAgg",
+          "relation": null,
+          "rows": 35,
+          "loops": 1,
+          "sharedHits": 812,
+          "sharedReads": 0
+        },
+        {
+          "node": "Incremental Sort",
+          "relation": null,
+          "rows": 35,
+          "loops": 1,
+          "sharedHits": 812,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 35,
+          "loops": 1,
+          "sharedHits": 812,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 35,
+          "loops": 1,
+          "sharedHits": 742,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 35,
+          "loops": 1,
+          "sharedHits": 637,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 84,
+          "loops": 1,
+          "sharedHits": 621,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 84,
+          "loops": 1,
+          "sharedHits": 620,
+          "sharedReads": 0
+        },
+        {
+          "node": "Merge Join",
+          "relation": null,
+          "rows": 84,
+          "loops": 1,
+          "sharedHits": 512,
+          "sharedReads": 0
+        },
+        {
+          "node": "Sort",
+          "relation": null,
+          "rows": 84,
+          "loops": 1,
+          "sharedHits": 508,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 84,
+          "loops": 1,
+          "sharedHits": 508,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 84,
+          "loops": 1,
+          "sharedHits": 340,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 84,
+          "loops": 1,
+          "sharedHits": 172,
+          "sharedReads": 0
+        },
+        {
+          "node": "Hash Join",
+          "relation": null,
+          "rows": 84,
+          "loops": 1,
+          "sharedHits": 4,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "pitch_facts",
+          "rows": 91,
+          "loops": 1,
+          "sharedHits": 3,
+          "sharedReads": 0
+        },
+        {
+          "node": "Hash",
+          "relation": null,
+          "rows": 12,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "games",
+          "rows": 12,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Index Scan",
+          "relation": "game_team_snapshots",
+          "rows": 1,
+          "loops": 84,
+          "sharedHits": 168,
+          "sharedReads": 0
+        },
+        {
+          "node": "Index Scan",
+          "relation": "game_team_snapshots",
+          "rows": 1,
+          "loops": 84,
+          "sharedHits": 168,
+          "sharedReads": 0
+        },
+        {
+          "node": "Index Scan",
+          "relation": "game_revisions",
+          "rows": 1,
+          "loops": 84,
+          "sharedHits": 168,
+          "sharedReads": 0
+        },
+        {
+          "node": "Sort",
+          "relation": null,
+          "rows": 88,
+          "loops": 1,
+          "sharedHits": 4,
+          "sharedReads": 0
+        },
+        {
+          "node": "Subquery Scan",
+          "relation": null,
+          "rows": 52,
+          "loops": 1,
+          "sharedHits": 4,
+          "sharedReads": 0
+        },
+        {
+          "node": "Hash Join",
+          "relation": null,
+          "rows": 52,
+          "loops": 1,
+          "sharedHits": 4,
+          "sharedReads": 0
+        },
+        {
+          "node": "Aggregate",
+          "relation": null,
+          "rows": 52,
+          "loops": 1,
+          "sharedHits": 3,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "pitch_facts",
+          "rows": 78,
+          "loops": 1,
+          "sharedHits": 3,
+          "sharedReads": 0
+        },
+        {
+          "node": "Hash",
+          "relation": null,
+          "rows": 13,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_revisions",
+          "rows": 13,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Memoize",
+          "relation": null,
+          "rows": 0,
+          "loops": 84,
+          "sharedHits": 108,
+          "sharedReads": 0
+        },
+        {
+          "node": "Index Scan",
+          "relation": "pitch_tracking_links",
+          "rows": 0,
+          "loops": 84,
+          "sharedHits": 108,
+          "sharedReads": 0
+        },
+        {
+          "node": "Materialize",
+          "relation": null,
+          "rows": 23,
+          "loops": 84,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "tracking_observations",
+          "rows": 26,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Materialize",
+          "relation": null,
+          "rows": 5,
+          "loops": 84,
+          "sharedHits": 16,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 5,
+          "loops": 1,
+          "sharedHits": 16,
+          "sharedReads": 0
+        },
+        {
+          "node": "Nested Loop",
+          "relation": null,
+          "rows": 5,
+          "loops": 1,
+          "sharedHits": 6,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "game_revisions",
+          "rows": 5,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "games",
+          "rows": 5,
+          "loops": 5,
+          "sharedHits": 5,
+          "sharedReads": 0
+        },
+        {
+          "node": "Index Scan",
+          "relation": "current_competition_datasets",
+          "rows": 0,
+          "loops": 5,
+          "sharedHits": 10,
+          "sharedReads": 0
+        },
+        {
+          "node": "Index Scan",
+          "relation": "relay_event_facts",
+          "rows": 1,
+          "loops": 35,
+          "sharedHits": 105,
+          "sharedReads": 0
+        },
+        {
+          "node": "Index Only Scan",
+          "relation": "pitch_facts",
+          "rows": 1,
+          "loops": 35,
+          "sharedHits": 70,
+          "sharedReads": 0
+        },
+        {
+          "node": "Materialize",
+          "relation": null,
+          "rows": 22,
+          "loops": 35,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "tracking_observations",
+          "rows": 26,
+          "loops": 1,
+          "sharedHits": 1,
+          "sharedReads": 0
+        },
+        {
+          "node": "Hash",
+          "relation": null,
+          "rows": 52,
+          "loops": 1,
+          "sharedHits": 2,
+          "sharedReads": 0
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "plate_appearance_facts",
+          "rows": 52,
+          "loops": 1,
+          "sharedHits": 2,
+          "sharedReads": 0
+        },
+        {
+          "node": "Index Scan",
+          "relation": "relay_substitutions",
+          "rows": 0,
+          "loops": 35,
+          "sharedHits": 60,
+          "sharedReads": 0
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+<html lang=ko><meta charset=utf-8><title>월별 자동 편향 계산</title><style>body{max-width:1000px;margin:40px auto;padding:24px;font-family:Malgun Gothic,sans-serif;line-height:1.8;color:#213844}table{border-collapse:collapse;width:100%}td,th{padding:8px;border-bottom:1px solid #ccd6dd}pre{background:#eef3f5;padding:16px;white-space:pre-wrap}a{color:#08768b}</style><h1>월별 자동 구장 편향 계산 제안</h1>
+<p style="background:#eaf5f5;padding:16px;border-left:4px solid #08768b"><strong>후속 검증 완료:</strong> <a href="calibration-search.html">86개 설정 비교와 최종 권장 방식</a>.<br>현재 권장은 매일 최근 84일 자료를 7일 반감기로 다시 추정하는 방식이다. 아래 내용은 월별 자동 보정을 처음 검토한 시점의 기록이다.</p>
+<p>2026-09-20 후속 분석. 운영 기능을 구현하거나 작업을 예약한 결과가 아니라,
+저장된 2020~2025 데이터로 자동 갱신 방식을 검토한 설계와 시간순 검증이다.</p>
+<h2>권장 구조</h2>
+<p>월별로 구장 편향과 불확실성을 계산해 기록하고, 최근 자료를 더 많이 반영해 다음 기간에 적용한다.
+원시 구장 평균을 평균내는 것이 아니라 같은 투수·구종·기간, 구속·타석 방향·카운트를 통제한
+구장 효과를 대상으로 한다. 단순 월별 리그 평균을 빼면 선수 구성과 실제 구위 변화까지 제거한다.</p>
+<p>평가면은 모든 시즌에서 중간면 <code>y=17/24 ft</code>다. 저장하는 계수는 시즌마다 다른 기준 시각의 cm보다
+정렬 가속도 <code>kx/kz</code>의 편향(ft/s²)이 적절하다. 분석 화면에서 해당 모델의 시각 T에 맞춰
+<code>T²/2×30.48</code>을 곱해 cm로 바꾸면 서로 다른 기준 시각의 계수를 섞지 않는다.</p>
+<p>월별 계수의 0 기준도 고정해야 한다. 이번 검증에서는 잠실 대비 차이를 저장해 월별 투구 구성에
+따른 기준점 이동을 제거했다. 잠실의 실제 오차가 0이라는 주장이 아니다. 전체 구장에 공통된
+성분은 이 자료만으로 식별할 수 없으며, 서비스 표시에서는 고정된 구장 가중치로 다시 중심화할 수 있다.</p>
+<p>처음에는 다음처럼 최근 3개월 지수 가중평균을 후보로 둘 수 있다.</p>
+<pre><code class="language-text">b_used = Σ(w_m × b_month_m) / Σ(w_m)
+w_m = 2^(-자료 나이 / 반감기) × 신뢰도 가중치
+</code></pre>
+<p>신뢰도는 단순 투구 수보다 경기 수, 투수 수, 다른 구장과 연결되는 표본, 추정 불확실성으로 판단한다.
+시작값으로 고정한 가중치가 최적이라고 가정하지 않고 과거→다음 달 검증으로 반감기를 선택한다.
+지수 가중의 기본 원리는 <a href="https://www.itl.nist.gov/div898/handbook/pmc/section4/pmc43.htm">NIST 설명</a>,
+미래 자료를 사용하지 않는 검증은 <a href="https://otexts.com/fpp3/tscv.html">rolling-origin validation</a>을 따른다.</p>
+<p>장기적으로는 월별 측정 오차와 실제 편향의 변화를 함께 고려하는 재귀 필터를 사용할 수 있다.</p>
+<pre><code class="language-text">P_pred = P_previous + Q
+alpha = P_pred / (P_pred + R_month)
+b_used = b_previous + alpha × (b_month - b_previous)
+P_updated = (1-alpha) × P_pred
+</code></pre>
+<p>R_month는 새 월별 계수의 추정 분산, Q는 시간이 흐르며 편향이 변하는 정도다.
+새 표본의 신뢰도가 높으면 최신 값에 더 빨리 적응하고, 표본이 적으면 기존 값에 가깝게 유지한다.
+X/Z의 공분산과 구장 간 계수의 상관이 있으므로 실제 구현에서는 그 불확실성을 함께 다뤄야 한다.
+이 재귀 필터와 신뢰도 가중은 이번에 적합하거나 검증한 모형이 아닌 후속 후보다.</p>
+<h2>이번 시간순 검증</h2>
+<ul>
+<li>중간면에서 궤적 유효성을 다시 판정했다.</li>
+<li>주요 구장, 같은 투수·경기·구종 5구 이상으로 집계했다.</li>
+<li>월별 추정은 투수×구종 고정효과와 구종별 구속 항, 타석 방향·카운트를 통제한다.</li>
+<li>월별 구장 계수는 최소 5경기·20투수가 있는 경우에만 검증 후보에 넣었다. 운영 확정 기준은 아니다.</li>
+<li>같은 시즌의 앞선 월들로만 계산하고 다음 달에 적용했다. 전년도 계수 승계나 개막 초기 동작은 검증하지 않았다.</li>
+<li>적어도 두 개의 앞선 월별 결과가 있는 5~9월을 검증했다. 모든 방법이 적용 가능한 동일한 41,477개 셀을 사용했다.</li>
+<li>검증 월의 동일 투수·구종 평균을 제거해 구장 간 일관성을 평가했다. 미래 투수의 절대 구위 예측이 아니다.</li>
+<li>공통된 과거 모형의 구속·타석·카운트 항을 사용해 교정계수 선택의 차이를 비교했다.</li>
+<li>계수의 척도를 맞추려고 0.4초의 공통 진단 시각에서 cm로 환산했다. 이전 보고서의 시즌별 T를 쓰는 RMSE와 직접 비교하지 않는다.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>방식</th>
+<th style="text-align: right;">좌우 RMSE(cm)</th>
+<th style="text-align: right;">상하 RMSE(cm)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>구장 교정 없음</td>
+<td style="text-align: right;">6.078</td>
+<td style="text-align: right;">4.287</td>
+</tr>
+<tr>
+<td>지난달 계수</td>
+<td style="text-align: right;">2.834</td>
+<td style="text-align: right;">2.691</td>
+</tr>
+<tr>
+<td>최근 3개월 지수 가중평균</td>
+<td style="text-align: right;">2.868</td>
+<td style="text-align: right;">2.707</td>
+</tr>
+<tr>
+<td>최근 6개월 지수 가중평균</td>
+<td style="text-align: right;">2.872</td>
+<td style="text-align: right;">2.714</td>
+</tr>
+<tr>
+<td>시즌 시작부터 직전 달까지 통합 추정</td>
+<td style="text-align: right;">2.914</td>
+<td style="text-align: right;">2.731</td>
+</tr>
+</tbody>
+</table>
+<p>가중평균은 평균 달 길이 기준 약 61일 반감기다. 최근 세 달의 비중은 표본이 모두 있을 때
+약 45.3% / 32.0% / 22.7%다. 이번 비교에는 신뢰도 가중이나 적응형 필터를 넣지 않았다.</p>
+<p>최근 3개월 방식은 교정 없음 대비 좌우 오차를 52.8%, 상하를 36.8% 줄였다.
+지난달 계수 방식은 53.4%, 37.2% 감소로 소폭 더 좋았다. 방식 간 작은 차이에 대한 유의성 검정이나
+반감기 최적화는 수행하지 않았으므로 지난달 방식이 확정적으로 최적이라고 결론 내리지 않는다.
+자료가 충분한 최근 월을 강하게 반영하는 단순한 모형을 기준으로 두고, 평활화의 추가 효과를 검증하는 것이 적절하다.</p>
+<p>2020~2023으로 설정을 고르고 2024~2025를 최종 보류하는 등 별도 모형 선택·평가 분리가 다음 단계다.
+비시즌 공백, 새 구장, 장비 설정 변경, 자료 누락에서 오래된 계수가 자동 연장되는 문제도 별도로 검증해야 한다.</p>
+<h2>자동 실행과 이력</h2>
+<ol>
+<li>새 current sealed revision이 생기면 해당 월의 sourceHash가 바뀐 경우에만 재계산 작업을 넣는다.</li>
+<li>월별 원추정치, 가속도 단위 계수, 신뢰구간/공분산, 경기·투수 수, 기준점과 데이터 범위를 버전으로 남긴다.</li>
+<li>마감 월은 확정값, 진행 중인 월은 잠정값으로 구분한다. 당일 자료를 사용한 결과의 유효 시점은 다음 날 이후로 둔다.</li>
+<li>과거 자료 정정 시 그 달과 그 결과에 의존하는 후속 계수만 다시 계산한다. 새 버전이 과거 제공 결과를 몰래 바꾸지 않게 한다.</li>
+<li>화면 조회에서는 완성된 프로필을 읽는다. 브라우저에서 추정하거나 매번 전량 재계산하지 않는다.</li>
+<li>신규 구장·측정 설정 변경은 새 프로필로 분리한다. 비시즌의 이전 값은 불확실성을 늘린 사전값으로만 사용할 후보이며, 영구 상수로 자동 승계하지 않는다.</li>
+</ol>
+<p>매월 관측된 급변은 여러 경기·원정 투수에서도 지속되는지 확인한다. 평활화로 무조건 지워 버리거나,
+한 경기의 이상치만으로 전체 프로필을 초기화하지 않는다. 원천 fact는 불변으로 두고 분석 프로필만 갱신한다.</p>
+<p>재현 파일: <a href="rolling_calibration.py">스크립트</a>, <a href="rolling_monthly_history.csv">월별 계수</a>,
+<a href="rolling_validation_coverage.csv">시간순 검증 범위</a>, <a href="rolling_validation_months.csv">월별 결과</a>,
+<a href="rolling_validation_pooled.csv">합산 결과</a>.</p></html>

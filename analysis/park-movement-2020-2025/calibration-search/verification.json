@@ -1,0 +1,13 @@
+{
+  "previous_5_method_max_sse_difference": 8.512870408594608e-10,
+  "old_new_monthly_coefficient_error": 1.7763568394002505e-15,
+  "synthetic_recovery_error": 3.197442310920451e-14,
+  "row_permutation_error": 2.398081733190338e-14,
+  "common_translation_error": 3.552713678800501e-15,
+  "game_aggregation_error": 2.9103830456733704e-11,
+  "direct_fits_audited": 6924,
+  "identical_samples_all_methods": true,
+  "strictly_past_training": true,
+  "raw_snapshot_hash_verified_by_search": true,
+  "user_database_and_source_files_modified": false
+}

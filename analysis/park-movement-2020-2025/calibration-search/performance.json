@@ -1,0 +1,66 @@
+{
+  "measured_at_local": "2026-09-20",
+  "python": "3.13.7",
+  "numpy": "2.5.3",
+  "pandas": "3.0.6",
+  "cpu": "AMD Ryzen 5 9600X (6 cores / 12 logical processors)",
+  "blas_threads": "1 requested before importing numpy",
+  "scope": "Local Python research implementation, elapsed time; excludes DB extraction, process startup and production API",
+  "cached_82575_cells": {
+    "n": 5,
+    "median_ms": 8.579299959819764,
+    "p95_ms": 9.059700032230467,
+    "min_ms": 7.876900024712086,
+    "max_ms": 9.063800040166825
+  },
+  "all_cells_memory_bytes": 29851372,
+  "daily_fit": {
+    "coefficients_only": {
+      "n": 75,
+      "median_ms": 32.219499989878386,
+      "p95_ms": 47.32860003132372,
+      "min_ms": 21.579899999778718,
+      "max_ms": 59.01260004611686
+    },
+    "with_covariance": {
+      "n": 75,
+      "median_ms": 36.94199997698888,
+      "p95_ms": 48.886870028218254,
+      "min_ms": 26.102700037881732,
+      "max_ms": 61.17939995601773
+    }
+  },
+  "daily_fit_dates": 15,
+  "repeats_per_date": 5,
+  "window_cell_range": [
+    3566,
+    6009
+  ],
+  "window_game_range": [
+    193,
+    326
+  ],
+  "window_input_memory_bytes_range": [
+    1346059,
+    2269691
+  ],
+  "regression_columns": [
+    25,
+    27
+  ],
+  "historical_backfill": {
+    "dates": 596,
+    "seconds": 22.031615900050383,
+    "includes_covariance": true,
+    "scope": "Only the 24 evaluated season-months; not all dates in six complete seasons"
+  },
+  "full_raw_file_prepare": {
+    "n": 3,
+    "median_ms": 3729.9123000120744,
+    "p95_ms": 3781.528559984872,
+    "min_ms": 3615.7854000339285,
+    "max_ms": 3787.2636999818496
+  },
+  "full_raw_prepare_note": "Existing gzip read plus manifest join, validity and aggregation; OS cache may be warm; excludes DB read",
+  "production_integration_benchmarked": false
+}

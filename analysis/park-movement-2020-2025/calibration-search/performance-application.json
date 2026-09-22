@@ -1,0 +1,32 @@
+{
+  "node": "v24.19.0",
+  "scope": "Operation-only benchmark: repeated actual cell means; one frozen example profile; no database, trajectory or GMM timing",
+  "excluded": [
+    "input construction",
+    "profile loading",
+    "database",
+    "trajectory calculation",
+    "GMM",
+    "response serialization"
+  ],
+  "results": [
+    {
+      "rows": 5000,
+      "repetitions": 25,
+      "medianMs": 0.06409999999999982,
+      "p95Ms": 0.11350000000000193
+    },
+    {
+      "rows": 250000,
+      "repetitions": 25,
+      "medianMs": 2.248499999999993,
+      "p95Ms": 3.9296000000000078
+    },
+    {
+      "rows": 1428758,
+      "repetitions": 25,
+      "medianMs": 12.76740000000001,
+      "p95Ms": 14.213200000000029
+    }
+  ]
+}

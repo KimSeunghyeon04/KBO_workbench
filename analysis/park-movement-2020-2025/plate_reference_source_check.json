@@ -1,0 +1,57 @@
+[
+  {
+    "game_id": "20240314HTOB02024",
+    "endpoint": "relay_001",
+    "source_hash": "50fb6761a2787f45305d5de74b145b28df6a1bb55d6448c6b8cef97fed763768",
+    "endpoint_sha256": "e6bdfeb8b69c63c14b0adad8fa5de0ae890b07ded37400f20ca216d08cd5389c",
+    "values": {
+      "1.4167": 34
+    }
+  },
+  {
+    "game_id": "20240314HTOB02024",
+    "endpoint": "relay_002",
+    "source_hash": "50fb6761a2787f45305d5de74b145b28df6a1bb55d6448c6b8cef97fed763768",
+    "endpoint_sha256": "c3cc81a87e55b19b3051253e4918fe57ee114e503a005226059a922a56d64ba1",
+    "values": {
+      "0.7083": 27,
+      "1.4167": 14
+    }
+  },
+  {
+    "game_id": "20240314HTOB02024",
+    "endpoint": "relay_003",
+    "source_hash": "50fb6761a2787f45305d5de74b145b28df6a1bb55d6448c6b8cef97fed763768",
+    "endpoint_sha256": "1f6243cbaa6e58bf8acd9503751d1670714ee25e30e0aa5d8aa626b3b527cbe3",
+    "values": {
+      "0.7083": 25
+    }
+  },
+  {
+    "game_id": "20250308LGKT02025",
+    "endpoint": "relay_001",
+    "source_hash": "bf0be343f05f9ee1853943afacd382ef782da66146b1905d24e3175922fcb564",
+    "endpoint_sha256": "668b655743fd28efe12a02f44d0901280ed2c40b18309874d84c930ddf251aed",
+    "values": {
+      "1.4167": 32
+    }
+  },
+  {
+    "game_id": "20250308LGKT02025",
+    "endpoint": "relay_002",
+    "source_hash": "bf0be343f05f9ee1853943afacd382ef782da66146b1905d24e3175922fcb564",
+    "endpoint_sha256": "59aa95f5081292cca4118d2748bdb1618f7b1e58a440d3818b050bac2f5d1fd3",
+    "values": {
+      "1.4167": 27
+    }
+  },
+  {
+    "game_id": "20250308LGKT02025",
+    "endpoint": "relay_003",
+    "source_hash": "bf0be343f05f9ee1853943afacd382ef782da66146b1905d24e3175922fcb564",
+    "endpoint_sha256": "dcc6affd3c8e39147e603a98cd6721d0db977e467d4703951151a3af297d50fb",
+    "values": {
+      "1.4167": 23
+    }
+  }
+]

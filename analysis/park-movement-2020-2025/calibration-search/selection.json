@@ -1,0 +1,27 @@
+{
+  "selected": "daily_w84_h7",
+  "configuration": {
+    "id": "daily_w84_h7",
+    "family": "direct",
+    "frequency": "daily",
+    "window": 84,
+    "half": 7,
+    "robust": false
+  },
+  "family_winners": {
+    "direct": "daily_w84_h7",
+    "ema": "ema_a0.9",
+    "ewma": "ewma_w2_h0.5",
+    "kalman": "adaptive_q1",
+    "latest": "last_month",
+    "pooled": "season_to_date",
+    "precision": "precision_h0.5_q1",
+    "trend": "trend_d0.25",
+    "direct_monthly": "monthly_w56_h14",
+    "direct_weekly": "weekly_w112_h10",
+    "direct_daily": "daily_w84_h7",
+    "direct_fortnightly": "fortnightly_w84_h14"
+  },
+  "rule": "minimum pooled combined RMSE using 2020-2024 only",
+  "retrospective": true
+}

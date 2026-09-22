@@ -1,5 +1,11 @@
 # 경기 재생 운영
 
+스트라이크존은 타자 키로 계산한다. 2024년까지는 2024 규칙, 2025·2026년은 2025 규칙을 사용하며
+트래킹 존으로 대체하지 않는다. 키가 없으면 계산 불가다. [정책·구현·검증](strike-zone.md)을 따른다.
+
+재생 화면의 경기 목록은 `/api/v2/games?authority=database`만 조회한다. 전체 수집 목록과
+query key를 구분하면서 catalog 무효화는 함께 적용하므로 적재·새 revision 뒤 최신 목록을 읽는다.
+
 경기 재생은 PostgreSQL의 seal된 typed revision을 직접 사용한다. staging 원장을 복원해 replay하거나
 브라우저에서 reducer를 다시 돌리지 않는다.
 
@@ -29,6 +35,10 @@ frame의 단위는 원장 행이 아니라 DB `play_facts`의 상태 변경 단�
 DB 적재 시에는 DB에서 다시 읽은 원장 fact를 전체 compile해 저장된 play·상태·PA·기록과 일치하는지
 이미 확인한다. 공개 replay 요청은 최종 typed fact를 직접 읽는다. 불일치는 frame을 반환하지 않고
 `persistence` integrity 오류로 종료한다.
+
+새 manifest 요청은 항상 DB 무결성을 다시 검증한다. 이후 frame page는 그 검증을 마친 불변 bundle을
+최대 64MiB·16개·미사용 60초 범위에서 재사용한다. 만료·퇴출 후에는 다시 DB를 검증한다. 응답은
+호출자마다 복제하며 cursor의 game/revision/document/frame hash 검사는 각 page에서 유지한다.
 
 종료 결과가 없는 PA는 원인을 가진 partial lifecycle로 보존한다. 주루사 제3아웃 partial은 실제
 투구를 포함하지만 공식 PA·타수·투수 상대 타자 수에는 포함하지 않는다. 다음 반이닝 이벤트가 해당
@@ -72,9 +82,12 @@ replay를 지우지 않는다. `선택 경기 재생`을 누르면 manifest와 �
 - 좌표 metric이 있을 때 포수 시점 스트라이크 존
 
 tracking 좌표가 없으면 위치를 추정하지 않고 metric만 표시한다. `crossPlateY`는 높이가 아니라
-홈플레이트의 종방향 y 기준 좌표다. `crossPlateX`와 strike-zone 경계가 있고 직접 높이가 없을 때는
+홈플레이트의 종방향 y 기준 좌표다. `crossPlateX`와 신장으로 계산한 `strikeZone` 경계가 있고 직접 높이가 없을 때는
 `y0/vy0/ay`로 첫 물리적 교차 시점을 구한 뒤 같은 시점의 `z0/vz0/az`로 홈플레이트 통과 높이를
 계산한다. 필요한 값이 하나라도 없거나 비정상이면 차트를 만들지 않는다.
+DB 분석도 같은 신장 기준으로 존 안팎을 판정한다. `0009_player_height_supplements`의 zone formula 5는
+같은 경기·같은 시즌 자료와 검토한 공식 프로필에서 확정한 DB 키를 사용한다.
+플레이트 Y가 동일하고 높이가 다른 궤적, 경계·누락·교차 불가 사례를 SQL과 재생 테스트에서 공유한다.
 
 웹 구현은 재생 도메인 상태를 다음 경계로 나눈다.
 

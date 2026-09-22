@@ -1,0 +1,21 @@
+{
+  "model_id": "daily_w84_h7",
+  "status": "research recommendation; not deployed",
+  "configuration": {
+    "id": "daily_w84_h7",
+    "family": "direct",
+    "frequency": "daily",
+    "window": 84,
+    "half": 7,
+    "robust": false
+  },
+  "coordinate_plane_ft": 0.7083333333333334,
+  "coefficient_units": "ft/s^2",
+  "raw_source_immutable": true,
+  "effective_at": "after training cutoff; only earlier games",
+  "evaluation_scope": "supported in-season May-September comparisons",
+  "combined_rmse_all": 2.6613774855487096,
+  "extra_gain_vs_last_month_pct": 3.6911008836735038,
+  "confirmation_2025_gain_pct": 7.583235266538435,
+  "source_protocol": "protocol.json"
+}

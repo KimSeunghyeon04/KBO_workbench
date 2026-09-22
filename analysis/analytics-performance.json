@@ -1,0 +1,57 @@
+{
+  "node": "v24.19.0",
+  "cpu": "AMD Ryzen 5 9600X 6-Core Processor             ",
+  "platform": "win32",
+  "fixture": "synthetic; performance only; excludes database, IPC and disk I/O; first is process-warm/JIT-cold",
+  "maxSampledRssBytes": 404111360,
+  "records": [
+    {
+      "label": "quality-training",
+      "inputRows": 7200,
+      "repetitions": 30,
+      "compute": {
+        "firstMs": 438.92939999999993,
+        "warmMeanMs": 514.5925,
+        "warmP95Ms": 538.5915
+      },
+      "serialization": {
+        "firstMs": 0.2679000000000542,
+        "warmMeanMs": 0.34402758620676804,
+        "warmP95Ms": 0.401400000000649
+      },
+      "outputBytes": 76842
+    },
+    {
+      "label": "quality-player",
+      "inputRows": 5000,
+      "repetitions": 30,
+      "compute": {
+        "firstMs": 9.261899999999514,
+        "warmMeanMs": 8.833168965516961,
+        "warmP95Ms": 10.677799999999479
+      },
+      "serialization": {
+        "firstMs": 0.032799999999042484,
+        "warmMeanMs": 0.03706896551726647,
+        "warmP95Ms": 0.05949999999938882
+      },
+      "outputBytes": 6547
+    },
+    {
+      "label": "park-training",
+      "inputRows": 2880,
+      "repetitions": 30,
+      "compute": {
+        "firstMs": 241.57640000000174,
+        "warmMeanMs": 205.2714448275859,
+        "warmP95Ms": 218.37669999999707
+      },
+      "serialization": {
+        "firstMs": 0.052100000000791624,
+        "warmMeanMs": 0.05586206896548212,
+        "warmP95Ms": 0.060499999999592546
+      },
+      "outputBytes": 11414
+    }
+  ]
+}

@@ -1,0 +1,638 @@
+{
+  "version": 1,
+  "grid": [
+    {
+      "id": "last_month",
+      "family": "latest"
+    },
+    {
+      "id": "season_to_date",
+      "family": "pooled"
+    },
+    {
+      "id": "ewma_w2_h0.25",
+      "family": "ewma",
+      "window": 2,
+      "half": 0.25
+    },
+    {
+      "id": "ewma_w2_h0.5",
+      "family": "ewma",
+      "window": 2,
+      "half": 0.5
+    },
+    {
+      "id": "ewma_w2_h1",
+      "family": "ewma",
+      "window": 2,
+      "half": 1.0
+    },
+    {
+      "id": "ewma_w2_h2",
+      "family": "ewma",
+      "window": 2,
+      "half": 2.0
+    },
+    {
+      "id": "ewma_w2_h3",
+      "family": "ewma",
+      "window": 2,
+      "half": 3.0
+    },
+    {
+      "id": "ewma_w3_h0.25",
+      "family": "ewma",
+      "window": 3,
+      "half": 0.25
+    },
+    {
+      "id": "ewma_w3_h0.5",
+      "family": "ewma",
+      "window": 3,
+      "half": 0.5
+    },
+    {
+      "id": "ewma_w3_h1",
+      "family": "ewma",
+      "window": 3,
+      "half": 1.0
+    },
+    {
+      "id": "ewma_w3_h2",
+      "family": "ewma",
+      "window": 3,
+      "half": 2.0
+    },
+    {
+      "id": "ewma_w3_h3",
+      "family": "ewma",
+      "window": 3,
+      "half": 3.0
+    },
+    {
+      "id": "ewma_w6_h0.25",
+      "family": "ewma",
+      "window": 6,
+      "half": 0.25
+    },
+    {
+      "id": "ewma_w6_h0.5",
+      "family": "ewma",
+      "window": 6,
+      "half": 0.5
+    },
+    {
+      "id": "ewma_w6_h1",
+      "family": "ewma",
+      "window": 6,
+      "half": 1.0
+    },
+    {
+      "id": "ewma_w6_h2",
+      "family": "ewma",
+      "window": 6,
+      "half": 2.0
+    },
+    {
+      "id": "ewma_w6_h3",
+      "family": "ewma",
+      "window": 6,
+      "half": 3.0
+    },
+    {
+      "id": "precision_h0.5_q0.25",
+      "family": "precision",
+      "half": 0.5,
+      "drift": 0.25
+    },
+    {
+      "id": "precision_h0.5_q1",
+      "family": "precision",
+      "half": 0.5,
+      "drift": 1.0
+    },
+    {
+      "id": "precision_h0.5_q2",
+      "family": "precision",
+      "half": 0.5,
+      "drift": 2.0
+    },
+    {
+      "id": "precision_h1_q0.25",
+      "family": "precision",
+      "half": 1.0,
+      "drift": 0.25
+    },
+    {
+      "id": "precision_h1_q1",
+      "family": "precision",
+      "half": 1.0,
+      "drift": 1.0
+    },
+    {
+      "id": "precision_h1_q2",
+      "family": "precision",
+      "half": 1.0,
+      "drift": 2.0
+    },
+    {
+      "id": "precision_h2_q0.25",
+      "family": "precision",
+      "half": 2.0,
+      "drift": 0.25
+    },
+    {
+      "id": "precision_h2_q1",
+      "family": "precision",
+      "half": 2.0,
+      "drift": 1.0
+    },
+    {
+      "id": "precision_h2_q2",
+      "family": "precision",
+      "half": 2.0,
+      "drift": 2.0
+    },
+    {
+      "id": "ema_a0.5",
+      "family": "ema",
+      "alpha": 0.5
+    },
+    {
+      "id": "ema_a0.75",
+      "family": "ema",
+      "alpha": 0.75
+    },
+    {
+      "id": "ema_a0.9",
+      "family": "ema",
+      "alpha": 0.9
+    },
+    {
+      "id": "kalman_q0.25",
+      "family": "kalman",
+      "drift": 0.25,
+      "adaptive": false
+    },
+    {
+      "id": "kalman_q0.5",
+      "family": "kalman",
+      "drift": 0.5,
+      "adaptive": false
+    },
+    {
+      "id": "kalman_q1",
+      "family": "kalman",
+      "drift": 1.0,
+      "adaptive": false
+    },
+    {
+      "id": "kalman_q2",
+      "family": "kalman",
+      "drift": 2.0,
+      "adaptive": false
+    },
+    {
+      "id": "kalman_q4",
+      "family": "kalman",
+      "drift": 4.0,
+      "adaptive": false
+    },
+    {
+      "id": "adaptive_q0.5",
+      "family": "kalman",
+      "drift": 0.5,
+      "adaptive": true
+    },
+    {
+      "id": "adaptive_q1",
+      "family": "kalman",
+      "drift": 1.0,
+      "adaptive": true
+    },
+    {
+      "id": "adaptive_q2",
+      "family": "kalman",
+      "drift": 2.0,
+      "adaptive": true
+    },
+    {
+      "id": "trend_d0.25",
+      "family": "trend",
+      "damp": 0.25
+    },
+    {
+      "id": "trend_d0.5",
+      "family": "trend",
+      "damp": 0.5
+    },
+    {
+      "id": "monthly_w28_hflat",
+      "family": "direct",
+      "frequency": "monthly",
+      "window": 28,
+      "half": null,
+      "robust": false
+    },
+    {
+      "id": "monthly_w28_h14",
+      "family": "direct",
+      "frequency": "monthly",
+      "window": 28,
+      "half": 14,
+      "robust": false
+    },
+    {
+      "id": "monthly_w28_h28",
+      "family": "direct",
+      "frequency": "monthly",
+      "window": 28,
+      "half": 28,
+      "robust": false
+    },
+    {
+      "id": "monthly_w28_h28_huber",
+      "family": "direct",
+      "frequency": "monthly",
+      "window": 28,
+      "half": 28,
+      "robust": true
+    },
+    {
+      "id": "monthly_w56_hflat",
+      "family": "direct",
+      "frequency": "monthly",
+      "window": 56,
+      "half": null,
+      "robust": false
+    },
+    {
+      "id": "monthly_w56_h14",
+      "family": "direct",
+      "frequency": "monthly",
+      "window": 56,
+      "half": 14,
+      "robust": false
+    },
+    {
+      "id": "monthly_w56_h28",
+      "family": "direct",
+      "frequency": "monthly",
+      "window": 56,
+      "half": 28,
+      "robust": false
+    },
+    {
+      "id": "monthly_w56_h28_huber",
+      "family": "direct",
+      "frequency": "monthly",
+      "window": 56,
+      "half": 28,
+      "robust": true
+    },
+    {
+      "id": "monthly_w84_hflat",
+      "family": "direct",
+      "frequency": "monthly",
+      "window": 84,
+      "half": null,
+      "robust": false
+    },
+    {
+      "id": "monthly_w84_h14",
+      "family": "direct",
+      "frequency": "monthly",
+      "window": 84,
+      "half": 14,
+      "robust": false
+    },
+    {
+      "id": "monthly_w84_h28",
+      "family": "direct",
+      "frequency": "monthly",
+      "window": 84,
+      "half": 28,
+      "robust": false
+    },
+    {
+      "id": "monthly_w84_h28_huber",
+      "family": "direct",
+      "frequency": "monthly",
+      "window": 84,
+      "half": 28,
+      "robust": true
+    },
+    {
+      "id": "weekly_w28_hflat",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 28,
+      "half": null,
+      "robust": false
+    },
+    {
+      "id": "weekly_w28_h14",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 28,
+      "half": 14,
+      "robust": false
+    },
+    {
+      "id": "weekly_w28_h28",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 28,
+      "half": 28,
+      "robust": false
+    },
+    {
+      "id": "weekly_w28_h28_huber",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 28,
+      "half": 28,
+      "robust": true
+    },
+    {
+      "id": "weekly_w56_hflat",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 56,
+      "half": null,
+      "robust": false
+    },
+    {
+      "id": "weekly_w56_h14",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 56,
+      "half": 14,
+      "robust": false
+    },
+    {
+      "id": "weekly_w56_h28",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 56,
+      "half": 28,
+      "robust": false
+    },
+    {
+      "id": "weekly_w56_h28_huber",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 56,
+      "half": 28,
+      "robust": true
+    },
+    {
+      "id": "weekly_w84_hflat",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 84,
+      "half": null,
+      "robust": false
+    },
+    {
+      "id": "weekly_w84_h14",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 84,
+      "half": 14,
+      "robust": false
+    },
+    {
+      "id": "weekly_w84_h28",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 84,
+      "half": 28,
+      "robust": false
+    },
+    {
+      "id": "weekly_w84_h28_huber",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 84,
+      "half": 28,
+      "robust": true
+    },
+    {
+      "id": "weekly_w56_h7",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 56,
+      "half": 7,
+      "robust": false
+    },
+    {
+      "id": "weekly_w56_h10",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 56,
+      "half": 10,
+      "robust": false
+    },
+    {
+      "id": "weekly_w56_h21",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 56,
+      "half": 21,
+      "robust": false
+    },
+    {
+      "id": "weekly_w84_h7",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 84,
+      "half": 7,
+      "robust": false
+    },
+    {
+      "id": "weekly_w84_h10",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 84,
+      "half": 10,
+      "robust": false
+    },
+    {
+      "id": "weekly_w84_h21",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 84,
+      "half": 21,
+      "robust": false
+    },
+    {
+      "id": "weekly_w112_h7",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 112,
+      "half": 7,
+      "robust": false
+    },
+    {
+      "id": "weekly_w112_h10",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 112,
+      "half": 10,
+      "robust": false
+    },
+    {
+      "id": "weekly_w112_h21",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 112,
+      "half": 21,
+      "robust": false
+    },
+    {
+      "id": "weekly_w112_h14",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 112,
+      "half": 14,
+      "robust": false
+    },
+    {
+      "id": "weekly_w84_h3.5",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 84,
+      "half": 3.5,
+      "robust": false
+    },
+    {
+      "id": "weekly_w28_h7",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 28,
+      "half": 7,
+      "robust": false
+    },
+    {
+      "id": "weekly_w84_h14_huber",
+      "family": "direct",
+      "frequency": "weekly",
+      "window": 84,
+      "half": 14,
+      "robust": true
+    },
+    {
+      "id": "daily_w84_h3.5",
+      "family": "direct",
+      "frequency": "daily",
+      "window": 84,
+      "half": 3.5,
+      "robust": false
+    },
+    {
+      "id": "daily_w56_h7",
+      "family": "direct",
+      "frequency": "daily",
+      "window": 56,
+      "half": 7,
+      "robust": false
+    },
+    {
+      "id": "daily_w56_h14",
+      "family": "direct",
+      "frequency": "daily",
+      "window": 56,
+      "half": 14,
+      "robust": false
+    },
+    {
+      "id": "daily_w56_h28",
+      "family": "direct",
+      "frequency": "daily",
+      "window": 56,
+      "half": 28,
+      "robust": false
+    },
+    {
+      "id": "daily_w84_h7",
+      "family": "direct",
+      "frequency": "daily",
+      "window": 84,
+      "half": 7,
+      "robust": false
+    },
+    {
+      "id": "daily_w84_h14",
+      "family": "direct",
+      "frequency": "daily",
+      "window": 84,
+      "half": 14,
+      "robust": false
+    },
+    {
+      "id": "daily_w84_h28",
+      "family": "direct",
+      "frequency": "daily",
+      "window": 84,
+      "half": 28,
+      "robust": false
+    },
+    {
+      "id": "fortnightly_w84_h7",
+      "family": "direct",
+      "frequency": "fortnightly",
+      "window": 84,
+      "half": 7,
+      "robust": false
+    },
+    {
+      "id": "fortnightly_w84_h14",
+      "family": "direct",
+      "frequency": "fortnightly",
+      "window": 84,
+      "half": 14,
+      "robust": false
+    },
+    {
+      "id": "fortnightly_w84_h28",
+      "family": "direct",
+      "frequency": "fortnightly",
+      "window": 84,
+      "half": 28,
+      "robust": false
+    }
+  ],
+  "primary": "sqrt((SSE_X+SSE_Z)/(2*N)); equal cell and axis weights",
+  "selection_seasons": [
+    2020,
+    2021,
+    2022,
+    2023,
+    2024
+  ],
+  "confirmation_season": 2025,
+  "caveat": "2025 aggregate baseline results were previously inspected; retrospective confirmation, not untouched prospective validation",
+  "nested_outer_seasons": [
+    2023,
+    2024,
+    2025
+  ],
+  "plane_ft": 0.7083333333333334,
+  "diagnostic_seconds": 0.4,
+  "min_pitches_per_cell": 5,
+  "fit_cell_weight": "min(pitch_count,30)",
+  "min_park_games": 5,
+  "min_park_pitchers": 20,
+  "covariance_eigenvalue_floor_cm2": 0.04,
+  "weekly_cutoff": "Monday 00:00; latest eligible game is strictly earlier; current season only",
+  "daily_cutoff": "00:00 each calendar day; latest eligible game is strictly earlier",
+  "fortnightly_cutoff": "14-day intervals anchored on Monday 1970-01-05; past data only",
+  "monthly_cutoff": "First day 00:00; latest eligible game is strictly earlier; current season only",
+  "centering": "equal-weight supported prior park universe; anchor contrasts estimated relative to Jamsil",
+  "evaluation": "same rows as prior monthly comparison; test pitcher/type mean removed only to score consistency",
+  "robust": "joint standardized residual Huber IRLS; radial cutoff 2; at most 15 iterations",
+  "fallback": "insufficient direct-window support uses most recent supported monthly contrast; then supported season-to-date",
+  "uncertainty": "paired resampling of seasons and circular 2-month blocks within season; 10000 draws; seeded",
+  "no_offseason_transfer": true
+}

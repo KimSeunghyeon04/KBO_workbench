@@ -1,0 +1,7 @@
+{
+  "synthetic_max_error": 4.529709940470639e-14,
+  "annual_design_full_rank": true,
+  "annual_pitch_weighted_effects_sum_to_zero": true,
+  "trajectory_public_api_sample_count": 1000,
+  "trajectory_public_api_max_absolute_error": 5.684341886080802e-14
+}
