@@ -53,6 +53,7 @@ export function createApp(
     pool: context.pool,
     references: context.runtime.workspace.pitchReferences,
     calibrations: context.runtime.workspace.pitchCalibrations,
+    summaries: context.runtime.workspace.analysisCoverage,
     runModels: context.runtime.workspace.runExpectancy,
     parkModels: context.runtime.workspace.parkEnvironment,
     qualityModels: context.runtime.workspace.pitchQuality,

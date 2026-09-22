@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import type {
   PitchAnalysisComputation,
+  AnalysisCoverageWorkspace,
   PitchReferenceWorkspace,
   PitchCalibrationWorkspace,
   RunExpectancyWorkspace,
@@ -12,6 +13,7 @@ import { ComputationPool } from "../computation-pool.js";
 import type { RouteContext } from "./context.js";
 import { pitchAnalysisRoutes } from "./pitch-analysis.js";
 import { batterDisciplineRoutes } from "./batter-discipline.js";
+import { analysisCoverageRoutes } from "./analysis-coverage.js";
 import { playerStatisticsRoutes } from "./player-statistics.js";
 import { batterProfileRoutes } from "./batter-profile.js";
 import { pitcherChangesRoutes } from "./pitcher-changes.js";
@@ -26,6 +28,7 @@ import { pitchLocationRoutes } from "./pitch-location.js";
 import { pitchAnglesRoutes } from "./pitch-angles.js";
 
 type Options = Pick<RouteContext, "pool"> & {
+  summaries: Pick<AnalysisCoverageWorkspace, "read" | "write">;
   references: Pick<PitchReferenceWorkspace, "getOrCreate">;
   calibrations: Pick<PitchCalibrationWorkspace, "getOrCreate">;
   runModels: Pick<RunExpectancyWorkspace, "read" | "readCount" | "readWin">;
@@ -79,6 +82,12 @@ export const analysisRoutes: FastifyPluginAsyncTypebox<Options> = async (app, co
     pool: context.pool,
     references: context.references,
     computeReference: computation.reference,
+  });
+  await app.register(analysisCoverageRoutes, {
+    pool: context.pool,
+    calibrations: context.calibrations,
+    calibrate: computation.calibration,
+    summaries: context.summaries,
   });
   await app.register(playerStatisticsRoutes, { pool: context.pool });
   await app.register(pitchLocationRoutes, { pool: context.pool });

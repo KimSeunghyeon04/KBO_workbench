@@ -23,6 +23,7 @@ const analysisNavigation = [
   { to: "/analysis/pitch-shape", label: "투구 움직임", end: false },
   { to: "/analysis/batter-discipline", label: "타자 선구안", end: false },
   { to: "/replay", label: "경기 재생", end: false },
+  { to: "/analysis/coverage", label: "분석 자료 품질", end: false },
   { to: "/analysis/park-environment", label: "구장 득점 환경", end: false },
 ] as const;
 type Workspace = "management" | "analysis";

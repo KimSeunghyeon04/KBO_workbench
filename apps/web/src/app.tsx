@@ -63,6 +63,11 @@ const BatterDisciplinePage = lazy(() =>
     default: module.BatterDisciplinePage,
   })),
 );
+const AnalysisCoveragePage = lazy(() =>
+  import("./pages/analysis-coverage-page").then((module) => ({
+    default: module.AnalysisCoveragePage,
+  })),
+);
 
 export function App(): React.JSX.Element {
   return (
@@ -77,6 +82,7 @@ export function App(): React.JSX.Element {
           <Route path="/replay" element={<ReplayPage />} />
           <Route path="/analysis/pitch-shape" element={<PitchAnalysisPage />} />
           <Route path="/analysis/batter-discipline" element={<BatterDisciplinePage />} />
+          <Route path="/analysis/coverage" element={<AnalysisCoveragePage />} />
           <Route path="/analysis/models" element={<AnalysisModelsPage />} />
           <Route path="/analysis/park-environment" element={<ParkEnvironmentPage />} />
           <Route path="/analysis/pitcher-changes" element={<PitcherChangesPage />} />

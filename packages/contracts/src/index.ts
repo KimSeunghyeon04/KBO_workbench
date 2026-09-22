@@ -507,7 +507,18 @@ export {
   type PitchCalibrationSeason,
   type PitchCalibrationStatus,
 } from "./pitch-calibration.js";
-
+export {
+  AnalysisCoveragePreparationSchema,
+  AnalysisCoverageResultSchema,
+  type AnalysisCoveragePreparation,
+  type AnalysisCoverageResult,
+  AnalysisCoverageQuerySchema,
+  AnalysisCoverageCountsSchema,
+  AnalysisCoverageResponseSchema,
+  validAnalysisCoverage,
+  type AnalysisCoverageCounts,
+  type AnalysisCoverageResponse,
+} from "./analysis-coverage.js";
 export {
   GameCompetitionSchema,
   CompetitionPageSchema,

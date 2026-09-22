@@ -101,7 +101,12 @@ export {
   preparePitchCalibrationCells,
   pitchCalibrationParkId,
 } from "./pitch-calibration.js";
-
+export { AnalysisCoverageWorkspace } from "./analysis-coverage-workspace.js";
+export type { CoverageSeason } from "./analysis-coverage-summary.js";
+export {
+  AnalysisCoverageRepository,
+  type CoverageInspection,
+} from "./analysis-coverage-repository.js";
 export { GameCompetitionRepository } from "./game-competition-repository.js";
 export { PlayerStatisticsRepository } from "./player-statistics-repository.js";
 export { PitchLocationRepository } from "./pitch-location-repository.js";

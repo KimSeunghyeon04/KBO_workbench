@@ -1,3 +1,4 @@
+import { AnalysisCoverageWorkspace } from "./analysis-coverage-workspace.js";
 import { readImmutableSourceBundle } from "./source-bundle-reader.js";
 import { AnalysisModelJobWorkspace } from "./analysis-model-job-workspace.js";
 import { constants as fsConstants } from "node:fs";
@@ -118,6 +119,7 @@ export class StagingWorkspace {
   public readonly collection: CollectionWorkspace;
   public readonly imports: ImportWorkspace;
   public readonly pitchReferences: PitchReferenceWorkspace;
+  public readonly analysisCoverage: AnalysisCoverageWorkspace;
   public readonly pitchCalibrations: PitchCalibrationWorkspace;
   public readonly runExpectancy: RunExpectancyWorkspace;
   public readonly pitchQuality: PitchQualityWorkspace;
@@ -153,6 +155,10 @@ export class StagingWorkspace {
       await this.verifyLock();
     });
     this.pitchReferences = new PitchReferenceWorkspace(this.root, async () => {
+      this.assertOpen();
+      await this.verifyLock();
+    });
+    this.analysisCoverage = new AnalysisCoverageWorkspace(this.root, async () => {
       this.assertOpen();
       await this.verifyLock();
     });
