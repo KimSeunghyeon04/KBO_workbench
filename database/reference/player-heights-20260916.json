@@ -1,0 +1,50 @@
+[
+  {
+    "season": 2021,
+    "playerId": "51714",
+    "playerName": "페레즈",
+    "birthDate": "1991-03-26",
+    "heightCm": 183,
+    "reportedValue": 72,
+    "reportedUnit": "inch",
+    "sourceUrl": "https://www.mlb.com/player/hernan-perez-541650",
+    "sourcePlayerId": "541650",
+    "checkedOn": "2026-09-16"
+  },
+  {
+    "season": 2025,
+    "playerId": "55013",
+    "playerName": "스티븐슨",
+    "birthDate": "1994-06-01",
+    "heightCm": 180,
+    "reportedValue": 180,
+    "reportedUnit": "cm",
+    "sourceUrl": "https://npb.jp/bis/players/63765159.html",
+    "sourcePlayerId": "63765159",
+    "checkedOn": "2026-09-16"
+  },
+  {
+    "season": 2021,
+    "playerId": "51144",
+    "playerName": "보어",
+    "birthDate": "1988-05-28",
+    "heightCm": 193,
+    "reportedValue": 193,
+    "reportedUnit": "cm",
+    "sourceUrl": "https://npb.jp/bis/players/63765151.html",
+    "sourcePlayerId": "63765151",
+    "checkedOn": "2026-09-16"
+  },
+  {
+    "season": 2020,
+    "playerId": "50802",
+    "playerName": "화이트",
+    "birthDate": "1990-10-29",
+    "heightCm": 180,
+    "reportedValue": 71,
+    "reportedUnit": "inch",
+    "sourceUrl": "https://www.mlb.com/player/tyler-white-643603",
+    "sourcePlayerId": "643603",
+    "checkedOn": "2026-09-16"
+  }
+]

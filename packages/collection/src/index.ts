@@ -1,6 +1,6 @@
 export { inspectPlaywrightBrowser } from "./browser-status.js";
 export { NaverGameCollector } from "./collector.js";
-
+export { extractNaverPlayerHeights } from "./naver/player-height.js";
 export { NaverEndpoints, type Endpoint } from "./endpoints.js";
 export {
   CollectionCancelledError,
@@ -90,3 +90,5 @@ export type {
   ScheduleExplorer,
   SourceFinding,
 } from "./types.js";
+export { KboScheduleCollector, parseKboCompetitionPage } from "./kbo-schedule.js";
+export { linkKboCompetitionGames } from "./kbo-game-links.js";

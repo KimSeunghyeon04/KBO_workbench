@@ -190,6 +190,9 @@ importers:
       '@kbo/game-core':
         specifier: workspace:*
         version: link:../game-core
+      '@sinclair/typebox':
+        specifier: ^0.34.41
+        version: 0.34.52
       pg:
         specifier: ^8.16.3
         version: 8.23.0

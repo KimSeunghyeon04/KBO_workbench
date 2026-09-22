@@ -16,6 +16,7 @@
   "dependencies": {
     "@kbo/contracts": "workspace:*",
     "@kbo/game-core": "workspace:*",
+    "@sinclair/typebox": "^0.34.41",
     "pg": "^8.16.3"
   },
   "devDependencies": {
