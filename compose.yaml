@@ -1,7 +1,7 @@
 name: kbo-workbench
 
 x-api-environment: &api-environment
-  EXPECTED_MIGRATION_VERSION: "0004_pitch_metadata"
+  EXPECTED_MIGRATION_VERSION: "0012_competition_game_links"
   MIGRATIONS_DIR: "/app/database/v3"
   KBO_DATA_DIR: "/var/lib/kbo"
   KBO_COLLECTION_CONCURRENCY: "${KBO_COLLECTION_CONCURRENCY:-1}"
@@ -93,7 +93,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 6
-      start_period: 10s
+      # Windows bind mounts with archived source files need time for startup integrity checks.
+      start_period: 180s
     networks:
       - frontend
       - backend
