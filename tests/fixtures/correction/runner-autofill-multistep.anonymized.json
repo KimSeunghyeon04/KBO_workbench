@@ -1,0 +1,647 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "provider": "naver",
+    "sourceGameId": "anonymous-runner-autofill",
+    "collectedAt": "2026-08-20T12:00:00+09:00",
+    "sourceBundleHash": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "revisionBase": {
+    "kind": "new_game"
+  },
+  "metadata": {
+    "gameId": "anonymous-runner-autofill",
+    "season": 2026,
+    "gameDate": "2026-08-20",
+    "status": "suspended",
+    "scheduledInnings": 9
+  },
+  "teams": {
+    "away": {
+      "teamId": "AWAY",
+      "name": "원정"
+    },
+    "home": {
+      "teamId": "HOME",
+      "name": "홈"
+    }
+  },
+  "rosters": {
+    "away": {
+      "teamId": "AWAY",
+      "players": [
+        {
+          "playerId": "a1",
+          "name": "a1",
+          "battingOrder": 1,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a2",
+          "name": "a2",
+          "battingOrder": 2,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a3",
+          "name": "a3",
+          "battingOrder": 3,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a4",
+          "name": "a4",
+          "battingOrder": 4,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a5",
+          "name": "a5",
+          "battingOrder": 5,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a6",
+          "name": "a6",
+          "battingOrder": 6,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a7",
+          "name": "a7",
+          "battingOrder": 7,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a8",
+          "name": "a8",
+          "battingOrder": 8,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a9",
+          "name": "a9",
+          "battingOrder": 9,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "ar1",
+          "name": "ar1",
+          "starter": false,
+          "positions": ["PR"]
+        }
+      ]
+    },
+    "home": {
+      "teamId": "HOME",
+      "players": [
+        {
+          "playerId": "h1",
+          "name": "h1",
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "h2",
+          "name": "h2",
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "h3",
+          "name": "h3",
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "hp1",
+          "name": "hp1",
+          "starter": true,
+          "positions": ["P"]
+        },
+        {
+          "playerId": "hp2",
+          "name": "hp2",
+          "starter": false,
+          "positions": ["P"]
+        }
+      ]
+    }
+  },
+  "events": [
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e0",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 0
+      },
+      "sequence": 0,
+      "inning": 1,
+      "half": "top",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e1",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 1
+      },
+      "sequence": 1,
+      "inning": 1,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e2",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 2
+      },
+      "sequence": 2,
+      "inning": 1,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1",
+        "result": "single"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e3",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 3
+      },
+      "sequence": 3,
+      "inning": 1,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e4",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 4
+      },
+      "sequence": 4,
+      "inning": 1,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1",
+        "result": "double"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e5",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 5
+      },
+      "sequence": 5,
+      "inning": 1,
+      "half": "top",
+      "kind": "runner_advance",
+      "payload": {
+        "runnerId": "a1",
+        "fromBase": 1,
+        "toBase": 3,
+        "outcome": "safe",
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "e4"
+        }
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e6",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 6
+      },
+      "sequence": 6,
+      "inning": 1,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e7",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 7
+      },
+      "sequence": 7,
+      "inning": 1,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e8",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 8
+      },
+      "sequence": 8,
+      "inning": 1,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a4",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "walk-pitch-0",
+        "endpoint": "anonymous-walk",
+        "blockIndex": 0,
+        "eventIndex": 0
+      },
+      "sequence": 9,
+      "inning": 1,
+      "half": "top",
+      "kind": "pitch",
+      "payload": {
+        "call": "called_strike"
+      },
+      "relayText": "1구 스트라이크"
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "walk-pitch-1",
+        "endpoint": "anonymous-walk",
+        "blockIndex": 0,
+        "eventIndex": 1
+      },
+      "sequence": 10,
+      "inning": 1,
+      "half": "top",
+      "kind": "pitch",
+      "payload": {
+        "call": "ball"
+      },
+      "relayText": "2구 볼"
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "walk-pitch-2",
+        "endpoint": "anonymous-walk",
+        "blockIndex": 0,
+        "eventIndex": 2
+      },
+      "sequence": 11,
+      "inning": 1,
+      "half": "top",
+      "kind": "pitch",
+      "payload": {
+        "call": "ball"
+      },
+      "relayText": "3구 볼"
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "walk-pitch-3",
+        "endpoint": "anonymous-walk",
+        "blockIndex": 0,
+        "eventIndex": 3
+      },
+      "sequence": 12,
+      "inning": 1,
+      "half": "top",
+      "kind": "pitch",
+      "payload": {
+        "call": "ball"
+      },
+      "relayText": "4구 볼"
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "walk-pitch-4",
+        "endpoint": "anonymous-walk",
+        "blockIndex": 0,
+        "eventIndex": 4
+      },
+      "sequence": 13,
+      "inning": 1,
+      "half": "top",
+      "kind": "pitch",
+      "payload": {
+        "call": "ball"
+      },
+      "relayText": "5구 볼"
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e9",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 9
+      },
+      "sequence": 14,
+      "inning": 1,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a4",
+        "pitcherId": "hp1",
+        "result": "walk"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e10",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 10
+      },
+      "sequence": 15,
+      "inning": 1,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a5",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "half": "top",
+      "identity": {
+        "kind": "source",
+        "eventId": "play-result",
+        "endpoint": "anonymous-relay",
+        "blockIndex": 0,
+        "eventIndex": 0
+      },
+      "inning": 1,
+      "kind": "plate_result",
+      "observedStateAfter": {
+        "awayScore": 0,
+        "balls": 2,
+        "bases": [true, true, true],
+        "homeScore": 0,
+        "outs": 1,
+        "strikes": 2
+      },
+      "payload": {
+        "battedBallType": "ground_ball",
+        "batterId": "a5",
+        "isBunt": false,
+        "pitcherId": "hp1",
+        "result": "fielder_choice"
+      },
+      "relayText": "a5 : 유격수 앞 땅볼로 출루",
+      "sequence": 16
+    },
+    {
+      "half": "top",
+      "identity": {
+        "kind": "source",
+        "eventId": "movement-1",
+        "endpoint": "anonymous-relay",
+        "blockIndex": 0,
+        "eventIndex": 1
+      },
+      "inning": 1,
+      "kind": "runner_advance",
+      "observedStateAfter": {
+        "awayScore": 0,
+        "balls": 2,
+        "bases": [false, true, true],
+        "homeScore": 0,
+        "outs": 1,
+        "strikes": 2
+      },
+      "payload": {
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "play-result"
+        },
+        "fromBase": 1,
+        "outcome": "safe",
+        "runnerId": "a5",
+        "toBase": 2
+      },
+      "relayText": "1루주자 a5 : 실책으로 2루까지 진루",
+      "sequence": 17
+    },
+    {
+      "half": "top",
+      "identity": {
+        "kind": "source",
+        "eventId": "movement-2",
+        "endpoint": "anonymous-relay",
+        "blockIndex": 0,
+        "eventIndex": 2
+      },
+      "inning": 1,
+      "kind": "runner_advance",
+      "observedStateAfter": {
+        "awayScore": 0,
+        "balls": 2,
+        "bases": [false, true, true],
+        "homeScore": 0,
+        "outs": 1,
+        "strikes": 2
+      },
+      "payload": {
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "play-result"
+        },
+        "fromBase": 1,
+        "outcome": "safe",
+        "runnerId": "a4",
+        "toBase": 2
+      },
+      "relayText": "1루주자 a4 : 2루까지 진루",
+      "sequence": 18
+    },
+    {
+      "half": "top",
+      "identity": {
+        "kind": "source",
+        "eventId": "movement-3",
+        "endpoint": "anonymous-relay",
+        "blockIndex": 0,
+        "eventIndex": 3
+      },
+      "inning": 1,
+      "kind": "runner_advance",
+      "observedStateAfter": {
+        "awayScore": 0,
+        "balls": 2,
+        "bases": [false, true, true],
+        "homeScore": 0,
+        "outs": 1,
+        "strikes": 2
+      },
+      "payload": {
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "play-result"
+        },
+        "fromBase": 2,
+        "outcome": "safe",
+        "runnerId": "a4",
+        "toBase": 3
+      },
+      "relayText": "2루주자 a4 : 실책으로 3루까지 진루",
+      "sequence": 19
+    },
+    {
+      "half": "top",
+      "identity": {
+        "kind": "source",
+        "eventId": "movement-4",
+        "endpoint": "anonymous-relay",
+        "blockIndex": 0,
+        "eventIndex": 4
+      },
+      "inning": 1,
+      "kind": "runner_advance",
+      "observedStateAfter": {
+        "awayScore": 0,
+        "balls": 2,
+        "bases": [false, true, true],
+        "homeScore": 0,
+        "outs": 1,
+        "strikes": 2
+      },
+      "payload": {
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "play-result"
+        },
+        "fromBase": 2,
+        "outcome": "safe",
+        "runnerId": "a2",
+        "toBase": 3
+      },
+      "relayText": "2루주자 a2 : 3루까지 진루",
+      "sequence": 20
+    },
+    {
+      "half": "top",
+      "identity": {
+        "kind": "source",
+        "eventId": "wrong-runner",
+        "endpoint": "anonymous-relay",
+        "blockIndex": 0,
+        "eventIndex": 5
+      },
+      "inning": 1,
+      "kind": "runner_advance",
+      "observedStateAfter": {
+        "awayScore": 1,
+        "balls": 2,
+        "bases": [false, true, true],
+        "homeScore": 0,
+        "outs": 1,
+        "strikes": 2
+      },
+      "payload": {
+        "runnerId": "a1",
+        "fromBase": 3,
+        "toBase": 4,
+        "outcome": "scored",
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "play-result"
+        }
+      },
+      "relayText": "3루주자 a2 : 실책으로 홈인",
+      "sequence": 21
+    },
+    {
+      "half": "top",
+      "identity": {
+        "kind": "source",
+        "eventId": "third-runner-home",
+        "endpoint": "anonymous-relay",
+        "blockIndex": 0,
+        "eventIndex": 6
+      },
+      "inning": 1,
+      "kind": "runner_advance",
+      "observedStateAfter": {
+        "awayScore": 2,
+        "balls": 2,
+        "bases": [false, true, true],
+        "homeScore": 0,
+        "outs": 1,
+        "strikes": 2
+      },
+      "payload": {
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "play-result"
+        },
+        "fromBase": 3,
+        "outcome": "scored",
+        "runnerId": "a1",
+        "toBase": 4
+      },
+      "relayText": "3루주자 a1 : 실책으로 홈인 (유격수 송구 실책->포수)",
+      "sequence": 22
+    }
+  ],
+  "trackingCandidates": [],
+  "officialRecords": {
+    "batters": [],
+    "pitchers": []
+  }
+}

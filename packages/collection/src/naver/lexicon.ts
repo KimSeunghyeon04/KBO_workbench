@@ -81,7 +81,11 @@ export function kindDecision(row: CanonicalNaverRow): ParseDecision<StagingRelay
     );
   }
   const text = row.relayText ?? "";
-  if (row.numericType === 7 && /피치클락.*(투수|타자).*위반.*(볼|스트라이크)/.test(text)) {
+  if (
+    row.numericType === 7 &&
+    /피치클락.*(?:투수|타자|포수).*위반.*(?:볼|스트라이크)/.test(text) &&
+    !/경고/.test(text)
+  ) {
     candidates.push(candidate("pitch", "kind.text.pitch_clock", 450, text));
   }
   if (row.numericType === 7 && /투수판.*이탈|노피치|no.?pitch/i.test(text)) {
@@ -117,10 +121,12 @@ export function plateResultDecision(row: CanonicalNaverRow): ParseDecision<Plate
     candidates.push(candidate("sacrifice_fly", "result.text.sacrifice_fly", 620, text));
   }
   const explicit = row.resultCode === null ? undefined : resultAliases[row.resultCode];
-  if (
-    /(?:땅볼|야수선택).*로출루/.test(text) &&
-    (explicit === undefined || explicit === "field_out" || explicit === "fielder_choice")
-  ) {
+  const resultText = text.replace(/\([^)]*\)/g, "");
+  const coarseResult =
+    explicit === undefined || explicit === "field_out" || explicit === "fielder_choice";
+  // 명시적 실책 출루는 일반 출루보다 구체적이다. 복합 결과끼리는 기존 specificity를 유지한다.
+  const textResultStrength = coarseResult && /실책으로출루/.test(resultText) ? 600 : 300;
+  if (/(?:땅볼|야수선택).*로출루/.test(resultText) && coarseResult) {
     candidates.push(candidate("fielder_choice", "result.text.fielder_choice_reach", 600, text));
   }
   if (explicit !== undefined) {
@@ -147,7 +153,14 @@ export function plateResultDecision(row: CanonicalNaverRow): ParseDecision<Plate
   for (const [pattern, value, ruleId, specificity] of patterns) {
     if (pattern.test(text)) {
       candidates.push(
-        candidate(value, `result.text.${ruleId}`, 300, text, "exact_text", specificity),
+        candidate(
+          value,
+          `result.text.${ruleId}`,
+          textResultStrength,
+          text,
+          "exact_text",
+          specificity,
+        ),
       );
     }
   }
@@ -358,12 +371,21 @@ export function substitutionRole(
   textValue: string | null,
   positionChange: boolean,
 ): "batter" | "runner" | "pitcher" | "fielder" {
-  if (positionChange) return "fielder";
-  const compactText = `${roleHint} ${textValue ?? ""}`.toLowerCase();
-  if (/투수|pitcher/.test(compactText)) return "pitcher";
-  if (/대타|타자/.test(roleHint.toLowerCase())) return "batter";
-  if (/대주자|주자/.test(roleHint.toLowerCase())) return "runner";
+  const incoming =
+    incomingFieldPosition(textValue) ?? substitutionSegments(textValue)?.incoming ?? roleHint;
+  const hint = (positionChange ? incoming : roleHint || incoming).toLowerCase();
+  if (/투수|pitcher|^p$/.test(hint)) return "pitcher";
+  if (!positionChange && /대타|타자|batter/.test(hint)) return "batter";
+  if (!positionChange && /대주자|주자|runner/.test(hint)) return "runner";
   return "fielder";
+}
+
+export function incomingFieldPosition(textValue: string | null): string | null {
+  return (
+    /:\s*(투수|포수|[123]루수|유격수|좌익수|중견수|우익수|지명타자)(?=\s|\(|로|$)/.exec(
+      textValue ?? "",
+    )?.[1] ?? null
+  );
 }
 
 export function textIndicatesPositionChange(textValue: string | null): boolean {
@@ -431,12 +453,20 @@ export function reviewDecision(
 
 export function administrativeCode(
   row: CanonicalNaverRow,
-): "announcement" | "mound_visit" | "break" | "footer" | "other" {
-  const allowed = ["announcement", "mound_visit", "break", "footer", "other"] as const;
+): "announcement" | "mound_visit" | "break" | "footer" | "called_game" | "other" {
+  const allowed = [
+    "announcement",
+    "mound_visit",
+    "break",
+    "footer",
+    "called_game",
+    "other",
+  ] as const;
   if (allowed.includes(row.administrativeCode as (typeof allowed)[number])) {
     return row.administrativeCode as (typeof allowed)[number];
   }
   const text = row.relayText ?? "";
+  if (/(?:강우|일몰)?\s*콜드\s*(?:게임|경기)?\s*(?:선언|종료)/.test(text)) return "called_game";
   if (/마운드\s*방문/.test(text)) return "mound_visit";
   if (/경기\s*종료|승리투수|패전투수|무승부/.test(text)) return "footer";
   if (/휴식|정비|중단/.test(text)) return "break";

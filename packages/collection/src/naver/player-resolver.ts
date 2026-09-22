@@ -146,30 +146,81 @@ export function resolveRunner(
   const playOriginBase = context.basesTrusted[key]
     ? (context.platePlay[key]?.originBases[fromBase - 1] ?? null)
     : null;
+  const name = runnerName(row.relayText);
+  const matchingIds =
+    name === null ? null : (context.players.idsByNameAndSide.get(nameKey(side, name)) ?? []);
+  if (
+    matchingIds !== null &&
+    (matchingIds.length === 0 || (row.runnerId !== null && !matchingIds.includes(row.runnerId)))
+  ) {
+    return {
+      status: "unresolved",
+      ruleId: "runner.explicit_name_conflict",
+      reason: "명시된 주자 이름을 선수 ID와 일치시킬 수 없습니다.",
+      evidence: [],
+    };
+  }
   const candidates: DecisionCandidate<string>[] = [];
   addIdentityCandidate(candidates, row.runnerId, "runner.structured", 700, "structured");
+  // 플레이 전체의 최종 관찰은 이 행에서 명시한 주자와 일치할 때만 식별 근거다.
+  const applicable = (id: string | null): string | null =>
+    id !== null && (matchingIds === null || matchingIds.includes(id)) ? id : null;
   addIdentityCandidate(
     candidates,
-    sourceDestination,
+    applicable(sourceDestination),
     "runner.source_state.destination",
     650,
     "source_state",
   );
-  const name = runnerName(row.relayText);
-  if (name !== null) {
-    const matchingIds = context.players.idsByNameAndSide.get(nameKey(side, name)) ?? [];
-    const strength = matchingIds.length === 1 ? 600 : 400;
-    addNameCandidates(candidates, name, side, context.players, "runner.name", strength);
-  }
+  if (name !== null)
+    addNameCandidates(
+      candidates,
+      name,
+      side,
+      context.players,
+      "runner.name",
+      matchingIds?.length === 1 ? 600 : 400,
+    );
   addIdentityCandidate(
     candidates,
-    observedBase,
+    applicable(observedBase),
     "runner.source_state.previous",
     550,
     "source_state",
   );
-  addIdentityCandidate(candidates, playOriginBase, "runner.plate_play_origin", 575, "context");
-  addIdentityCandidate(candidates, inferredBase, "runner.ledger_context", 500, "context");
+  addIdentityCandidate(
+    candidates,
+    applicable(playOriginBase),
+    "runner.plate_play_origin",
+    575,
+    "context",
+  );
+  const play = context.basesTrusted[key] ? context.platePlay[key] : null;
+  const placement = play?.batterPlacement;
+  if (placement !== undefined && placement !== null) {
+    const lastMove = play?.movements.filter((move) => move.runnerId === placement.batterId).at(-1);
+    const currentBase =
+      lastMove === undefined
+        ? placement.destination
+        : lastMove.outcome === "safe"
+          ? lastMove.toBase
+          : null;
+    if (currentBase === fromBase)
+      addIdentityCandidate(
+        candidates,
+        applicable(placement.batterId),
+        "runner.plate_play_batter",
+        575,
+        "context",
+      );
+  }
+  addIdentityCandidate(
+    candidates,
+    applicable(inferredBase),
+    "runner.ledger_context",
+    500,
+    "context",
+  );
   return decide(candidates, "runner.identity_unresolved", "주자를 유일하게 식별할 수 없습니다.");
 }
 
@@ -221,7 +272,12 @@ export function resolveSubstitutionPlayers(
       "structured",
     );
   }
-  const activeOutgoingPitcher = role === "pitcher" ? context.currentPitcher[side] : null;
+  const activeOutgoingPitcher =
+    role === "pitcher"
+      ? context.currentPitcher[side]
+      : role === "batter"
+        ? context.currentBatter[side]
+        : null;
   if (
     activeOutgoingPitcher !== null &&
     playerMentionedInSegment(
@@ -233,7 +289,9 @@ export function resolveSubstitutionPlayers(
     addIdentityCandidate(
       outgoingCandidates,
       activeOutgoingPitcher,
-      "substitution.outgoing.active_pitcher",
+      role === "pitcher"
+        ? "substitution.outgoing.active_pitcher"
+        : "substitution.outgoing.active_batter",
       550,
       "context",
     );

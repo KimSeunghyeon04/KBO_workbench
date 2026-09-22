@@ -7,6 +7,32 @@ import { readFile } from "node:fs/promises";
 import { sanitizedNaverBundle } from "../helpers/naver.js";
 
 describe("Naver strict mapper", () => {
+  it("discards provider zone fields at collection while retaining trajectory and source bundle", async () => {
+    const bundle = await mutableBundle();
+    const blocks = (
+      bundle.payloads.relay_001 as {
+        result: {
+          textRelayData: { textRelays: Array<{ ptsOptions?: Array<Record<string, unknown>> }> };
+        };
+      }
+    ).result.textRelayData.textRelays;
+    const tracking = blocks[0]?.ptsOptions?.[0];
+    if (tracking === undefined) throw new Error("missing fixture tracking");
+    tracking.topSz = 0.375;
+    tracking.bottomSz = 1.5;
+    const first = mapNaverGame(bundle);
+    expect(first.document.trackingCandidates[0]).not.toHaveProperty("topSz");
+    expect(first.document.trackingCandidates[0]).not.toHaveProperty("bottomSz");
+    expect(first.document.trackingCandidates[0]).toMatchObject({
+      crossPlateX: 0.1,
+      resolution: { kind: "linked" },
+    });
+    tracking.topSz = 100;
+    tracking.bottomSz = -10;
+    expect(mapNaverGame(bundle).document.trackingCandidates).toEqual(
+      first.document.trackingCandidates,
+    );
+  });
   it("sanitized bundle을 strict 문서로 mapping한다", async () => {
     const mapped = mapNaverGame(await sanitizedNaverBundle());
     expect(mapped.findings).toEqual([]);

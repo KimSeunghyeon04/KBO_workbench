@@ -114,7 +114,7 @@ describe("평면 원장 보정 명령", () => {
     );
   });
 
-  it("source 행 교체가 원문과 observedStateAfter를 보존한다", async () => {
+  it("source 행 문구 수정은 반영하고 source identity와 observedStateAfter는 보존한다", async () => {
     const base = await golden();
     const document = parseStagingGameDocumentV2({
       ...base,
@@ -136,7 +136,7 @@ describe("평면 원장 보정 명령", () => {
 
     expect(corrected.document.events[7]).toMatchObject({
       identity: document.events[7]?.identity,
-      relayText: document.events[7]?.relayText,
+      relayText: "바꾸려 한 원문",
       observedStateAfter: { balls: 1, strikes: 2, outs: 0 },
     });
   });

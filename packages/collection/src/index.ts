@@ -1,5 +1,6 @@
 export { inspectPlaywrightBrowser } from "./browser-status.js";
 export { NaverGameCollector } from "./collector.js";
+
 export { NaverEndpoints, type Endpoint } from "./endpoints.js";
 export {
   CollectionCancelledError,
@@ -77,6 +78,7 @@ export {
   parseSchedulePayload,
   PlaywrightScheduleExplorer,
   type SchedulePageFetcher,
+  type SchedulePageObserver,
   type SchedulePagePayload,
 } from "./schedule.js";
 export type {

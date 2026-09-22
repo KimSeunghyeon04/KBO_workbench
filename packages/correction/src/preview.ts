@@ -13,11 +13,24 @@ export function buildCorrectionPreview(
 ): CorrectionPreview {
   const beforeCodes = before.findings.map((finding) => finding.code);
   const afterCodes = after.findings.map((finding) => finding.code);
+  const blockingKeys = (replay: ReplayResult) =>
+    replay.findings
+      .filter((finding) => finding.severity === "blocking")
+      .map((finding) => {
+        const stable = Object.fromEntries(
+          Object.entries(finding).filter(([key]) => key !== "eventSequence"),
+        );
+        return canonicalStringify(stable);
+      });
+  const beforeBlocking = blockingKeys(before);
+  const afterBlocking = blockingKeys(after);
   return {
     beforeDocumentHash: stagingDocumentHash(beforeDocument),
     afterDocumentHash: stagingDocumentHash(afterDocument),
     beforeBlockingCount: count(before, "blocking"),
     afterBlockingCount: count(after, "blocking"),
+    resolvedBlockingCount: difference(beforeBlocking, afterBlocking).length,
+    newBlockingCount: difference(afterBlocking, beforeBlocking).length,
     beforeWarningCount: count(before, "warning"),
     afterWarningCount: count(after, "warning"),
     eventCountDelta: afterDocument.events.length - beforeDocument.events.length,

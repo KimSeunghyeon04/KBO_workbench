@@ -4,6 +4,7 @@ import { Value } from "@sinclair/typebox/value";
 import {
   StagingGameDocumentV2Schema,
   StagingRelayEventSchema,
+  ObservedStateSchema,
   OfficialBatterRecordSchema,
   OfficialPitcherRecordSchema,
   PitchCallSchema,
@@ -60,6 +61,15 @@ export const MoveEventCommandSchema = Type.Object(
     kind: Type.Literal("move_event"),
     eventId: EventIdSchema,
     beforeEventId: Type.Union([EventIdSchema, Type.Null()]),
+  },
+  strict,
+);
+export const UpdateObservedStateCommandSchema = Type.Object(
+  {
+    ...CommandBase,
+    kind: Type.Literal("update_observed_state"),
+    eventId: EventIdSchema,
+    observedStateAfter: ObservedStateSchema,
   },
   strict,
 );
@@ -152,6 +162,7 @@ export const AtomicCorrectionCommandSchema = Type.Union([
   AddEventCommandSchema,
   DeleteEventCommandSchema,
   ReplaceEventCommandSchema,
+  UpdateObservedStateCommandSchema,
   MoveEventCommandSchema,
   UpdateRosterPlayerCommandSchema,
   UpdateRosterPositionCommandSchema,
@@ -230,6 +241,9 @@ export const CorrectionEventContextSchema = Type.Object(
     applied: Type.Boolean(),
     before: CorrectionEventStateSchema,
     after: CorrectionEventStateSchema,
+    runnerMovement: Type.Optional(
+      Type.Object({ runnerId: IdSchema, responsiblePitcherId: IdSchema }, strict),
+    ),
     pitch: Type.Optional(
       Type.Object(
         {
@@ -393,6 +407,8 @@ export const CorrectionPreviewSchema = Type.Object(
     beforeDocumentHash: HashSchema,
     afterDocumentHash: HashSchema,
     beforeBlockingCount: Type.Integer({ minimum: 0 }),
+    resolvedBlockingCount: Type.Optional(Type.Integer({ minimum: 0 })),
+    newBlockingCount: Type.Optional(Type.Integer({ minimum: 0 })),
     afterBlockingCount: Type.Integer({ minimum: 0 }),
     beforeWarningCount: Type.Integer({ minimum: 0 }),
     afterWarningCount: Type.Integer({ minimum: 0 }),

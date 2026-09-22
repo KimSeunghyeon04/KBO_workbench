@@ -9,6 +9,21 @@ playwright-report/
 .env
 .data/
 .backups/
+analysis/validation/
+analysis/deployment/
+analysis/commit-preparation/
+__pycache__/
+*.py[cod]
+# Rebuildable research inputs and large checkpoints stay on the analysis machine.
+analysis/park-movement-2020-2025/**/*.pkl
+analysis/park-movement-2020-2025/**/*.gz
+analysis/park-movement-2020-2025/**/coefficient-checkpoints.json
+analysis/park-movement-2020-2025/**/verification-input.json
+analysis/park-movement-2020-2025/**/performance-application-input.json
+analysis/park-movement-2020-2025/manifest.csv
+analysis/park-movement-2020-2025/snapshot.json
+analysis/park-movement-2020-2025/calibration-search/cells-source.txt
+analysis/park-movement-2020-2025/calibration-search/run.json
 *.log
 .DS_Store
 kbo_workbench_web_implementation_spec

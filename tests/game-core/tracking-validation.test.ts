@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { readFile } from "node:fs/promises";
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 
 import {
   parseStagingGameDocumentV2,
@@ -11,6 +14,39 @@ import { compileStagingGameDocumentV2 } from "@kbo/game-core";
 import { makeDocument } from "../helpers/game-document.js";
 
 describe("V2 tracking resolution", () => {
+  it("retains all five real anomalous trajectories without a zone finding", async () => {
+    const rows = Value.Decode(
+      Type.Array(Type.Record(Type.String(), Type.Number())),
+      JSON.parse(
+        await readFile("tests/fixtures/correction/inverted-tracking-zone.anonymized.json", "utf8"),
+      ) as unknown,
+    );
+    expect(rows).toHaveLength(5);
+    for (const row of rows) {
+      const t = { ...candidate("t1", 0, "e2", 1, { kind: "linked", pitchEventId: "e2" }), ...row };
+      const document = withCandidates([t]);
+      expect(codes(document).filter((c) => c.includes("strike_zone"))).toEqual([]);
+      expect(document.trackingCandidates[0]?.crossPlateX).toBe(row.crossPlateX);
+    }
+  });
+  it("legacy inverted provider zones neither block pitches nor distinguish duplicates", () => {
+    const linked = candidate("t1", 0, "e2", 1, { kind: "linked", pitchEventId: "e2" });
+    const base = withCandidates([linked]);
+    const inverted = withCandidates([{ ...linked, topSz: 0.375, bottomSz: 1.5 }]);
+    expect(compileStagingGameDocumentV2(inverted)).toEqual(compileStagingGameDocumentV2(base));
+    const duplicate = withCandidates([
+      linked,
+      {
+        ...linked,
+        trackingId: "t2",
+        sequence: 1,
+        topSz: 0.375,
+        bottomSz: 1.5,
+        resolution: { kind: "duplicate", canonicalTrackingId: "t1" },
+      },
+    ]);
+    expect(codes(duplicate)).not.toContain("source.tracking.invalid_duplicate_resolution");
+  });
   it("pending 후보는 값이 같아도 대표 선택 요구 대신 개별 미해결로 차단한다", () => {
     const document = withCandidates([
       candidate("t1", 0, "e2", 1, { kind: "pending" }),

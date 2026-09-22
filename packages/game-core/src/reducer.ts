@@ -10,7 +10,7 @@ import type { CompileContext, MutableState } from "./compiler/model.js";
 import { compileBaserunnerLines, compilePitchFacts } from "./compiler/derived-facts.js";
 import { applyLedgerEvent } from "./compiler/event-transition.js";
 import { comparePlayerLine } from "./compiler/statistics.js";
-import { addFinding, compareFindings } from "./compiler/findings.js";
+import { addFinding, compareFindings, findingFor } from "./compiler/findings.js";
 import {
   compareFinalObservedScore,
   compareIndependentPlayObservedState,
@@ -44,6 +44,13 @@ export function compileStagingGameDocumentV2(input: unknown): ReplayResult {
   };
   const links: PlayIndex = buildPlayIndex(document);
   const hitByPitchTerminalPitchIds = findHitByPitchTerminalPitchIds(document.events);
+  const buntStrikeoutPitchIds = new Set(
+    document.events.flatMap((event, index) => {
+      if (event.kind !== "plate_result" || event.payload.result !== "strikeout") return [];
+      const pitch = findTerminalPitchForPlateResult(document.events, index);
+      return pitch?.payload.call === "foul_bunt" ? [pitch.identity.eventId] : [];
+    }),
+  );
   let state = initialState();
   const frames: ReplayFrame[] = [];
   const plays: CompiledPlay[] = [];
@@ -116,6 +123,24 @@ export function compileStagingGameDocumentV2(input: unknown): ReplayResult {
           local,
         );
       } else if (event.kind === "pitch") {
+        const terminalBuntDisplay =
+          before.strikes === 2 &&
+          state.strikes === 3 &&
+          event.observedStateAfter?.strikes === 2 &&
+          buntStrikeoutPitchIds.has(eventId);
+        if (terminalBuntDisplay) {
+          local.findings.push({
+            ...findingFor(
+              local,
+              event,
+              "source_terminal_bunt_count_display",
+              "source",
+              "번트 파울 뒤 삼진 결과가 확인되어 원천의 2스트라이크 종결 표기를 보존했습니다.",
+              [{ field: "strikes", expected: 2, actual: 3 }],
+            ),
+            severity: "warning",
+          });
+        }
         // 원천의 투구 행 snapshot은 다음 결과 행의 아웃·주자·점수를 미리 담는 경우가
         // 있다. 투구 자체로 확정되는 카운트만 비교하고, 나머지는 play 종료 지점에서
         // 비교한다.
@@ -125,6 +150,7 @@ export function compileStagingGameDocumentV2(input: unknown): ReplayResult {
           includeBalls:
             event.payload.call !== "hit_by_pitch" &&
             !hitByPitchTerminalPitchIds.has(event.identity.eventId),
+          includeStrikes: !terminalBuntDisplay,
           includeBases: false,
           includeOuts: false,
           includeScore: false,
@@ -203,14 +229,39 @@ function findHitByPitchTerminalPitchIds(events: readonly StagingRelayEvent[]): R
 }
 
 function finishDocument(state: MutableState, context: CompileContext): void {
-  if (!state.halfActive) return;
   const walkOff =
     state.half === "bottom" &&
     state.inning >= context.document.metadata.scheduledInnings &&
     state.homeScore > state.awayScore;
-  const calledGame =
+  const declarations = context.document.events.filter(
+    (event) => event.kind === "administrative" && event.payload.code === "called_game",
+  );
+  const declaration = declarations.at(-1);
+  const validDeclaration =
+    state.halfActive &&
+    declaration !== undefined &&
     context.document.metadata.status === "final" &&
-    state.inning < context.document.metadata.scheduledInnings;
+    declaration.inning === state.inning &&
+    declaration.half === state.half &&
+    context.document.events
+      .slice(declaration.sequence + 1)
+      .every((event) => event.kind === "administrative" || event.kind === "review");
+  for (const entry of declarations) {
+    if (entry !== declaration || !validDeclaration) {
+      addFinding(
+        context,
+        entry,
+        "invalid_called_game_declaration",
+        "source",
+        "콜드게임 종료 선언은 종료 경기의 마지막 반이닝에 있어야 하며 이후 경기 진행 행이 없어야 합니다.",
+      );
+    }
+  }
+  if (!state.halfActive) return;
+  const calledGame =
+    validDeclaration ||
+    (context.document.metadata.status === "final" &&
+      state.inning < context.document.metadata.scheduledInnings);
   if (state.activePlateAppearance !== null) {
     const reason =
       state.outs === 3
@@ -223,7 +274,9 @@ function finishDocument(state: MutableState, context: CompileContext): void {
     const endEventId =
       reason === "end_of_document"
         ? null
-        : (context.document.events.at(-1)?.identity.eventId ?? null);
+        : reason === "called_game" && validDeclaration
+          ? (declaration?.identity.eventId ?? null)
+          : (context.document.events.at(-1)?.identity.eventId ?? null);
     context.plateAppearances.push(partialPlateAppearance(state, endEventId, reason));
   }
   if (context.document.metadata.status === "final" && state.outs < 3 && !walkOff && !calledGame) {

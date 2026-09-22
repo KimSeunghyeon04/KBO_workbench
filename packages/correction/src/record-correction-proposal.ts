@@ -1,5 +1,6 @@
 import {
   recordCorrectionSupportKind,
+  parseStagingGameDocumentV2,
   type AtomicCorrectionCommand,
   type CorrectionBatch,
   type CorrectionPreview,
@@ -10,9 +11,9 @@ import {
   type RecordCorrectionProposalChange,
   type StagingGameDocumentV2,
 } from "@kbo/contracts";
-import { compileStagingGameDocumentV2 } from "@kbo/game-core";
+import { compileStagingGameDocumentV2, type ReplayResult } from "@kbo/game-core";
 
-import { applyCorrectionCommand } from "./commands.js";
+import { applyCompiledCorrectionCommand } from "./commands.js";
 
 export interface RecordCorrectionProposalBinding {
   readonly eventId: string;
@@ -76,10 +77,29 @@ export function buildRecordCorrectionBatchProposal(
   notice: RecordCorrectionNotice,
   binding: RecordCorrectionProposalBinding,
 ): BuiltRecordCorrectionProposal {
+  return createRecordCorrectionProposalBuilder(document)(notice, binding);
+}
+
+export function createRecordCorrectionProposalBuilder(input: StagingGameDocumentV2) {
+  // Own a strict decoded snapshot; callers cannot pair a different ledger with this compile.
+  const document = parseStagingGameDocumentV2(structuredClone(input));
+  const replay = compileStagingGameDocumentV2(document);
+  return (
+    notice: RecordCorrectionNotice,
+    binding: RecordCorrectionProposalBinding,
+  ): BuiltRecordCorrectionProposal =>
+    structuredClone(buildProposal(document, replay, notice, binding));
+}
+
+function buildProposal(
+  document: StagingGameDocumentV2,
+  replay: ReplayResult,
+  notice: RecordCorrectionNotice,
+  binding: RecordCorrectionProposalBinding,
+): BuiltRecordCorrectionProposal {
   const reasons: string[] = [];
   const changes: RecordCorrectionProposalChange[] = [];
   const commands: AtomicCorrectionCommand[] = [];
-  const replay = compileStagingGameDocumentV2(document);
   const event = document.events.find((item) => item.identity.eventId === binding.eventId);
   if (event?.kind !== "plate_result") {
     return blocked("선택한 이벤트가 타석 결과가 아닙니다.", changes);
@@ -236,7 +256,10 @@ export function buildRecordCorrectionBatchProposal(
             "already_applied",
           ),
         );
-      } else if (value !== stat.beforeValue) {
+      } else if (
+        value !== stat.beforeValue &&
+        (current[descriptor.field] !== undefined || descriptor.omittedValue === null)
+      ) {
         reasons.push(`${stat.rawStatName} 타자 공식 기록이 정정 전·후 어느 값과도 다릅니다.`);
         changes.push(
           change("official_batter", playerId, descriptor.field, value, stat.afterValue, "conflict"),
@@ -244,7 +267,14 @@ export function buildRecordCorrectionBatchProposal(
       } else {
         batterRecords.set(playerId, { ...current, [descriptor.field]: stat.afterValue });
         changes.push(
-          change("official_batter", playerId, descriptor.field, value, stat.afterValue, "change"),
+          change(
+            "official_batter",
+            playerId,
+            descriptor.field,
+            current[descriptor.field] === undefined && value !== stat.beforeValue ? null : value,
+            stat.afterValue,
+            "change",
+          ),
         );
       }
     } else if (stat.scope === "pitcher") {
@@ -270,7 +300,10 @@ export function buildRecordCorrectionBatchProposal(
             "already_applied",
           ),
         );
-      } else if (value !== stat.beforeValue) {
+      } else if (
+        value !== stat.beforeValue &&
+        (current[descriptor.field] !== undefined || descriptor.omittedValue === null)
+      ) {
         reasons.push(`${stat.rawStatName} 투수 공식 기록이 정정 전·후 어느 값과도 다릅니다.`);
         changes.push(
           change(
@@ -285,7 +318,14 @@ export function buildRecordCorrectionBatchProposal(
       } else {
         pitcherRecords.set(playerId, { ...current, [descriptor.field]: stat.afterValue });
         changes.push(
-          change("official_pitcher", playerId, descriptor.field, value, stat.afterValue, "change"),
+          change(
+            "official_pitcher",
+            playerId,
+            descriptor.field,
+            current[descriptor.field] === undefined && value !== stat.beforeValue ? null : value,
+            stat.afterValue,
+            "change",
+          ),
         );
       }
     }
@@ -322,7 +362,7 @@ export function buildRecordCorrectionBatchProposal(
     commands,
   };
   try {
-    const result = applyCorrectionCommand(document, batch);
+    const result = applyCompiledCorrectionCommand(document, replay, batch);
     const beforeBlocking = new Set(
       replay.findings.filter((finding) => finding.severity === "blocking").map(findingKey),
     );

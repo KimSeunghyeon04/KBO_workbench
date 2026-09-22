@@ -110,7 +110,11 @@ export function transitionMovements(
         "한 플레이에서 같은 출발 베이스를 두 번 사용했습니다.",
       );
     }
-    origins.add(originKey);
+    // 같은 베이스에 살아 돌아온 원천 행은 그 베이스를 떠난 이동이 아니다.
+    // 뒤따르는 진루는 허용하되 두 번 실제로 떠나는 중복 이동은 계속 거부한다.
+    if (movement.outcome !== "safe" || movement.toBase !== movement.fromBase) {
+      origins.add(originKey);
+    }
     const occupant = bases[movement.fromBase - 1];
     if (currentBaseByRunner.get(movement.runnerId) !== movement.fromBase) {
       return failure("runner_not_at_origin", "주자가 지정한 출발 베이스에 없습니다.", [

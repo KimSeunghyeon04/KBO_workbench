@@ -8,6 +8,7 @@ import {
   battingOrderFromPosition,
   buntDecision,
   independentReasonDecision,
+  incomingFieldPosition,
   inferredBatterDestination,
   kindDecision,
   pitchCallDecision,
@@ -308,7 +309,11 @@ function emitSubstitution(
 ): EmittedRelayRow {
   const segments = substitutionSegments(row.relayText);
   const roleHint =
-    row.roleHint ?? row.playerChange.incomingPosition ?? segments?.incoming ?? row.relayText ?? "";
+    row.playerChange.incomingPosition ??
+    row.roleHint ??
+    incomingFieldPosition(row.relayText) ??
+    segments?.incoming ??
+    "";
   const positionChange =
     row.playerChange.type === "shift" || textIndicatesPositionChange(row.relayText);
   const role = substitutionRole(roleHint, row.relayText, positionChange);
@@ -340,7 +345,8 @@ function emitSubstitution(
     row.playerChange.battingOrder ??
     battingOrderFromPosition(row.playerChange.outgoingPosition) ??
     battingOrderForPlayer(context.players, side, outgoingPlayerId ?? null);
-  const fieldPosition = row.fieldPosition ?? row.playerChange.incomingPosition;
+  const fieldPosition =
+    row.fieldPosition ?? row.playerChange.incomingPosition ?? incomingFieldPosition(row.relayText);
   return {
     event: {
       ...base,

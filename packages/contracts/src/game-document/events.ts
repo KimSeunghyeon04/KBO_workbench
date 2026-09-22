@@ -234,6 +234,7 @@ export const AdministrativeEventSchema = Type.Object(
           Type.Literal("mound_visit"),
           Type.Literal("break"),
           Type.Literal("footer"),
+          Type.Literal("called_game"),
           Type.Literal("other"),
         ]),
       },

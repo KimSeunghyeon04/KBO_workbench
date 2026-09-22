@@ -1,0 +1,1900 @@
+{
+  "events": [
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 13,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:0",
+        "eventIndex": 0,
+        "kind": "source",
+        "sourceEventId": "374"
+      },
+      "inning": 1,
+      "kind": "half_inning_start",
+      "payload": {},
+      "relayText": "7회초 원정팀 공격",
+      "sequence": 0
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 12,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:1",
+        "eventIndex": 0,
+        "kind": "source",
+        "sourceEventId": "375"
+      },
+      "inning": 1,
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a6",
+        "pitcherId": "h23"
+      },
+      "relayText": "5번타자 원정선수6",
+      "sequence": 1
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 12,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:2",
+        "eventIndex": 1,
+        "kind": "source",
+        "sourceEventId": "376"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a6",
+        "call": "ball",
+        "pitchType": "포크",
+        "pitcherId": "h23",
+        "speedKph": 126
+      },
+      "relayText": "1구 볼",
+      "sequence": 2
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 12,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:3",
+        "eventIndex": 2,
+        "kind": "source",
+        "sourceEventId": "377"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a6",
+        "call": "called_strike",
+        "pitchType": "직구",
+        "pitcherId": "h23",
+        "speedKph": 139
+      },
+      "relayText": "2구 스트라이크",
+      "sequence": 3
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 12,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:4",
+        "eventIndex": 3,
+        "kind": "source",
+        "sourceEventId": "378"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a6",
+        "call": "ball",
+        "pitchType": "직구",
+        "pitcherId": "h23",
+        "speedKph": 139
+      },
+      "relayText": "3구 볼",
+      "sequence": 4
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 12,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:5",
+        "eventIndex": 4,
+        "kind": "source",
+        "sourceEventId": "379"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a6",
+        "call": "ball",
+        "pitchType": "직구",
+        "pitcherId": "h23",
+        "speedKph": 138
+      },
+      "relayText": "4구 볼",
+      "sequence": 5
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 12,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:6",
+        "eventIndex": 5,
+        "kind": "source",
+        "sourceEventId": "380"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a6",
+        "call": "in_play",
+        "pitchType": "직구",
+        "pitcherId": "h23",
+        "speedKph": 140
+      },
+      "relayText": "5구 타격",
+      "sequence": 6
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 12,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:7",
+        "eventIndex": 6,
+        "kind": "source",
+        "sourceEventId": "381"
+      },
+      "inning": 1,
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a6",
+        "creditedRbi": 1,
+        "pitcherId": "h23",
+        "result": "home_run"
+      },
+      "relayText": "원정선수6 : 좌익수 뒤 홈런 (홈런거리:115M)",
+      "sequence": 7
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 11,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:8",
+        "eventIndex": 0,
+        "kind": "source",
+        "sourceEventId": "382"
+      },
+      "inning": 1,
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a7",
+        "pitcherId": "h23"
+      },
+      "relayText": "6번타자 원정선수7",
+      "sequence": 8
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 11,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:9",
+        "eventIndex": 1,
+        "kind": "source",
+        "sourceEventId": "383"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a7",
+        "call": "ball",
+        "pitchType": "직구",
+        "pitcherId": "h23",
+        "speedKph": 138
+      },
+      "relayText": "1구 볼",
+      "sequence": 9
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 11,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:10",
+        "eventIndex": 2,
+        "kind": "source",
+        "sourceEventId": "384"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a7",
+        "call": "ball",
+        "pitchType": "직구",
+        "pitcherId": "h23",
+        "speedKph": 139
+      },
+      "relayText": "2구 볼",
+      "sequence": 10
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 11,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:11",
+        "eventIndex": 3,
+        "kind": "source",
+        "sourceEventId": "385"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a7",
+        "call": "ball",
+        "pitchType": "직구",
+        "pitcherId": "h23",
+        "speedKph": 139
+      },
+      "relayText": "3구 볼",
+      "sequence": 11
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 11,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:12",
+        "eventIndex": 4,
+        "kind": "source",
+        "sourceEventId": "386"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a7",
+        "call": "called_strike",
+        "pitchType": "직구",
+        "pitcherId": "h23",
+        "speedKph": 139
+      },
+      "relayText": "4구 스트라이크",
+      "sequence": 12
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 11,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:13",
+        "eventIndex": 5,
+        "kind": "source",
+        "sourceEventId": "387"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a7",
+        "call": "foul",
+        "pitchType": "직구",
+        "pitcherId": "h23",
+        "speedKph": 138
+      },
+      "relayText": "5구 파울",
+      "sequence": 13
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 11,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:14",
+        "eventIndex": 6,
+        "kind": "source",
+        "sourceEventId": "388"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a7",
+        "call": "ball",
+        "pitchType": "슬라이더",
+        "pitcherId": "h23",
+        "speedKph": 126
+      },
+      "relayText": "6구 볼",
+      "sequence": 14
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 11,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:15",
+        "eventIndex": 7,
+        "kind": "source",
+        "sourceEventId": "389"
+      },
+      "inning": 1,
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a7",
+        "pitcherId": "h23",
+        "result": "walk"
+      },
+      "relayText": "원정선수7 : 볼넷",
+      "sequence": 15
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 10,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:16",
+        "eventIndex": 0,
+        "kind": "source",
+        "sourceEventId": "390"
+      },
+      "inning": 1,
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a8",
+        "pitcherId": "h23"
+      },
+      "relayText": "7번타자 원정선수8",
+      "sequence": 16
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 10,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:17",
+        "eventIndex": 1,
+        "kind": "source",
+        "sourceEventId": "391"
+      },
+      "inning": 1,
+      "kind": "substitution",
+      "payload": {
+        "battingOrder": 6,
+        "fieldPosition": "대주자",
+        "incomingPlayerId": "a15",
+        "outgoingPlayerId": "a7",
+        "role": "runner",
+        "side": "away"
+      },
+      "relayText": "1루주자 원정선수7 : 대주자 원정선수15 (으)로 교체",
+      "sequence": 17
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 10,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:18",
+        "eventIndex": 2,
+        "kind": "source",
+        "sourceEventId": "392"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a8",
+        "call": "called_strike",
+        "pitchType": "직구",
+        "pitcherId": "h23",
+        "speedKph": 139
+      },
+      "relayText": "1구 스트라이크",
+      "sequence": 18
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 10,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:19",
+        "eventIndex": 3,
+        "kind": "source",
+        "sourceEventId": "393"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a8",
+        "call": "foul",
+        "pitchType": "직구",
+        "pitcherId": "h23",
+        "speedKph": 139
+      },
+      "relayText": "2구 파울",
+      "sequence": 19
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 10,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:20",
+        "eventIndex": 4,
+        "kind": "source",
+        "sourceEventId": "394"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a8",
+        "call": "in_play",
+        "pitchType": "포크",
+        "pitcherId": "h23",
+        "speedKph": 125
+      },
+      "relayText": "3구 타격",
+      "sequence": 20
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 10,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:21",
+        "eventIndex": 5,
+        "kind": "source",
+        "sourceEventId": "395"
+      },
+      "inning": 1,
+      "kind": "plate_result",
+      "payload": {
+        "battedBallType": "fly_ball",
+        "batterId": "a8",
+        "isBunt": false,
+        "pitcherId": "h23",
+        "result": "field_out"
+      },
+      "relayText": "원정선수8 : 2루수 플라이 아웃",
+      "sequence": 21
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 9,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:22",
+        "eventIndex": 0,
+        "kind": "source",
+        "sourceEventId": "396"
+      },
+      "inning": 1,
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a9",
+        "pitcherId": "h23"
+      },
+      "relayText": "8번타자 원정선수9",
+      "sequence": 22
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 9,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:23",
+        "eventIndex": 1,
+        "kind": "source",
+        "sourceEventId": "397"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a9",
+        "call": "ball",
+        "pitchType": "슬라이더",
+        "pitcherId": "h23",
+        "speedKph": 126
+      },
+      "relayText": "1구 볼",
+      "sequence": 23
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 9,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:24",
+        "eventIndex": 2,
+        "kind": "source",
+        "sourceEventId": "398"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a9",
+        "call": "ball",
+        "pitchType": "슬라이더",
+        "pitcherId": "h23",
+        "speedKph": 125
+      },
+      "relayText": "2구 볼",
+      "sequence": 24
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 9,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:25",
+        "eventIndex": 3,
+        "kind": "source",
+        "sourceEventId": "399"
+      },
+      "inning": 1,
+      "kind": "administrative",
+      "payload": {
+        "code": "mound_visit"
+      },
+      "relayText": "포수 마운드 방문",
+      "sequence": 25
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 9,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:26",
+        "eventIndex": 4,
+        "kind": "source",
+        "sourceEventId": "400"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a9",
+        "call": "called_strike",
+        "pitchType": "직구",
+        "pitcherId": "h23",
+        "speedKph": 140
+      },
+      "relayText": "3구 스트라이크",
+      "sequence": 26
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 9,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:27",
+        "eventIndex": 5,
+        "kind": "source",
+        "sourceEventId": "401"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a9",
+        "call": "in_play",
+        "pitchType": "직구",
+        "pitcherId": "h23",
+        "speedKph": 139
+      },
+      "relayText": "4구 타격",
+      "sequence": 27
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 9,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:28",
+        "eventIndex": 6,
+        "kind": "source",
+        "sourceEventId": "402"
+      },
+      "inning": 1,
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a9",
+        "pitcherId": "h23",
+        "result": "single"
+      },
+      "relayText": "원정선수9 : 중견수 앞 1루타",
+      "sequence": 28
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 9,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:29",
+        "eventIndex": 7,
+        "kind": "source",
+        "sourceEventId": "403"
+      },
+      "inning": 1,
+      "kind": "runner_advance",
+      "payload": {
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "anonymous-stationary:28"
+        },
+        "fromBase": 1,
+        "outcome": "safe",
+        "runnerId": "a15",
+        "toBase": 2
+      },
+      "relayText": "1루주자 원정선수15 : 2루까지 진루",
+      "sequence": 29
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 8,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:30",
+        "eventIndex": 0,
+        "kind": "source",
+        "sourceEventId": "404"
+      },
+      "inning": 1,
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a10",
+        "pitcherId": "h23"
+      },
+      "relayText": "9번타자 원정선수10",
+      "sequence": 30
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 8,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:31",
+        "eventIndex": 1,
+        "kind": "source",
+        "sourceEventId": "405"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a10",
+        "call": "ball",
+        "pitchType": "직구",
+        "pitcherId": "h23",
+        "speedKph": 139
+      },
+      "relayText": "1구 볼",
+      "sequence": 31
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 8,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:32",
+        "eventIndex": 2,
+        "kind": "source",
+        "sourceEventId": "406"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a10",
+        "call": "in_play",
+        "pitchType": "직구",
+        "pitcherId": "h23",
+        "speedKph": 138
+      },
+      "relayText": "2구 타격",
+      "sequence": 32
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 8,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:33",
+        "eventIndex": 3,
+        "kind": "source",
+        "sourceEventId": "407"
+      },
+      "inning": 1,
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a10",
+        "creditedRbi": 1,
+        "pitcherId": "h23",
+        "result": "double"
+      },
+      "relayText": "원정선수10 : 좌익수 왼쪽 2루타",
+      "sequence": 33
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 8,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:34",
+        "eventIndex": 4,
+        "kind": "source",
+        "sourceEventId": "408"
+      },
+      "inning": 1,
+      "kind": "runner_advance",
+      "payload": {
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "anonymous-stationary:33"
+        },
+        "fromBase": 1,
+        "outcome": "safe",
+        "runnerId": "a9",
+        "toBase": 3
+      },
+      "relayText": "1루주자 원정선수9 : 3루까지 진루",
+      "sequence": 34
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 8,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:35",
+        "eventIndex": 5,
+        "kind": "source",
+        "sourceEventId": "409"
+      },
+      "inning": 1,
+      "kind": "runner_advance",
+      "payload": {
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "anonymous-stationary:33"
+        },
+        "fromBase": 2,
+        "outcome": "scored",
+        "runnerId": "a15",
+        "toBase": 4
+      },
+      "relayText": "2루주자 원정선수15 : 홈인",
+      "sequence": 35
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 7,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:36",
+        "eventIndex": 0,
+        "kind": "source",
+        "sourceEventId": "410"
+      },
+      "inning": 1,
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "h23"
+      },
+      "relayText": "1번타자 원정선수2",
+      "sequence": 36
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 7,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:37",
+        "eventIndex": 1,
+        "kind": "source",
+        "sourceEventId": "411"
+      },
+      "inning": 1,
+      "kind": "substitution",
+      "payload": {
+        "fieldPosition": "투수",
+        "incomingPlayerId": "h20",
+        "outgoingPlayerId": "h23",
+        "role": "pitcher",
+        "side": "home"
+      },
+      "relayText": "투수 홈선수23 : 투수 홈선수20 (으)로 교체",
+      "sequence": 37
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 7,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:38",
+        "eventIndex": 2,
+        "kind": "source",
+        "sourceEventId": "412"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a2",
+        "call": "called_strike",
+        "pitchType": "슬라이더",
+        "pitcherId": "h20",
+        "speedKph": 129
+      },
+      "relayText": "1구 스트라이크",
+      "sequence": 38
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 7,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:39",
+        "eventIndex": 3,
+        "kind": "source",
+        "sourceEventId": "413"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a2",
+        "call": "foul",
+        "pitchType": "직구",
+        "pitcherId": "h20",
+        "speedKph": 143
+      },
+      "relayText": "2구 파울",
+      "sequence": 39
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 7,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:40",
+        "eventIndex": 4,
+        "kind": "source",
+        "sourceEventId": "414"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a2",
+        "call": "foul",
+        "pitchType": "직구",
+        "pitcherId": "h20",
+        "speedKph": 144
+      },
+      "relayText": "3구 파울",
+      "sequence": 40
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 7,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:41",
+        "eventIndex": 5,
+        "kind": "source",
+        "sourceEventId": "415"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a2",
+        "call": "ball",
+        "pitchType": "슬라이더",
+        "pitcherId": "h20",
+        "speedKph": 129
+      },
+      "relayText": "4구 볼",
+      "sequence": 41
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 7,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:42",
+        "eventIndex": 6,
+        "kind": "source",
+        "sourceEventId": "416"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a2",
+        "call": "foul",
+        "pitchType": "직구",
+        "pitcherId": "h20",
+        "speedKph": 145
+      },
+      "relayText": "5구 파울",
+      "sequence": 42
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 7,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:43",
+        "eventIndex": 7,
+        "kind": "source",
+        "sourceEventId": "417"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a2",
+        "call": "in_play",
+        "pitchType": "커브",
+        "pitcherId": "h20",
+        "speedKph": 117
+      },
+      "relayText": "6구 타격",
+      "sequence": 43
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 7,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:44",
+        "eventIndex": 8,
+        "kind": "source",
+        "sourceEventId": "418"
+      },
+      "inning": 1,
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a2",
+        "creditedRbi": 1,
+        "pitcherId": "h20",
+        "result": "single"
+      },
+      "relayText": "원정선수2 : 중견수 앞 1루타",
+      "sequence": 44
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 7,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:45",
+        "eventIndex": 9,
+        "kind": "source",
+        "sourceEventId": "419"
+      },
+      "inning": 1,
+      "kind": "runner_advance",
+      "payload": {
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "anonymous-stationary:44"
+        },
+        "fromBase": 1,
+        "outcome": "safe",
+        "runnerId": "a2",
+        "toBase": 2
+      },
+      "relayText": "1루주자 원정선수2 : 다른주자수비하는 사이 2루까지 진루 (중견수->포수)",
+      "sequence": 45
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 7,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:46",
+        "eventIndex": 10,
+        "kind": "source",
+        "sourceEventId": "420"
+      },
+      "inning": 1,
+      "kind": "runner_advance",
+      "payload": {
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "anonymous-stationary:44"
+        },
+        "fromBase": 2,
+        "outcome": "safe",
+        "runnerId": "a10",
+        "toBase": 3
+      },
+      "relayText": "2루주자 원정선수10 : 3루까지 진루",
+      "sequence": 46
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 7,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:47",
+        "eventIndex": 11,
+        "kind": "source",
+        "sourceEventId": "421"
+      },
+      "inning": 1,
+      "kind": "runner_advance",
+      "payload": {
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "anonymous-stationary:44"
+        },
+        "fromBase": 3,
+        "outcome": "scored",
+        "runnerId": "a9",
+        "toBase": 4
+      },
+      "relayText": "3루주자 원정선수9 : 홈인",
+      "sequence": 47
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 6,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:48",
+        "eventIndex": 0,
+        "kind": "source",
+        "sourceEventId": "422"
+      },
+      "inning": 1,
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "h20"
+      },
+      "relayText": "2번타자 원정선수3",
+      "sequence": 48
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 6,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:49",
+        "eventIndex": 1,
+        "kind": "source",
+        "sourceEventId": "423"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a3",
+        "call": "called_strike",
+        "pitchType": "직구",
+        "pitcherId": "h20",
+        "speedKph": 148
+      },
+      "relayText": "1구 스트라이크",
+      "sequence": 49
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 6,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:50",
+        "eventIndex": 2,
+        "kind": "source",
+        "sourceEventId": "424"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a3",
+        "call": "ball",
+        "pitchType": "직구",
+        "pitcherId": "h20",
+        "speedKph": 146
+      },
+      "relayText": "2구 볼",
+      "sequence": 50
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 6,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:51",
+        "eventIndex": 3,
+        "kind": "source",
+        "sourceEventId": "425"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a3",
+        "call": "in_play",
+        "pitchType": "슬라이더",
+        "pitcherId": "h20",
+        "speedKph": 128
+      },
+      "relayText": "3구 타격",
+      "sequence": 51
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 6,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:52",
+        "eventIndex": 4,
+        "kind": "source",
+        "sourceEventId": "426"
+      },
+      "inning": 1,
+      "kind": "plate_result",
+      "payload": {
+        "battedBallType": "ground_ball",
+        "batterId": "a3",
+        "isBunt": false,
+        "pitcherId": "h20",
+        "result": "fielder_choice"
+      },
+      "relayText": "원정선수3 : 3루수 앞 땅볼로 출루",
+      "sequence": 52
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 6,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:53",
+        "eventIndex": 5,
+        "kind": "source",
+        "sourceEventId": "427"
+      },
+      "inning": 1,
+      "kind": "runner_advance",
+      "payload": {
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "anonymous-stationary:52"
+        },
+        "fromBase": 3,
+        "outKind": "tag",
+        "outcome": "out",
+        "runnerId": "a10",
+        "toBase": 3
+      },
+      "relayText": "3루주자 원정선수10 : 태그아웃 (3루수->포수->투수 태그아웃)",
+      "sequence": 53
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 5,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:54",
+        "eventIndex": 0,
+        "kind": "source",
+        "sourceEventId": "428"
+      },
+      "inning": 1,
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a4",
+        "pitcherId": "h20"
+      },
+      "relayText": "3번타자 원정선수4",
+      "sequence": 54
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 5,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:55",
+        "eventIndex": 1,
+        "kind": "source",
+        "sourceEventId": "429"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a4",
+        "call": "called_strike",
+        "pitchType": "직구",
+        "pitcherId": "h20",
+        "speedKph": 146
+      },
+      "relayText": "1구 스트라이크",
+      "sequence": 55
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 5,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:56",
+        "eventIndex": 2,
+        "kind": "source",
+        "sourceEventId": "430"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a4",
+        "call": "ball",
+        "pitchType": "슬라이더",
+        "pitcherId": "h20",
+        "speedKph": 129
+      },
+      "relayText": "2구 볼",
+      "sequence": 56
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 5,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:57",
+        "eventIndex": 3,
+        "kind": "source",
+        "sourceEventId": "431"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a4",
+        "call": "swinging_strike",
+        "pitchType": "슬라이더",
+        "pitcherId": "h20",
+        "speedKph": 131
+      },
+      "relayText": "3구 헛스윙",
+      "sequence": 57
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 5,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:58",
+        "eventIndex": 4,
+        "kind": "source",
+        "sourceEventId": "432"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a4",
+        "call": "ball",
+        "pitchType": "직구",
+        "pitcherId": "h20",
+        "speedKph": 145
+      },
+      "relayText": "4구 볼",
+      "sequence": 58
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 5,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:59",
+        "eventIndex": 5,
+        "kind": "source",
+        "sourceEventId": "433"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a4",
+        "call": "in_play",
+        "pitchType": "슬라이더",
+        "pitcherId": "h20",
+        "speedKph": 129
+      },
+      "relayText": "5구 타격",
+      "sequence": 59
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 5,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:60",
+        "eventIndex": 6,
+        "kind": "source",
+        "sourceEventId": "434"
+      },
+      "inning": 1,
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a4",
+        "creditedRbi": 1,
+        "pitcherId": "h20",
+        "result": "single"
+      },
+      "relayText": "원정선수4 : 좌중간 1루타",
+      "sequence": 60
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 5,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:61",
+        "eventIndex": 7,
+        "kind": "source",
+        "sourceEventId": "435"
+      },
+      "inning": 1,
+      "kind": "runner_advance",
+      "payload": {
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "anonymous-stationary:60"
+        },
+        "fromBase": 1,
+        "outcome": "safe",
+        "runnerId": "a3",
+        "toBase": 2
+      },
+      "relayText": "1루주자 원정선수3 : 2루까지 진루",
+      "sequence": 61
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 5,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:62",
+        "eventIndex": 8,
+        "kind": "source",
+        "sourceEventId": "436"
+      },
+      "inning": 1,
+      "kind": "runner_advance",
+      "payload": {
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "anonymous-stationary:60"
+        },
+        "fromBase": 2,
+        "outcome": "scored",
+        "runnerId": "a2",
+        "toBase": 4
+      },
+      "relayText": "2루주자 원정선수2 : 홈인",
+      "sequence": 62
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 4,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:63",
+        "eventIndex": 0,
+        "kind": "source",
+        "sourceEventId": "437"
+      },
+      "inning": 1,
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a5",
+        "pitcherId": "h20"
+      },
+      "relayText": "4번타자 원정선수5",
+      "sequence": 63
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 4,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:64",
+        "eventIndex": 1,
+        "kind": "source",
+        "sourceEventId": "438"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a5",
+        "call": "ball",
+        "pitchType": "직구",
+        "pitcherId": "h20",
+        "speedKph": 146
+      },
+      "relayText": "1구 볼",
+      "sequence": 64
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 4,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:65",
+        "eventIndex": 2,
+        "kind": "source",
+        "sourceEventId": "439"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a5",
+        "call": "foul",
+        "pitchType": "직구",
+        "pitcherId": "h20",
+        "speedKph": 146
+      },
+      "relayText": "2구 파울",
+      "sequence": 65
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 4,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:66",
+        "eventIndex": 3,
+        "kind": "source",
+        "sourceEventId": "440"
+      },
+      "inning": 1,
+      "kind": "pitch",
+      "payload": {
+        "batterId": "a5",
+        "call": "in_play",
+        "pitchType": "직구",
+        "pitcherId": "h20",
+        "speedKph": 145
+      },
+      "relayText": "3구 타격",
+      "sequence": 66
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 4,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:67",
+        "eventIndex": 4,
+        "kind": "source",
+        "sourceEventId": "441"
+      },
+      "inning": 1,
+      "kind": "plate_result",
+      "payload": {
+        "battedBallType": "ground_ball",
+        "batterId": "a5",
+        "isBunt": false,
+        "pitcherId": "h20",
+        "result": "field_out"
+      },
+      "relayText": "원정선수5 : 유격수 땅볼 아웃 (유격수->1루수 송구아웃)",
+      "sequence": 67
+    },
+    {
+      "half": "top",
+      "identity": {
+        "blockIndex": 4,
+        "endpoint": "relay_007",
+        "eventId": "anonymous-stationary:68",
+        "eventIndex": 5,
+        "kind": "source",
+        "sourceEventId": "442"
+      },
+      "inning": 1,
+      "kind": "administrative",
+      "payload": {
+        "code": "announcement"
+      },
+      "relayText": "7회초 4번타순 3구 후 수비 시프트: 유격수가 1,2루간 위치에서 수비",
+      "sequence": 68
+    }
+  ],
+  "metadata": {
+    "gameId": "anonymous-stationary-responsibility",
+    "season": 2026,
+    "gameDate": "2026-09-13",
+    "status": "suspended",
+    "scheduledInnings": 9
+  },
+  "officialRecords": {
+    "batters": [],
+    "pitchers": []
+  },
+  "revisionBase": {
+    "kind": "new_game"
+  },
+  "rosters": {
+    "away": {
+      "players": [
+        {
+          "name": "원정선수1",
+          "playerId": "a1",
+          "positions": ["선발투수"],
+          "starter": true
+        },
+        {
+          "battingOrder": 1,
+          "name": "원정선수2",
+          "playerId": "a2",
+          "positions": ["중견수"],
+          "starter": true
+        },
+        {
+          "battingOrder": 2,
+          "name": "원정선수3",
+          "playerId": "a3",
+          "positions": ["지명타자"],
+          "starter": true
+        },
+        {
+          "battingOrder": 3,
+          "name": "원정선수4",
+          "playerId": "a4",
+          "positions": ["우익수"],
+          "starter": true
+        },
+        {
+          "battingOrder": 4,
+          "name": "원정선수5",
+          "playerId": "a5",
+          "positions": ["1루수"],
+          "starter": true
+        },
+        {
+          "battingOrder": 5,
+          "name": "원정선수6",
+          "playerId": "a6",
+          "positions": ["포수"],
+          "starter": true
+        },
+        {
+          "battingOrder": 6,
+          "name": "원정선수7",
+          "playerId": "a7",
+          "positions": ["3루수"],
+          "starter": true
+        },
+        {
+          "battingOrder": 7,
+          "name": "원정선수8",
+          "playerId": "a8",
+          "positions": ["좌익수"],
+          "starter": true
+        },
+        {
+          "battingOrder": 8,
+          "name": "원정선수9",
+          "playerId": "a9",
+          "positions": ["유격수"],
+          "starter": true
+        },
+        {
+          "battingOrder": 9,
+          "name": "원정선수10",
+          "playerId": "a10",
+          "positions": ["2루수"],
+          "starter": true
+        },
+        {
+          "name": "홈선수7",
+          "playerId": "a11",
+          "positions": ["포수"],
+          "starter": false
+        },
+        {
+          "name": "원정선수12",
+          "playerId": "a12",
+          "positions": ["포수"],
+          "starter": false
+        },
+        {
+          "name": "원정선수13",
+          "playerId": "a13",
+          "positions": ["3루수"],
+          "starter": false
+        },
+        {
+          "name": "원정선수14",
+          "playerId": "a14",
+          "positions": ["3루수"],
+          "starter": false
+        },
+        {
+          "name": "원정선수15",
+          "playerId": "a15",
+          "positions": ["유격수"],
+          "starter": false
+        },
+        {
+          "name": "원정선수16",
+          "playerId": "a16",
+          "positions": ["우익수"],
+          "starter": false
+        },
+        {
+          "name": "원정선수17",
+          "playerId": "a17",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "원정선수18",
+          "playerId": "a18",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "원정선수19",
+          "playerId": "a19",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "원정선수20",
+          "playerId": "a20",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "원정선수21",
+          "playerId": "a21",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "원정선수23",
+          "playerId": "a22",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "원정선수23",
+          "playerId": "a23",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "원정선수24",
+          "playerId": "a24",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "원정선수25",
+          "playerId": "a25",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "원정선수26",
+          "playerId": "a26",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "원정선수27",
+          "playerId": "a27",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "원정선수28",
+          "playerId": "a28",
+          "positions": ["1"],
+          "starter": false
+        }
+      ],
+      "teamId": "AWAY"
+    },
+    "home": {
+      "players": [
+        {
+          "name": "홈선수1",
+          "playerId": "h1",
+          "positions": ["선발투수"],
+          "starter": false
+        },
+        {
+          "battingOrder": 1,
+          "name": "홈선수2",
+          "playerId": "h2",
+          "positions": ["유격수"],
+          "starter": true
+        },
+        {
+          "battingOrder": 2,
+          "name": "홈선수3",
+          "playerId": "h3",
+          "positions": ["우익수"],
+          "starter": true
+        },
+        {
+          "battingOrder": 3,
+          "name": "홈선수4",
+          "playerId": "h4",
+          "positions": ["지명타자"],
+          "starter": true
+        },
+        {
+          "battingOrder": 4,
+          "name": "홈선수5",
+          "playerId": "h5",
+          "positions": ["좌익수"],
+          "starter": true
+        },
+        {
+          "battingOrder": 5,
+          "name": "홈선수6",
+          "playerId": "h6",
+          "positions": ["1루수"],
+          "starter": true
+        },
+        {
+          "battingOrder": 6,
+          "name": "홈선수7",
+          "playerId": "h7",
+          "positions": ["3루수"],
+          "starter": true
+        },
+        {
+          "battingOrder": 7,
+          "name": "홈선수8",
+          "playerId": "h8",
+          "positions": ["중견수"],
+          "starter": true
+        },
+        {
+          "battingOrder": 8,
+          "name": "홈선수9",
+          "playerId": "h9",
+          "positions": ["포수"],
+          "starter": true
+        },
+        {
+          "battingOrder": 9,
+          "name": "홈선수10",
+          "playerId": "h10",
+          "positions": ["2루수"],
+          "starter": true
+        },
+        {
+          "name": "홈선수11",
+          "playerId": "h11",
+          "positions": ["포수"],
+          "starter": false
+        },
+        {
+          "name": "홈선수12",
+          "playerId": "h12",
+          "positions": ["1루수"],
+          "starter": false
+        },
+        {
+          "name": "홈선수13",
+          "playerId": "h13",
+          "positions": ["3루수"],
+          "starter": false
+        },
+        {
+          "name": "홈선수14",
+          "playerId": "h14",
+          "positions": ["좌익수"],
+          "starter": false
+        },
+        {
+          "name": "홈선수15",
+          "playerId": "h15",
+          "positions": ["중견수"],
+          "starter": false
+        },
+        {
+          "name": "홈선수16",
+          "playerId": "h16",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "홈선수17",
+          "playerId": "h17",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "홈선수18",
+          "playerId": "h18",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "홈선수19",
+          "playerId": "h19",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "홈선수20",
+          "playerId": "h20",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "홈선수21",
+          "playerId": "h21",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "홈선수22",
+          "playerId": "h22",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "홈선수23",
+          "playerId": "h23",
+          "positions": ["1"],
+          "starter": true
+        },
+        {
+          "name": "홈선수24",
+          "playerId": "h24",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "홈선수25",
+          "playerId": "h25",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "홈선수26",
+          "playerId": "h26",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "홈선수27",
+          "playerId": "h27",
+          "positions": ["1"],
+          "starter": false
+        },
+        {
+          "name": "홈선수28",
+          "playerId": "h28",
+          "positions": ["1"],
+          "starter": false
+        }
+      ],
+      "teamId": "HOME"
+    }
+  },
+  "schemaVersion": 2,
+  "source": {
+    "provider": "naver",
+    "sourceGameId": "anonymous-stationary-responsibility",
+    "collectedAt": "2026-09-13T00:00:00.000Z",
+    "sourceBundleHash": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "teams": {
+    "away": {
+      "name": "원정팀",
+      "teamId": "AWAY"
+    },
+    "home": {
+      "name": "홈팀",
+      "teamId": "HOME"
+    }
+  },
+  "trackingCandidates": []
+}

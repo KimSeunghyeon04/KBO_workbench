@@ -1,7 +1,7 @@
 import type { PlateResultEvent, RunnerAdvanceEvent, StagingRelayEvent } from "@kbo/contracts";
 
 import { requiredBatterDestination } from "../rules.js";
-import type { CompiledRunnerMovement, PlateAppearanceSummary } from "../types.js";
+import type { BaseOccupant, CompiledRunnerMovement, PlateAppearanceSummary } from "../types.js";
 import { addFinding } from "./findings.js";
 import type { CompileContext, MutableState } from "./model.js";
 import { orderPlayMovements, transitionMovements } from "./movement-engine.js";
@@ -105,12 +105,16 @@ export function applyPlateResultPlay(
   const rawMovements: CompiledRunnerMovement[] = [deriveBatterMovement(event, resultPitcherId)];
   for (const runner of linkedRunners)
     rawMovements.push(explicitMovement(runner, state, pa.currentPitcherId, rawMovements));
-  const chronologicalMovements = inheritFielderChoiceResponsibilities(
+  const inheritedByRunner = inheritFielderChoiceResponsibilities(
     state,
     event,
     rawMovements,
     pa.currentPitcherId,
   );
+  const chronologicalMovements = rawMovements.map((movement) => {
+    const inherited = inheritedByRunner.get(movement.runnerId);
+    return inherited === undefined ? movement : { ...movement, responsiblePitcherId: inherited };
+  });
   const placementMovements = orderPlayMovements(state, chronologicalMovements);
   const scoreBefore = state.half === "top" ? state.awayScore : state.homeScore;
   const applied = applyMovementsAtomically(
@@ -122,6 +126,19 @@ export function applyPlateResultPlay(
     chronologicalMovements,
   );
   if (!applied) return { ...baseApplication, movements: [] };
+  // 진루하지 않은 생존 주자도 책임 슬롯을 승계한다. 이동 행을 만들지 않고
+  // play 전체의 이동 검증이 성공한 뒤 최종 점유에만 반영한다.
+  const inheritBase = (base: BaseOccupant | null): BaseOccupant | null => {
+    const inherited = base === null ? undefined : inheritedByRunner.get(base.runnerId);
+    return base === null || inherited === undefined
+      ? base
+      : { ...base, responsiblePitcherId: inherited };
+  };
+  state.bases = [
+    inheritBase(state.bases[0]),
+    inheritBase(state.bases[1]),
+    inheritBase(state.bases[2]),
+  ];
 
   for (const row of relayRows) appendPlateEvent(state, row.identity.eventId);
   const completed: PlateAppearanceSummary = {
@@ -197,61 +214,54 @@ function inheritFielderChoiceResponsibilities(
   event: PlateResultEvent,
   movements: readonly CompiledRunnerMovement[],
   resultPitcherId: string,
-): CompiledRunnerMovement[] {
-  if (event.payload.result !== "fielder_choice") return [...movements];
+): ReadonlyMap<string, string | undefined> {
+  if (event.payload.result !== "fielder_choice" && event.payload.result !== "double_play")
+    return new Map();
 
-  const finalByBase = state.bases.map((base) => base?.runnerId ?? null) as [
-    string | null,
-    string | null,
-    string | null,
-  ];
-  for (const movement of movements) {
-    if (movement.fromBase > 0) finalByBase[movement.fromBase - 1] = null;
+  const runners = new Map<
+    string,
+    { origin: number; responsiblePitcherId: string; last: CompiledRunnerMovement | null }
+  >();
+  for (const [index, base] of state.bases.entries()) {
+    if (base !== null)
+      runners.set(base.runnerId, {
+        origin: index + 1,
+        responsiblePitcherId: base.responsiblePitcherId,
+        last: null,
+      });
   }
   for (const movement of movements) {
-    if (movement.outcome === "safe" && movement.toBase < 4)
-      finalByBase[movement.toBase - 1] = movement.runnerId;
+    const prior = runners.get(movement.runnerId);
+    runners.set(movement.runnerId, {
+      origin: prior?.origin ?? movement.fromBase,
+      responsiblePitcherId: prior?.responsiblePitcherId ?? movement.responsiblePitcherId,
+      last: movement,
+    });
   }
-
-  const finalRunners = [...finalByBase]
-    .reverse()
-    .filter((runnerId): runnerId is string => runnerId !== null);
-  const responsibilityByRunner = new Map<string, string>();
-  for (const base of state.bases) {
-    if (base !== null) responsibilityByRunner.set(base.runnerId, base.responsiblePitcherId);
-  }
-  for (const movement of movements) {
-    if (movement.outcome === "safe" && movement.toBase < 4)
-      responsibilityByRunner.set(movement.runnerId, movement.responsiblePitcherId);
-  }
-  const slots = finalRunners.map(
-    (runnerId) => responsibilityByRunner.get(runnerId) ?? resultPitcherId,
+  // 책임 순서는 플레이 전 주자 순서다. 중간 진루를 별도 점유로 세지 않으며,
+  // 같은 플레이에서 득점한 주자도 아웃된 승계주자의 책임을 이어받을 수 있다.
+  const survivors = [...runners.entries()]
+    .filter(([, runner]) => runner.last?.outcome !== "out")
+    .sort(([, left], [, right]) => right.origin - left.origin);
+  const slots = survivors.map(
+    ([, runner]) => runner.last?.responsiblePitcherId ?? runner.responsiblePitcherId,
   );
-  const inheritedOuts = movements.filter((movement) => {
-    if (movement.fromBase === 0 || movement.outcome !== "out") return false;
-    const occupant = state.bases[movement.fromBase - 1];
-    return (
-      occupant !== null &&
-      occupant !== undefined &&
-      occupant.responsiblePitcherId !== resultPitcherId
-    );
-  });
-  for (const movement of [...inheritedOuts].reverse()) {
-    const occupant = state.bases[movement.fromBase - 1];
-    if (occupant === null || occupant === undefined) continue;
-    const leadRank = finalByBase
-      .slice(movement.fromBase)
-      .filter((runnerId) => runnerId !== null).length;
-    slots.splice(Math.min(leadRank, slots.length), 0, occupant.responsiblePitcherId);
+  const retired = [...runners.values()]
+    .filter(
+      (runner) =>
+        runner.origin > 0 &&
+        runner.last?.outcome === "out" &&
+        // 포스 병살도 선행 주자의 책임을 승계한다. 귀루 실패·도루 실패 등의
+        // 비포스 병살은 야수선택으로 대체된 주자로 간주하지 않는다.
+        (event.payload.result === "fielder_choice" || runner.last.outKind === "force") &&
+        runner.responsiblePitcherId !== resultPitcherId,
+    )
+    .sort((left, right) => left.origin - right.origin);
+  for (const runner of retired) {
+    const leadRank = survivors.filter(([, survivor]) => survivor.origin > runner.origin).length;
+    slots.splice(leadRank, 0, runner.responsiblePitcherId);
   }
-  slots.length = finalRunners.length;
-  const inheritedByRunner = new Map(
-    finalRunners.map((runnerId, index) => [runnerId, slots[index]]),
-  );
-  return movements.map((movement) => {
-    const inherited = inheritedByRunner.get(movement.runnerId);
-    return inherited === undefined ? movement : { ...movement, responsiblePitcherId: inherited };
-  });
+  return new Map(survivors.map(([runnerId], index) => [runnerId, slots[index]]));
 }
 
 function deriveBatterMovement(event: PlateResultEvent, pitcherId: string): CompiledRunnerMovement {

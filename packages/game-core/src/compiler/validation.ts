@@ -217,24 +217,6 @@ export function validateTracking(
         pitchEventId,
       );
     }
-    if (
-      candidate.topSz !== undefined &&
-      candidate.bottomSz !== undefined &&
-      candidate.bottomSz >= candidate.topSz
-    ) {
-      trackingFinding(
-        document,
-        context,
-        candidate,
-        "source.tracking.invalid_strike_zone",
-        "tracking의 스트라이크 존 하단은 상단보다 낮아야 합니다.",
-        [
-          { field: "bottomSz", actual: candidate.bottomSz },
-          { field: "topSz", actual: candidate.topSz },
-        ],
-        pitchEventId,
-      );
-    }
   }
 
   for (const [pitchEventId, linked] of linkedByPitch) {
@@ -344,7 +326,8 @@ function addReusedSourcePitchIdWarnings(
 function trackingFingerprint(candidate: TrackingCandidate): string {
   const fact = Object.fromEntries(
     Object.entries(candidate).filter(
-      ([key]) => !["trackingId", "source", "sequence", "resolution"].includes(key),
+      ([key]) =>
+        !["trackingId", "source", "sequence", "resolution", "topSz", "bottomSz"].includes(key),
     ),
   );
   return canonicalStringify(fact);

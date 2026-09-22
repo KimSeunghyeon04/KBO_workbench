@@ -141,11 +141,16 @@ function decodePlayerChange(value: unknown): CanonicalPlayerChange {
   const change = record(value);
   const incoming = record(change.inPlayer);
   const outgoing = record(change.outPlayer);
+  const shifted = change.type === "shift" ? record(change.shiftPlayer) : {};
   return {
     type: optionalText(change.type)?.toLowerCase() ?? null,
-    incomingPlayerId: optionalText(first(incoming, ["playerId", "playerCode", "pcode"])),
+    incomingPlayerId:
+      optionalText(first(incoming, ["playerId", "playerCode", "pcode"])) ??
+      optionalText(shifted.playerId),
     incomingPosition: optionalText(first(incoming, ["playerPos", "positionName", "position"])),
-    outgoingPlayerId: optionalText(first(outgoing, ["playerId", "playerCode", "pcode"])),
+    outgoingPlayerId:
+      optionalText(first(outgoing, ["playerId", "playerCode", "pcode"])) ??
+      optionalText(shifted.playerId),
     outgoingPosition: optionalText(first(outgoing, ["playerPos", "positionName", "position"])),
     battingOrder: validInteger(first(change, ["battingOrder", "batorder"]), 1, 9),
   };

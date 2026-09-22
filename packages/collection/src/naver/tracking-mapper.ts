@@ -20,7 +20,10 @@ import {
 
 export function mapNaverTrackingCandidates(
   gameId: string,
-  normalized: Pick<RelayNormalizationResult, "blocks" | "events" | "pitchEventIdsByBlock">,
+  normalized: Pick<
+    RelayNormalizationResult,
+    "blocks" | "events" | "pitchEventIdsByBlock" | "excludedPitchIdsByBlock"
+  >,
 ): {
   readonly candidates: readonly TrackingCandidate[];
   readonly findings: readonly SourceFinding[];
@@ -78,7 +81,17 @@ export function mapNaverTrackingCandidates(
         ...(batterId === null ? {} : { batterId }),
         ...(stance === "L" || stance === "R" || stance === "S" ? { stance } : {}),
         ...trackingNumbers(rawTracking),
-        resolution: { kind: "pending" },
+        resolution:
+          sourcePitchId !== null &&
+          sourceCandidates.length === 0 &&
+          normalized.excludedPitchIdsByBlock?.get(block.sourceBlockIndex)?.has(sourcePitchId) ===
+            true
+            ? {
+                kind: "excluded",
+                reason: "not_a_pitch",
+                note: "종료 뒤 완전히 일치하는 반복 중계의 관측값을 보존했습니다.",
+              }
+            : { kind: "pending" },
       });
     }
     resolveBlockTrackingCandidates(blockCandidates, pitchEvents, findings);
@@ -135,8 +148,6 @@ const trackingNumberKeys = [
   "az",
   "crossPlateX",
   "crossPlateY",
-  "topSz",
-  "bottomSz",
 ] as const;
 
 function trackingNumbers(
@@ -166,6 +177,7 @@ function resolveBlockTrackingCandidates(
 ): void {
   const indexesBySourcePitchId = new Map<string, number[]>();
   for (const [index, candidate] of candidates.entries()) {
+    if (candidate.resolution.kind === "excluded") continue;
     const key = candidate.sourcePitchId;
     if (key === undefined) {
       findings.push(

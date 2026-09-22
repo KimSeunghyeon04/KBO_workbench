@@ -1,0 +1,326 @@
+[
+  [
+    {
+      "inn": 6,
+      "homeOrAway": "1",
+      "textOptions": [
+        {
+          "currentGameState": {
+            "awayBallFour": "3",
+            "awayError": "1",
+            "awayHit": "4",
+            "awayScore": "3",
+            "ball": "0",
+            "base1": "0",
+            "base2": "0",
+            "base3": "0",
+            "batter": "p38",
+            "homeBallFour": "2",
+            "homeError": "1",
+            "homeHit": "3",
+            "homeScore": "1",
+            "out": "0",
+            "pitcher": "p1",
+            "strike": "0"
+          },
+          "seqno": 313,
+          "text": "6회말 4번타순 초구 전 21:56 6회초 강우콜드 선언.",
+          "type": 7
+        }
+      ]
+    },
+    {
+      "inn": 6,
+      "homeOrAway": "1",
+      "textOptions": [
+        {
+          "currentGameState": {
+            "awayBallFour": "3",
+            "awayError": "1",
+            "awayHit": "4",
+            "awayScore": "3",
+            "ball": "0",
+            "base1": "0",
+            "base2": "0",
+            "base3": "0",
+            "batter": "p38",
+            "homeBallFour": "2",
+            "homeError": "1",
+            "homeHit": "3",
+            "homeScore": "1",
+            "out": "0",
+            "pitcher": "p22",
+            "strike": "0"
+          },
+          "playerChange": {
+            "inPlayer": {
+              "outPlayerTurn": 10,
+              "playerId": "p22",
+              "playerName": "선수22",
+              "playerPos": "투수"
+            },
+            "liveText": "투수 선수1 : 투수 선수22 (으)로 교체",
+            "outPlayer": {
+              "playerId": "p1",
+              "playerName": "선수1",
+              "playerPos": "투수"
+            },
+            "type": "substitution"
+          },
+          "seqno": 314,
+          "text": "투수 선수1 : 투수 선수22 (으)로 교체",
+          "type": 2
+        }
+      ]
+    },
+    {
+      "inn": 6,
+      "homeOrAway": "1",
+      "textOptions": [
+        {
+          "currentGameState": {
+            "awayBallFour": "3",
+            "awayError": "1",
+            "awayHit": "4",
+            "awayScore": "3",
+            "ball": "0",
+            "base1": "0",
+            "base2": "0",
+            "base3": "0",
+            "batter": "p38",
+            "homeBallFour": "2",
+            "homeError": "1",
+            "homeHit": "3",
+            "homeScore": "1",
+            "out": "0",
+            "pitcher": "p22",
+            "strike": "0"
+          },
+          "seqno": 315,
+          "text": "=====================================",
+          "type": 99
+        }
+      ]
+    },
+    {
+      "inn": 6,
+      "homeOrAway": "1",
+      "textOptions": [
+        {
+          "currentGameState": {
+            "awayBallFour": "3",
+            "awayError": "1",
+            "awayHit": "4",
+            "awayScore": "3",
+            "ball": "0",
+            "base1": "0",
+            "base2": "0",
+            "base3": "0",
+            "batter": "p38",
+            "homeBallFour": "2",
+            "homeError": "1",
+            "homeHit": "3",
+            "homeScore": "1",
+            "out": "0",
+            "pitcher": "p22",
+            "strike": "0"
+          },
+          "seqno": 316,
+          "text": "승리투수: 선수1",
+          "type": 99
+        }
+      ]
+    }
+  ],
+  [
+    {
+      "inn": 6,
+      "homeOrAway": "0",
+      "textOptions": [
+        {
+          "currentGameState": {
+            "awayBallFour": "4",
+            "awayError": "0",
+            "awayHit": "3",
+            "awayScore": "0",
+            "ball": "3",
+            "base1": "4",
+            "base2": "0",
+            "base3": "1",
+            "batter": "p6",
+            "homeBallFour": "2",
+            "homeError": "0",
+            "homeHit": "9",
+            "homeScore": "5",
+            "out": "3",
+            "pitcher": "p54",
+            "strike": "2"
+          },
+          "seqno": 331,
+          "text": "6회초 5번타순 7구 후 21:19 강우콜드 게임 선언",
+          "type": 7
+        }
+      ]
+    },
+    {
+      "inn": 6,
+      "homeOrAway": "1",
+      "textOptions": [
+        {
+          "currentGameState": {
+            "awayBallFour": "4",
+            "awayError": "0",
+            "awayHit": "3",
+            "awayScore": "0",
+            "ball": "0",
+            "base1": "0",
+            "base2": "0",
+            "base3": "0",
+            "batter": "p37",
+            "homeBallFour": "2",
+            "homeError": "0",
+            "homeHit": "9",
+            "homeScore": "5",
+            "out": "0",
+            "pitcher": "p20",
+            "strike": "0"
+          },
+          "seqno": 332,
+          "text": "6회말 홈팀 공격",
+          "type": 0
+        }
+      ]
+    },
+    {
+      "inn": 6,
+      "homeOrAway": "1",
+      "textOptions": [
+        {
+          "currentGameState": {
+            "awayBallFour": "4",
+            "awayError": "0",
+            "awayHit": "3",
+            "awayScore": "0",
+            "ball": "0",
+            "base1": "0",
+            "base2": "0",
+            "base3": "0",
+            "batter": "p37",
+            "homeBallFour": "2",
+            "homeError": "0",
+            "homeHit": "9",
+            "homeScore": "5",
+            "out": "0",
+            "pitcher": "p1",
+            "strike": "0"
+          },
+          "seqno": 333,
+          "text": "8번타자 선수37",
+          "type": 8
+        }
+      ]
+    },
+    {
+      "inn": 6,
+      "homeOrAway": "1",
+      "textOptions": [
+        {
+          "currentGameState": {
+            "awayBallFour": "4",
+            "awayError": "0",
+            "awayHit": "3",
+            "awayScore": "0",
+            "ball": "0",
+            "base1": "0",
+            "base2": "0",
+            "base3": "0",
+            "batter": "p37",
+            "homeBallFour": "2",
+            "homeError": "0",
+            "homeHit": "9",
+            "homeScore": "5",
+            "out": "0",
+            "pitcher": "p20",
+            "strike": "0"
+          },
+          "playerChange": {
+            "inPlayer": {
+              "outPlayerTurn": 10,
+              "playerId": "p20",
+              "playerName": "선수20",
+              "playerPos": "투수"
+            },
+            "liveText": "투수 선수1 : 투수 선수20 (으)로 교체",
+            "outPlayer": {
+              "playerId": "p1",
+              "playerName": "선수1",
+              "playerPos": "투수"
+            },
+            "type": "substitution"
+          },
+          "seqno": 334,
+          "text": "투수 선수1 : 투수 선수20 (으)로 교체",
+          "type": 2
+        }
+      ]
+    },
+    {
+      "inn": 6,
+      "homeOrAway": "1",
+      "textOptions": [
+        {
+          "currentGameState": {
+            "awayBallFour": "4",
+            "awayError": "0",
+            "awayHit": "3",
+            "awayScore": "0",
+            "ball": "0",
+            "base1": "0",
+            "base2": "0",
+            "base3": "0",
+            "batter": "p37",
+            "homeBallFour": "2",
+            "homeError": "0",
+            "homeHit": "9",
+            "homeScore": "5",
+            "out": "0",
+            "pitcher": "p20",
+            "strike": "0"
+          },
+          "seqno": 335,
+          "text": "=====================================",
+          "type": 99
+        }
+      ]
+    },
+    {
+      "inn": 6,
+      "homeOrAway": "1",
+      "textOptions": [
+        {
+          "currentGameState": {
+            "awayBallFour": "4",
+            "awayError": "0",
+            "awayHit": "3",
+            "awayScore": "0",
+            "ball": "0",
+            "base1": "0",
+            "base2": "0",
+            "base3": "0",
+            "batter": "p37",
+            "homeBallFour": "2",
+            "homeError": "0",
+            "homeHit": "9",
+            "homeScore": "5",
+            "out": "0",
+            "pitcher": "p20",
+            "strike": "0"
+          },
+          "seqno": 336,
+          "text": "승리투수: 선수46",
+          "type": 99
+        }
+      ]
+    }
+  ]
+]

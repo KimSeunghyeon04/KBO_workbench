@@ -1,0 +1,546 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "provider": "naver",
+    "sourceGameId": "anonymous-fc-multistep",
+    "collectedAt": "2026-08-20T12:00:00+09:00",
+    "sourceBundleHash": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "revisionBase": {
+    "kind": "new_game"
+  },
+  "metadata": {
+    "gameId": "anonymous-fc-multistep",
+    "season": 2026,
+    "gameDate": "2026-08-20",
+    "status": "suspended",
+    "scheduledInnings": 9
+  },
+  "teams": {
+    "away": {
+      "teamId": "AWAY",
+      "name": "원정"
+    },
+    "home": {
+      "teamId": "HOME",
+      "name": "홈"
+    }
+  },
+  "rosters": {
+    "away": {
+      "teamId": "AWAY",
+      "players": [
+        {
+          "playerId": "a1",
+          "name": "a1",
+          "battingOrder": 1,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a2",
+          "name": "a2",
+          "battingOrder": 2,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a3",
+          "name": "a3",
+          "battingOrder": 3,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a4",
+          "name": "a4",
+          "battingOrder": 4,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a5",
+          "name": "a5",
+          "battingOrder": 5,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a6",
+          "name": "a6",
+          "battingOrder": 6,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a7",
+          "name": "a7",
+          "battingOrder": 7,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a8",
+          "name": "a8",
+          "battingOrder": 8,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a9",
+          "name": "a9",
+          "battingOrder": 9,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "ar1",
+          "name": "ar1",
+          "starter": false,
+          "positions": ["PR"]
+        }
+      ]
+    },
+    "home": {
+      "teamId": "HOME",
+      "players": [
+        {
+          "playerId": "h1",
+          "name": "h1",
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "h2",
+          "name": "h2",
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "h3",
+          "name": "h3",
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "hp1",
+          "name": "hp1",
+          "starter": true,
+          "positions": ["P"]
+        },
+        {
+          "playerId": "hp2",
+          "name": "hp2",
+          "starter": false,
+          "positions": ["P"]
+        }
+      ]
+    }
+  },
+  "events": [
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e0",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 0
+      },
+      "sequence": 0,
+      "inning": 1,
+      "half": "top",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e1",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 1
+      },
+      "sequence": 1,
+      "inning": 1,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e2",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 2
+      },
+      "sequence": 2,
+      "inning": 1,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "result": "hit_by_pitch",
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e3",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 3
+      },
+      "sequence": 3,
+      "inning": 1,
+      "half": "top",
+      "kind": "substitution",
+      "payload": {
+        "side": "home",
+        "role": "pitcher",
+        "incomingPlayerId": "hp2",
+        "outgoingPlayerId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e4",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 4
+      },
+      "sequence": 4,
+      "inning": 1,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp2"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e5",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 5
+      },
+      "sequence": 5,
+      "inning": 1,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "result": "single",
+        "batterId": "a2",
+        "pitcherId": "hp2",
+        "batterDestination": 1
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e6",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 6
+      },
+      "sequence": 6,
+      "inning": 1,
+      "half": "top",
+      "kind": "runner_advance",
+      "payload": {
+        "runnerId": "a1",
+        "fromBase": 1,
+        "toBase": 3,
+        "outcome": "safe",
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "e5"
+        }
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e7",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 7
+      },
+      "sequence": 7,
+      "inning": 1,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp2"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e8",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 8
+      },
+      "sequence": 8,
+      "inning": 1,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "result": "field_out",
+        "batterId": "a3",
+        "pitcherId": "hp2"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e9",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 9
+      },
+      "sequence": 9,
+      "inning": 1,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a4",
+        "pitcherId": "hp2"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e10",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 10
+      },
+      "sequence": 10,
+      "inning": 1,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "result": "fielder_choice",
+        "batterId": "a4",
+        "pitcherId": "hp2",
+        "battedBallType": "ground_ball",
+        "batterDestination": 1
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e11",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 11
+      },
+      "sequence": 11,
+      "inning": 1,
+      "half": "top",
+      "kind": "runner_advance",
+      "payload": {
+        "runnerId": "a4",
+        "fromBase": 1,
+        "toBase": 2,
+        "outcome": "safe",
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "e10"
+        }
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e12",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 12
+      },
+      "sequence": 12,
+      "inning": 1,
+      "half": "top",
+      "kind": "runner_advance",
+      "payload": {
+        "runnerId": "a2",
+        "fromBase": 1,
+        "toBase": 2,
+        "outcome": "safe",
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "e10"
+        }
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e13",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 13
+      },
+      "sequence": 13,
+      "inning": 1,
+      "half": "top",
+      "kind": "runner_advance",
+      "payload": {
+        "runnerId": "a2",
+        "fromBase": 2,
+        "toBase": 3,
+        "outcome": "safe",
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "e10"
+        }
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e14",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 14
+      },
+      "sequence": 14,
+      "inning": 1,
+      "half": "top",
+      "kind": "runner_advance",
+      "payload": {
+        "runnerId": "a1",
+        "fromBase": 3,
+        "toBase": 3,
+        "outcome": "out",
+        "outKind": "tag",
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "e10"
+        }
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e15",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 15
+      },
+      "sequence": 15,
+      "inning": 1,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a5",
+        "pitcherId": "hp2"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e16",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 16
+      },
+      "sequence": 16,
+      "inning": 1,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "result": "home_run",
+        "batterId": "a5",
+        "pitcherId": "hp2",
+        "creditedRbi": 3
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e17",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 17
+      },
+      "sequence": 17,
+      "inning": 1,
+      "half": "top",
+      "kind": "runner_advance",
+      "payload": {
+        "runnerId": "a4",
+        "fromBase": 2,
+        "toBase": 4,
+        "outcome": "scored",
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "e16"
+        }
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e18",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 18
+      },
+      "sequence": 18,
+      "inning": 1,
+      "half": "top",
+      "kind": "runner_advance",
+      "payload": {
+        "runnerId": "a2",
+        "fromBase": 3,
+        "toBase": 4,
+        "outcome": "scored",
+        "context": {
+          "kind": "plate_result",
+          "plateResultEventId": "e16"
+        }
+      }
+    }
+  ],
+  "trackingCandidates": [],
+  "officialRecords": {
+    "batters": [],
+    "pitchers": [
+      {
+        "playerId": "hp1",
+        "side": "home",
+        "battersFaced": 1,
+        "outsRecorded": 0,
+        "hits": 0,
+        "runs": 1,
+        "earnedRuns": 1,
+        "walks": 0,
+        "hitByPitch": 1,
+        "strikeouts": 0
+      },
+      {
+        "playerId": "hp2",
+        "side": "home",
+        "battersFaced": 4,
+        "outsRecorded": 2,
+        "hits": 2,
+        "runs": 2,
+        "earnedRuns": 2,
+        "walks": 0,
+        "hitByPitch": 0,
+        "strikeouts": 0
+      }
+    ]
+  }
+}

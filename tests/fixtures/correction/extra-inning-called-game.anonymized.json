@@ -1,0 +1,2355 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "provider": "naver",
+    "sourceGameId": "test-source-game",
+    "collectedAt": "2026-08-20T12:00:00+09:00",
+    "sourceBundleHash": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "revisionBase": {
+    "kind": "new_game"
+  },
+  "metadata": {
+    "gameId": "test-game",
+    "season": 2026,
+    "gameDate": "2026-08-20",
+    "status": "final",
+    "scheduledInnings": 9
+  },
+  "teams": {
+    "away": {
+      "teamId": "AWAY",
+      "name": "원정"
+    },
+    "home": {
+      "teamId": "HOME",
+      "name": "홈"
+    }
+  },
+  "rosters": {
+    "away": {
+      "teamId": "AWAY",
+      "players": [
+        {
+          "playerId": "a1",
+          "name": "a1",
+          "battingOrder": 1,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a2",
+          "name": "a2",
+          "battingOrder": 2,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a3",
+          "name": "a3",
+          "battingOrder": 3,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a4",
+          "name": "a4",
+          "battingOrder": 4,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a5",
+          "name": "a5",
+          "battingOrder": 5,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a6",
+          "name": "a6",
+          "battingOrder": 6,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a7",
+          "name": "a7",
+          "battingOrder": 7,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a8",
+          "name": "a8",
+          "battingOrder": 8,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a9",
+          "name": "a9",
+          "battingOrder": 9,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "ar1",
+          "name": "ar1",
+          "starter": false,
+          "positions": ["PR"]
+        }
+      ]
+    },
+    "home": {
+      "teamId": "HOME",
+      "players": [
+        {
+          "playerId": "h1",
+          "name": "h1",
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "h2",
+          "name": "h2",
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "h3",
+          "name": "h3",
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "hp1",
+          "name": "hp1",
+          "starter": true,
+          "positions": ["P"]
+        },
+        {
+          "playerId": "hp2",
+          "name": "hp2",
+          "starter": false,
+          "positions": ["P"]
+        }
+      ]
+    }
+  },
+  "events": [
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e0",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 0
+      },
+      "sequence": 0,
+      "inning": 1,
+      "half": "top",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e1",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 1
+      },
+      "sequence": 1,
+      "inning": 1,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e2",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 2
+      },
+      "sequence": 2,
+      "inning": 1,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e3",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 3
+      },
+      "sequence": 3,
+      "inning": 1,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e4",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 4
+      },
+      "sequence": 4,
+      "inning": 1,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e5",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 5
+      },
+      "sequence": 5,
+      "inning": 1,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e6",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 6
+      },
+      "sequence": 6,
+      "inning": 1,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e7",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 7
+      },
+      "sequence": 7,
+      "inning": 1,
+      "half": "bottom",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e8",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 8
+      },
+      "sequence": 8,
+      "inning": 1,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h1",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e9",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 9
+      },
+      "sequence": 9,
+      "inning": 1,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h1",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e10",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 10
+      },
+      "sequence": 10,
+      "inning": 1,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h2",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e11",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 11
+      },
+      "sequence": 11,
+      "inning": 1,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h2",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e12",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 12
+      },
+      "sequence": 12,
+      "inning": 1,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h3",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e13",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 13
+      },
+      "sequence": 13,
+      "inning": 1,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h3",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e14",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 14
+      },
+      "sequence": 14,
+      "inning": 2,
+      "half": "top",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e15",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 15
+      },
+      "sequence": 15,
+      "inning": 2,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e16",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 16
+      },
+      "sequence": 16,
+      "inning": 2,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e17",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 17
+      },
+      "sequence": 17,
+      "inning": 2,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e18",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 18
+      },
+      "sequence": 18,
+      "inning": 2,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e19",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 19
+      },
+      "sequence": 19,
+      "inning": 2,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e20",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 20
+      },
+      "sequence": 20,
+      "inning": 2,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e21",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 21
+      },
+      "sequence": 21,
+      "inning": 2,
+      "half": "bottom",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e22",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 22
+      },
+      "sequence": 22,
+      "inning": 2,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h1",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e23",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 23
+      },
+      "sequence": 23,
+      "inning": 2,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h1",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e24",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 24
+      },
+      "sequence": 24,
+      "inning": 2,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h2",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e25",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 25
+      },
+      "sequence": 25,
+      "inning": 2,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h2",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e26",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 26
+      },
+      "sequence": 26,
+      "inning": 2,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h3",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e27",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 27
+      },
+      "sequence": 27,
+      "inning": 2,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h3",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e28",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 28
+      },
+      "sequence": 28,
+      "inning": 3,
+      "half": "top",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e29",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 29
+      },
+      "sequence": 29,
+      "inning": 3,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e30",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 30
+      },
+      "sequence": 30,
+      "inning": 3,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e31",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 31
+      },
+      "sequence": 31,
+      "inning": 3,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e32",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 32
+      },
+      "sequence": 32,
+      "inning": 3,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e33",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 33
+      },
+      "sequence": 33,
+      "inning": 3,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e34",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 34
+      },
+      "sequence": 34,
+      "inning": 3,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e35",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 35
+      },
+      "sequence": 35,
+      "inning": 3,
+      "half": "bottom",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e36",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 36
+      },
+      "sequence": 36,
+      "inning": 3,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h1",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e37",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 37
+      },
+      "sequence": 37,
+      "inning": 3,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h1",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e38",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 38
+      },
+      "sequence": 38,
+      "inning": 3,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h2",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e39",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 39
+      },
+      "sequence": 39,
+      "inning": 3,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h2",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e40",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 40
+      },
+      "sequence": 40,
+      "inning": 3,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h3",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e41",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 41
+      },
+      "sequence": 41,
+      "inning": 3,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h3",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e42",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 42
+      },
+      "sequence": 42,
+      "inning": 4,
+      "half": "top",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e43",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 43
+      },
+      "sequence": 43,
+      "inning": 4,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e44",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 44
+      },
+      "sequence": 44,
+      "inning": 4,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e45",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 45
+      },
+      "sequence": 45,
+      "inning": 4,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e46",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 46
+      },
+      "sequence": 46,
+      "inning": 4,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e47",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 47
+      },
+      "sequence": 47,
+      "inning": 4,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e48",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 48
+      },
+      "sequence": 48,
+      "inning": 4,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e49",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 49
+      },
+      "sequence": 49,
+      "inning": 4,
+      "half": "bottom",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e50",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 50
+      },
+      "sequence": 50,
+      "inning": 4,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h1",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e51",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 51
+      },
+      "sequence": 51,
+      "inning": 4,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h1",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e52",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 52
+      },
+      "sequence": 52,
+      "inning": 4,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h2",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e53",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 53
+      },
+      "sequence": 53,
+      "inning": 4,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h2",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e54",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 54
+      },
+      "sequence": 54,
+      "inning": 4,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h3",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e55",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 55
+      },
+      "sequence": 55,
+      "inning": 4,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h3",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e56",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 56
+      },
+      "sequence": 56,
+      "inning": 5,
+      "half": "top",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e57",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 57
+      },
+      "sequence": 57,
+      "inning": 5,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e58",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 58
+      },
+      "sequence": 58,
+      "inning": 5,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e59",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 59
+      },
+      "sequence": 59,
+      "inning": 5,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e60",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 60
+      },
+      "sequence": 60,
+      "inning": 5,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e61",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 61
+      },
+      "sequence": 61,
+      "inning": 5,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e62",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 62
+      },
+      "sequence": 62,
+      "inning": 5,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e63",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 63
+      },
+      "sequence": 63,
+      "inning": 5,
+      "half": "bottom",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e64",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 64
+      },
+      "sequence": 64,
+      "inning": 5,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h1",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e65",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 65
+      },
+      "sequence": 65,
+      "inning": 5,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h1",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e66",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 66
+      },
+      "sequence": 66,
+      "inning": 5,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h2",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e67",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 67
+      },
+      "sequence": 67,
+      "inning": 5,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h2",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e68",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 68
+      },
+      "sequence": 68,
+      "inning": 5,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h3",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e69",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 69
+      },
+      "sequence": 69,
+      "inning": 5,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h3",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e70",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 70
+      },
+      "sequence": 70,
+      "inning": 6,
+      "half": "top",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e71",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 71
+      },
+      "sequence": 71,
+      "inning": 6,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e72",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 72
+      },
+      "sequence": 72,
+      "inning": 6,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e73",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 73
+      },
+      "sequence": 73,
+      "inning": 6,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e74",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 74
+      },
+      "sequence": 74,
+      "inning": 6,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e75",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 75
+      },
+      "sequence": 75,
+      "inning": 6,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e76",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 76
+      },
+      "sequence": 76,
+      "inning": 6,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e77",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 77
+      },
+      "sequence": 77,
+      "inning": 6,
+      "half": "bottom",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e78",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 78
+      },
+      "sequence": 78,
+      "inning": 6,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h1",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e79",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 79
+      },
+      "sequence": 79,
+      "inning": 6,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h1",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e80",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 80
+      },
+      "sequence": 80,
+      "inning": 6,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h2",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e81",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 81
+      },
+      "sequence": 81,
+      "inning": 6,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h2",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e82",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 82
+      },
+      "sequence": 82,
+      "inning": 6,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h3",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e83",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 83
+      },
+      "sequence": 83,
+      "inning": 6,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h3",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e84",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 84
+      },
+      "sequence": 84,
+      "inning": 7,
+      "half": "top",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e85",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 85
+      },
+      "sequence": 85,
+      "inning": 7,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e86",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 86
+      },
+      "sequence": 86,
+      "inning": 7,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e87",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 87
+      },
+      "sequence": 87,
+      "inning": 7,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e88",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 88
+      },
+      "sequence": 88,
+      "inning": 7,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e89",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 89
+      },
+      "sequence": 89,
+      "inning": 7,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e90",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 90
+      },
+      "sequence": 90,
+      "inning": 7,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e91",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 91
+      },
+      "sequence": 91,
+      "inning": 7,
+      "half": "bottom",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e92",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 92
+      },
+      "sequence": 92,
+      "inning": 7,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h1",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e93",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 93
+      },
+      "sequence": 93,
+      "inning": 7,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h1",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e94",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 94
+      },
+      "sequence": 94,
+      "inning": 7,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h2",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e95",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 95
+      },
+      "sequence": 95,
+      "inning": 7,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h2",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e96",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 96
+      },
+      "sequence": 96,
+      "inning": 7,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h3",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e97",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 97
+      },
+      "sequence": 97,
+      "inning": 7,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h3",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e98",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 98
+      },
+      "sequence": 98,
+      "inning": 8,
+      "half": "top",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e99",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 99
+      },
+      "sequence": 99,
+      "inning": 8,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e100",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 100
+      },
+      "sequence": 100,
+      "inning": 8,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e101",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 101
+      },
+      "sequence": 101,
+      "inning": 8,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e102",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 102
+      },
+      "sequence": 102,
+      "inning": 8,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e103",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 103
+      },
+      "sequence": 103,
+      "inning": 8,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e104",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 104
+      },
+      "sequence": 104,
+      "inning": 8,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e105",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 105
+      },
+      "sequence": 105,
+      "inning": 8,
+      "half": "bottom",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e106",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 106
+      },
+      "sequence": 106,
+      "inning": 8,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h1",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e107",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 107
+      },
+      "sequence": 107,
+      "inning": 8,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h1",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e108",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 108
+      },
+      "sequence": 108,
+      "inning": 8,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h2",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e109",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 109
+      },
+      "sequence": 109,
+      "inning": 8,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h2",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e110",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 110
+      },
+      "sequence": 110,
+      "inning": 8,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h3",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e111",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 111
+      },
+      "sequence": 111,
+      "inning": 8,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h3",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e112",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 112
+      },
+      "sequence": 112,
+      "inning": 9,
+      "half": "top",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e113",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 113
+      },
+      "sequence": 113,
+      "inning": 9,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e114",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 114
+      },
+      "sequence": 114,
+      "inning": 9,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e115",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 115
+      },
+      "sequence": 115,
+      "inning": 9,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e116",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 116
+      },
+      "sequence": 116,
+      "inning": 9,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a2",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e117",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 117
+      },
+      "sequence": 117,
+      "inning": 9,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e118",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 118
+      },
+      "sequence": 118,
+      "inning": 9,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a3",
+        "pitcherId": "hp1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e119",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 119
+      },
+      "sequence": 119,
+      "inning": 9,
+      "half": "bottom",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e120",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 120
+      },
+      "sequence": 120,
+      "inning": 9,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h1",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e121",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 121
+      },
+      "sequence": 121,
+      "inning": 9,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h1",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e122",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 122
+      },
+      "sequence": 122,
+      "inning": 9,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h2",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e123",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 123
+      },
+      "sequence": 123,
+      "inning": 9,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h2",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e124",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 124
+      },
+      "sequence": 124,
+      "inning": 9,
+      "half": "bottom",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "h3",
+        "pitcherId": "ar1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e125",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 125
+      },
+      "sequence": 125,
+      "inning": 9,
+      "half": "bottom",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "h3",
+        "pitcherId": "ar1",
+        "result": "field_out"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e126",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 126
+      },
+      "sequence": 126,
+      "inning": 10,
+      "half": "top",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e127",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 127
+      },
+      "sequence": 127,
+      "inning": 10,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e128",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 128
+      },
+      "sequence": 128,
+      "inning": 10,
+      "half": "top",
+      "kind": "pitch",
+      "payload": {
+        "call": "ball",
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e129",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 129
+      },
+      "sequence": 129,
+      "inning": 10,
+      "half": "top",
+      "kind": "administrative",
+      "payload": {
+        "code": "called_game"
+      },
+      "relayText": "강우콜드 선언"
+    }
+  ],
+  "trackingCandidates": [],
+  "officialRecords": {
+    "batters": [],
+    "pitchers": []
+  }
+}

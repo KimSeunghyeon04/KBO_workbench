@@ -26,6 +26,7 @@ export interface RelayNormalizationResult {
   readonly findings: readonly import("../types.js").SourceFinding[];
   readonly blocks: readonly NormalizedRelayBlock[];
   readonly pitchEventIdsByBlock: ReadonlyMap<number, ReadonlyMap<string, readonly string[]>>;
+  readonly excludedPitchIdsByBlock?: ReadonlyMap<number, ReadonlySet<string>>;
 }
 
 export interface CanonicalSourceState {

@@ -1,0 +1,36 @@
+[
+  {
+    "kind": "plate_result",
+    "payload": {
+      "result": "field_out",
+      "batterId": "a2",
+      "pitcherId": "hp1",
+      "battedBallType": "fly_ball",
+      "isBunt": true,
+      "creditedRbi": 0
+    },
+    "relayText": "원정타자 : 투수 플라이 아웃 (번트)"
+  },
+  {
+    "kind": "runner_advance",
+    "payload": {
+      "runnerId": "a1",
+      "fromBase": 3,
+      "toBase": 3,
+      "outcome": "safe",
+      "context": { "kind": "plate_result", "plateResultEventId": "e4" }
+    },
+    "relayText": "3루주자 원정주자 : 투수 실책으로 3루까지 진루 (투수 송구 실책->3루수)"
+  },
+  {
+    "kind": "runner_advance",
+    "payload": {
+      "runnerId": "a1",
+      "fromBase": 3,
+      "toBase": 4,
+      "outcome": "scored",
+      "context": { "kind": "plate_result", "plateResultEventId": "e4" }
+    },
+    "relayText": "3루주자 원정주자 : 주자의 재치로 홈인"
+  }
+]

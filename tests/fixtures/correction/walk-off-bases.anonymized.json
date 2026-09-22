@@ -1,0 +1,50 @@
+[
+  {
+    "kind": "plate_result",
+    "payload": {
+      "batterId": "a6",
+      "pitcherId": "hp1",
+      "result": "single",
+      "creditedRbi": 1
+    },
+    "relayText": "홈타자6 : 우익수 앞 1루타",
+    "observedStateAfter": {
+      "balls": 1,
+      "strikes": 2,
+      "outs": 2,
+      "bases": [true, true, false],
+      "awayScore": 0,
+      "homeScore": 0
+    }
+  },
+  {
+    "kind": "runner_advance",
+    "payload": {
+      "runnerId": "a1",
+      "fromBase": 3,
+      "toBase": 4,
+      "outcome": "scored",
+      "context": { "kind": "plate_result", "plateResultEventId": "walkoff-0" }
+    },
+    "relayText": "3루주자 홈주자1 : 홈인",
+    "observedStateAfter": {
+      "balls": 1,
+      "strikes": 2,
+      "outs": 2,
+      "bases": [true, true, false],
+      "awayScore": 0,
+      "homeScore": 1
+    }
+  },
+  {
+    "kind": "administrative",
+    "payload": { "code": "footer" },
+    "relayText": "경기 종료 안내",
+    "observedStateAfter": {
+      "outs": 2,
+      "bases": [true, true, false],
+      "awayScore": 0,
+      "homeScore": 1
+    }
+  }
+]

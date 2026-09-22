@@ -1,0 +1,30 @@
+{
+  "lineup": {
+    "result": {
+      "previewData": {
+        "awayTeamLineUp": {
+          "fullLineUp": [{ "playerCode": "a1", "playerName": "익명 타자 A", "height": "185.0" }],
+          "batterCandidate": [{ "playerCode": "a2", "playerName": "익명 타자 B" }]
+        },
+        "homeTeamLineUp": {
+          "fullLineUp": [{ "playerCode": "h1", "playerName": "익명 투수", "height": "190.0" }]
+        }
+      }
+    }
+  },
+  "relay_001": {
+    "result": {
+      "textRelayData": {
+        "awayLineup": { "batter": [{ "pcode": "a1", "name": "익명 타자 A", "height": "185.0" }] },
+        "textRelays": [{ "ptsOptions": [{ "height": "999", "topSz": 0.375, "bottomSz": 1.5 }] }]
+      }
+    }
+  },
+  "relay_summary": {
+    "result": {
+      "textRelayData": {
+        "awayLineup": { "batter": [{ "pcode": "a2", "name": "익명 타자 B", "height": "178.0" }] }
+      }
+    }
+  }
+}

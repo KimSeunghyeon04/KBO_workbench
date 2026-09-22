@@ -8,7 +8,10 @@ import {
   type RecordCorrectionNotice,
   type StagingGameDocumentV2,
 } from "@kbo/contracts";
-import { buildRecordCorrectionBatchProposal } from "@kbo/correction";
+import {
+  buildRecordCorrectionBatchProposal,
+  createRecordCorrectionProposalBuilder,
+} from "@kbo/correction";
 import { compileStagingGameDocumentV2 } from "@kbo/game-core";
 import { describe, expect, it } from "vitest";
 
@@ -65,6 +68,18 @@ describe("KBO 기록정정 correction batch", () => {
       participantPlayerIds: { "0": "a2", "1": "hp1" },
     });
     expect(proposal.eligible).toBe(true);
+    const build = createRecordCorrectionProposalBuilder(document);
+    const binding = {
+      eventId: "e10",
+      batterPlayerId: "a2",
+      pitcherPlayerId: "hp1",
+      participantPlayerIds: { "0": "a2", "1": "hp1" },
+    };
+    const reusable = build(notice, binding);
+    expect(reusable).toEqual(proposal);
+    document.teams.away.name = "caller changed";
+    if (reusable.batch !== null) reusable.batch.commands.splice(0);
+    expect(build(notice, binding)).toEqual(proposal);
     const replacement = proposal.batch?.commands.find(
       (command) => command.kind === "replace_event",
     );

@@ -87,10 +87,12 @@ export function comparePlatePlayObservedState(
   linkedRunners: readonly RunnerAdvanceEvent[],
   context: CompileContext,
 ): void {
-  const options = { includeCount: false, includeBases: state.outs < 3 } as const;
   const finalStateEvent = linkedRunners.at(-1) ?? result;
   if (finalStateEvent.observedStateAfter !== undefined) {
-    compareObservedState(state, finalStateEvent, context, options);
+    compareObservedState(state, finalStateEvent, context, {
+      includeCount: false,
+      includeBases: state.outs < 3 && !isFinalWalkOff(state, finalStateEvent, context),
+    });
   }
 }
 
@@ -101,8 +103,32 @@ export function compareIndependentPlayObservedState(
 ): void {
   const finalStateEvent = runners.at(-1);
   if (finalStateEvent?.observedStateAfter !== undefined) {
-    compareObservedState(state, finalStateEvent, context, { includeBases: state.outs < 3 });
+    compareObservedState(state, finalStateEvent, context, {
+      includeBases: state.outs < 3 && !isFinalWalkOff(state, finalStateEvent, context),
+    });
   }
+}
+
+function isFinalWalkOff(
+  state: MutableState,
+  finalStateEvent: StagingRelayEvent,
+  context: CompileContext,
+): boolean {
+  const { document } = context;
+  if (
+    document.metadata.status !== "final" ||
+    state.half !== "bottom" ||
+    state.inning < document.metadata.scheduledInnings ||
+    state.homeScore <= state.awayScore
+  ) {
+    return false;
+  }
+  // 끝내기 이후 원천의 잔루 표시는 정리 중인 값일 수 있다. 실제 진행이 더 있으면
+  // 종료 지점으로 간주하지 않으며, 점수·아웃과 명시적 이동 검증은 그대로 유지한다.
+  for (const event of document.events.slice(finalStateEvent.sequence + 1)) {
+    if (event.kind !== "administrative" && event.kind !== "review") return false;
+  }
+  return true;
 }
 
 export function compareFinalObservedScore(

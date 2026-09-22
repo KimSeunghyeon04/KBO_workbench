@@ -922,6 +922,7 @@
                       { "const": "mound_visit", "type": "string" },
                       { "const": "break", "type": "string" },
                       { "const": "footer", "type": "string" },
+                      { "const": "called_game", "type": "string" },
                       { "const": "other", "type": "string" }
                     ]
                   }

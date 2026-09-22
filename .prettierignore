@@ -4,5 +4,11 @@ dist
 coverage
 .data
 .backups
+analysis/validation
+analysis/deployment
 pnpm-lock.yaml
 kbo_workbench_web_implementation_spec.md
+# Generated offline research reports and numerical artifacts; retain generator output.
+analysis/park-movement-2020-2025/**/*.html
+analysis/park-movement-2020-2025/**/*.json
+analysis/park-movement-2020-2025/**/*.md

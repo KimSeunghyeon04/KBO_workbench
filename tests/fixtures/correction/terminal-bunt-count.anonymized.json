@@ -1,0 +1,253 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "provider": "naver",
+    "sourceGameId": "test-source-game",
+    "collectedAt": "2026-08-20T12:00:00+09:00",
+    "sourceBundleHash": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "revisionBase": {
+    "kind": "new_game"
+  },
+  "metadata": {
+    "gameId": "test-game",
+    "season": 2026,
+    "gameDate": "2026-08-20",
+    "status": "suspended",
+    "scheduledInnings": 9
+  },
+  "teams": {
+    "away": {
+      "teamId": "AWAY",
+      "name": "원정"
+    },
+    "home": {
+      "teamId": "HOME",
+      "name": "홈"
+    }
+  },
+  "rosters": {
+    "away": {
+      "teamId": "AWAY",
+      "players": [
+        {
+          "playerId": "a1",
+          "name": "a1",
+          "battingOrder": 1,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a2",
+          "name": "a2",
+          "battingOrder": 2,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a3",
+          "name": "a3",
+          "battingOrder": 3,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a4",
+          "name": "a4",
+          "battingOrder": 4,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a5",
+          "name": "a5",
+          "battingOrder": 5,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a6",
+          "name": "a6",
+          "battingOrder": 6,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a7",
+          "name": "a7",
+          "battingOrder": 7,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a8",
+          "name": "a8",
+          "battingOrder": 8,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "a9",
+          "name": "a9",
+          "battingOrder": 9,
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "ar1",
+          "name": "ar1",
+          "starter": false,
+          "positions": ["PR"]
+        }
+      ]
+    },
+    "home": {
+      "teamId": "HOME",
+      "players": [
+        {
+          "playerId": "h1",
+          "name": "h1",
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "h2",
+          "name": "h2",
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "h3",
+          "name": "h3",
+          "starter": true,
+          "positions": ["IF"]
+        },
+        {
+          "playerId": "hp1",
+          "name": "hp1",
+          "starter": true,
+          "positions": ["P"]
+        },
+        {
+          "playerId": "hp2",
+          "name": "hp2",
+          "starter": false,
+          "positions": ["P"]
+        }
+      ]
+    }
+  },
+  "events": [
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e0",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 0
+      },
+      "sequence": 0,
+      "inning": 1,
+      "half": "top",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e1",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 1
+      },
+      "sequence": 1,
+      "inning": 1,
+      "half": "top",
+      "kind": "batter_start",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e2",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 2
+      },
+      "sequence": 2,
+      "inning": 1,
+      "half": "top",
+      "kind": "pitch",
+      "payload": {
+        "call": "called_strike",
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e3",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 3
+      },
+      "sequence": 3,
+      "inning": 1,
+      "half": "top",
+      "kind": "pitch",
+      "payload": {
+        "call": "called_strike",
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e4",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 4
+      },
+      "sequence": 4,
+      "inning": 1,
+      "half": "top",
+      "kind": "pitch",
+      "payload": {
+        "call": "foul_bunt",
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      },
+      "observedStateAfter": {
+        "strikes": 2
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e5",
+        "endpoint": "test-relay",
+        "blockIndex": 0,
+        "eventIndex": 5
+      },
+      "sequence": 5,
+      "inning": 1,
+      "half": "top",
+      "kind": "plate_result",
+      "payload": {
+        "result": "strikeout",
+        "batterId": "a1",
+        "pitcherId": "hp1"
+      }
+    }
+  ],
+  "trackingCandidates": [],
+  "officialRecords": {
+    "batters": [],
+    "pitchers": []
+  }
+}

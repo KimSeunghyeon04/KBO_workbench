@@ -33,7 +33,17 @@ export function applyCorrectionCommand(
 ): CorrectionResult {
   const document = parseStagingGameDocumentV2(input);
   const before = compileStagingGameDocumentV2(document);
+  return applyCompiledCorrectionCommand(document, before, command);
+}
+
+// Package-internal: the proposal builder owns this exact decoded document and compile.
+export function applyCompiledCorrectionCommand(
+  document: StagingGameDocumentV2,
+  before: ReplayResult,
+  command: CorrectionCommand,
+): CorrectionResult {
   let corrected: StagingGameDocumentV2;
+  let replay: ReplayResult;
   try {
     const decoded = parseCorrectionCommand(command);
     const raw =
@@ -41,20 +51,21 @@ export function applyCorrectionCommand(
         ? decoded.commands.reduce((current, item) => applyAtomic(current, item), document)
         : applyAtomic(document, decoded);
     const provisional = parseStagingGameDocumentV2(resequence(raw));
-    corrected = parseStagingGameDocumentV2(
-      followStableTrackingPlateAppearanceContexts(
-        document,
-        before,
-        provisional,
-        compileStagingGameDocumentV2(provisional),
-      ),
+    const provisionalReplay = compileStagingGameDocumentV2(provisional);
+    const followed = followStableTrackingPlateAppearanceContexts(
+      document,
+      before,
+      provisional,
+      provisionalReplay,
     );
+    // Reuse only the compile of this exact decoded document, before any tracking changes.
+    corrected = followed === provisional ? provisional : parseStagingGameDocumentV2(followed);
+    replay = followed === provisional ? provisionalReplay : compileStagingGameDocumentV2(corrected);
   } catch (error: unknown) {
     throw new CorrectionCommandError(
       error instanceof Error ? error.message : "보정 명령을 적용할 수 없습니다.",
     );
   }
-  const replay = compileStagingGameDocumentV2(corrected);
   return {
     document: corrected,
     replay,
@@ -76,6 +87,19 @@ function applyAtomic(
       return deleteEvent(document, command.eventId);
     case "replace_event":
       return replaceEvent(document, command.eventId, command.event);
+    case "update_observed_state": {
+      const index = requiredIndex(document.events, command.eventId);
+      const current = document.events[index];
+      if (current?.identity.kind !== "source") {
+        throw new Error("관측값 수정은 원문에서 수집한 행에만 적용할 수 있습니다.");
+      }
+      const events = [...document.events];
+      const corrected = structuredClone(current);
+      if (Object.keys(command.observedStateAfter).length === 0) delete corrected.observedStateAfter;
+      else corrected.observedStateAfter = command.observedStateAfter;
+      events[index] = parseStagingRelayEvent(corrected);
+      return withEvents(document, events);
+    }
     case "move_event":
       return withEvents(
         document,
@@ -282,11 +306,14 @@ function replaceEvent(
     identity: current.identity,
     sequence: current.sequence,
   };
+  if (current.identity.kind === "source") delete common.observedStateAfter;
   events[index] = parseStagingRelayEvent(
     current.identity.kind === "source"
       ? {
           ...common,
-          ...(current.relayText === undefined ? {} : { relayText: current.relayText }),
+          ...(replacement.relayText !== undefined || current.relayText === undefined
+            ? {}
+            : { relayText: current.relayText }),
           ...(current.observedStateAfter === undefined
             ? {}
             : { observedStateAfter: current.observedStateAfter }),

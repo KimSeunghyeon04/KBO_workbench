@@ -1,0 +1,73 @@
+{
+  "shift": [
+    {
+      "type": 2,
+      "text": "1루수 홈야수 : 투수(으)로 수비위치 변경",
+      "playerChange": {
+        "type": "shift",
+        "shiftPlayer": { "playerId": "h1", "playerName": "홈야수", "playerPos": "1루수" },
+        "shiftMessage": " 투수(으)로 수비위치 변경"
+      },
+      "currentGameState": { "pitcher": "h1", "batter": "a1" }
+    }
+  ],
+  "pitcherToFielder": [
+    {
+      "type": 2,
+      "text": "투수 홈투수 : 3루수 홈야수 (으)로 교체",
+      "playerChange": {
+        "type": "substitution",
+        "inPlayer": { "playerId": "h1", "playerName": "홈야수", "playerPos": "3루수" },
+        "outPlayer": { "playerId": "hp1", "playerName": "홈투수", "playerPos": "투수" }
+      }
+    }
+  ],
+  "repeatedPinchHitter": [
+    { "kind": "batter_start", "batterId": "a2", "pitcherId": "hp1", "text": "2번타자 원정대타" },
+    {
+      "type": 2,
+      "text": "대타 원정대타 : 대타 원정후속 (으)로 교체",
+      "playerChange": { "type": "text" },
+      "currentGameState": { "batter": "a3", "pitcher": "hp1" }
+    }
+  ],
+  "batterRunner": [
+    { "kind": "half_inning_start", "text": "1회초" },
+    { "kind": "batter_start", "batterId": "a1", "pitcherId": "hp1", "text": "1번타자 원정선수" },
+    {
+      "kind": "plate_result",
+      "result": "single",
+      "batterId": "a1",
+      "pitcherId": "hp1",
+      "text": "원정선수 : 1루타"
+    },
+    { "kind": "batter_start", "batterId": "a3", "pitcherId": "hp1", "text": "3번타자 원정후속" },
+    {
+      "kind": "plate_result",
+      "result": "single",
+      "batterId": "a3",
+      "pitcherId": "hp1",
+      "text": "원정후속 : 1루타"
+    },
+    {
+      "type": 14,
+      "text": "1루주자 원정후속 : 다른주자수비하는 사이 2루까지 진루 (중견수->포수)",
+      "currentGameState": {
+        "base1": "0",
+        "base2": "1",
+        "base3": "0",
+        "batter": "a3",
+        "pitcher": "hp1"
+      }
+    },
+    { "type": 14, "text": "1루주자 원정선수 : 3루까지 진루" }
+  ],
+  "catcherClock": [
+    { "kind": "batter_start", "batterId": "a1", "pitcherId": "hp1", "text": "1번타자 원정선수" },
+    {
+      "type": 7,
+      "text": "2구 피치클락 포수위반 볼",
+      "currentGameState": { "batter": "a1", "pitcher": "hp1", "ball": "2", "strike": "0" }
+    }
+  ]
+}

@@ -10,6 +10,7 @@ import {
 } from "./naver/game-metadata.js";
 import { mapNaverOfficialRecords } from "./naver/official-record-mapper.js";
 import { findNaverStartingPitcher, mapNaverRoster } from "./naver/roster-mapper.js";
+import { supplementNaverRosters } from "./naver/roster-supplement.js";
 import {
   attachNaverTrackingPlateAppearanceContexts,
   mapNaverTrackingCandidates,
@@ -34,8 +35,15 @@ export function mapNaverGame(bundle: RawGameBundle): MappingResult {
     homeTeamId,
     homeName,
   } = decodeNaverGameMetadata(bundle);
-  const awayRoster = mapNaverRoster(lineup, "away", awayTeamId);
-  const homeRoster = mapNaverRoster(lineup, "home", homeTeamId);
+  const recordPayload = endpointPayload(bundle.payloads.record, "recordData", "record");
+  const supplemented = supplementNaverRosters(
+    {
+      away: mapNaverRoster(lineup, "away", awayTeamId),
+      home: mapNaverRoster(lineup, "home", homeTeamId),
+    },
+    recordPayload,
+  );
+  const { away: awayRoster, home: homeRoster } = supplemented.rosters;
   const startingPitchers = {
     away: findNaverStartingPitcher(awayRoster),
     home: findNaverStartingPitcher(homeRoster),
@@ -66,9 +74,8 @@ export function mapNaverGame(bundle: RawGameBundle): MappingResult {
     closeTrailingHalf: status === "final",
   });
   const tracking = mapNaverTrackingCandidates(bundle.gameId, normalized);
-  const findings = [...normalized.findings, ...tracking.findings];
+  const findings = [...supplemented.findings, ...normalized.findings, ...tracking.findings];
 
-  const recordPayload = endpointPayload(bundle.payloads.record, "recordData", "record");
   const officialRecords = mapNaverOfficialRecords(recordPayload);
   const mappedDocument = parseStagingGameDocumentV2({
     schemaVersion: 2,

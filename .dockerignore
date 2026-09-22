@@ -5,7 +5,9 @@ node_modules
 .pnpm-store
 **/dist
 coverage
+test-results
 .data
 .backups
+analysis
 .env
 *.log

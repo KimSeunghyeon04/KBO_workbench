@@ -1,3 +1,7 @@
+import { readFile } from "node:fs/promises";
+
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 import { describe, expect, it } from "vitest";
 
 import { normalizeNaverRelay, type RelayBlockInput, type RelayRosterPlayer } from "@kbo/collection";
@@ -12,6 +16,13 @@ const players: readonly RelayRosterPlayer[] = [
   player("h2", "홈2", "home", 2),
   player("ap1", "원정투수", "away", undefined, ["투수"]),
 ];
+
+const errorReachTexts = Value.Decode(
+  Type.Array(Type.String({ minLength: 1 })),
+  JSON.parse(
+    await readFile("tests/fixtures/naver/reached-on-error.anonymized.json", "utf8"),
+  ) as unknown,
+);
 
 describe("Naver 평면 relay 원장 정규화", () => {
   it("볼넷 결과 앞의 정상적인 4구 볼은 사구로 바꾸지 않는다", () => {
@@ -260,6 +271,140 @@ describe("Naver 평면 relay 원장 정규화", () => {
     expect(runner?.kind === "runner_advance" ? runner.payload.context : null).toEqual({
       kind: "independent",
       reason: "stolen_base",
+    });
+  });
+
+  describe.each([undefined, "field_out", "fielder_choice"] as const)(
+    "실책 출루와 coarse 원천 결과 %s",
+    (sourceResult) => {
+      it.each(errorReachTexts)("실책 출루를 원문과 identity를 보존해 분류한다: %s", (text) => {
+        const rows = [
+          row(0, "half_inning_start", "1회초 시작"),
+          row(1, "batter_start", "원정1 타석", { batterId: "a1", pitcherId: "hp1" }),
+          {
+            seqno: 2,
+            type: 13,
+            text,
+            currentGameState: { batter: "a1", pitcher: "hp1" },
+            ...(sourceResult === undefined ? {} : { result: sourceResult }),
+          },
+        ];
+        const normalized = normalize(rows);
+        expect(normalized.events).toHaveLength(rows.length);
+        expect(normalized.events[2]).toMatchObject({
+          kind: "plate_result",
+          sequence: 2,
+          identity: {
+            eventId: "20260820TEST0:relay_001:0:2",
+            sourceEventId: "2",
+            endpoint: "relay_001",
+            blockIndex: 0,
+            eventIndex: 2,
+          },
+          relayText: text,
+          payload: { result: "reached_on_error", batterId: "a1", pitcherId: "hp1" },
+        });
+        expect(normalize(rows)).toEqual(normalized);
+      });
+
+      it.each([
+        ["원정1 : 투수 희생번트 실책으로 출루", "sacrifice_bunt"],
+        ["원정1 : 중견수 희생플라이 실책으로 출루", "sacrifice_fly"],
+        ["원정1 : 포수 스트라이크 낫아웃 실책으로 출루", "strikeout"],
+      ] as const)("복합 결과를 실책 출루로 덮지 않는다: %s", (text, expected) => {
+        const normalized = normalize([
+          row(0, "half_inning_start", "1회초 시작"),
+          row(1, "batter_start", "원정1 타석", { batterId: "a1", pitcherId: "hp1" }),
+          row(2, "plate_result", text, {
+            ...(sourceResult === undefined ? {} : { result: sourceResult }),
+            batterId: "a1",
+            pitcherId: "hp1",
+          }),
+        ]);
+        expect(normalized.events[2]).toMatchObject({
+          kind: "plate_result",
+          payload: { result: expected, batterDestination: 1 },
+        });
+      });
+    },
+  );
+
+  it.each(["single", "double", "strikeout", "double_play", "triple_play"] as const)(
+    "실책 출루 문구로 구체적인 원천 결과 %s를 덮지 않는다",
+    (result) => {
+      const normalized = normalize([
+        row(0, "half_inning_start", "1회초 시작"),
+        row(1, "batter_start", "원정1 타석", { batterId: "a1", pitcherId: "hp1" }),
+        row(2, "plate_result", "원정1 : 유격수 땅볼 실책으로 출루", {
+          result,
+          batterId: "a1",
+          pitcherId: "hp1",
+        }),
+      ]);
+      expect(normalized.events[2]).toMatchObject({ kind: "plate_result", payload: { result } });
+    },
+  );
+
+  it("실책 출루의 연결 주자 이동과 PA·AB·H 계산을 함께 보존한다", () => {
+    const sourceText = errorReachTexts[0];
+    if (sourceText === undefined) throw new Error("실책 출루 fixture가 비어 있습니다.");
+    const rows = [
+      row(0, "half_inning_start", "1회초 시작"),
+      row(1, "batter_start", "원정2 타석", { batterId: "a2", pitcherId: "hp1" }),
+      row(2, "plate_result", "원정2 : 자동 고의4구", {
+        result: "intentional_walk",
+        batterId: "a2",
+        pitcherId: "hp1",
+      }),
+      row(3, "batter_start", "원정1 타석", { batterId: "a1", pitcherId: "hp1" }),
+      row(4, "pitch", "1구 타격", { call: "in_play", batterId: "a1", pitcherId: "hp1" }),
+      { seqno: 5, type: 23, text: sourceText },
+      { seqno: 6, type: 14, text: "1루주자 원정2 : 실책으로 2루까지 진루" },
+    ];
+    const normalized = normalize(rows);
+    const compiled = compileStagingGameDocumentV2(documentFor(normalized.events));
+    expect(normalized.events).toHaveLength(rows.length);
+    expect(normalized.events[5]).toMatchObject({ payload: { result: "reached_on_error" } });
+    expect(normalized.events[6]).toMatchObject({
+      kind: "runner_advance",
+      payload: {
+        runnerId: "a2",
+        fromBase: 1,
+        toBase: 2,
+        context: { kind: "plate_result", plateResultEventId: "20260820TEST0:relay_001:0:5" },
+      },
+    });
+    expect(compiled.findings.filter((finding) => finding.severity === "blocking")).toEqual([]);
+    expect(compiled.plateAppearances.at(-1)).toMatchObject({
+      batterId: "a1",
+      result: "reached_on_error",
+      actualPitchCount: 1,
+    });
+    expect(compiled.batterLines.find((line) => line.playerId === "a1")).toMatchObject({
+      plateAppearances: 1,
+      atBats: 1,
+      hits: 0,
+    });
+    expect(compiled.finalState.bases).toEqual([
+      { runnerId: "a1", responsiblePitcherId: "hp1" },
+      { runnerId: "a2", responsiblePitcherId: "hp1" },
+      null,
+    ]);
+  });
+
+  it("괄호 안 부연의 실책 출루를 현재 타자의 결과로 사용하지 않는다", () => {
+    const normalized = normalize([
+      row(0, "half_inning_start", "1회초 시작"),
+      row(1, "batter_start", "원정1 타석", { batterId: "a1", pitcherId: "hp1" }),
+      row(2, "plate_result", "원정1 : 2루수 땅볼 아웃 (직전 타자 실책으로 출루)", {
+        result: "field_out",
+        batterId: "a1",
+        pitcherId: "hp1",
+      }),
+    ]);
+    expect(normalized.events[2]).toMatchObject({
+      kind: "plate_result",
+      payload: { result: "field_out" },
     });
   });
 

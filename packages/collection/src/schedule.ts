@@ -26,6 +26,8 @@ export type SchedulePageFetcher = (
   signal: AbortSignal,
 ) => Promise<SchedulePagePayload>;
 
+export type SchedulePageObserver = (page: number, response: SchedulePagePayload) => Promise<void>;
+
 export class PlaywrightScheduleExplorer {
   public constructor(
     private readonly fetchPage?: SchedulePageFetcher,
@@ -36,10 +38,11 @@ export class PlaywrightScheduleExplorer {
     startDate: string,
     endDate: string,
     signal: AbortSignal,
+    observePage?: SchedulePageObserver,
   ): Promise<readonly ScheduleEntry[]> {
     assertDateRange(startDate, endDate);
     if (this.fetchPage !== undefined) {
-      return discoverPages(startDate, endDate, signal, this.fetchPage);
+      return discoverPages(startDate, endDate, signal, this.fetchPage, observePage);
     }
 
     let browser: Browser | undefined;
@@ -60,22 +63,28 @@ export class PlaywrightScheduleExplorer {
         { waitUntil: "domcontentloaded", timeout: 20_000 },
       );
       const request = context.request;
-      return await discoverPages(startDate, endDate, signal, async (from, to, pageNumber) => {
-        throwIfCancelled(signal);
-        const response = await request.get(this.endpoints.schedule(), {
-          params: {
-            fields: "basic,schedule,baseball,manualRelayUrl",
-            upperCategoryId: "kbaseball",
-            categoryIds: "kbo",
-            fromDate: from,
-            toDate: to,
-            size: pageSize,
-            page: pageNumber,
-          },
-          timeout: 20_000,
-        });
-        return { status: response.status(), url: response.url(), payload: await response.json() };
-      });
+      return await discoverPages(
+        startDate,
+        endDate,
+        signal,
+        async (from, to, pageNumber) => {
+          throwIfCancelled(signal);
+          const response = await request.get(this.endpoints.schedule(), {
+            params: {
+              fields: "basic,schedule,baseball,manualRelayUrl",
+              upperCategoryId: "kbaseball",
+              categoryIds: "kbo",
+              fromDate: from,
+              toDate: to,
+              size: pageSize,
+              page: pageNumber,
+            },
+            timeout: 20_000,
+          });
+          return { status: response.status(), url: response.url(), payload: await response.json() };
+        },
+        observePage,
+      );
     } catch (error: unknown) {
       if (signal.aborted || error instanceof CollectionCancelledError) {
         throw new CollectionCancelledError();
@@ -95,6 +104,7 @@ export async function discoverPages(
   endDate: string,
   signal: AbortSignal,
   fetchPage: SchedulePageFetcher,
+  observePage?: SchedulePageObserver,
 ): Promise<readonly ScheduleEntry[]> {
   assertDateRange(startDate, endDate);
   const found: ScheduleEntry[] = [];
@@ -103,13 +113,14 @@ export async function discoverPages(
   for (let page = 1; total === null || fetched < total; page += 1) {
     throwIfCancelled(signal);
     const response = await fetchPage(startDate, endDate, page, signal);
+    await observePage?.(page, response);
     if (response.status !== 200) throw new NaverHttpError(response.status);
     const parsed = parseSchedulePayload(response.payload, startDate, endDate);
     if (total === null) total = parsed.total;
     else if (total !== parsed.total) {
       throw new NaverSourceFormatError("일정 pagination 중 gameTotalCount가 변경되었습니다.");
     }
-    if (parsed.games.length === 0 && fetched < total) {
+    if (parsed.pageCount === 0 && fetched < total) {
       throw new NaverSourceFormatError("gameTotalCount 전에 일정 page가 끝났습니다.");
     }
     fetched += parsed.pageCount;

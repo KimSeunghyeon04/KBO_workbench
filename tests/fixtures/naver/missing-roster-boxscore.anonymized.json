@@ -1,0 +1,84 @@
+{
+  "gameId": "20260715AABB0",
+  "collectedAt": "2026-07-15T01:02:03Z",
+  "missingEndpoints": [],
+  "payloads": {
+    "lineup": {
+      "game_info": {
+        "aCode": "AA",
+        "aName": "원정",
+        "hCode": "BB",
+        "hName": "홈",
+        "gdate": 20260715,
+        "gtime": "18:30",
+        "statusCode": "SUSPENDED"
+      },
+      "awayTeamLineUp": {
+        "fullLineUp": [
+          { "playerCode": "A1", "playerName": "원정타자", "batorder": 1, "positionName": "중견수" }
+        ],
+        "batterCandidate": [],
+        "pitcherBullpen": []
+      },
+      "homeTeamLineUp": {
+        "fullLineUp": [{ "playerCode": "HP1", "playerName": "홈선발", "positionName": "투수" }],
+        "batterCandidate": [],
+        "pitcherBullpen": []
+      }
+    },
+    "record": {
+      "battersBoxscore": {
+        "away": [{ "playerCode": "A2", "name": "원정후보", "pos": "교", "ab": 0 }],
+        "home": []
+      },
+      "pitchersBoxscore": {
+        "away": [],
+        "home": [{ "pcode": "HP2", "name": "홈구원", "inn": "0", "pa": 0, "bf": 1 }]
+      }
+    },
+    "relay_001": {
+      "textRelays": [
+        {
+          "inn": 1,
+          "homeOrAway": "0",
+          "textOptions": [
+            {
+              "type": 0,
+              "text": "1회초 시작",
+              "currentGameState": { "batter": "A1", "pitcher": "HP1" }
+            },
+            {
+              "type": 8,
+              "text": "1번타자 원정타자",
+              "currentGameState": { "batter": "A1", "pitcher": "HP1" }
+            },
+            {
+              "type": 2,
+              "seqno": 3,
+              "text": "투수 홈선발 : 투수 홈구원 (으)로 교체",
+              "playerChange": {
+                "type": "substitution",
+                "liveText": "투수 홈선발 : 투수 홈구원 (으)로 교체",
+                "inPlayer": {
+                  "outPlayerTurn": 10,
+                  "playerId": "HP2",
+                  "playerName": "홈구원",
+                  "playerPos": "투수"
+                },
+                "outPlayer": { "playerId": "HP1", "playerName": "홈선발", "playerPos": "투수" }
+              },
+              "currentGameState": { "batter": "A1", "pitcher": "HP2" }
+            },
+            {
+              "type": 1,
+              "seqno": 4,
+              "text": "1구 볼",
+              "pitchResult": "B",
+              "currentGameState": { "batter": "A1", "pitcher": "HP2" }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

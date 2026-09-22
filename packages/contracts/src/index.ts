@@ -73,6 +73,7 @@ export {
   parseCorrectionCommand,
   ReconcileTrackingPlateAppearanceContextsCommandSchema,
   ReplaceEventCommandSchema,
+  UpdateObservedStateCommandSchema,
   UpdateOfficialPitcherRecordCommandSchema,
   UpdateOfficialRecordCommandSchema,
   UpdateRosterPlayerCommandSchema,
