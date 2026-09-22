@@ -103,7 +103,9 @@ export function filterCorrectionGames(
     .filter(
       (game) =>
         normalized === "" ||
-        `${game.gameId} ${game.season ?? ""}`.toLocaleLowerCase("ko-KR").includes(normalized),
+        `${game.gameId} ${game.season} ${game.gameDate} ${game.teams.away.name} ${game.teams.home.name}`
+          .toLocaleLowerCase("ko-KR")
+          .includes(normalized),
     )
     .sort(
       (left, right) =>
@@ -114,7 +116,7 @@ export function filterCorrectionGames(
 }
 
 export function correctionGameLabel(game: CorrectionGameCatalogItem): string {
-  return `${game.gameId} · ${catalogAuthorityLabel(game.authority)}`;
+  return `${game.gameDate} ${game.teams.away.name}–${game.teams.home.name} · ${catalogAuthorityLabel(game.authority)} · ${game.gameId}`;
 }
 
 export function catalogAuthorityLabel(authority: CatalogAuthority | string): string {

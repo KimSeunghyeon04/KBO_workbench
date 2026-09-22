@@ -22,7 +22,27 @@ afterEach(() => {
 describe("보정 화면의 KBO 기록정정 내용", () => {
   it("검토함에서 이동하면 공지 원문과 선수별 전후 공식 기록을 표시한다", async () => {
     const correctionCase = anonymizedCorrectionCase();
-    const proposal = anonymizedProposal();
+    const proposal: RecordCorrectionProposal = {
+      ...anonymizedProposal(),
+      changes: [
+        {
+          kind: "official_batter",
+          field: "doubles",
+          playerId: "a1",
+          beforeValue: null,
+          afterValue: 1,
+          state: "change",
+        },
+        {
+          kind: "official_pitcher",
+          field: "earnedRuns",
+          playerId: "hp2",
+          beforeValue: 2,
+          afterValue: 2,
+          state: "already_applied",
+        },
+      ],
+    };
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: string | URL | Request) => {
@@ -61,6 +81,13 @@ describe("보정 화면의 KBO 기록정정 내용", () => {
     expect(screen.getByText("비식별 원정팀 가상타자 기록과 판정 정정")).toBeTruthy();
     expect(screen.getByText("안타: 3 → 2")).toBeTruthy();
     expect(screen.getByText("파생 검증")).toBeTruthy();
+    expect(screen.getByText("a1")).toBeTruthy();
+    expect(screen.getByText("2루타")).toBeTruthy();
+    expect(screen.getByText("미제공 → 1")).toBeTruthy();
+    expect(screen.getByText("KBO 공지로 보완 예정")).toBeTruthy();
+    expect(screen.getByText("hp2")).toBeTruthy();
+    expect(screen.getByText("자책점")).toBeTruthy();
+    expect(screen.getByText("이미 반영")).toBeTruthy();
     queryClient.clear();
   });
 });

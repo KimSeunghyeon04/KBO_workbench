@@ -661,3 +661,21 @@
     grid-column: 2;
   }
 }
+
+@media (max-width: 860px) {
+  .sidebar-section-label {
+    grid-column: 1 / -1;
+    padding: 6px 10px;
+    text-align: left;
+  }
+}
+@media (max-width: 600px) {
+  .topbar {
+    height: 96px;
+    padding: 8px 16px 0;
+    gap: 4px 8px;
+  }
+  .sidebar.open {
+    top: 96px;
+  }
+}

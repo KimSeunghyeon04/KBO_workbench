@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 
 import { loadReplay } from "../api/client";
-import { catalogQueryOptions, revisionCatalogQueryOptions } from "../api/query-options";
+import { storedCatalogQueryOptions, revisionCatalogQueryOptions } from "../api/query-options";
 import { catalogGameIdentity, catalogMonths, catalogSeasons, filterStoredGames } from "./catalog";
 import { nextReplayIndex, replayDelay } from "./playback";
 
@@ -21,7 +21,7 @@ export function useReplayPageController() {
   const [searchParams] = useSearchParams();
   const requestedGameId = searchParams.get("gameId");
   const requestedRevision = parseRequestedRevision(searchParams.get("revision"));
-  const games = useQuery(catalogQueryOptions());
+  const games = useQuery(storedCatalogQueryOptions());
   const stored = useMemo(
     () => games.data?.games.filter((item) => item.authority === "database") ?? [],
     [games.data],

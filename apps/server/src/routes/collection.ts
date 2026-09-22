@@ -7,6 +7,7 @@ import {
   type JobEvent,
 } from "@kbo/contracts";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
+import { Type } from "@sinclair/typebox";
 
 import type { RouteContext } from "./context.js";
 import { JobParamsSchema } from "./schemas.js";
@@ -25,15 +26,27 @@ export const collectionRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (
       },
     },
     async (request, reply) => {
-      const job = context.runtime.collectionJobs.create(request.body);
+      const job = await context.runtime.collectionJobs.create(request.body);
       return reply.code(202).send({ jobId: job.jobId, status: job.status });
     },
   );
 
   app.get(
     "/api/v2/collection-jobs",
-    { schema: { response: { 200: CollectionJobListSchema } } },
-    async () => ({ jobs: [...context.runtime.collectionJobs.list()] }),
+    {
+      schema: {
+        querystring: Type.Object(
+          { activeOnly: Type.Optional(Type.Boolean()) },
+          { additionalProperties: false },
+        ),
+        response: { 200: CollectionJobListSchema },
+      },
+    },
+    async (request) => ({
+      jobs: [...context.runtime.collectionJobs.list()].filter(
+        (job) => request.query.activeOnly !== true || !isTerminal(job.status),
+      ),
+    }),
   );
 
   app.get(

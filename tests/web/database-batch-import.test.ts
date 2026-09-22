@@ -1,40 +1,54 @@
 // @vitest-environment jsdom
-
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { DatabasePage } from "../../apps/web/src/pages/database-page.js";
-
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
 
 describe("데이터베이스 운영 콘솔", () => {
-  it("명시적 확인 뒤 적재 가능한 경기 전체를 서버 batch로 한 번만 등록한다", async () => {
+  it("서버가 확정한 선택은 필터 변경에도 유지하고 선택 ID로 한 번만 실행한다", async () => {
     let batchPosted = false;
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const requestPath = String(input);
-      if (requestPath === "/api/v2/database/status") return Response.json(databaseOverview());
-      if (requestPath === "/api/v2/games") return Response.json(gameCatalog());
-      if (requestPath === "/api/v2/import-jobs" && init?.method !== "POST") {
-        return Response.json({ jobs: batchPosted ? completedJobs() : [] });
+      const requestPath = String(input),
+        url = new URL(requestPath, "http://localhost");
+      if (url.pathname === "/api/v2/database/status") return Response.json(databaseOverview());
+      if (url.pathname === "/api/v2/database/games")
+        return Response.json({
+          games: url.searchParams.get("season") === "2025" ? [] : gameCatalog().games,
+          total: url.searchParams.get("season") === "2025" ? 0 : 2,
+          page: 1,
+          limit: 50,
+          seasons: [2026, 2025],
+        });
+      if (url.pathname === "/api/v2/import-history")
+        return Response.json(historyPage(batchPosted ? completedJobs() : []));
+      if (url.pathname === "/api/v2/import-selections") {
+        expect(JSON.parse(String(init?.body))).toEqual({ season: 2026 });
+        return Response.json({
+          selectionId: "confirmed-selection",
+          count: 2,
+          createdAt: "2026-08-30T00:00:00.000Z",
+          criteria: { season: 2026 },
+        });
       }
-      if (requestPath === "/api/v2/import-jobs/batch" && init?.method === "POST") {
+      if (url.pathname === "/api/v2/import-jobs/batch") {
         batchPosted = true;
         return Response.json(
           {
             batchId: "anon-batch-1",
             createdCount: 2,
-            skippedCount: 1,
-            jobs: [
-              { jobId: "anon-job-1", gameId: "anon-game-a", status: "queued" },
-              { jobId: "anon-job-2", gameId: "anon-game-b", status: "queued" },
-            ],
+            skippedCount: 0,
+            jobs: completedJobs().map((job) => ({
+              jobId: job.jobId,
+              gameId: job.gameId,
+              status: "queued",
+            })),
           },
           { status: 202 },
         );
@@ -43,89 +57,116 @@ describe("데이터베이스 운영 콘솔", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("crypto", { randomUUID: () => "anon-batch-idempotency-key" });
-    const queryClient = renderDatabase("/database");
-
-    await userEvent.setup().click(await screen.findByRole("button", { name: "2경기 일괄 적재" }));
-    expect(screen.getByRole("alert").textContent).toContain("2경기를 일괄 적재");
+    const queryClient = renderDatabase("/database?scope=ready&season=2026");
+    const user = userEvent.setup();
+    const choose = await screen.findByRole("button", { name: "현재 조건 전체 선택" });
+    await waitFor(() => expect((choose as HTMLButtonElement).disabled).toBe(false));
+    await user.click(choose);
+    await screen.findByRole("button", { name: "2경기 일괄 적재 시작" });
+    await user.selectOptions(screen.getByLabelText("시즌"), "2025");
+    expect(await screen.findByText("적재할 경기가 없습니다.")).toBeTruthy();
+    expect(screen.getByText(/2026 시즌.*2경기 확정/)).toBeTruthy();
     expect(batchRequests(fetchMock)).toHaveLength(0);
-
-    await userEvent.setup().click(screen.getByRole("button", { name: "일괄 적재 시작" }));
-    expect(await screen.findByText("최근 일괄 등록 2")).toBeTruthy();
-    expect(screen.getByText("제외 1")).toBeTruthy();
-    expect(await screen.findByText("anon-job-1")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "2경기 일괄 적재 시작" }));
+    expect(await screen.findByText("선택한 일괄 작업")).toBeTruthy();
+    expect(await screen.findByText("완료 1")).toBeTruthy();
+    expect(screen.getByText("실패 1")).toBeTruthy();
     expect(batchRequests(fetchMock)).toHaveLength(1);
-    expect(batchRequests(fetchMock)[0]?.[1]).toEqual(
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ idempotencyKey: "anon-batch-idempotency-key" }),
-      }),
-    );
+    expect(JSON.parse(String(batchRequests(fetchMock)[0]?.[1]?.body))).toEqual({
+      selectionId: "confirmed-selection",
+      idempotencyKey: "anon-batch-idempotency-key",
+    });
     queryClient.clear();
   });
 
-  it("저장 경기 784개는 가상화하고 선택한 경기 revision만 한 번 요청한다", async () => {
-    const storedGames = Array.from({ length: 784 }, (_, index) => databaseGame(index));
+  it("저장 경기 10,000개를 50개씩 요청하고 시즌 필터에서 빠진 상세를 닫는다", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
-      const requestPath = String(input);
-      if (requestPath === "/api/v2/database/status") {
-        return Response.json({ ...databaseOverview(), counts: { readyToImport: 0, stored: 784 } });
-      }
-      if (requestPath === "/api/v2/games") return Response.json({ games: storedGames });
-      if (requestPath === "/api/v2/import-jobs") return Response.json({ jobs: [] });
-      if (requestPath.endsWith("/revisions")) {
+      const url = new URL(String(input), "http://localhost"),
+        page = Number(url.searchParams.get("page") ?? 1);
+      if (url.pathname === "/api/v2/database/status")
         return Response.json({
-          gameId: "anon-db-000",
-          currentRevision: 2,
-          revisions: [
-            {
-              revision: 2,
-              documentHash: "a".repeat(64),
-              projectionHash: "b".repeat(64),
-              sealed: true,
-              createdAt: "2026-08-30T00:00:00.000Z",
-              sealedAt: "2026-08-30T00:00:01.000Z",
-              original: false,
-              current: true,
-            },
-          ],
+          ...databaseOverview(),
+          counts: { readyToImport: 0, stored: 10_000 },
         });
-      }
-      throw new Error(`unexpected request: ${requestPath}`);
+      if (url.pathname === "/api/v2/database/games")
+        return Response.json({
+          games:
+            url.searchParams.get("season") === "2025"
+              ? []
+              : Array.from({ length: 50 }, (_, index) => databaseGame((page - 1) * 50 + index)),
+          total: url.searchParams.get("season") === "2025" ? 0 : 10_000,
+          page,
+          limit: 50,
+          seasons: [2026, 2025],
+        });
+      if (url.pathname === "/api/v2/import-history") return Response.json(historyPage([]));
+      if (url.pathname.endsWith("/revisions"))
+        return Response.json({ gameId: "anon-db-000", currentRevision: 2, revisions: [] });
+      throw new Error(`unexpected request: ${url.pathname}`);
     });
     vi.stubGlobal("fetch", fetchMock);
     const queryClient = renderDatabase("/database?scope=stored");
-
-    const first = await screen.findByRole("option", { name: /anon-db-000/ });
-    expect(revisionRequests(fetchMock)).toHaveLength(0);
-    expect(document.querySelectorAll(".operation-list-row").length).toBeLessThan(30);
-    expect(document.querySelectorAll("*").length).toBeLessThan(2_000);
-    await userEvent.setup().click(first);
-    expect(await screen.findByRole("button", { name: /r2.*current/ })).toBeTruthy();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("option", { name: /anon-db-000/ }));
+    expect(await screen.findByRole("button", { name: "current 교정 초안 열기" })).toBeTruthy();
     expect(revisionRequests(fetchMock)).toHaveLength(1);
+    await user.selectOptions(screen.getByLabelText("시즌"), "2025");
+    expect(await screen.findByText("저장된 경기가 없습니다.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "current 교정 초안 열기" })).toBeNull();
+    await user.selectOptions(screen.getByLabelText("시즌"), "2026");
+    await screen.findByRole("option", { name: /anon-db-000/ });
+    await user.click(screen.getByRole("button", { name: "다음", exact: true }));
+    expect(await screen.findByRole("option", { name: /anon-db-050/ })).toBeTruthy();
+    expect(document.querySelectorAll(".operation-list-row").length).toBeLessThan(30);
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("page=2&limit=50"))).toBe(
+      true,
+    );
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === "/api/v2/games")).toBe(false);
     queryClient.clear();
   });
 
-  it("적재 작업 784개도 선택 가능한 고정 높이 목록으로 가상화한다", async () => {
-    const importJobs = Array.from({ length: 784 }, (_, index) => importJob(index));
+  it("적재 기록을 페이지 조회하며 전체 이력을 요청하지 않는다", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
-      const requestPath = String(input);
-      if (requestPath === "/api/v2/database/status") {
-        return Response.json({ ...databaseOverview(), counts: { readyToImport: 0, stored: 0 } });
-      }
-      if (requestPath === "/api/v2/games") return Response.json({ games: [] });
-      if (requestPath === "/api/v2/import-jobs") return Response.json({ jobs: importJobs });
-      throw new Error(`unexpected request: ${requestPath}`);
+      const url = new URL(String(input), "http://localhost"),
+        page = Number(url.searchParams.get("page") ?? 1);
+      if (url.pathname === "/api/v2/database/status") return Response.json(databaseOverview());
+      if (url.pathname === "/api/v2/import-history")
+        return Response.json({
+          ...historyPage(
+            Array.from({ length: 50 }, (_, index) => importJob((page - 1) * 50 + index)),
+          ),
+          total: 784,
+          page,
+        });
+      throw new Error(`unexpected request: ${url.pathname}`);
     });
     vi.stubGlobal("fetch", fetchMock);
     const queryClient = renderDatabase("/database?scope=jobs");
-
     expect(await screen.findByRole("option", { name: /anon-import-game-000/ })).toBeTruthy();
-    expect(document.querySelectorAll(".operation-list-row").length).toBeLessThan(30);
-    expect(screen.queryByText("anon-import-game-783")).toBeNull();
+    await userEvent.setup().click(screen.getByRole("button", { name: "다음", exact: true }));
+    expect(await screen.findByRole("option", { name: /anon-import-game-050/ })).toBeTruthy();
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === "/api/v2/import-jobs")).toBe(
+      false,
+    );
     queryClient.clear();
   });
 });
-
+function historyPage(jobs: ReturnType<typeof importJob>[]) {
+  return {
+    jobs,
+    total: jobs.length,
+    page: 1,
+    limit: 50,
+    summary: {
+      total: jobs.length,
+      queued: 0,
+      running: 0,
+      succeeded: jobs.filter((job) => job.status === "succeeded").length,
+      failed: jobs.filter((job) => job.status === "failed").length,
+      cancelled: 0,
+    },
+  };
+}
 function renderDatabase(initialEntry: string): QueryClient {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },

@@ -1,7 +1,7 @@
 import { useCallback, useDeferredValue, useEffect, useRef, useState, useTransition } from "react";
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import type {
   RecordCorrectionCase,
@@ -29,7 +29,7 @@ import { SelectableVirtualList } from "../components/selectable-virtual-list";
 const statusOptions: readonly [RecordCorrectionCaseStatus, string][] = [
   ["action_required", "적용 가능"],
   ["manual_review", "후보 확인"],
-  ["unmatched", "DB 경기 없음"],
+  ["unmatched", "경기 연결 필요"],
   ["already_applied", "이미 반영"],
   ["out_of_scope", "지원 범위 외"],
   ["resolved", "해결됨"],
@@ -141,11 +141,13 @@ export function RecordCorrectionsPage(): React.JSX.Element {
   });
   const draft = useMutation({
     mutationFn: (noticeId: string) => createRecordCorrectionDraft(noticeId),
-    onSuccess: (created) => {
+    onSuccess: async (created) => {
+      await invalidate();
       void navigate(
         `/correct?sessionId=${encodeURIComponent(created.sessionId)}&noticeId=${encodeURIComponent(created.noticeId)}`,
       );
     },
+    onError: invalidate,
   });
   const error =
     summary.error ??
@@ -250,7 +252,7 @@ export function RecordCorrectionsPage(): React.JSX.Element {
                 />
               </label>
               <label>
-                <span>상태</span>
+                <span>DB 기준 상태</span>
                 <select
                   value={status ?? "all"}
                   onChange={(event) =>
@@ -268,6 +270,23 @@ export function RecordCorrectionsPage(): React.JSX.Element {
                   ))}
                 </select>
               </label>
+              {queue !== "completed" && cases.data !== undefined ? (
+                <p className="record-correction-progress-counts" aria-live="polite">
+                  현재 목록 · 검토 필요{" "}
+                  {
+                    cases.data.filter(
+                      (item) =>
+                        belongsToQueue(item.status, "needs_action") &&
+                        item.draftProgress?.state !== "ready_to_import",
+                    ).length
+                  }
+                  {" · "}DB 적재 대기{" "}
+                  {
+                    cases.data.filter((item) => item.draftProgress?.state === "ready_to_import")
+                      .length
+                  }
+                </p>
+              ) : null}
             </div>
             <SelectableVirtualList
               ariaLabel="기록정정 공지 목록"
@@ -347,8 +366,8 @@ function RecordCorrectionRow({
         <strong>
           {item.awayTeamName} vs {item.homeTeamName}
         </strong>
-        <span className={`record-correction-status ${item.status}`}>
-          {statusLabel(item.status)}
+        <span className={`record-correction-status ${item.draftProgress?.state ?? item.status}`}>
+          {progressLabel(item)}
         </span>
       </span>
       <span className="operation-row-meta">
@@ -374,6 +393,7 @@ function RecordCorrectionDetail(props: {
   readonly onDraft: () => void;
 }): React.JSX.Element {
   const { item } = props;
+  const readyToImport = item.draftProgress?.state === "ready_to_import";
   return (
     <div className="operation-detail-stack">
       <header className="operation-detail-heading">
@@ -385,10 +405,19 @@ function RecordCorrectionDetail(props: {
             KBO #{String(item.notice.recordNumber)} · {item.notice.seriesName}
           </p>
         </div>
-        <span className={`record-correction-status ${item.status}`}>
-          {statusLabel(item.status)}
+        <span className={`record-correction-status ${item.draftProgress?.state ?? item.status}`}>
+          {progressLabel(item)}
         </span>
       </header>
+      {item.draftProgress !== undefined ? (
+        <div
+          className={`record-correction-saved-progress ${item.draftProgress.state}`}
+          role="status"
+        >
+          <strong>{readyToImport ? "수정 완료 · DB 적재 대기" : progressLabel(item)}</strong>
+          <p>{item.draftProgress.message}</p>
+        </div>
+      ) : null}
       <dl className="operation-detail-fields">
         <div>
           <dt>경기</dt>
@@ -412,12 +441,14 @@ function RecordCorrectionDetail(props: {
             {item.notice.beforeRecordText} → {item.notice.afterRecordText}
           </dd>
         </div>
-        <div>
-          <dt>판정 근거</dt>
-          <dd>{item.reasonMessage}</dd>
-        </div>
+        {item.draftProgress === undefined ? (
+          <div>
+            <dt>판정 근거</dt>
+            <dd>{item.reasonMessage}</dd>
+          </div>
+        ) : null}
       </dl>
-      <h3>전후 공식 기록</h3>
+      <h3>KBO 정정 내용</h3>
       <div className="record-correction-stat-list">
         {item.notice.statChanges.map((stat) => {
           const participant =
@@ -428,7 +459,13 @@ function RecordCorrectionDetail(props: {
               <span>
                 {stat.rawStatName}: {String(stat.beforeValue)} → {String(stat.afterValue)}
               </span>
-              <small>{supportLabel(stat.supportKind)}</small>
+              <small>
+                {readyToImport && stat.supportKind === "direct"
+                  ? "작업본 반영 완료"
+                  : readyToImport && stat.supportKind === "derived"
+                    ? "작업본 검증 완료"
+                    : supportLabel(stat.supportKind)}
+              </small>
             </div>
           );
         })}
@@ -436,8 +473,9 @@ function RecordCorrectionDetail(props: {
           <p className="muted-text">구조화된 통계 변경이 없습니다.</p>
         ) : null}
       </div>
-      {item.candidates.length > 1 ||
-      (item.status === "manual_review" && item.candidates.length > 0) ? (
+      {!readyToImport &&
+      (item.candidates.length > 1 ||
+        (item.status === "manual_review" && item.candidates.length > 0)) ? (
         <>
           <h3>서버 후보</h3>
           <div className="record-correction-candidates">
@@ -473,7 +511,7 @@ function RecordCorrectionDetail(props: {
           >
             재검토
           </button>
-        ) : item.status === "out_of_scope" ? null : (
+        ) : item.status === "out_of_scope" || readyToImport ? null : (
           <>
             <input
               value={props.dismissReason}
@@ -492,7 +530,7 @@ function RecordCorrectionDetail(props: {
         )}
         <button
           type="button"
-          className="primary-button"
+          className={readyToImport ? "secondary-button" : "primary-button"}
           disabled={
             props.pending ||
             item.gameId === null ||
@@ -502,8 +540,16 @@ function RecordCorrectionDetail(props: {
           }
           onClick={props.onDraft}
         >
-          보정 작업대로 이동
+          {readyToImport ? "저장한 작업본 보기" : "보정 작업대로 이동"}
         </button>
+        {readyToImport && item.gameId !== null ? (
+          <Link
+            className="primary-button"
+            to={`/database?scope=ready&game=${encodeURIComponent(item.gameId)}`}
+          >
+            DB 적재하러 가기
+          </Link>
+        ) : null}
       </div>
     </div>
   );
@@ -528,6 +574,19 @@ function reviewFeedback(status: RecordCorrectionCaseStatus, remaining: number | 
 
 function statusLabel(status: RecordCorrectionCaseStatus): string {
   return statusOptions.find(([value]) => value === status)?.[1] ?? status;
+}
+
+function progressLabel(item: RecordCorrectionListItem | RecordCorrectionCase): string {
+  switch (item.draftProgress?.state) {
+    case "ready_to_import":
+      return "DB 적재 대기";
+    case "needs_review":
+      return "수정 중";
+    case "stale_base":
+      return "기준 기록 확인";
+    default:
+      return statusLabel(item.status);
+  }
 }
 
 function summaryTotal(summary: RecordCorrectionSummary | undefined): number {

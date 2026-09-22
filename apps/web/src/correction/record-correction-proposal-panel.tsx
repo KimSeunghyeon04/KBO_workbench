@@ -11,6 +11,7 @@ import {
   recordCorrectionCaseQueryOptions,
   recordCorrectionProposalQueryOptions,
 } from "../api/query-options";
+import { recordFieldLabel } from "./record-comparison";
 
 export function RecordCorrectionProposalPanel(props: {
   readonly session: CorrectionSession;
@@ -85,12 +86,30 @@ export function RecordCorrectionProposalPanel(props: {
           <div className="record-correction-proposal-changes">
             {data.changes.map((change, index) => (
               <div key={`${change.kind}:${change.field}:${String(index)}`}>
-                <span>{changeKindLabel(change.kind)}</span>
-                <strong>{change.field}</strong>
+                <span>
+                  {change.playerId === null
+                    ? changeKindLabel(change.kind)
+                    : ([
+                        ...props.session.draftDocument.rosters.away.players,
+                        ...props.session.draftDocument.rosters.home.players,
+                      ].find((player) => player.playerId === change.playerId)?.name ??
+                      change.playerId)}
+                </span>
+                <strong>
+                  {change.kind === "official_batter"
+                    ? (recordFieldLabel("batter", change.field) ?? change.field)
+                    : change.kind === "official_pitcher"
+                      ? (recordFieldLabel("pitcher", change.field) ?? change.field)
+                      : change.field}
+                </strong>
                 <code>
-                  {String(change.beforeValue ?? "—")} → {String(change.afterValue ?? "—")}
+                  {String(change.beforeValue ?? "미제공")} → {String(change.afterValue ?? "미제공")}
                 </code>
-                <small>{changeStateLabel(change.state)}</small>
+                <small>
+                  {change.state === "change" && change.beforeValue === null
+                    ? "KBO 공지로 보완 예정"
+                    : changeStateLabel(change.state)}
+                </small>
               </div>
             ))}
           </div>

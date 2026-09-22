@@ -439,11 +439,14 @@ export function normalizeProjectionTables(
 ): ProjectionTables {
   return mapProjectionTables((table) => {
     const columns = projectionTableColumns(table, version);
+    const columnSet = new Set<string>(columns);
     const rows = tables[table];
     if (!Array.isArray(rows)) {
       throw new ProjectionShapeError(`${table} projection table이 배열이 아닙니다.`);
     }
-    return rows.map((row, rowIndex) => normalizeProjectionRow(table, rowIndex, columns, row));
+    return rows.map((row, rowIndex) =>
+      normalizeProjectionRow(table, rowIndex, columns, columnSet, row),
+    );
   });
 }
 
@@ -451,9 +454,9 @@ function normalizeProjectionRow(
   table: ProjectionTableName,
   rowIndex: number,
   columns: readonly string[],
+  columnSet: ReadonlySet<string>,
   row: ProjectionRow,
 ): ProjectionRow {
-  const columnSet = new Set<string>(columns);
   const rowKeys = Object.keys(row);
   const missing = columns.filter((column) => !Object.hasOwn(row, column));
   const extra = rowKeys.filter((column) => !columnSet.has(column));

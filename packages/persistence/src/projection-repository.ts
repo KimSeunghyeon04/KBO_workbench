@@ -12,18 +12,29 @@ import {
 } from "./projection.js";
 
 export async function writeProjection(
-  client: PoolClient,
+  client: Pick<PoolClient, "query">,
   tables: ProjectionTables,
   version: ProjectionVersion = 4,
 ): Promise<void> {
   const normalized = normalizeProjectionTables(tables, version);
   for (const descriptor of projectionTableDescriptors(version)) {
     const { columns, name, schema } = descriptor;
-    for (const [rowIndex, row] of normalized[name].entries()) {
-      const decoded = descriptor.decodeRow(row, rowIndex);
+    // Stay below the protocol parameter limit while preserving descriptor and row order.
+    const batchSize = Math.min(500, Math.floor(60_000 / columns.length));
+    const rows = normalized[name];
+    for (let offset = 0; offset < rows.length; offset += batchSize) {
+      const batch = rows.slice(offset, offset + batchSize);
+      const values = batch.flatMap((row, index) => {
+        const decoded = descriptor.decodeRow(row, offset + index);
+        return columns.map((column) => decoded[column]);
+      });
+      const placeholders = batch.map(
+        (_, rowIndex) =>
+          `(${columns.map((_, columnIndex) => `$${String(rowIndex * columns.length + columnIndex + 1)}`).join(",")})`,
+      );
       await client.query(
-        `INSERT INTO ${schema}.${name} (${columns.join(",")}) VALUES (${columns.map((_, index) => `$${String(index + 1)}`).join(",")})`,
-        columns.map((column) => decoded[column]),
+        `INSERT INTO ${schema}.${name} (${columns.join(",")}) VALUES ${placeholders.join(",")}`,
+        values,
       );
     }
   }

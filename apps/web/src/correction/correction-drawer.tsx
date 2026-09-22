@@ -62,6 +62,13 @@ import {
 } from "./event-editor-autofill";
 import { eventKindLabel } from "./event-presentation";
 import { PlayerPicker, playerSideForRole } from "./player-picker";
+import { runnerResponsibilityLabel } from "./runner-responsibility";
+import {
+  decodeObservedStateForm,
+  observedStateChanged,
+  observedStateForm,
+  ObservedStateEditor,
+} from "./observed-state-editor";
 
 export function CorrectionDrawer({
   request,
@@ -81,6 +88,10 @@ export function CorrectionDrawer({
   readonly onApply: (command: CorrectionCommand) => void;
 }): React.JSX.Element {
   const originalEvent = request.mode === "replace_event" ? selectedEvent : undefined;
+  const [observationForm, setObservationForm] = useState(() =>
+    observedStateForm(originalEvent?.observedStateAfter),
+  );
+  const observation = decodeObservedStateForm(observationForm, originalEvent?.observedStateAfter);
   const autofillContext = buildEditorAutofillContext(session, request);
   const [singleEditor, setSingleEditor] = useState<EditorFormModel>(() =>
     initialEditorModel(request, originalEvent, autofillContext),
@@ -91,6 +102,12 @@ export function CorrectionDrawer({
     (editor) => createAddEventComposerState(createAddEventDraft(editor)),
   );
   const [dirty, setDirty] = useState(false);
+  const [eventEdited, setEventEdited] = useState(false);
+  const observationChanged =
+    originalEvent?.identity.kind === "source" &&
+    observation.value !== null &&
+    observedStateChanged(observation.value, originalEvent.observedStateAfter);
+  const observationOnly = observationChanged && !eventEdited;
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -116,12 +133,14 @@ export function CorrectionDrawer({
     } else setSingleEditor(next);
   };
   const update = (patch: Partial<FormState>): void => {
+    setEventEdited(true);
     updateEditor(manualFormPatch(editor, patch));
     setDirty(true);
     setConfirmDiscard(false);
     setComposerError(null);
   };
   const updateModel = (transform: (current: EditorFormModel) => EditorFormModel): void => {
+    setEventEdited(true);
     updateEditor(transform(editor));
     setDirty(true);
     setConfirmDiscard(false);
@@ -145,7 +164,7 @@ export function CorrectionDrawer({
         ? activeValidation === undefined
           ? "추가할 행을 찾을 수 없습니다."
           : activeValidation.error
-        : validateForm(form, gameDocument);
+        : (observation.error ?? (observationOnly ? null : validateForm(form, gameDocument)));
   const suggestionEvents = addMode
     ? transientEventsAtAnchor(gameDocument, request.beforeEventId, queuedBeforeActive)
     : gameDocument.events;
@@ -216,13 +235,34 @@ export function CorrectionDrawer({
       if (command !== null) onApply(command);
       return;
     }
-    if (candidate === null || validation !== null) return;
-    onApply({
+    if (validation !== null) return;
+    const observationCommand =
+      observationChanged && observation.value !== null
+        ? {
+            commandId: newCommandId(),
+            kind: "update_observed_state" as const,
+            eventId: request.eventId,
+            observedStateAfter: observation.value,
+          }
+        : null;
+    if (observationOnly && observationCommand !== null) {
+      onApply(observationCommand);
+      return;
+    }
+    if (candidate === null) return;
+    const replace: CorrectionCommand = {
       commandId: newCommandId(),
       kind: "replace_event",
       eventId: request.eventId,
       event: candidate,
-    });
+    };
+    if (observationCommand !== null) {
+      onApply({
+        commandId: newCommandId(),
+        kind: "correction_batch",
+        commands: [replace, observationCommand],
+      });
+    } else onApply(replace);
   };
 
   const changeKind = (kind: StagingRelayEventKind): void => {
@@ -409,6 +449,18 @@ export function CorrectionDrawer({
                     referenceEvents={referenceEvents}
                     queuedEvents={queuedBeforeActive}
                   />
+                  {originalEvent?.identity.kind === "source" ? (
+                    <ObservedStateEditor
+                      form={observationForm}
+                      document={gameDocument}
+                      side={originalEvent.half === "top" ? "away" : "home"}
+                      onChange={(next) => {
+                        setObservationForm(next);
+                        setDirty(true);
+                        setConfirmDiscard(false);
+                      }}
+                    />
+                  ) : null}
                   <div className="relay-text-field">
                     <label htmlFor={`${titleId}-relay-text`}>중계 문구</label>
                     <textarea
@@ -438,6 +490,12 @@ export function CorrectionDrawer({
                       문구 제안
                     </button>
                     <small>{String(form.relayText.length)} / 1000</small>
+                    {originalEvent?.identity.kind === "source" ? (
+                      <small>
+                        수정한 문구는 보정 원장에 저장됩니다. 최초 원문은 근거 패널에서 확인할 수
+                        있습니다.
+                      </small>
+                    ) : null}
                   </div>
                 </>
               )}
@@ -492,7 +550,7 @@ export function CorrectionDrawer({
                     pending ||
                     (!addMode &&
                       request.mode !== "move_event" &&
-                      (candidate === null || validation !== null))
+                      ((!observationOnly && candidate === null) || validation !== null))
                   }
                 >
                   {addMode && composer.drafts.length > 1
@@ -928,7 +986,7 @@ function EventFields({
         ) : null}
         <PlayerPicker
           label="책임 투수 (선택)"
-          optionalLabel="자동(현재 책임 투수)"
+          optionalLabel={runnerResponsibilityLabel(form, context)}
           document={document}
           side={pitcherSide}
           value={form.responsiblePitcherId}
@@ -1112,6 +1170,7 @@ function EventFields({
           <option value="mound_visit">마운드 방문</option>
           <option value="break">휴식·중단</option>
           <option value="footer">footer</option>
+          <option value="called_game">콜드게임 종료 선언</option>
           <option value="other">기타</option>
         </select>
       </label>

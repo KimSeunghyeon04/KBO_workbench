@@ -190,6 +190,19 @@ export const RecordCorrectionMatchCandidateSchema = Type.Object(
   strict,
 );
 
+export const RecordCorrectionDraftProgressSchema = Type.Object(
+  {
+    state: Type.Union([
+      Type.Literal("ready_to_import"),
+      Type.Literal("needs_review"),
+      Type.Literal("stale_base"),
+    ]),
+    blockingCount: Type.Integer({ minimum: 0 }),
+    message: Type.String({ minLength: 1, maxLength: 1000 }),
+  },
+  strict,
+);
+
 export const RecordCorrectionCaseSchema = Type.Object(
   {
     noticeId: IdSchema,
@@ -207,6 +220,7 @@ export const RecordCorrectionCaseSchema = Type.Object(
     assessedAt: DateTimeSchema,
     notice: RecordCorrectionNoticeSchema,
     candidates: Type.Array(RecordCorrectionMatchCandidateSchema),
+    draftProgress: Type.Optional(RecordCorrectionDraftProgressSchema),
   },
   strict,
 );
@@ -256,6 +270,7 @@ export const RecordCorrectionListItemSchema = Type.Object(
     venueName: Type.String({ minLength: 1, maxLength: 200 }),
     beforeRecordText: Type.String({ minLength: 1, maxLength: 1000 }),
     afterRecordText: Type.String({ minLength: 1, maxLength: 1000 }),
+    draftProgress: Type.Optional(RecordCorrectionDraftProgressSchema),
   },
   strict,
 );
@@ -403,6 +418,7 @@ export type RecordCorrectionCaseStatus = Static<typeof RecordCorrectionCaseStatu
 export type RecordCorrectionQueue = Static<typeof RecordCorrectionQueueSchema>;
 export type RecordCorrectionMatchCandidate = Static<typeof RecordCorrectionMatchCandidateSchema>;
 export type RecordCorrectionCase = Static<typeof RecordCorrectionCaseSchema>;
+export type RecordCorrectionDraftProgress = Static<typeof RecordCorrectionDraftProgressSchema>;
 export type RecordCorrectionListItem = Static<typeof RecordCorrectionListItemSchema>;
 export type RecordCorrectionSummary = Static<typeof RecordCorrectionSummarySchema>;
 export type RecordCorrectionReviewActionRequest = Static<

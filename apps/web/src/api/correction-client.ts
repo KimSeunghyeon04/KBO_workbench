@@ -15,7 +15,14 @@ import {
 } from "@kbo/contracts";
 import { Value } from "@sinclair/typebox/value";
 
-import { requestJson } from "./transport";
+import { requestJson, requestNoContent } from "./transport";
+
+export async function deleteCorrectionSession(sessionId: string, version: number): Promise<void> {
+  await requestNoContent(
+    `/api/v2/correction-sessions/${encodeURIComponent(sessionId)}?expectedSessionVersion=${String(version)}`,
+    { method: "DELETE", keepalive: true },
+  );
+}
 
 export async function getCorrectionGameCatalog(): Promise<CorrectionGameCatalog> {
   return Value.Decode(CorrectionGameCatalogSchema, await requestJson("/api/v2/correction-games"));
@@ -88,11 +95,13 @@ export async function getCorrectionOriginal(sessionId: string): Promise<StagingG
 export async function getCorrectionSourceEvidence(
   sessionId: string,
   eventId: string,
+  signal?: AbortSignal,
 ): Promise<CorrectionSourceEvidence> {
   return Value.Decode(
     CorrectionSourceEvidenceSchema,
     await requestJson(
       `/api/v2/correction-sessions/${encodeURIComponent(sessionId)}/source-evidence/${encodeURIComponent(eventId)}`,
+      signal === undefined ? undefined : { signal },
     ),
   );
 }

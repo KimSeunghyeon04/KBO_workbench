@@ -859,7 +859,7 @@ const ENUM_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   reason: [...PROJECTION_ENUM_VALUES.runnerReason, "plate_result"],
   substitution_role: ["batter", "runner", "pitcher", "fielder"],
   review_decision: ["requested", "upheld", "overturned", "inconclusive"],
-  administrative_code: ["announcement", "mound_visit", "break", "footer", "other"],
+  administrative_code: ["announcement", "mound_visit", "break", "footer", "called_game", "other"],
   suspected_kind: PROJECTION_ENUM_VALUES.relayKind.filter((value) => value !== "unresolved"),
   stance: PROJECTION_ENUM_VALUES.stance,
   resolution_kind: ["pending", "linked", "duplicate", "excluded"],

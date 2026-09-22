@@ -27,12 +27,16 @@ describe("replay HTTP API", () => {
       source: sourceData(document),
       replay: compileStagingGameDocumentV2(document),
     }));
-    const pool = { end: vi.fn(async () => undefined) } as unknown as Pool;
+    const pool = {
+      query: vi.fn(async () => ({ rows: [{ pitchId: "e2", season: 2026, heightCm: 180 }] })),
+      end: vi.fn(async () => undefined),
+    } as unknown as Pool;
     const app = createApp(testConfig(temporary.path), pool, {
       workspace,
       collectionJobs: emptyCollectionJobs(),
       revisionStore: {
         catalog: async () => [],
+        storedGameIds: async () => [],
         countStoredGames: async () => 0,
         loadCompiled,
         revisions: unexpected,
@@ -75,6 +79,13 @@ describe("replay HTTP API", () => {
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json()).toMatchObject({ code: "invalid_replay_cursor", category: "domain" });
     expect(loadCompiled).toHaveBeenCalledWith(document.metadata.gameId, 1);
+    expect(loadCompiled).toHaveBeenCalledTimes(1);
+    await app.inject({ method: "GET", url: `${base}/replay-manifest` });
+    expect(loadCompiled).toHaveBeenCalledTimes(2);
+    loadCompiled.mockRejectedValueOnce(new Error("sealed integrity failure"));
+    const corrupt = await app.inject({ method: "GET", url: `${base}/replay-manifest` });
+    expect(corrupt.statusCode).toBe(500);
+    expect(loadCompiled).toHaveBeenCalledTimes(3);
     await app.close();
   });
 });

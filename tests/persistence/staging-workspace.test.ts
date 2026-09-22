@@ -15,6 +15,94 @@ import { StagingWorkspace, WorkspacePersistenceBlockedError } from "@kbo/persist
 import { sanitizedNaverBundle } from "../helpers/naver.js";
 
 describe("staging workspace", () => {
+  it("조회한 catalog도 저장·실패 상태·적재 제거와 재시작을 즉시 반영한다", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-catalog-updates-"));
+    const workspace = await StagingWorkspace.open(temporary.path);
+    const { document } = mapNaverGame(await sanitizedNaverBundle());
+    const gameId = document.metadata.gameId;
+    const blocking = {
+      producer: "collection" as const,
+      lifecycle: "persistent" as const,
+      code: "source.review",
+      category: "source" as const,
+      severity: "blocking" as const,
+      message: "검토 필요",
+    };
+    expect(await workspace.catalog()).toEqual({ games: [] });
+    await workspace.saveQuarantine(document, [blocking]);
+    expect((await workspace.catalog()).games[0]).toMatchObject({
+      authority: "quarantine",
+      blockingFindings: 1,
+      supersededCount: 0,
+    });
+    expect((await workspace.correctionGameCatalog()).games[0]?.authority).toBe("quarantine");
+    const oldToken = await workspace.collectionToken(gameId);
+    await workspace.saveReady(document, []);
+    expect((await workspace.catalog()).games[0]).toMatchObject({
+      authority: "staging",
+      blockingFindings: 0,
+      supersededCount: 1,
+    });
+    await expect(workspace.saveSourceFailure(gameId, [blocking], 2026, oldToken)).rejects.toThrow();
+    expect((await workspace.catalog()).games[0]?.authority).toBe("staging");
+    await workspace.saveSourceFailure(gameId, [blocking]);
+    expect((await workspace.catalog()).games[0]).toMatchObject({
+      authority: "source_failure",
+      supersededCount: 2,
+    });
+    expect(await workspace.correctionGameCatalog()).toEqual({ games: [] });
+    await workspace.saveReady(document, []);
+    const ready = await workspace.catalog();
+    await workspace.close();
+    const restarted = await StagingWorkspace.open(temporary.path);
+    expect(await restarted.catalog()).toEqual(ready);
+    expect((await restarted.correctionGameCatalog()).games[0]?.authority).toBe("staging");
+    await restarted.removeImportedStaging(2026, gameId, stagingDocumentHash(document));
+    expect(await restarted.catalog()).toEqual({ games: [] });
+    expect(await restarted.correctionGameCatalog()).toEqual({ games: [] });
+    await restarted.close();
+  });
+
+  it("교정 저장 직후 오류가 나도 이전 catalog를 유지하지 않고 복구 후 다시 구축한다", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-catalog-recovery-"));
+    const workspace = await StagingWorkspace.open(temporary.path);
+    const { document } = mapNaverGame(await sanitizedNaverBundle());
+    await workspace.saveQuarantine(document, [
+      {
+        producer: "collection",
+        lifecycle: "persistent",
+        code: "source.review",
+        category: "source",
+        severity: "blocking",
+        message: "검토 필요",
+      },
+    ]);
+    expect((await workspace.catalog()).games[0]?.authority).toBe("quarantine");
+    await expect(
+      workspace.commitCorrection(
+        {
+          baseAuthority: "quarantine",
+          targetAuthority: "staging",
+          baseDocumentHash: stagingDocumentHash(document),
+          document,
+          findingEnvelope: { schemaVersion: 2, findings: [] },
+        },
+        "after_current",
+      ),
+    ).rejects.toThrow("injected correction failure");
+    expect((await workspace.catalog()).games[0]).toMatchObject({
+      authority: "staging",
+      blockingFindings: 0,
+    });
+    await workspace.close();
+    const restarted = await StagingWorkspace.open(temporary.path);
+    expect((await restarted.catalog()).games[0]).toMatchObject({
+      authority: "staging",
+      blockingFindings: 0,
+    });
+    await restarted.close();
+  });
+
   it("strict 문서와 finding을 원자 저장하고 catalog에서 읽는다", async () => {
     await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-workspace-"));
     const workspace = await StagingWorkspace.open(temporary.path);

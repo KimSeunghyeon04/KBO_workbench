@@ -4,7 +4,6 @@ import type {
   CorrectionCommand,
   CorrectionGameCatalogItem,
   CorrectionPreview,
-  CorrectionSession,
 } from "@kbo/contracts";
 
 import {
@@ -17,16 +16,20 @@ import {
 } from "../api/client";
 import { correctionOriginalQueryOptions, queryKeys } from "../api/query-options";
 import type { DrawerRequest } from "./event-editor-registry";
+import { useOwnedSession } from "./use-owned-session";
+import { ApiClientError } from "../api/transport";
 
 export type CorrectionCommitCompletion = Readonly<{
   sessionId: string;
   gameId: string;
+  documentHash: string;
+  label: string;
   outcome: "promoted" | "staging_saved" | "quarantine_saved";
 }>;
 
 export function useCorrectionSessionController(selectedGame: CorrectionGameCatalogItem | null) {
   const queryClient = useQueryClient();
-  const [session, setSession] = useState<CorrectionSession | null>(null);
+  const { session, setSession, release } = useOwnedSession();
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [drawer, setDrawer] = useState<DrawerRequest | null>(null);
   const [notice, setNotice] = useState("");
@@ -34,14 +37,16 @@ export function useCorrectionSessionController(selectedGame: CorrectionGameCatal
   const [lastCommit, setLastCommit] = useState<CorrectionCommitCompletion | null>(null);
 
   const openSession = useMutation({
-    mutationFn: async () => {
-      if (selectedGame === null) throw new Error("보정할 경기를 선택하세요.");
-      if (selectedGame.authority !== "staging" && selectedGame.authority !== "quarantine") {
+    mutationFn: async (requestedGame?: CorrectionGameCatalogItem) => {
+      const target = requestedGame ?? selectedGame;
+      if (target === null) throw new Error("보정할 경기를 선택하세요.");
+      if (target.authority !== "staging" && target.authority !== "quarantine") {
         throw new Error("현재 파일 원장만 보정 session으로 열 수 있습니다.");
       }
-      return createCorrectionSession(selectedGame.authority, selectedGame.gameId);
+      return createCorrectionSession(target.authority, target.gameId);
     },
     onSuccess(next) {
+      adoptSession.reset();
       setSession(next);
       setSelectedEventId(next.draftDocument.events[0]?.identity.eventId ?? null);
       setDrawer(null);
@@ -58,7 +63,10 @@ export function useCorrectionSessionController(selectedGame: CorrectionGameCatal
       setDrawer(null);
       setLastPreview(null);
       setLastCommit(null);
-      setNotice("KBO 기록정정 작업 사본을 열었습니다.");
+      setNotice("이전 작업 사본을 다시 열었습니다.");
+    },
+    onError(error) {
+      if (error instanceof ApiClientError && error.status === 404) setSession(null);
     },
   });
   const mutation = useMutation({
@@ -120,8 +128,11 @@ export function useCorrectionSessionController(selectedGame: CorrectionGameCatal
       setLastCommit({
         sessionId: result.session.sessionId,
         gameId: result.session.gameId,
+        documentHash: result.session.draftDocumentHash,
+        label: `${result.session.draftDocument.metadata.gameDate} ${result.session.draftDocument.teams.away.name}–${result.session.draftDocument.teams.home.name}`,
         outcome,
       });
+      setSession(result.session);
       setSession(null);
       setSelectedEventId(null);
       setDrawer(null);
@@ -135,11 +146,24 @@ export function useCorrectionSessionController(selectedGame: CorrectionGameCatal
       );
       void queryClient.invalidateQueries({ queryKey: queryKeys.catalog });
       void queryClient.invalidateQueries({ queryKey: queryKeys.correction.games });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.recordCorrections.all });
     },
   });
   const original = useQuery({
     ...correctionOriginalQueryOptions(session?.sessionId ?? "inactive"),
     enabled: session !== null,
+  });
+  const closeSession = useMutation({
+    mutationFn: async () => {
+      if (session !== null) await release(session);
+    },
+    onSuccess() {
+      setSession(null);
+      setSelectedEventId(null);
+      setDrawer(null);
+      setLastPreview(null);
+      setNotice("작업 사본을 닫았습니다.");
+    },
   });
   const loadOriginal = useMutation({
     mutationFn: async () => {
@@ -159,7 +183,8 @@ export function useCorrectionSessionController(selectedGame: CorrectionGameCatal
     mutation.isPending ||
     history.isPending ||
     commit.isPending ||
-    loadOriginal.isPending;
+    loadOriginal.isPending ||
+    closeSession.isPending;
   const error =
     openSession.error ??
     mutation.error ??
@@ -167,6 +192,7 @@ export function useCorrectionSessionController(selectedGame: CorrectionGameCatal
     commit.error ??
     loadOriginal.error ??
     adoptSession.error ??
+    closeSession.error ??
     null;
   const acceptExternalMutation = (
     result: Awaited<ReturnType<typeof submitCorrectionCommand>>,
@@ -194,6 +220,7 @@ export function useCorrectionSessionController(selectedGame: CorrectionGameCatal
     commit,
     original,
     loadOriginal,
+    closeSession,
     busy,
     error,
   };

@@ -42,3 +42,27 @@ export async function buildSystemStatus(
     recentFailures: [...recentFailures].slice(0, 20),
   };
 }
+
+/** Short absolute TTL shares overlapping display polls without indefinitely extending freshness. */
+export function createSystemStatusReader(
+  load: () => Promise<SystemStatus>,
+  now: () => number = Date.now,
+  maxAgeMs = 500,
+): () => Promise<SystemStatus> {
+  let value: SystemStatus | undefined;
+  let expiresAt = 0;
+  let pending: Promise<SystemStatus> | undefined;
+  return async () => {
+    if (value !== undefined && now() < expiresAt) return structuredClone(value);
+    pending ??= load()
+      .then((next) => {
+        value = next;
+        expiresAt = now() + maxAgeMs;
+        return next;
+      })
+      .finally(() => {
+        pending = undefined;
+      });
+    return structuredClone(await pending);
+  };
+}

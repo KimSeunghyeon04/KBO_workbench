@@ -1,5 +1,7 @@
 import type {
   GameCatalogItem,
+  GamePlayerHeightDataset,
+  DatabaseGamesQuery,
   RevisionCatalog,
   StagingGameDocumentV2,
   StagingRelayEvent,
@@ -35,9 +37,12 @@ import {
 } from "./projection.js";
 import { readProjection, writeProjection } from "./projection-repository.js";
 import { PROJECTION_ENUM_VALUES } from "./projection-descriptor.js";
-import { readDatabaseCatalog } from "./revision-catalog-repository.js";
+import { readDatabaseCatalog, readStoredGameIds } from "./revision-catalog-repository.js";
+import { readDatabaseCatalogPage, readDatabaseSeasons } from "./revision-catalog-page.js";
 import { rebaseSealedCorrectionDraft } from "./revision-draft-rebase.js";
 import { PersistenceIntegrityError } from "./errors.js";
+import { writeGamePlayerHeights } from "./player-height-repository.js";
+import { resolvePlayerHeights } from "./player-height-supplement-repository.js";
 
 export { PersistenceIntegrityError } from "./errors.js";
 
@@ -162,10 +167,32 @@ export type ProjectionLedgerManifest = Pick<
   | "scheduled_innings"
 >;
 
+export interface RevisionProjectionComputation {
+  project(
+    document: StagingGameDocumentV2,
+    replay: ReplayResult,
+    revision: number,
+    version: ProjectionVersion,
+  ): Promise<RelationalProjection>;
+  hash(tables: ProjectionTables, version: ProjectionVersion): Promise<string>;
+}
+const inlineProjection: RevisionProjectionComputation = {
+  project: async (document, replay, revision, version) =>
+    buildRelationalProjection(document, replay, revision, version),
+  hash: async (tables, version) => hashProjectionTables(tables, version),
+};
+
 export class GameRevisionStore {
   public constructor(
     private readonly pool: Pool,
     private readonly expectedMigrationVersion: string,
+    private readonly compile: (document: StagingGameDocumentV2) => Promise<ReplayResult> = async (
+      document,
+    ) => compileStagingGameDocumentV2(document),
+    private readonly projectionComputation: RevisionProjectionComputation = inlineProjection,
+    private readonly readPlayerHeights?: (
+      document: StagingGameDocumentV2,
+    ) => Promise<GamePlayerHeightDataset>,
   ) {}
 
   public async importRevision(
@@ -173,15 +200,24 @@ export class GameRevisionStore {
     options: ImportOptions = {},
   ): Promise<ImportedRevision> {
     const stagingDocument = parseStagingGameDocumentV2(input);
-    const stagingReplay = compileStagingGameDocumentV2(stagingDocument);
+    const stagingReplay = await this.compile(stagingDocument);
     rejectBlocking(stagingDocument.metadata.gameId, stagingReplay);
     const document = stagingDocument;
     const replay = stagingReplay;
     const documentHash = stagingDocumentHash(document);
+    const heights = await this.readPlayerHeights?.(document);
+    if (
+      heights !== undefined &&
+      (heights.gameId !== document.metadata.gameId ||
+        heights.season !== document.metadata.season ||
+        heights.sourceBundleHash !== document.source.sourceBundleHash)
+    )
+      throw new PersistenceIntegrityError("선수 키 원문이 경기 문서의 출처와 다릅니다.");
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       await assertDatabaseContract(client, this.expectedMigrationVersion);
+      if (heights !== undefined) await writeGamePlayerHeights(client, heights);
       const existing = await client.query(
         "SELECT current_revision FROM workbench.games WHERE game_id=$1 FOR UPDATE",
         [document.metadata.gameId],
@@ -212,19 +248,27 @@ export class GameRevisionStore {
         }
         revision = currentRevision + 1;
       }
-      const projection = buildRelationalProjection(document, replay, revision);
+      const projection = await this.projectionComputation.project(document, replay, revision, 4);
       await upsertGameCatalog(client, document, replay);
       await insertManifest(client, document, revision, documentHash, projection.projectionHash);
       injectFailure(options, "after_manifest");
       await writeProjection(client, projection.tables);
       injectFailure(options, "after_facts");
-      await verifyStoredProjection(client, document.metadata.gameId, revision, projection);
+      await verifyStoredProjection(
+        client,
+        document.metadata.gameId,
+        revision,
+        projection,
+        this.projectionComputation,
+      );
       await verifyRecompile(
         client,
         document.metadata.gameId,
         revision,
         documentHash,
         projection.projectionHash,
+        this.compile,
+        this.projectionComputation,
       );
       injectFailure(options, "before_seal");
       await client.query(
@@ -235,6 +279,8 @@ export class GameRevisionStore {
         document.metadata.gameId,
         revision,
       ]);
+      if (heights !== undefined)
+        await resolvePlayerHeights(client, document.metadata.season, document.metadata.gameId);
       await client.query("COMMIT");
       return {
         gameId: document.metadata.gameId,
@@ -351,8 +397,17 @@ export class GameRevisionStore {
       sourceBundleHash: hashText(row.source_bundle_hash, "current source_bundle_hash"),
     };
   }
-  public async catalog(): Promise<readonly GameCatalogItem[]> {
-    return readDatabaseCatalog(this.pool);
+  public async catalog(gameIds?: readonly string[]): Promise<readonly GameCatalogItem[]> {
+    return readDatabaseCatalog(this.pool, gameIds);
+  }
+  public storedGameIds(): Promise<string[]> {
+    return readStoredGameIds(this.pool);
+  }
+  public catalogPage(query: DatabaseGamesQuery) {
+    return readDatabaseCatalogPage(this.pool, query);
+  }
+  public catalogSeasons() {
+    return readDatabaseSeasons(this.pool);
   }
   public async revisions(gameId: string): Promise<RevisionCatalog> {
     const result = await this.pool.query(
@@ -563,9 +618,10 @@ async function verifyStoredProjection(
   gameId: string,
   revision: number,
   projection: RelationalProjection,
+  computation: RevisionProjectionComputation,
 ): Promise<void> {
   const stored = await readProjection(client, gameId, revision, projection.version);
-  const hash = hashProjectionTables(stored, projection.version);
+  const hash = await computation.hash(stored, projection.version);
   if (hash !== projection.projectionHash)
     throw new PersistenceIntegrityError(
       `DB projection hash 검증 실패: expected=${projection.projectionHash}, actual=${hash}`,
@@ -577,15 +633,17 @@ async function verifyRecompile(
   revision: number,
   documentHash: string,
   projectionHash: string,
+  compile: (document: StagingGameDocumentV2) => Promise<ReplayResult>,
+  computation: RevisionProjectionComputation,
 ): Promise<void> {
   const storedManifest = await loadManifest(client, gameId, revision);
   const tables = await readProjection(client, gameId, revision, storedManifest.projection_version);
   const document = hydrateProjectionLedger(storedManifest, tables);
   if (stagingDocumentHash(document) !== documentHash)
     throw new PersistenceIntegrityError("DB 원장 fact의 문서 hash가 원본 staging 원장과 다릅니다.");
-  const replay = compileStagingGameDocumentV2(document);
+  const replay = await compile(document);
   if (
-    buildRelationalProjection(document, replay, revision, storedManifest.projection_version)
+    (await computation.project(document, replay, revision, storedManifest.projection_version))
       .projectionHash !== projectionHash
   )
     throw new PersistenceIntegrityError("DB 원장 재compile 결과가 저장 projection과 다릅니다.");

@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import { readFile } from "node:fs/promises";
+
 import {
   parseStagingGameDocumentV2,
   type CorrectionCommand,
@@ -8,12 +10,19 @@ import {
   type StagingGameDocumentV2,
   type StagingRelayEvent,
 } from "@kbo/contracts";
+import { applyCorrectionCommand } from "@kbo/correction";
+import { compileStagingGameDocumentV2, stagingDocumentHash } from "@kbo/game-core";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EventPresentation } from "../../apps/web/src/correction/event-presentation.js";
+import { prepareCorrectionSnapshot } from "../../apps/server/src/correction-snapshot.js";
+import {
+  decodeObservedStateForm,
+  observedStateForm,
+} from "../../apps/web/src/correction/observed-state-editor.js";
 import type { EventCollapseGroup } from "../../apps/web/src/correction/event-collapse.js";
 import {
   CorrectionDrawer,
@@ -39,6 +48,289 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("평면 원장 빠른 보정 UI", () => {
+  it("책임 투수의 실제 이름을 표시하되 문구만 바꾸면 책임을 명시적으로 고정하지 않는다", async () => {
+    const document = parseStagingGameDocumentV2(
+      JSON.parse(
+        await readFile(
+          "tests/fixtures/correction/force-double-play-responsibility.anonymized.json",
+          "utf8",
+        ),
+      ) as unknown,
+    );
+    const target = document.events.find(
+      (event) =>
+        event.kind === "runner_advance" &&
+        event.payload.runnerId === "h3" &&
+        event.payload.toBase === 2,
+    );
+    if (target?.kind !== "runner_advance") throw new Error("missing anonymous runner");
+    let submitted: CorrectionCommand | undefined;
+    const props = {
+      request: { mode: "replace_event" as const, eventId: target.identity.eventId },
+      session: {
+        ...session(document),
+        ...prepareCorrectionSnapshot(document, compileStagingGameDocumentV2(document), []),
+      },
+      selectedEvent: target,
+      pending: false,
+      error: null,
+      onClose: vi.fn(),
+      onApply: (command: CorrectionCommand) => {
+        submitted = command;
+      },
+    };
+    render(createElement(CorrectionDrawer, props));
+    const picker = screen.getByRole("combobox", { name: "책임 투수 (선택)" });
+    expect(picker.textContent).toContain("선수a1 (a1)");
+    expect(picker.textContent).not.toContain("자동");
+    fireEvent.change(screen.getByRole("textbox", { name: "중계 문구" }), {
+      target: { value: "확인한 주자 이동" },
+    });
+    expect(picker.textContent).toContain("선수a1 (a1)");
+    await userEvent.setup().click(screen.getByRole("button", { name: "작업 사본에 즉시 반영" }));
+    if (submitted?.kind !== "replace_event" || submitted.event.kind !== "runner_advance")
+      throw new Error("missing runner command");
+    expect(submitted.event.payload.responsiblePitcherId).toBeUndefined();
+    expect(submitted.event.payload).toEqual(target.payload);
+    fireEvent.change(screen.getByRole("combobox", { name: "도착" }), { target: { value: "3" } });
+    expect(picker.textContent).toContain("반영 후 확인");
+    await userEvent.setup().click(picker);
+    await userEvent.setup().click(screen.getByRole("option", { name: /선수a51\(a51\)/ }));
+    expect(picker.textContent).toContain("선수a51(a51)");
+  });
+
+  it("수집 행 문구를 수정해 적용·재열기해도 선수와 이동은 바뀌지 않는다", async () => {
+    const document = parseStagingGameDocumentV2(
+      JSON.parse(
+        await readFile(
+          "tests/fixtures/correction/runner-autofill-multistep.anonymized.json",
+          "utf8",
+        ),
+      ) as unknown,
+    );
+    const target = document.events.find((event) => event.identity.eventId === "wrong-runner");
+    if (target === undefined) throw new Error("missing anonymous source runner");
+    let submitted: CorrectionCommand | undefined;
+    const props = {
+      request: { mode: "replace_event" as const, eventId: target.identity.eventId },
+      session: session(document),
+      selectedEvent: target,
+      pending: false,
+      error: null,
+      onClose: vi.fn(),
+      onApply: (command: CorrectionCommand) => {
+        submitted = command;
+      },
+    };
+    const view = render(createElement(CorrectionDrawer, props));
+    const relayText = "3루주자 a2 : 수동 확인한 홈인 문구";
+    fireEvent.change(screen.getByRole("textbox", { name: "중계 문구" }), {
+      target: { value: relayText },
+    });
+    await userEvent.setup().click(screen.getByRole("button", { name: "작업 사본에 즉시 반영" }));
+    if (submitted === undefined) throw new Error("missing correction command");
+    const corrected = applyCorrectionCommand(document, submitted);
+    const edited = corrected.document.events.find(
+      (event) => event.identity.eventId === target.identity.eventId,
+    );
+    expect(edited).toEqual({ ...target, relayText });
+    const before = compileStagingGameDocumentV2(document);
+    expect(corrected.replay.finalState).toEqual(before.finalState);
+    expect(corrected.replay.findings).toEqual(before.findings);
+    expect(corrected.replay.pitcherLines).toEqual(before.pitcherLines);
+    expect(corrected.replay.batterLines).toEqual(before.batterLines);
+    view.unmount();
+    render(
+      createElement(CorrectionDrawer, {
+        ...props,
+        session: session(corrected.document),
+        selectedEvent: edited,
+      }),
+    );
+    expect((screen.getByRole("textbox", { name: "중계 문구" }) as HTMLTextAreaElement).value).toBe(
+      relayText,
+    );
+    expect(document.events[target.sequence]?.relayText).toBe(target.relayText);
+  });
+  it.each(["player-first", "base-first"])(
+    "같은 플레이의 2루→3루→홈 교정은 선택 순서(%s)에 관계없이 선수·출발을 보존한다",
+    async (order) => {
+      // 검토 경기의 주자 이동 순서와 잘못 선택된 선수를 비식별 축약한 사본이다.
+      const document = parseStagingGameDocumentV2(
+        JSON.parse(
+          await readFile(
+            "tests/fixtures/correction/runner-autofill-multistep.anonymized.json",
+            "utf8",
+          ),
+        ) as unknown,
+      );
+      const originalHash = stagingDocumentHash(document);
+      const target = document.events.find((event) => event.identity.eventId === "wrong-runner");
+      if (target?.kind !== "runner_advance") throw new Error("missing anonymous runner");
+      const compiled = compileStagingGameDocumentV2(document);
+      expect(
+        compiled.findings.some((finding) => finding.code === "movement_origin_duplicated"),
+      ).toBe(true);
+      const before = correctionState({
+        bases: ["a4", "a2", "a1"],
+        batterId: "a5",
+        pitcherId: "hp1",
+        outs: 1,
+      });
+      let submitted: CorrectionCommand | undefined;
+      const props = {
+        request: { mode: "replace_event" as const, eventId: target.identity.eventId },
+        session: session(document, [
+          { eventId: "play-result", applied: false, before, after: before },
+          { eventId: target.identity.eventId, applied: false, before, after: before },
+        ]),
+        selectedEvent: target,
+        pending: false,
+        error: null,
+        onClose: vi.fn(),
+        onApply: (command: CorrectionCommand) => {
+          submitted = command;
+        },
+      };
+      const view = render(createElement(CorrectionDrawer, props));
+      const user = userEvent.setup();
+      const selectRunner = async () => {
+        await user.click(screen.getByRole("combobox", { name: "주자" }));
+        await user.click(screen.getByRole("option", { name: /a2\(a2\)/ }));
+      };
+      const selectBase = async () => {
+        await user.selectOptions(screen.getByRole("combobox", { name: "출발" }), "2");
+        await user.selectOptions(screen.getByRole("combobox", { name: "출발" }), "3");
+      };
+      if (order === "player-first") {
+        await selectRunner();
+        await selectBase();
+      } else {
+        await selectBase();
+        await selectRunner();
+      }
+      view.rerender(createElement(CorrectionDrawer, props));
+      expect(screen.getByRole("combobox", { name: "주자" }).textContent).toContain("a2(a2)");
+      expect((screen.getByRole("combobox", { name: "출발" }) as HTMLSelectElement).value).toBe("3");
+      await user.click(screen.getByRole("button", { name: "작업 사본에 즉시 반영" }));
+      if (submitted === undefined) throw new Error("missing correction command");
+      expect(submitted).toMatchObject({
+        kind: "replace_event",
+        event: {
+          payload: {
+            runnerId: "a2",
+            fromBase: 3,
+            toBase: 4,
+            outcome: "scored",
+            context: { kind: "plate_result", plateResultEventId: "play-result" },
+          },
+        },
+      });
+      const corrected = applyCorrectionCommand(document, submitted);
+      expect(
+        corrected.replay.findings.filter((finding) => finding.severity === "blocking"),
+      ).toEqual([]);
+      expect(corrected.replay.finalState).toMatchObject({
+        awayScore: 2,
+        homeScore: 0,
+        bases: [null, { runnerId: "a5" }, { runnerId: "a4" }],
+      });
+      expect(stagingDocumentHash(document)).toBe(originalHash);
+      expect(
+        corrected.document.events.find(
+          (event) => event.identity.eventId === target.identity.eventId,
+        ),
+      ).toMatchObject({
+        identity: target.identity,
+        relayText: target.relayText,
+        observedStateAfter: target.observedStateAfter,
+      });
+    },
+  );
+  it("관측값만 변경하면 원장 내용을 교체하지 않고 다른 관측은 보존한다", async () => {
+    const document = fixture();
+    const pitch = {
+      ...pitchEvent("e3", 3, "in_play", "2구 타격"),
+      observedStateAfter: { balls: 1, strikes: 1, bases: [false, null, true] as const },
+    };
+    const onApply = vi.fn<(command: CorrectionCommand) => void>();
+    render(
+      createElement(CorrectionDrawer, {
+        request: { mode: "replace_event", eventId: "e3" },
+        session: session(document),
+        selectedEvent: pitch,
+        pending: false,
+        error: null,
+        onClose: vi.fn(),
+        onApply,
+      }),
+    );
+    await userEvent.setup().click(screen.getByText("관측값 수정 (검증용)"));
+    expect(screen.getByLabelText("관측 볼").getAttribute("value")).toBe("1");
+    expect(screen.getByLabelText("관측 아웃").getAttribute("value")).toBe("");
+    fireEvent.change(screen.getByLabelText("관측 볼"), { target: { value: "0" } });
+    await userEvent.setup().click(screen.getByRole("button", { name: "작업 사본에 즉시 반영" }));
+    expect(onApply).toHaveBeenCalledWith({
+      commandId: expect.any(String),
+      kind: "update_observed_state",
+      eventId: "e3",
+      observedStateAfter: { balls: 0, strikes: 1, bases: [false, null, true] },
+    });
+    fireEvent.change(screen.getByLabelText("중계 문구"), { target: { value: "2구 타격 확인" } });
+    await userEvent.setup().click(screen.getByRole("button", { name: "작업 사본에 즉시 반영" }));
+    expect(onApply).toHaveBeenLastCalledWith({
+      commandId: expect.any(String),
+      kind: "correction_batch",
+      commands: [
+        expect.objectContaining({ kind: "replace_event", eventId: "e3" }),
+        expect.objectContaining({ kind: "update_observed_state", eventId: "e3" }),
+      ],
+    });
+  });
+
+  it("관측값 편집은 잘못된 입력·전송 중 편집을 막고 변경 폐기 확인을 제공한다", async () => {
+    const document = fixture();
+    const pitch = {
+      ...pitchEvent("e3", 3, "in_play", "2구 타격"),
+      observedStateAfter: { balls: 1 },
+    };
+    const props = {
+      request: { mode: "replace_event" as const, eventId: "e3" },
+      session: session(document),
+      selectedEvent: pitch,
+      pending: false,
+      error: null,
+      onClose: vi.fn(),
+      onApply: vi.fn(),
+    };
+    const view = render(createElement(CorrectionDrawer, props));
+    await userEvent.setup().click(screen.getByText("관측값 수정 (검증용)"));
+    fireEvent.change(screen.getByLabelText("관측 볼"), { target: { value: "-1" } });
+    expect(screen.getByText("관측 볼은 0 이상의 정수로 입력하세요.")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "작업 사본에 즉시 반영" }).hasAttribute("disabled"),
+    ).toBe(true);
+    await userEvent.setup().click(screen.getByRole("button", { name: "취소" }));
+    expect(screen.getByRole("alert").textContent).toContain("입력 중인 변경을 버릴까요?");
+    expect(props.onClose).not.toHaveBeenCalled();
+    view.rerender(createElement(CorrectionDrawer, { ...props, pending: true }));
+    expect(screen.getByLabelText("관측 볼").matches(":disabled")).toBe(true);
+  });
+
+  it("관측 베이스는 선수·점유·없음·미관측을 구분하고 원문의 false/null을 유지한다", () => {
+    const original = { balls: 0, bases: [false, null, "a1"] as const };
+    const form = observedStateForm(original);
+    expect(decodeObservedStateForm(form, original)).toEqual({ value: original, error: null });
+    expect(
+      decodeObservedStateForm({ ...form, bases: ["player:a2", "occupied", "empty"] }, original),
+    ).toEqual({ value: { balls: 0, bases: ["a2", true, false] }, error: null });
+    expect(
+      decodeObservedStateForm(
+        { ...form, numbers: { ...form.numbers, balls: "" }, bases: null },
+        original,
+      ),
+    ).toEqual({ value: {}, error: null });
+  });
   it("secure context가 아니어도 보정 명령 ID를 생성한다", () => {
     const source = {
       getRandomValues: <T extends ArrayBufferView>(array: T): T => {

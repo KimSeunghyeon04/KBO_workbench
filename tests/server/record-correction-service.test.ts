@@ -15,6 +15,8 @@ import {
 } from "@kbo/persistence";
 import { describe, expect, it, vi } from "vitest";
 
+import { recordCorrectionVenueFixture } from "../helpers/record-correction-fixture.js";
+
 import { CorrectionSessionManager } from "../../apps/server/src/correction-session-manager.js";
 import {
   RecordCorrectionConflictError,
@@ -22,7 +24,7 @@ import {
 } from "../../apps/server/src/record-correction-service.js";
 
 describe("RecordCorrectionService 매칭", () => {
-  it("날짜·팀·구장과 유일한 PA가 맞으면 미반영 제안을 분류한다", async () => {
+  it("날짜·팀과 유일한 PA가 맞으면 미반영 제안을 분류한다", async () => {
     const fixture = await setup([game("anon-game", "anon_DH1")]);
 
     await expect(fixture.service.assessNotice(fixture.notice)).resolves.toMatchObject({
@@ -31,6 +33,46 @@ describe("RecordCorrectionService 매칭", () => {
       gameId: "anon-game",
       eventId: "e10",
     });
+  });
+
+  it("구장 표기가 달라도 동일 날짜·대진의 경기와 정정 타석을 연결한다", async () => {
+    const source = await recordCorrectionVenueFixture();
+    const fixture = await setup([
+      {
+        ...game(source.document.metadata.gameId, source.document.source.sourceGameId),
+        stadium: source.document.metadata.stadium ?? null,
+      },
+    ]);
+    fixture.setDocument(source.document);
+    await expect(fixture.service.assessNotice(source.notice)).resolves.toMatchObject({
+      gameId: source.document.metadata.gameId,
+      eventId: "e10",
+      candidates: [
+        { confidenceReason: "날짜·원정/홈 팀·이닝·초말·타순·타자·투수가 모두 일치합니다." },
+      ],
+    });
+  });
+
+  it("DH2 공지에 DH1만 저장돼 있으면 한 경기여도 자동 연결하지 않는다", async () => {
+    const fixture = await setup([game("anon-game-1", "anon_DH1")]);
+    await expect(
+      fixture.service.assessNotice({ ...fixture.notice, doubleheaderNumber: 2 }),
+    ).resolves.toMatchObject({ status: "manual_review", reasonCode: "ambiguous_game_identity" });
+  });
+
+  it("미연결 공지는 해당 경기의 최초 적재 뒤 재평가하고 다른 경기 적재에는 유지한다", async () => {
+    const fixture = await setup([]);
+    await expect(fixture.service.assessNotice(fixture.notice)).resolves.toMatchObject({
+      status: "unmatched",
+    });
+    await fixture.service.afterImport("unrelated-game", 1, "c".repeat(64));
+    expect(fixture.assess).toHaveBeenCalledOnce();
+
+    fixture.setGameCandidates([game("anon-game", "anon_DH1")]);
+    await fixture.service.afterImport("anon-game", 1, "b".repeat(64));
+    expect(fixture.assess).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: "action_required", gameId: "anon-game", gameRevision: 1 }),
+    );
   });
 
   it("복수 경기에서 DH identity를 확정할 수 없으면 단일 PA 후보여도 수동 검토한다", async () => {
@@ -94,7 +136,10 @@ describe("RecordCorrectionService 매칭", () => {
     const sessions = new CorrectionSessionManager(workspace);
     const service = new RecordCorrectionService(
       fixture.repository,
-      { loadCorrectionDraft: async () => fixture.document },
+      {
+        loadCorrectionDraft: async () => fixture.document,
+        currentRevisionBase: async () => null,
+      },
       workspace,
       sessions,
       () => new Date("2026-09-01T00:00:00.000Z"),
@@ -238,6 +283,7 @@ async function setup(gameCandidates: readonly RecordCorrectionGameCandidate[]) {
     case: async () => currentCase,
     gameCandidates: async () => [...candidates],
     listCases: async () => (currentCase === null ? [] : [currentCase]),
+    listCaseSummaries: async () => [],
     markProposalApplied,
     markResolvedAfterReassessment,
     markResolvedIfImported: async () => [],
@@ -247,10 +293,13 @@ async function setup(gameCandidates: readonly RecordCorrectionGameCandidate[]) {
   };
   const service = new RecordCorrectionService(
     repository,
-    { loadCorrectionDraft: async () => document },
+    { loadCorrectionDraft: async () => document, currentRevisionBase: async () => null },
     {
-      saveQuarantine: async () => undefined,
-      saveReady: async () => undefined,
+      readCurrentDocumentSnapshot: async () => null,
+      correctionGameCatalog: async () => ({ games: [] }),
+      ensureCorrectionDraft: async () => {
+        throw new Error("unexpected draft write");
+      },
     },
     {
       command: () => {

@@ -1,5 +1,6 @@
 import { type Static, Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
+import { BatterStrikeZoneSchema } from "./strike-zone.js";
 
 import {
   ContractValidationError,
@@ -115,8 +116,7 @@ export const ReplayTrackingCandidateSchema = Type.Object(
     az: Type.Union([Type.Number(), Type.Null()]),
     crossPlateX: Type.Union([Type.Number(), Type.Null()]),
     crossPlateY: Type.Union([Type.Number(), Type.Null()]),
-    topSz: Type.Union([Type.Number(), Type.Null()]),
-    bottomSz: Type.Union([Type.Number(), Type.Null()]),
+    strikeZone: Type.Union([BatterStrikeZoneSchema, Type.Null()]),
   },
   strict,
 );

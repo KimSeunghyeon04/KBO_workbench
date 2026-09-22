@@ -1,3 +1,6 @@
+export { CollectionWorkspace } from "./collection-workspace.js";
+export { ImportWorkspace } from "./import-workspace.js";
+export { readImmutableSourceBundle } from "./source-bundle-reader.js";
 export {
   buildRelationalProjection,
   decodeProjectionRow,
@@ -27,6 +30,7 @@ export {
   type ImportFailurePoint,
   type ImportOptions,
   type ProjectionLedgerManifest,
+  type RevisionProjectionComputation,
   type StoredCompiledRevision,
   type StoredReplayRelayEvent,
   type StoredReplayRosterPlayer,

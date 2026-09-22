@@ -82,7 +82,7 @@ export const recordCorrectionRoutes: FastifyPluginAsyncTypebox<RouteContext> = a
     {
       schema: {
         querystring: RecordCorrectionListQuerySchema,
-        response: { 200: RecordCorrectionListSchema },
+        response: { 200: RecordCorrectionListSchema, 503: ApiErrorSchema },
       },
     },
     async (request) => ({
@@ -95,7 +95,7 @@ export const recordCorrectionRoutes: FastifyPluginAsyncTypebox<RouteContext> = a
     {
       schema: {
         params: NoticeParamsSchema,
-        response: { 200: RecordCorrectionCaseSchema, 404: ApiErrorSchema },
+        response: { 200: RecordCorrectionCaseSchema, 404: ApiErrorSchema, 503: ApiErrorSchema },
       },
     },
     async (request, reply) => {
@@ -119,7 +119,12 @@ export const recordCorrectionRoutes: FastifyPluginAsyncTypebox<RouteContext> = a
       schema: {
         params: NoticeParamsSchema,
         body: RecordCorrectionReviewActionRequestSchema,
-        response: { 200: RecordCorrectionCaseSchema, 404: ApiErrorSchema, 409: ApiErrorSchema },
+        response: {
+          200: RecordCorrectionCaseSchema,
+          404: ApiErrorSchema,
+          409: ApiErrorSchema,
+          503: ApiErrorSchema,
+        },
       },
     },
     async (request) => service.reviewAction(request.params.noticeId, request.body),
@@ -132,6 +137,7 @@ export const recordCorrectionRoutes: FastifyPluginAsyncTypebox<RouteContext> = a
         params: NoticeParamsSchema,
         response: {
           201: RecordCorrectionDraftCreateResponseSchema,
+          503: ApiErrorSchema,
           404: ApiErrorSchema,
           409: ApiErrorSchema,
         },
@@ -146,7 +152,12 @@ export const recordCorrectionRoutes: FastifyPluginAsyncTypebox<RouteContext> = a
     {
       schema: {
         params: ProposalParamsSchema,
-        response: { 200: RecordCorrectionProposalSchema, 404: ApiErrorSchema, 409: ApiErrorSchema },
+        response: {
+          200: RecordCorrectionProposalSchema,
+          404: ApiErrorSchema,
+          409: ApiErrorSchema,
+          503: ApiErrorSchema,
+        },
       },
     },
     async (request) => service.proposal(request.params.sessionId, request.params.noticeId),
@@ -160,6 +171,7 @@ export const recordCorrectionRoutes: FastifyPluginAsyncTypebox<RouteContext> = a
         body: RecordCorrectionProposalApplyRequestSchema,
         response: {
           200: CorrectionMutationResultSchema,
+          503: ApiErrorSchema,
           404: ApiErrorSchema,
           409: ApiErrorSchema,
         },

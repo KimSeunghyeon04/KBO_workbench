@@ -11,10 +11,116 @@ import { StagingWorkspace } from "@kbo/persistence";
 import { createApp } from "../../apps/server/src/app.js";
 import type { AppConfig } from "../../apps/server/src/config.js";
 import { CollectionJobManager } from "../../apps/server/src/jobs/collection-job-manager.js";
+import { CollectionOperationsService } from "../../apps/server/src/collection-operations-service.js";
 import type { AppRuntime } from "../../apps/server/src/runtime.js";
 import { sanitizedNaverBundle } from "../helpers/naver.js";
 
 describe("collection HTTP API", () => {
+  it("일정 query prototype·strict pagination·선택 ID 경로를 HTTP 경계에서 검증한다", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-operations-api-"));
+    const workspace = await StagingWorkspace.open(temporary.path);
+    const operations = new CollectionOperationsService(
+      {
+        discoverRange: async () => [
+          {
+            gameId: "anon",
+            gameDate: "2026-04-01",
+            scheduledAt: "2026-04-01T18:30:00+09:00",
+            label: "비식별 경기",
+          },
+        ],
+      },
+      workspace,
+      async () => ({ games: [] }),
+    );
+    const jobs = new CollectionJobManager(
+      { discoverRange: async () => [] },
+      {
+        collect: async () => {
+          throw new Error("HTTP 테스트는 경기를 수집하지 않습니다.");
+        },
+      },
+      workspace,
+    );
+    const app = createApp(
+      testConfig(temporary.path),
+      { end: async () => undefined } as unknown as Pool,
+      {
+        workspace,
+        collectionJobs: jobs,
+        collectionOperations: operations,
+        ...emptyPersistenceRuntime(),
+        async close() {
+          await jobs.close();
+          await operations.close();
+          await workspace.close();
+        },
+      },
+    );
+    try {
+      const request = {
+        startDate: "2026-04-01",
+        endDate: "2026-04-30",
+        idempotencyKey: "http-discovery",
+      };
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v2/collection-discoveries",
+        payload: request,
+      });
+      expect(created.statusCode).toBe(202);
+      const id = created.json<{ discoveryId: string }>().discoveryId;
+      await operations.wait(id);
+      const list = await app.inject({
+        method: "GET",
+        url: "/api/v2/collection-discoveries?startDate=2026-04-01&endDate=2026-04-30",
+      });
+      expect(list.statusCode).toBe(200);
+      expect(list.json()).toMatchObject({ discoveries: [{ discoveryId: id, complete: true }] });
+      expect(
+        (
+          await app.inject({
+            method: "GET",
+            url: `/api/v2/collection-discoveries/${id}/games?limit=201`,
+          })
+        ).statusCode,
+      ).toBe(400);
+      const page = await app.inject({
+        method: "GET",
+        url: `/api/v2/collection-discoveries/${id}/games?page=1&limit=50&unknownDate=false`,
+      });
+      expect(page.statusCode).toBe(200);
+      expect(page.json()).toMatchObject({ total: 1, page: 1, limit: 50 });
+      const selected = await app.inject({
+        method: "POST",
+        url: "/api/v2/collection-selections",
+        payload: {
+          discoveryId: id,
+          range: { startDate: request.startDate, endDate: request.endDate },
+          target: "uncollected",
+          mode: "all_matching",
+          gameIds: [],
+          excludedGameIds: [],
+        },
+      });
+      expect(selected.statusCode).toBe(201);
+      expect(selected.json()).toMatchObject({ count: 1 });
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: "/api/v2/collection-jobs",
+            payload: {
+              scope: { kind: "selection", selectionId: "missing-selection" },
+              idempotencyKey: "missing-selection-key",
+            },
+          })
+        ).statusCode,
+      ).toBe(400);
+    } finally {
+      await app.close();
+    }
+  });
   it("job 생성·조회·catalog를 strict response로 제공한다", async () => {
     await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-api-"));
     const workspace = await StagingWorkspace.open(temporary.path);
@@ -147,6 +253,7 @@ function emptyPersistenceRuntime(): Pick<
   return {
     revisionStore: {
       catalog: async () => [],
+      storedGameIds: async () => [],
       countStoredGames: async () => 0,
       hydrate: async () => {
         throw new Error("unexpected hydrate");

@@ -34,7 +34,12 @@ export const correctionRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (
     {
       schema: {
         body: CorrectionSessionCreateRequestSchema,
-        response: { 201: CorrectionSessionSchema, 404: ApiErrorSchema },
+        response: {
+          201: CorrectionSessionSchema,
+          404: ApiErrorSchema,
+          429: ApiErrorSchema,
+          503: ApiErrorSchema,
+        },
       },
     },
     async (request, reply) =>
@@ -72,7 +77,7 @@ export const correctionRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (
     {
       schema: {
         params: CorrectionSourceEvidenceParamsSchema,
-        response: { 200: CorrectionSourceEvidenceSchema, 404: ApiErrorSchema },
+        response: { 200: CorrectionSourceEvidenceSchema, 404: ApiErrorSchema, 503: ApiErrorSchema },
       },
     },
     async (request) =>
@@ -93,6 +98,7 @@ export const correctionRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (
           404: ApiErrorSchema,
           409: ApiErrorSchema,
           422: ApiErrorSchema,
+          503: ApiErrorSchema,
         },
       },
     },
@@ -112,6 +118,7 @@ export const correctionRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (
         response: {
           200: CorrectionMutationResultSchema,
           400: ApiErrorSchema,
+          503: ApiErrorSchema,
           404: ApiErrorSchema,
           409: ApiErrorSchema,
         },
@@ -138,6 +145,7 @@ export const correctionRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (
             404: ApiErrorSchema,
             409: ApiErrorSchema,
             422: ApiErrorSchema,
+            503: ApiErrorSchema,
           },
         },
       },

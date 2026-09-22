@@ -31,14 +31,14 @@ describe("CollectionJobManager", () => {
       scope: { kind: "game_ids" as const, gameIds: [bundle.gameId] },
       idempotencyKey: "same-request-key",
     };
-    const created = manager.create(request);
-    expect(manager.create(request).jobId).toBe(created.jobId);
-    expect(() =>
+    const created = await manager.create(request);
+    expect((await manager.create(request)).jobId).toBe(created.jobId);
+    await expect(
       manager.create({
         scope: { kind: "game_ids", gameIds: ["OTHER"] },
         idempotencyKey: "same-request-key",
       }),
-    ).toThrow(IdempotencyConflictError);
+    ).rejects.toThrow(IdempotencyConflictError);
 
     const completed = await manager.waitForTerminal(created.jobId);
     expect(completed).toMatchObject({
@@ -62,7 +62,7 @@ describe("CollectionJobManager", () => {
       gameId: "33331005AABB02026",
     };
     const manager = managerFor(workspace, bundle);
-    const job = manager.create({
+    const job = await manager.create({
       scope: { kind: "game_ids", gameIds: [bundle.gameId] },
       idempotencyKey: "special-game-source-season",
     });
@@ -106,7 +106,7 @@ describe("CollectionJobManager", () => {
       },
       workspace,
     );
-    const job = manager.create({
+    const job = await manager.create({
       scope: { kind: "game_ids", gameIds: [bundle.gameId, secondGameId] },
       idempotencyKey: "skip-ready-key",
     });
@@ -122,19 +122,10 @@ describe("CollectionJobManager", () => {
       await workspace.readDocument("staging", document.metadata.season, bundle.gameId),
     ).toEqual(before);
     const events = manager.eventsAfter(job.jobId, undefined);
-    expect(events.filter((event) => event.type === "game_completed")).toEqual([]);
-    expect(
-      events.filter((event) => event.payload.message.includes("재수집을 건너뛰었습니다")),
-    ).toEqual([
-      expect.objectContaining({
-        type: "progress",
-        payload: expect.objectContaining({
-          gameId: null,
-          disposition: "none",
-          completedItems: 2,
-          message: expect.stringContaining("2경기"),
-        }),
-      }),
+    expect(events.filter((event) => event.type === "game_completed")).toHaveLength(2);
+    expect((await workspace.collection.results(job.jobId)).map((item) => item.outcome)).toEqual([
+      "skipped",
+      "skipped",
     ]);
     await manager.close();
     await workspace.close();
@@ -168,7 +159,7 @@ describe("CollectionJobManager", () => {
       },
       workspace,
     );
-    const job = manager.create({
+    const job = await manager.create({
       scope: { kind: "game_ids", gameIds: [bundle.gameId] },
       idempotencyKey: "recollect-quarantine-key",
     });
@@ -192,7 +183,7 @@ describe("CollectionJobManager", () => {
     const bundle = structuredClone(await sanitizedNaverBundle());
     Object.assign(officialBatter(bundle), { ab: 7, hit: 6, hr: 3 });
     const manager = managerFor(workspace, bundle);
-    const job = manager.create({
+    const job = await manager.create({
       scope: { kind: "game_ids", gameIds: [bundle.gameId] },
       idempotencyKey: "record-mismatch-key",
     });
@@ -215,7 +206,7 @@ describe("CollectionJobManager", () => {
     const bundle = structuredClone(await sanitizedNaverBundle());
     officialBatter(bundle).rbi = 4;
     const manager = managerFor(workspace, bundle);
-    const job = manager.create({
+    const job = await manager.create({
       scope: { kind: "game_ids", gameIds: [bundle.gameId] },
       idempotencyKey: "rbi-excluded-key",
     });
@@ -247,14 +238,14 @@ describe("CollectionJobManager", () => {
       workspace,
       1,
     );
-    const job = manager.create({
+    const job = await manager.create({
       scope: { kind: "game_ids", gameIds: ["G1"] },
       idempotencyKey: "cancel-request-key",
     });
     while (manager.get(job.jobId).status === "queued") {
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
-    expect(manager.cancel(job.jobId).status).toBe("cancelling");
+    expect(["cancelling", "cancelled"]).toContain((await manager.cancel(job.jobId)).status);
     expect((await manager.waitForTerminal(job.jobId)).status).toBe("cancelled");
     await manager.close();
     await workspace.close();
@@ -264,18 +255,18 @@ describe("CollectionJobManager", () => {
     const workspace = await StagingWorkspace.open(temporary.path);
     const manager = managerFor(workspace, await sanitizedNaverBundle());
 
-    expect(() =>
+    await expect(
       manager.create({
         scope: { kind: "date_range", startDate: "2026-02-30", endDate: "2026-03-01" },
         idempotencyKey: "invalid-calendar-date",
       }),
-    ).toThrow(InvalidCollectionRequestError);
-    expect(() =>
+    ).rejects.toThrow(InvalidCollectionRequestError);
+    await expect(
       manager.create({
         scope: { kind: "date_range", startDate: "2026-04-02", endDate: "2026-04-01" },
         idempotencyKey: "reversed-date-range",
       }),
-    ).toThrow(InvalidCollectionRequestError);
+    ).rejects.toThrow(InvalidCollectionRequestError);
 
     await manager.close();
     await workspace.close();
@@ -291,7 +282,7 @@ describe("CollectionJobManager", () => {
       { collect: async () => Promise.reject(new Error("unexpected collect")) },
       workspace,
     );
-    const job = manager.create({
+    const job = await manager.create({
       scope: { kind: "date_range", startDate: "2026-08-01", endDate: "2026-08-01" },
       idempotencyKey: "source-failure-key",
     });

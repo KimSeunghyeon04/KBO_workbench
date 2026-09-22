@@ -7,6 +7,7 @@ export interface StrikeZonePlot {
   readonly zFeet: number;
   readonly bottomFeet: number;
   readonly topFeet: number;
+  readonly halfWidthFeet: number;
 }
 
 export function nextReplayIndex(current: number, frameCount: number): number {
@@ -21,8 +22,9 @@ export function replayDelay(speed: number): number {
 export function strikeZonePlot(observation: ReplayTrackingCandidate): StrikeZonePlot | null {
   const xFeet = observation.crossPlateX;
   const zFeet = trajectoryHeightAtPlate(observation);
-  const bottomFeet = observation.bottomSz;
-  const topFeet = observation.topSz;
+  const zone = observation.strikeZone;
+  if (zone === null) return null;
+  const { bottomFeet, topFeet, halfWidthFeet } = zone;
   if (
     xFeet === null ||
     zFeet === null ||
@@ -38,7 +40,7 @@ export function strikeZonePlot(observation: ReplayTrackingCandidate): StrikeZone
   ) {
     return null;
   }
-  return { xFeet, zFeet, bottomFeet, topFeet };
+  return { xFeet, zFeet, bottomFeet, topFeet, halfWidthFeet };
 }
 
 function trajectoryHeightAtPlate(observation: ReplayTrackingCandidate): number | null {

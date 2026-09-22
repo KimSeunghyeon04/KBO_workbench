@@ -143,7 +143,7 @@ describe("Correction 편집기 자동 지정", () => {
     expect(result.assignments.batterId?.reason).toBe("앞선 교체 타순");
   });
 
-  it("주자와 출발 베이스를 양방향으로 맞추고 득점·홈 관계를 정리한다", () => {
+  it("주자·출발 베이스의 자동값만 맞추고 사용자의 선택과 득점·홈 관계를 보존한다", () => {
     const document = fixture();
     const result = eventOfKind(document, "plate_result");
     const next = eventOfKind(document, "unresolved");
@@ -160,9 +160,15 @@ describe("Correction 편집기 자동 지정", () => {
     const second = runnerBaseModel(initial, "2", autofillContext);
     expect(second.form).toMatchObject({ fromBase: "2", runnerId: "runner-second" });
 
-    const third = runnerPlayerModel(second, "runner-third", autofillContext);
+    const selectedAfterBase = runnerPlayerModel(second, "runner-third", autofillContext);
+    expect(selectedAfterBase.form).toMatchObject({ fromBase: "2", runnerId: "runner-third" });
+    expect(selectedAfterBase.assignments.fromBase).toBeUndefined();
+    const third = runnerPlayerModel(initial, "runner-third", autofillContext);
     expect(third.form.fromBase).toBe("3");
     expect(third.assignments.fromBase?.reason).toBe("현재 베이스");
+    const selectedAfterPlayer = runnerBaseModel(third, "2", autofillContext);
+    expect(selectedAfterPlayer.form).toMatchObject({ fromBase: "2", runnerId: "runner-third" });
+    expect(selectedAfterPlayer.assignments.runnerId).toBeUndefined();
 
     const scored = runnerOutcomeModel(third, "scored");
     expect(scored.form).toMatchObject({ outcome: "scored", toBase: "4" });

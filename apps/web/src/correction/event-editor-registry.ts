@@ -1,4 +1,5 @@
 import {
+  canonicalStringify,
   StagingRelayEventSchema,
   type Half,
   type Side,
@@ -277,6 +278,18 @@ export function eventFromForm(
       return null;
     }
   };
+  if (original !== undefined) {
+    const originalForm = formFrom(
+      { mode: "replace_event", eventId: original.identity.eventId },
+      original,
+    );
+    if (
+      canonicalStringify({ ...form, relayText: originalForm.relayText }) ===
+      canonicalStringify(originalForm)
+    ) {
+      return decode({ ...original, relayText });
+    }
+  }
   if (form.kind === "half_inning_start")
     return decode({ ...base, kind: "half_inning_start", payload: {} });
   if (form.kind === "batter_start")
@@ -573,7 +586,14 @@ const BATTED_BALL_TYPES = ["ground_ball", "fly_ball", "line_drive", "popup"] as 
 const RUNNER_OUTCOMES = ["safe", "out", "scored"] as const;
 const SUBSTITUTION_ROLES = ["batter", "runner", "pitcher", "fielder"] as const;
 const REVIEW_DECISIONS = ["requested", "upheld", "overturned", "inconclusive"] as const;
-const ADMINISTRATIVE_CODES = ["announcement", "mound_visit", "break", "footer", "other"] as const;
+const ADMINISTRATIVE_CODES = [
+  "announcement",
+  "mound_visit",
+  "break",
+  "footer",
+  "called_game",
+  "other",
+] as const;
 const SUSPECTED_EVENT_KINDS = EVENT_KINDS.filter((kind) => kind !== "unresolved");
 
 function enumIncludes(values: readonly string[], value: string): boolean {

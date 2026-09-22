@@ -7,6 +7,7 @@ import {
   CorrectionJournalSchema,
   GameCatalogItemSchema,
   RecordCorrectionCaseSchema,
+  RecordCorrectionDraftProgressSchema,
   RecordCorrectionListItemSchema,
   parseSourceBundleManifest,
   parseSourceFailureRecord,
@@ -23,6 +24,20 @@ const base = {
   blockingFindings: 0,
   warningFindings: 1,
 };
+
+it("기록정정 작업본 진행 상태는 strict 선택 계약으로 검증한다", () => {
+  const progress = { state: "ready_to_import", blockingCount: 0, message: "DB 적재 대기" };
+  expect(Value.Check(RecordCorrectionDraftProgressSchema, progress)).toBe(true);
+  expect(Value.Check(RecordCorrectionDraftProgressSchema, { ...progress, state: "resolved" })).toBe(
+    false,
+  );
+  expect(Value.Check(RecordCorrectionDraftProgressSchema, { ...progress, blockingCount: -1 })).toBe(
+    false,
+  );
+  expect(Value.Check(RecordCorrectionDraftProgressSchema, { ...progress, extra: true })).toBe(
+    false,
+  );
+});
 
 describe("catalog authority union과 workspace file codec", () => {
   it("보정 후보 요약은 finding count 없이 strict하게 검증한다", () => {

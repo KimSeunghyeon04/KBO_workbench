@@ -34,6 +34,9 @@ export async function cancelCollectionJob(jobId: string): Promise<CollectionJob>
     }),
   );
 }
-export async function getGameCatalog(): Promise<GameCatalog> {
-  return Value.Decode(GameCatalogSchema, await requestJson("/api/v2/games"));
+export async function getGameCatalog(authority?: "database"): Promise<GameCatalog> {
+  return Value.Decode(
+    GameCatalogSchema,
+    await requestJson(`/api/v2/games${authority === undefined ? "" : "?authority=database"}`),
+  );
 }

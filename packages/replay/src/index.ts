@@ -4,6 +4,7 @@ import {
   canonicalStringify,
   compareCanonicalStrings,
   type ReplayFielder,
+  type BatterStrikeZone,
   type PitchMetadata,
   type ReplayFrame,
   type ReplayManifest,
@@ -43,6 +44,7 @@ export interface ReplaySourceData {
   readonly trackingCandidates: StagingGameDocumentV2["trackingCandidates"];
 }
 export interface ReplayBundleInput {
+  readonly strikeZones?: ReadonlyMap<string, BatterStrikeZone>;
   readonly source: ReplaySourceData;
   readonly revision: number;
   readonly documentHash: string;
@@ -63,7 +65,7 @@ interface ActiveFielder {
 /** DB typed fact를 replay 응답으로 변환하며 staging 원장이나 compiler에는 접근하지 않는다. */
 export function buildReplayBundle(input: ReplayBundleInput): ReplayBundle {
   const players = playerDirectory(input.source);
-  const tracking = buildTracking(input.source, players);
+  const tracking = buildTracking(input.source, players, input.strikeZones ?? new Map());
   const active = initialFielders(input.source);
   const events = new Map(input.source.relayEvents.map((event) => [event.eventId, event]));
   const pitchMetadata = new Map<string, PitchMetadata>();
@@ -192,6 +194,7 @@ function activePlateAppearance(
 function buildTracking(
   source: ReplaySourceData,
   players: ReadonlyMap<string, ReplayPlayer>,
+  strikeZones: ReadonlyMap<string, BatterStrikeZone>,
 ): {
   readonly byEvent: ReadonlyMap<string, ReplayTrackingCandidate[]>;
   readonly unlinked: ReplayTrackingCandidate[];
@@ -224,8 +227,7 @@ function buildTracking(
       az: observation.az ?? null,
       crossPlateX: observation.crossPlateX ?? null,
       crossPlateY: observation.crossPlateY ?? null,
-      topSz: observation.topSz ?? null,
-      bottomSz: observation.bottomSz ?? null,
+      strikeZone: strikeZones.get(observation.resolution.pitchEventId) ?? null,
     };
     if (!eventIds.has(observation.resolution.pitchEventId)) {
       unlinked.push(item);

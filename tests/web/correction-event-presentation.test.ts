@@ -25,7 +25,7 @@ describe("보정 원장 행 표시", () => {
       "20240404LTHH02024",
     ]);
     expect(correctionGameLabel(games[0] as CorrectionGameCatalogItem)).toBe(
-      "20240404LTHH02024 · 검토 필요",
+      `${games[0]?.gameDate} ${games[0]?.teams.away.name}–${games[0]?.teams.home.name} · 검토 필요 · 20240404LTHH02024`,
     );
   });
 
@@ -120,5 +120,7 @@ function catalogItem(
     season: 2024,
     authority,
     updatedAt: "2026-08-22T00:00:00.000Z",
+    gameDate: "2024-04-04",
+    teams: { away: { teamId: "away", name: "원정" }, home: { teamId: "home", name: "홈" } },
   };
 }

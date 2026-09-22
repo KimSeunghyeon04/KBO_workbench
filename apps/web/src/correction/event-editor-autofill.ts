@@ -42,6 +42,7 @@ export interface EditorAutofillContext {
   readonly anchorInning: number | undefined;
   readonly anchorHalf: Half | undefined;
   readonly selectedEvent: StagingRelayEvent | undefined;
+  readonly selectedEventContext: CorrectionSession["eventContexts"][number] | undefined;
   readonly state: CorrectionEventState | undefined;
   readonly runnerState: CorrectionEventState | undefined;
   readonly addAfterEvent: StagingRelayEvent | undefined;
@@ -101,6 +102,10 @@ export function buildEditorAutofillContext(
     anchorInning: selectedEvent?.inning,
     anchorHalf: selectedEvent?.half,
     selectedEvent,
+    selectedEventContext:
+      request.mode === "replace_event"
+        ? session.eventContexts.find((item) => item.eventId === request.eventId)
+        : undefined,
     state,
     runnerState,
     addAfterEvent,
@@ -147,6 +152,9 @@ export function runnerBaseModel(
   fromBase: string,
   context: EditorAutofillContext,
 ): EditorFormModel {
+  // A runner can already have advanced within this play; the before-state is only a suggestion.
+  if (current.form.runnerId !== "" && current.assignments.runnerId === undefined)
+    return manualFormPatch(current, { fromBase });
   const state = matchingContextState(current.form, context, context.runnerState);
   const base = Number(fromBase);
   const runnerId = base >= 1 && base <= 3 ? (state?.bases[base - 1] ?? "") : "";
@@ -162,6 +170,8 @@ export function runnerPlayerModel(
   runnerId: string,
   context: EditorAutofillContext,
 ): EditorFormModel {
+  if (current.form.fromBase !== "" && current.assignments.fromBase === undefined)
+    return manualFormPatch(current, { runnerId });
   const state = matchingContextState(current.form, context, context.runnerState);
   const baseIndex = state?.bases.findIndex((candidate) => candidate === runnerId) ?? -1;
   return automaticFormPatch(

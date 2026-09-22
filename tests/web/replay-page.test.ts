@@ -9,6 +9,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { ReplayPage } from "../../apps/web/src/pages/replay-page.js";
+import {
+  evaluateRunValues,
+  evaluateCountRunValues,
+  evaluateWinValues,
+  trainWinProbability,
+} from "@kbo/game-core";
+import { analysisPlay, analysisState } from "../helpers/analysis-play.js";
+import { WinProbabilityPanel } from "../../apps/web/src/analysis/win-probability-panel.js";
 
 afterEach(() => {
   cleanup();
@@ -16,6 +24,71 @@ afterEach(() => {
 });
 
 describe("경기 재생 UI", () => {
+  it("loads the 2025 win curve on demand and explains reconstruction under the eleven-inning limit", async () => {
+    const source = { ...manifest(), gameDate: "2025-06-01" },
+      model = trainWinProbability(
+        Array.from({ length: 45 }, (_, i) => ({
+          gameId: `training-${i}`,
+          revision: 1,
+          season: 2024,
+          inning: 1,
+          half: "top" as const,
+          outs: 0,
+          bases: 0,
+          lead: 0,
+          limit: 11 as const,
+          outcome: i % 3,
+          weight: 1,
+        })),
+        "a".repeat(64),
+      ),
+      data = evaluateWinValues(
+        {
+          gameId: source.gameId,
+          revision: source.revision,
+          documentHash: source.documentHash,
+          season: 2025,
+          gameDate: source.gameDate,
+          scheduledInnings: 9,
+          normalEnd: true,
+          status: "final",
+        },
+        [
+          analysisPlay({
+            kind: "half_inning_start",
+            sequence: 0,
+            before: analysisState({ inning: 0 }),
+          }),
+          analysisPlay({
+            playId: "end",
+            sequence: 1,
+            inning: 9,
+            half: "bottom",
+            before: analysisState({ inning: 9, half: "bottom" }),
+            after: analysisState({ inning: 9, half: "bottom", homeScore: 1 }),
+          }),
+        ],
+        model,
+        "b".repeat(64),
+      ),
+      fetch = vi.fn(async () => Response.json(data)),
+      queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    vi.stubGlobal("fetch", fetch);
+    render(
+      createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(WinProbabilityPanel, { manifest: source, onSelect: vi.fn() }),
+      ),
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "승리확률 보기" }));
+    expect(await screen.findByRole("img", { name: "홈 승리확률 곡선" })).toBeTruthy();
+    expect(screen.getByText(/과거 경기를 11회 종료 기준으로 재구성/)).toBeTruthy();
+    expect(screen.queryByText(/연장전 규정을 지원하는 모델이 없습니다/)).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    queryClient.clear();
+  });
   it("달력에서 날짜를 선택해 해당 날짜의 DB 경기만 좁힌다", async () => {
     vi.stubGlobal("fetch", calendarFetchMock());
     const queryClient = new QueryClient({
@@ -119,7 +192,7 @@ describe("경기 재생 UI", () => {
     await user.click(screen.getByRole("button", { name: "다음" }));
     expect(screen.getAllByText("1구 스트라이크")).toHaveLength(2);
     expect(
-      screen.getByText("좌표 metric이 완전하지 않아 스트라이크존을 표시하지 않습니다."),
+      screen.getByText("타자 키 또는 투구 좌표가 없어 스트라이크존을 계산할 수 없습니다."),
     ).toBeTruthy();
     expect(screen.getByRole("slider", { name: "재생 위치" }).getAttribute("aria-valuetext")).toBe(
       "2 / 2",
@@ -136,6 +209,16 @@ describe("경기 재생 UI", () => {
 
     expect(screen.getAllByText("비식별 타자 : 안타")).toHaveLength(1);
     expect(screen.getAllByText("비식별 주자 : 1루까지 진루")).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "플레이 득점가치 보기" }));
+    const values = await screen.findByRole("table", { name: "플레이 득점가치" });
+    await user.click(within(values).getByRole("button", { name: "play-1" }));
+    expect(screen.getByRole("slider", { name: "재생 위치" }).getAttribute("aria-valuetext")).toBe(
+      "1 / 2",
+    );
+    await user.click(screen.getByRole("button", { name: "투구·비투구 득점가치 보기" }));
+    expect(await screen.findByRole("table", { name: "카운트 가치 전이" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "승리확률 보기" }));
+    expect(await screen.findByRole("table", { name: "승리확률 플레이" })).toBeTruthy();
     queryClient.clear();
   });
 });
@@ -143,7 +226,7 @@ describe("경기 재생 UI", () => {
 function calendarFetchMock(): ReturnType<typeof vi.fn> {
   return vi.fn(async (input: string | URL | Request) => {
     const path = String(input);
-    if (path === "/api/v2/games") {
+    if (path === "/api/v2/games?authority=database") {
       return Response.json({
         games: [
           catalogGame("20260830AABB02026", 2026, "2026-08-30"),
@@ -180,7 +263,7 @@ function calendarFetchMock(): ReturnType<typeof vi.fn> {
 function replayFetchMock(): ReturnType<typeof vi.fn> {
   return vi.fn(async (input: string | URL | Request) => {
     const path = String(input);
-    if (path === "/api/v2/games") {
+    if (path === "/api/v2/games?authority=database") {
       return Response.json({
         games: [
           catalogGame("anon-game-2026", 2026, "2026-08-30"),
@@ -239,6 +322,27 @@ function replayFetchMock(): ReturnType<typeof vi.fn> {
       });
     }
     if (path.endsWith("/replay-manifest")) return Response.json(manifest());
+    if (path.includes("/analysis/") && path.includes("/games/")) {
+      const m = manifest(),
+        game = {
+          gameId: m.gameId,
+          revision: m.revision,
+          season: 2026,
+          gameDate: m.gameDate,
+          scheduledInnings: 9,
+          status: "final",
+          normalEnd: true,
+          documentHash: m.documentHash,
+        },
+        plays = [analysisPlay({ gameId: m.gameId, gameDate: m.gameDate, playId: "play-1" })];
+      return Response.json(
+        path.includes("/count-run-value/")
+          ? evaluateCountRunValues(game, plays, null, null)
+          : path.includes("/win-probability/")
+            ? evaluateWinValues(game, plays, null, null)
+            : evaluateRunValues(game, plays, null, null),
+      );
+    }
     if (path.includes("/replay-frames?")) {
       return Response.json({
         gameId: "anon-game-2026",
@@ -458,7 +562,12 @@ function validTracking() {
     az: -16.4274,
     crossPlateX: 0.8,
     crossPlateY: 0.7083,
-    topSz: 3.067,
-    bottomSz: 1.504,
+    strikeZone: {
+      ruleYear: 2025 as const,
+      batterHeightCm: 168,
+      topFeet: (168 * 0.5575) / 30.48,
+      bottomFeet: (168 * 0.2704) / 30.48,
+      halfWidthFeet: 47.18 / 2 / 30.48,
+    },
   };
 }

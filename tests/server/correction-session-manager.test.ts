@@ -11,10 +11,176 @@ import { describe, expect, it, vi } from "vitest";
 import {
   CorrectionCommitBlockedError,
   CorrectionSessionManager,
+  CorrectionSessionLimitError,
+  CorrectionSessionNotFoundError,
   StaleCorrectionSessionError,
 } from "../../apps/server/src/correction-session-manager.js";
+import { inlineComputation, type ComputationRunner } from "../../apps/server/src/computation.js";
 
 describe("CorrectionSessionManager", () => {
+  it("an incomplete worker snapshot cannot advance the document, version or undo stack", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-snapshot-failure-"));
+    const workspace = await StagingWorkspace.open(temporary.path);
+    const document = await goldenDocument();
+    await workspace.saveReady(document, []);
+    const manager = new CorrectionSessionManager(workspace, undefined, undefined, undefined, {
+      async run(input) {
+        if (input.kind === "command")
+          return { kind: "command", value: applyCorrectionCommand(input.document, input.command) };
+        return inlineComputation.run(input);
+      },
+    });
+    try {
+      const session = await manager.create({
+        gameId: document.metadata.gameId,
+        authority: "staging",
+      });
+      const event = document.events[0];
+      if (event === undefined) throw new Error("missing fixture event");
+      await expect(
+        manager.command(
+          session.sessionId,
+          0,
+          { kind: "delete_event", commandId: "anonymous", eventId: event.identity.eventId },
+          true,
+        ),
+      ).rejects.toThrow("snapshot");
+      expect(manager.get(session.sessionId)).toEqual(session);
+    } finally {
+      manager.close();
+      await workspace.close();
+    }
+  });
+  it("계산 실패는 undo 이력을 보존하고 동시 명령은 session version 순서로 검증한다", async () => {
+    await using temporary = await mkdtempDisposable(
+      path.join(tmpdir(), "kbo-session-worker-failure-"),
+    );
+    const workspace = await StagingWorkspace.open(temporary.path);
+    const document = await goldenDocument();
+    await workspace.saveReady(document, []);
+    let failCompile = false;
+    const computation: ComputationRunner = {
+      async run(input) {
+        if (input.kind === "compile" && failCompile) throw new Error("worker stopped");
+        return inlineComputation.run(input);
+      },
+    };
+    const manager = new CorrectionSessionManager(
+      workspace,
+      undefined,
+      undefined,
+      undefined,
+      computation,
+    );
+    try {
+      const session = await manager.create({
+        authority: "staging",
+        gameId: document.metadata.gameId,
+      });
+      const eventId = document.events[0]?.identity.eventId;
+      if (eventId === undefined) throw new Error("missing fixture event");
+      const command = { kind: "delete_event" as const, commandId: "anon-delete", eventId };
+      const pair = await Promise.allSettled([
+        manager.command(session.sessionId, 0, command, true),
+        manager.command(session.sessionId, 0, command, true),
+      ]);
+      expect(pair[0]?.status).toBe("fulfilled");
+      expect(pair[1]).toMatchObject({
+        status: "rejected",
+        reason: expect.any(StaleCorrectionSessionError),
+      });
+      const before = manager.get(session.sessionId);
+      failCompile = true;
+      await expect(manager.undo(session.sessionId, 1)).rejects.toThrow("worker stopped");
+      expect(manager.get(session.sessionId)).toEqual(before);
+      failCompile = false;
+      expect((await manager.undo(session.sessionId, 1)).session.draftDocument).toEqual(document);
+    } finally {
+      manager.close();
+      await workspace.close();
+    }
+  });
+  it("비식별 작업 사본의 응답을 격리하고 오래된 clean session만 회수한다", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-session-lifetime-"));
+    const workspace = await StagingWorkspace.open(temporary.path);
+    const document = parseStagingGameDocumentV2(
+      JSON.parse(
+        await readFile("tests/fixtures/correction-record-mismatch.anonymized.json", "utf8"),
+      ) as unknown,
+    );
+    await workspace.saveQuarantine(
+      document,
+      compilerFindings(compileStagingGameDocumentV2(document).findings),
+    );
+    let now = 0,
+      id = 0;
+    const manager = new CorrectionSessionManager(
+      workspace,
+      () => `session-${String(++id)}`,
+      undefined,
+      () => now,
+    );
+    try {
+      const clean = await manager.create({
+        authority: "quarantine",
+        gameId: document.metadata.gameId,
+      });
+      const originalName = clean.draftDocument.teams.away.name;
+      clean.draftDocument.teams.away.name = "caller changed";
+      expect(manager.get(clean.sessionId).draftDocument.teams.away.name).toBe(originalName);
+      const dirty = await manager.create({
+        authority: "quarantine",
+        gameId: document.metadata.gameId,
+      });
+      const event = dirty.draftDocument.events[0];
+      if (event === undefined) throw new Error("missing anonymized event");
+      const applied = await manager.command(
+        dirty.sessionId,
+        0,
+        { commandId: "delete-anon-event", kind: "delete_event", eventId: event.identity.eventId },
+        true,
+      );
+      expect(manager.get(dirty.sessionId)).toEqual(applied.session);
+      expect(applied.session.sessionVersion).toBe(1);
+      now = 31 * 60_000;
+      const next = await manager.create({
+        authority: "quarantine",
+        gameId: document.metadata.gameId,
+      });
+      expect(() => manager.get(clean.sessionId)).toThrow(CorrectionSessionNotFoundError);
+      expect(manager.get(dirty.sessionId).dirty).toBe(true);
+      await expect(manager.delete(dirty.sessionId, 0)).rejects.toThrow(StaleCorrectionSessionError);
+      await manager.delete(dirty.sessionId, 1);
+      await manager.delete(next.sessionId, next.sessionVersion);
+    } finally {
+      manager.close();
+      await workspace.close();
+    }
+  });
+
+  it("작업 사본 상한을 넘겨도 기존 세션을 지우지 않는다", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-session-bound-"));
+    const workspace = await StagingWorkspace.open(temporary.path);
+    const document = await goldenDocument();
+    await workspace.saveReady(document, []);
+    let id = 0;
+    const manager = new CorrectionSessionManager(workspace, () => `bounded-${String(++id)}`);
+    try {
+      for (let i = 0; i < 64; i++)
+        await manager.create({ authority: "staging", gameId: document.metadata.gameId });
+      await expect(
+        manager.create({ authority: "staging", gameId: document.metadata.gameId }),
+      ).rejects.toThrow(CorrectionSessionLimitError);
+      expect(manager.get("bounded-1").sessionVersion).toBe(0);
+      await manager.delete("bounded-1", 0);
+      await expect(
+        manager.create({ authority: "staging", gameId: document.metadata.gameId }),
+      ).resolves.toMatchObject({ sessionId: "bounded-65" });
+    } finally {
+      manager.close();
+      await workspace.close();
+    }
+  });
   it("단일 current 원장만 읽고 전체 catalog 스캔 없이 작업 사본을 연다", async () => {
     await using temporary = await mkdtempDisposable(
       path.join(tmpdir(), "kbo-correction-current-snapshot-"),

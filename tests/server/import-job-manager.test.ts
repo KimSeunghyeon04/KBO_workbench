@@ -44,12 +44,12 @@ describe("ImportJobManager", () => {
       afterImport,
     );
     const request = { gameId: document.metadata.gameId, idempotencyKey: "same-import-key" };
-    const created = manager.create(request);
+    const created = await manager.create(request);
 
-    expect(manager.create(request).jobId).toBe(created.jobId);
-    expect(() =>
+    expect((await manager.create(request)).jobId).toBe(created.jobId);
+    await expect(
       manager.create({ gameId: "another-game", idempotencyKey: "same-import-key" }),
-    ).toThrow(ImportIdempotencyConflictError);
+    ).rejects.toThrow(ImportIdempotencyConflictError);
     await expect(manager.waitForTerminal(created.jobId)).resolves.toMatchObject({
       status: "succeeded",
       revision: 1,
@@ -85,7 +85,10 @@ describe("ImportJobManager", () => {
       () => new Date("2026-08-21T00:00:00.000Z"),
       () => "import-job-missing",
     );
-    const created = manager.create({ gameId: "missing", idempotencyKey: "missing-import-key" });
+    const created = await manager.create({
+      gameId: "missing",
+      idempotencyKey: "missing-import-key",
+    });
     await expect(manager.waitForTerminal(created.jobId)).resolves.toMatchObject({
       status: "failed",
       error: expect.stringContaining("staging ready"),
@@ -117,7 +120,7 @@ describe("ImportJobManager", () => {
       () => new Date("2026-08-21T00:00:00.000Z"),
       () => "import-job-db-failure",
     );
-    const job = manager.create({
+    const job = await manager.create({
       gameId: document.metadata.gameId,
       idempotencyKey: "db-failure-key",
     });
@@ -175,7 +178,7 @@ describe("ImportJobManager", () => {
 
     const batch = await manager.createReadyBatch({ idempotencyKey: "ready-batch-key" });
     expect(batch).toMatchObject({
-      batchId: "generated-1",
+      batchId: "generated-2",
       createdCount: 4,
       skippedCount: 0,
     });

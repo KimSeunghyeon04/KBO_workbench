@@ -1,9 +1,27 @@
 import type { GameCatalogItem } from "@kbo/contracts";
 import type { Pool, QueryResultRow } from "pg";
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 
 type CatalogPool = Pick<Pool, "query">;
 
-export async function readDatabaseCatalog(pool: CatalogPool): Promise<readonly GameCatalogItem[]> {
+export async function readStoredGameIds(pool: CatalogPool): Promise<string[]> {
+  const result = await pool.query(
+    'SELECT game_id AS "gameId" FROM analytics.current_game_revisions ORDER BY game_id',
+  );
+  return Value.Decode(
+    Type.Array(
+      Type.Object({ gameId: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
+    ),
+    result.rows,
+  ).map((row) => row.gameId);
+}
+
+export async function readDatabaseCatalog(
+  pool: CatalogPool,
+  gameIds?: readonly string[],
+): Promise<readonly GameCatalogItem[]> {
+  if (gameIds?.length === 0) return [];
   const result = await pool.query<
     QueryResultRow & {
       readonly game_id: string;
@@ -36,7 +54,9 @@ export async function readDatabaseCatalog(pool: CatalogPool): Promise<readonly G
        WHERE sealed
        GROUP BY game_id
      ) revisions ON revisions.game_id=r.game_id
+     WHERE ($1::text[] IS NULL OR r.game_id=ANY($1::text[]))
      ORDER BY r.game_date DESC, r.game_id DESC`,
+    [gameIds ?? null],
   );
   return result.rows.map((row) => ({
     gameId: row.game_id,

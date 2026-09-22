@@ -8,11 +8,13 @@ import {
 } from "@kbo/contracts";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 
-import { inspectDatabase } from "../database.js";
-import { buildSystemStatus } from "../status.js";
+import { buildSystemStatus, createSystemStatusReader } from "../status.js";
 import type { RouteContext } from "./context.js";
 
 export const systemRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app, context) => {
+  const readStatus = createSystemStatusReader(() =>
+    buildSystemStatus(context.config, context.pool),
+  );
   app.get("/health/live", { schema: { response: { 200: HealthStatusSchema } } }, async () => ({
     status: "ok" as const,
   }));
@@ -30,7 +32,7 @@ export const systemRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app,
   app.get(
     "/api/v2/system/status",
     { schema: { response: { 200: SystemStatusSchema } } },
-    async () => buildSystemStatus(context.config, context.pool, recentFailures(context.runtime)),
+    async () => ({ ...(await readStatus()), recentFailures: recentFailures(context.runtime) }),
   );
 
   app.get(
@@ -38,7 +40,7 @@ export const systemRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app,
     { schema: { response: { 200: DatabaseOverviewSchema } } },
     async () => {
       const [database, workspaceCatalog] = await Promise.all([
-        inspectDatabase(context.pool, context.config.expectedMigrationVersion),
+        readStatus().then((status) => status.database),
         context.runtime.workspace.catalog(),
       ]);
       if (!database.healthy) {
@@ -51,15 +53,14 @@ export const systemRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app,
           },
         };
       }
-      const storedCatalog = await context.runtime.revisionStore.catalog();
-      const storedIds = new Set(storedCatalog.map((game) => game.gameId));
+      const storedIds = new Set(await context.runtime.revisionStore.storedGameIds());
       return {
         database,
         counts: {
           readyToImport: workspaceCatalog.games.filter(
             (game) => game.authority === "staging" && !storedIds.has(game.gameId),
           ).length,
-          stored: storedCatalog.length,
+          stored: storedIds.size,
         },
       };
     },
@@ -69,12 +70,12 @@ export const systemRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app,
     "/api/v2/dashboard",
     { schema: { response: { 200: DashboardSummarySchema } } },
     async () => {
-      const system = await buildSystemStatus(context.config, context.pool);
-      const [catalog, storedCatalog] = await Promise.all([
+      const [system, catalog, storedGameIds] = await Promise.all([
+        readStatus(),
         context.runtime.workspace.catalog(),
-        context.runtime.revisionStore.catalog(),
+        context.runtime.revisionStore.storedGameIds(),
       ]);
-      const storedIds = new Set(storedCatalog.map((game) => game.gameId));
+      const storedIds = new Set(storedGameIds);
       const jobs = context.runtime.collectionJobs.list();
       return {
         status: system.status,
@@ -87,7 +88,7 @@ export const systemRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app,
           readyToImport: catalog.games.filter(
             (game) => game.authority === "staging" && !storedIds.has(game.gameId),
           ).length,
-          stored: storedCatalog.length,
+          stored: storedIds.size,
         },
       };
     },

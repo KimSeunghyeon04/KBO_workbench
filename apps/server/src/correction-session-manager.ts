@@ -2,25 +2,35 @@ import { randomUUID } from "node:crypto";
 
 import {
   canonicalStringify,
-  parseStagingGameDocumentV2,
   type CorrectionCommand,
   type CorrectionCommitRequest,
   type CorrectionCommitResult,
-  type CorrectionFinding,
   type CorrectionMutationResult,
   type CorrectionSession,
   type CorrectionSessionCreateRequest,
   type CorrectionSourceEvidence,
   type StagingGameDocumentV2,
 } from "@kbo/contracts";
-import { applyCorrectionCommand, buildCorrectionPreview } from "@kbo/correction";
+import { buildCorrectionPreview } from "@kbo/correction";
+import type { ReplayResult } from "@kbo/game-core";
+import type {
+  ImmutableSourceBundle,
+  StagingCorrectionCommit,
+  StagingWorkspace,
+  StoredFinding,
+} from "@kbo/persistence";
+
+import { BoundedReadCache } from "./bounded-read-cache.js";
 import {
-  compileStagingGameDocumentV2,
-  stagingDocumentHash,
-  type GameState,
-  type ReplayResult,
-} from "@kbo/game-core";
-import type { StagingCorrectionCommit, StagingWorkspace, StoredFinding } from "@kbo/persistence";
+  compileCorrectionDocument,
+  inlineComputation,
+  type ComputationRunner,
+} from "./computation.js";
+import {
+  mergePersistentSourceFindings,
+  type PreparedCorrectionSnapshot,
+} from "./correction-snapshot.js";
+export { mergePersistentSourceFindings } from "./correction-snapshot.js";
 
 interface HistoryEntry {
   readonly before: StagingGameDocumentV2;
@@ -35,10 +45,12 @@ interface InternalSession {
   baseCurrentContentHash: string | null;
   document: StagingGameDocumentV2;
   replay: ReplayResult;
+  prepared: PreparedCorrectionSnapshot;
   storedFindings: StoredFinding[];
   sessionVersion: number;
   undoStack: HistoryEntry[];
   redoStack: HistoryEntry[];
+  cachedSnapshot?: CorrectionSession;
 }
 type CorrectionWorkspace = Pick<
   StagingWorkspace,
@@ -57,38 +69,64 @@ export class CorrectionSessionNotFoundError extends Error {}
 export class StaleCorrectionSessionError extends Error {}
 export class CorrectionSourceNotFoundError extends Error {}
 export class CorrectionCommitBlockedError extends Error {}
+export class CorrectionSessionLimitError extends Error {}
 
 export class CorrectionSessionManager {
   private readonly sessions = new Map<string, InternalSession>();
   private readonly mutexes = new Map<string, AsyncMutex>();
+  private readonly accessedAt = new Map<string, number>();
+  private readonly sources = new BoundedReadCache<{ bundle: ImmutableSourceBundle; bytes: number }>(
+    32 * 1024 * 1024,
+    8,
+    300_000,
+    undefined,
+    (entry) => entry.bytes,
+  );
   public constructor(
     private readonly workspace: CorrectionWorkspace,
     private readonly newId: () => string = randomUUID,
     private readonly extractSourceEvidence: CorrectionSourceEvidenceExtractor = () => {
       throw new CorrectionSourceNotFoundError("source evidence extractor가 설정되지 않았습니다.");
     },
+    private readonly now: () => number = Date.now,
+    private readonly computation: ComputationRunner = inlineComputation,
+    private readonly readEvidence?: (
+      season: number,
+      gameId: string,
+      hash: string,
+      event: StagingGameDocumentV2["events"][number],
+    ) => Promise<CorrectionSourceEvidence>,
   ) {}
 
   public async create(request: CorrectionSessionCreateRequest): Promise<CorrectionSession> {
+    this.makeRoom();
     if (request.authority === "superseded") {
       const source = await this.workspace.readSupersededSnapshot(
         request.gameId,
         request.snapshotId,
       );
+      const { replay, prepared } = await compileCorrectionDocument(
+        this.computation,
+        source.document,
+        source.findings,
+      );
       const session: InternalSession = {
         sessionId: this.newId(),
         gameId: request.gameId,
-        baseDocumentHash: stagingDocumentHash(source.document),
+        baseDocumentHash: prepared.draftDocumentHash,
         authority: "superseded",
         snapshotId: source.snapshotId,
         baseCurrentContentHash: source.currentContentHash,
         document: source.document,
-        replay: compileStagingGameDocumentV2(source.document),
+        replay,
+        prepared,
         storedFindings: [...source.findings],
         sessionVersion: 0,
         undoStack: [],
         redoStack: [],
       };
+      this.makeRoom();
+      this.accessedAt.set(session.sessionId, this.now());
       this.sessions.set(session.sessionId, session);
       this.mutexes.set(session.sessionId, new AsyncMutex());
       return snapshot(session);
@@ -100,19 +138,27 @@ export class CorrectionSessionManager {
       );
     const document = current.document;
     const storedFindings = current.findings;
+    const { replay, prepared } = await compileCorrectionDocument(
+      this.computation,
+      document,
+      storedFindings,
+    );
     const session: InternalSession = {
       sessionId: this.newId(),
       gameId: request.gameId,
-      baseDocumentHash: stagingDocumentHash(document),
+      baseDocumentHash: prepared.draftDocumentHash,
       authority: current.authority,
       baseCurrentContentHash: null,
       document,
-      replay: compileStagingGameDocumentV2(document),
+      replay,
+      prepared,
       storedFindings: [...storedFindings],
       sessionVersion: 0,
       undoStack: [],
       redoStack: [],
     };
+    this.makeRoom();
+    this.accessedAt.set(session.sessionId, this.now());
     this.sessions.set(session.sessionId, session);
     this.mutexes.set(session.sessionId, new AsyncMutex());
     return snapshot(session);
@@ -126,28 +172,44 @@ export class CorrectionSessionManager {
     command: CorrectionCommand,
     apply: boolean,
   ): Promise<CorrectionMutationResult> {
-    return this.withSessionLock(sessionId, expected, (session) => {
-      const result = applyCorrectionCommand(session.document, command);
+    return this.withSessionLock(sessionId, expected, async (session) => {
+      const computed = await this.computation.run({
+        kind: "command",
+        ...(apply ? { storedFindings: session.storedFindings } : {}),
+        document: session.document,
+        command,
+      });
+      if (computed.kind !== "command") throw new Error("Unexpected correction result");
+      const result = computed.value;
       if (apply) {
+        if (computed.snapshot === undefined) throw new Error("Missing correction snapshot");
         session.undoStack.push({ before: session.document, after: result.document });
         session.redoStack = [];
         session.document = result.document;
         session.replay = result.replay;
+        session.prepared = computed.snapshot;
         session.sessionVersion += 1;
       }
       return { session: snapshot(session), preview: result.preview };
     });
   }
   public async undo(sessionId: string, expected: number): Promise<CorrectionMutationResult> {
-    return this.withSessionLock(sessionId, expected, (session) => {
-      const entry = session.undoStack.pop();
+    return this.withSessionLock(sessionId, expected, async (session) => {
+      const entry = session.undoStack.at(-1);
       if (entry === undefined)
         throw new CorrectionCommitBlockedError("실행 취소할 작업이 없습니다.");
       const before = session.document;
       const beforeReplay = session.replay;
+      const { replay, prepared } = await compileCorrectionDocument(
+        this.computation,
+        entry.before,
+        session.storedFindings,
+      );
+      session.undoStack.pop();
       session.redoStack.push(entry);
       session.document = entry.before;
-      session.replay = compileStagingGameDocumentV2(entry.before);
+      session.replay = replay;
+      session.prepared = prepared;
       session.sessionVersion += 1;
       return {
         session: snapshot(session),
@@ -156,15 +218,22 @@ export class CorrectionSessionManager {
     });
   }
   public async redo(sessionId: string, expected: number): Promise<CorrectionMutationResult> {
-    return this.withSessionLock(sessionId, expected, (session) => {
-      const entry = session.redoStack.pop();
+    return this.withSessionLock(sessionId, expected, async (session) => {
+      const entry = session.redoStack.at(-1);
       if (entry === undefined)
         throw new CorrectionCommitBlockedError("다시 실행할 작업이 없습니다.");
       const before = session.document;
       const beforeReplay = session.replay;
+      const { replay, prepared } = await compileCorrectionDocument(
+        this.computation,
+        entry.after,
+        session.storedFindings,
+      );
+      session.redoStack.pop();
       session.undoStack.push(entry);
       session.document = entry.after;
-      session.replay = compileStagingGameDocumentV2(entry.after);
+      session.replay = replay;
+      session.prepared = prepared;
       session.sessionVersion += 1;
       return {
         session: snapshot(session),
@@ -215,7 +284,8 @@ export class CorrectionSessionManager {
               findingEnvelope: { schemaVersion: 2, findings: committedFindings },
             };
       await this.workspace.commitCorrection(input);
-      session.baseDocumentHash = stagingDocumentHash(document);
+      session.baseDocumentHash = session.prepared.draftDocumentHash;
+      session.prepared = { ...session.prepared, storedFindings: session.prepared.findings };
       session.authority = targetAuthority;
       delete session.snapshotId;
       session.baseCurrentContentHash = null;
@@ -242,10 +312,27 @@ export class CorrectionSessionManager {
     if (event.identity.kind !== "source") {
       throw new CorrectionSourceNotFoundError("수동 추가 원장 행에는 immutable source가 없습니다.");
     }
-    const bundle = await this.workspace.readSourceBundle(
-      session.document.metadata.season,
-      session.gameId,
-      session.document.source.sourceBundleHash,
+    if (this.readEvidence !== undefined)
+      return this.readEvidence(
+        session.document.metadata.season,
+        session.gameId,
+        session.document.source.sourceBundleHash,
+        event,
+      );
+    const { bundle } = await this.sources.load(
+      canonicalStringify([
+        session.document.metadata.season,
+        session.gameId,
+        session.document.source.sourceBundleHash,
+      ]),
+      async () => {
+        const bundle = await this.workspace.readSourceBundle(
+          session.document.metadata.season,
+          session.gameId,
+          session.document.source.sourceBundleHash,
+        );
+        return { bundle, bytes: Buffer.byteLength(JSON.stringify(bundle), "utf8") };
+      },
     );
     try {
       return this.extractSourceEvidence({ event, payloads: bundle.payloads });
@@ -265,17 +352,22 @@ export class CorrectionSessionManager {
         session.document.metadata.season,
         session.gameId,
       );
-      const rebasedOriginal = parseSessionDocument({
+      const rebasedOriginal = {
         ...original,
         revisionBase: session.document.revisionBase,
-      });
+      };
       const before = session.document;
       const beforeReplay = session.replay;
-      const replay = compileStagingGameDocumentV2(rebasedOriginal);
+      const { replay, prepared } = await compileCorrectionDocument(
+        this.computation,
+        rebasedOriginal,
+        session.storedFindings,
+      );
       session.undoStack.push({ before, after: rebasedOriginal });
       session.redoStack = [];
       session.document = rebasedOriginal;
       session.replay = replay;
+      session.prepared = prepared;
       session.sessionVersion += 1;
       return {
         session: snapshot(session),
@@ -288,16 +380,39 @@ export class CorrectionSessionManager {
       this.sessions.delete(sessionId);
     });
     this.mutexes.delete(sessionId);
+    this.accessedAt.delete(sessionId);
+    if (this.sessions.size === 0) this.sources.clear();
   }
   public close(): void {
     this.sessions.clear();
     this.mutexes.clear();
+    this.accessedAt.clear();
+    this.sources.clear();
   }
   private required(sessionId: string): InternalSession {
     const session = this.sessions.get(sessionId);
     if (session === undefined)
       throw new CorrectionSessionNotFoundError("보정 session을 찾을 수 없습니다.");
+    this.accessedAt.set(sessionId, this.now());
     return session;
+  }
+  private makeRoom(): void {
+    for (const [id, session] of this.sessions) {
+      if (
+        session.undoStack.length === 0 &&
+        !this.mutexes.get(id)?.busy &&
+        this.now() - (this.accessedAt.get(id) ?? this.now()) >= 30 * 60_000
+      ) {
+        this.sessions.delete(id);
+        this.mutexes.delete(id);
+        this.accessedAt.delete(id);
+      }
+    }
+    if (this.sessions.size >= 64) {
+      throw new CorrectionSessionLimitError(
+        "열린 작업 사본이 많습니다. 사용하지 않는 작업 사본을 닫은 뒤 다시 시도하세요.",
+      );
+    }
   }
   private requiredVersion(sessionId: string, expected: number): InternalSession {
     const session = this.required(sessionId);
@@ -322,8 +437,14 @@ export class CorrectionSessionManager {
 
 class AsyncMutex {
   private tail: Promise<void> = Promise.resolve();
+  private pending = 0;
+
+  public get busy(): boolean {
+    return this.pending > 0;
+  }
 
   public async run<Result>(operation: () => Result | Promise<Result>): Promise<Result> {
+    this.pending += 1;
     let release = (): void => undefined;
     const previous = this.tail;
     this.tail = new Promise<void>((resolve) => {
@@ -333,68 +454,29 @@ class AsyncMutex {
     try {
       return await operation();
     } finally {
+      this.pending -= 1;
       release();
     }
   }
 }
 
-function parseSessionDocument(value: unknown): StagingGameDocumentV2 {
-  return parseStagingGameDocumentV2(JSON.parse(canonicalStringify(value)) as unknown);
-}
-
 function snapshot(session: InternalSession): CorrectionSession {
-  const currentFindings = mergePersistentSourceFindings(
-    session.storedFindings,
-    session.replay.findings,
-    session.document,
-  );
-  const pitchFacts = new Map(session.replay.pitchFacts.map((pitch) => [pitch.pitchId, pitch]));
-  return {
+  if (session.cachedSnapshot?.sessionVersion === session.sessionVersion)
+    return structuredClone(session.cachedSnapshot);
+  const result: CorrectionSession = {
+    ...session.prepared,
     sessionId: session.sessionId,
     authority: session.authority,
     ...(session.snapshotId === undefined ? {} : { snapshotId: session.snapshotId }),
     gameId: session.gameId,
     baseDocumentHash: session.baseDocumentHash,
     sessionVersion: session.sessionVersion,
-    draftDocumentHash: stagingDocumentHash(session.document),
-    draftDocument: parseSessionDocument(session.document),
-    storedFindings: session.storedFindings.map((finding) =>
-      storedFindingSnapshot(session.gameId, finding),
-    ),
-    findings: currentFindings.map((finding) => storedFindingSnapshot(session.gameId, finding)),
-    eventContexts: session.replay.frames.map((frame) => {
-      const pitch = pitchFacts.get(frame.eventId);
-      return {
-        eventId: frame.eventId,
-        applied: frame.applied,
-        before: correctionState(frame.before),
-        after: correctionState(frame.after),
-        ...(pitch === undefined
-          ? {}
-          : {
-              pitch: {
-                plateAppearanceEventId: pitch.plateAppearanceEventId,
-                pitchEventNumber: pitch.pitchEventNumber,
-                actualPitchNumber: pitch.actualPitchNumber,
-                batterId: pitch.batterId,
-                pitcherId: pitch.pitcherId,
-                sourcePitchId: pitch.sourcePitchId,
-                call: pitch.call,
-                actual: pitch.actual,
-              },
-            }),
-      };
-    }),
-    calculatedRecords: {
-      batters: session.replay.batterLines.map((line) => ({ ...line })),
-      pitchers: session.replay.pitcherLines.map((line) => ({ ...line })),
-    },
-    blockingCount: currentFindings.filter((finding) => finding.severity === "blocking").length,
-    warningCount: currentFindings.filter((finding) => finding.severity === "warning").length,
     canUndo: session.undoStack.length > 0,
     canRedo: session.redoStack.length > 0,
     dirty: session.undoStack.length > 0,
   };
+  session.cachedSnapshot = result;
+  return structuredClone(result);
 }
 
 function requiredSnapshotId(session: InternalSession): string {
@@ -402,75 +484,4 @@ function requiredSnapshotId(session: InternalSession): string {
     throw new CorrectionCommitBlockedError("superseded session snapshot ID가 없습니다.");
   }
   return session.snapshotId;
-}
-function storedFindingSnapshot(gameId: string, finding: StoredFinding): CorrectionFinding {
-  return {
-    code: finding.code,
-    category: finding.category,
-    severity: finding.severity,
-    message: finding.message,
-    gameId: finding.gameId ?? gameId,
-    ...(finding.eventId === undefined ? {} : { eventId: finding.eventId }),
-    ...(finding.eventSequence === undefined ? {} : { eventSequence: finding.eventSequence }),
-    ...(finding.recordIdentity === undefined ? {} : { recordIdentity: finding.recordIdentity }),
-    details: [
-      ...(finding.endpoint === undefined ? [] : [{ field: "endpoint", actual: finding.endpoint }]),
-      ...(finding.details ?? []).map((detail) => ({ ...detail })),
-    ],
-  };
-}
-
-export function mergePersistentSourceFindings(
-  stored: readonly StoredFinding[],
-  current: ReplayResult["findings"],
-  document: StagingGameDocumentV2,
-): StoredFinding[] {
-  const findings: StoredFinding[] = [
-    ...stored.filter((finding) => shouldRetainStoredFinding(finding, document)),
-    ...current.map((finding) => ({
-      producer: "compiler" as const,
-      lifecycle: "recomputed" as const,
-      code: finding.code,
-      category: finding.category,
-      severity: finding.severity,
-      message: finding.message,
-      ...(finding.eventId === undefined ? {} : { eventId: finding.eventId }),
-      ...(finding.eventSequence === undefined ? {} : { eventSequence: finding.eventSequence }),
-      ...(finding.recordIdentity === undefined ? {} : { recordIdentity: finding.recordIdentity }),
-      ...(finding.details.length === 0
-        ? {}
-        : { details: finding.details.map((detail) => ({ ...detail })) }),
-    })),
-  ];
-  const seen = new Set<string>();
-  return findings.filter((finding) => {
-    const key = canonicalStringify(finding);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-function shouldRetainStoredFinding(
-  finding: StoredFinding,
-  document: StagingGameDocumentV2,
-): boolean {
-  if (finding.lifecycle === "persistent") return true;
-  if (finding.lifecycle === "while_event_unresolved" && finding.eventId !== undefined) {
-    return document.events.some(
-      (event) => event.identity.eventId === finding.eventId && event.kind === "unresolved",
-    );
-  }
-  return false;
-}
-function correctionState(state: GameState): CorrectionSession["eventContexts"][number]["after"] {
-  return {
-    balls: state.balls,
-    strikes: state.strikes,
-    outs: state.outs,
-    bases: state.bases.map((base) => base?.runnerId ?? null),
-    awayScore: state.awayScore,
-    homeScore: state.homeScore,
-    batterId: state.activePlateAppearance?.currentBatterId ?? null,
-    pitcherId: state.activePlateAppearance?.currentPitcherId ?? null,
-  };
 }

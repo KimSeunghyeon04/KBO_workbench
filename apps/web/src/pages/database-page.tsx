@@ -1,15 +1,14 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
-
 import type {
   DatabaseGameCatalogItem,
   ImportJob,
-  ImportReadyBatchCreated,
+  ImportSelection,
+  ImportSelectionRequest,
   WorkspaceDocumentGameCatalogItem,
 } from "@kbo/contracts";
-
 import {
   createCollectionJob,
   createImportJob,
@@ -17,137 +16,212 @@ import {
   reopenRevisionDraft,
 } from "../api/client";
 import {
-  catalogQueryOptions,
+  createImportSelection,
+  getDatabaseGames,
+  getImportHistory,
+  getImportJob,
+  cancelImportBatch,
+  reconcileImportJob,
+} from "../api/import-client";
+import {
   databaseOverviewQueryOptions,
-  importJobsQueryOptions,
   queryKeys,
   revisionCatalogQueryOptions,
 } from "../api/query-options";
 import { OperationConsole, OperationEmptyDetail } from "../components/operation-console";
 import { SelectableVirtualList } from "../components/selectable-virtual-list";
 import { StatusBadge } from "../components/status-badge";
+import { createRequestKey } from "../api/request-key";
 
 type DatabaseScope = "ready" | "stored" | "jobs";
 type ReadyGame = Omit<WorkspaceDocumentGameCatalogItem, "authority"> & {
   readonly authority: "staging";
 };
-const scopes = new Set<DatabaseScope>(["ready", "stored", "jobs"]);
 const terminal = new Set<ImportJob["status"]>(["cancelled", "succeeded", "failed"]);
 
 export function DatabasePage(): React.JSX.Element {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [, startTransition] = useTransition();
-  const [confirmBatch, setConfirmBatch] = useState(false);
-  const [batchResult, setBatchResult] = useState<ImportReadyBatchCreated | null>(null);
+  const [selection, setSelection] = useState<ImportSelection | null>(null);
+  const [executionKey, setExecutionKey] = useState(createRequestKey);
   const overview = useQuery(databaseOverviewQueryOptions());
-  const catalog = useQuery(catalogQueryOptions());
-  const jobs = useQuery({
-    ...importJobsQueryOptions(),
-    refetchInterval: (query) =>
-      query.state.data?.some((job) => !terminal.has(job.status)) === true ? 1_000 : false,
-  });
-  const ready = useMemo(
-    () =>
-      catalog.data?.games.filter((game): game is ReadyGame => game.authority === "staging") ?? [],
-    [catalog.data?.games],
-  );
-  const stored = useMemo(
-    () =>
-      catalog.data?.games.filter(
-        (game): game is DatabaseGameCatalogItem => game.authority === "database",
-      ) ?? [],
-    [catalog.data?.games],
-  );
   const scopeValue = searchParams.get("scope");
-  const scope =
-    scopeValue !== null && scopes.has(scopeValue as DatabaseScope)
-      ? (scopeValue as DatabaseScope)
-      : ready.length > 0
+  const scope: DatabaseScope =
+    scopeValue === "ready" || scopeValue === "stored" || scopeValue === "jobs"
+      ? scopeValue
+      : (overview.data?.counts.readyToImport ?? 0) > 0
         ? "ready"
         : "stored";
   const query = searchParams.get("q") ?? "";
   const season = searchParams.get("season") ?? "all";
-  const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase("ko-KR"));
+  const page = Math.max(1, Number(searchParams.get("page")) || 1);
+  const batchId = searchParams.get("batch");
+  const resultFilter = searchParams.get("result");
   const selectedGameId = searchParams.get("game");
   const selectedJobId = searchParams.get("job");
+  const criteria = useMemo(
+    () => ({
+      ...(season === "all" ? {} : { season: Number(season) }),
+      ...(query.trim() === "" ? {} : { search: query.trim() }),
+    }),
+    [season, query],
+  );
+  const gamesQuery = {
+    ...criteria,
+    authority: scope === "ready" ? ("staging" as const) : ("database" as const),
+    page,
+    limit: 50,
+  };
+  const catalog = useQuery({
+    queryKey: [...queryKeys.catalog, "database", gamesQuery],
+    queryFn: ({ signal }) => getDatabaseGames(gamesQuery, signal),
+    enabled: scope !== "jobs",
+  });
+  const historyQuery = {
+    page: scope === "jobs" ? page : 1,
+    limit: 50,
+    ...(scope === "jobs" && query.trim() !== "" ? { search: query.trim() } : {}),
+    ...(batchId === null ? {} : { batchId }),
+    ...(resultFilter === "failed"
+      ? { status: "failed" as const }
+      : resultFilter === "cancelled"
+        ? { status: "cancelled" as const }
+        : {}),
+  };
+  const history = useQuery({
+    queryKey: [...queryKeys.jobs.import, "history", historyQuery],
+    queryFn: ({ signal }) => getImportHistory(historyQuery, signal),
+    refetchInterval: (entry) =>
+      (entry.state.data?.summary.queued ?? 0) +
+        (entry.state.data?.summary.running ?? 0) +
+        (entry.state.data?.activeJobs?.length ?? 0) >
+      0
+        ? 1_000
+        : false,
+  });
+  const jobDetail = useQuery({
+    queryKey: [...queryKeys.jobs.import, "detail", selectedJobId],
+    queryFn: ({ signal }) => getImportJob(selectedJobId ?? "", signal),
+    enabled: scope === "jobs" && selectedJobId !== null,
+    refetchInterval: (entry) =>
+      entry.state.data !== undefined &&
+      (!terminal.has(entry.state.data.status) ||
+        (entry.state.data.followUpPending === true && entry.state.data.error === null))
+        ? 1_000
+        : false,
+  });
+  const ready = (catalog.data?.games ?? []).filter(
+    (game): game is ReadyGame => game.authority === "staging",
+  );
+  const stored = (catalog.data?.games ?? []).filter(
+    (game): game is DatabaseGameCatalogItem => game.authority === "database",
+  );
   const selectedReady =
     scope === "ready" ? (ready.find((game) => game.gameId === selectedGameId) ?? null) : null;
   const selectedStored =
     scope === "stored" ? (stored.find((game) => game.gameId === selectedGameId) ?? null) : null;
+  const candidateJob = scope === "jobs" && selectedJobId !== null ? (jobDetail.data ?? null) : null;
   const selectedJob =
-    scope === "jobs" ? (jobs.data?.find((job) => job.jobId === selectedJobId) ?? null) : null;
+    candidateJob !== null &&
+    (batchId === null || candidateJob.batchId === batchId) &&
+    ((resultFilter !== "failed" && resultFilter !== "cancelled") ||
+      candidateJob.status === resultFilter) &&
+    `${candidateJob.gameId} ${candidateJob.jobId} ${candidateJob.error ?? ""}`
+      .toLocaleLowerCase("ko-KR")
+      .includes(query.trim().toLocaleLowerCase("ko-KR"))
+      ? candidateJob
+      : null;
+  const summary = history.data?.summary;
   const activeGameIds = new Set(
-    jobs.data?.filter((job) => !terminal.has(job.status)).map((job) => job.gameId) ?? [],
+    [...(history.data?.activeJobs ?? []), ...(history.data?.jobs ?? [])]
+      .filter(
+        (job) => !terminal.has(job.status) || (job.followUpPending === true && job.error === null),
+      )
+      .map((job) => job.gameId),
   );
-  const batchCandidates = ready.filter((game) => !activeGameIds.has(game.gameId));
-  const filteredReady = useMemo(
-    () => ready.filter((game) => gameMatches(game, season, deferredQuery)),
-    [deferredQuery, ready, season],
-  );
-  const filteredStored = useMemo(
-    () => stored.filter((game) => gameMatches(game, season, deferredQuery)),
-    [deferredQuery, season, stored],
-  );
-  const filteredJobs = useMemo(
-    () =>
-      (jobs.data ?? []).filter(
-        (job) =>
-          deferredQuery === "" ||
-          `${job.gameId} ${job.status} ${job.jobId}`
-            .toLocaleLowerCase("ko-KR")
-            .includes(deferredQuery),
-      ),
-    [deferredQuery, jobs.data],
-  );
-  const seasons = useMemo(
-    () =>
-      [
-        ...new Set(
-          [...ready, ...stored].flatMap((game) => (game.season === null ? [] : [game.season])),
-        ),
-      ].sort((left, right) => right - left),
-    [ready, stored],
-  );
-
   const updateSearch = useCallback(
-    (updates: Readonly<Record<string, string | null>>, replace = false): void => {
+    (updates: Readonly<Record<string, string | null>>, replace = false) => {
       const next = new URLSearchParams(searchParams);
       for (const [key, value] of Object.entries(updates)) {
         if (value === null || value === "") next.delete(key);
         else next.set(key, value);
       }
-      startTransition(() => setSearchParams(next, { replace }));
+      setSearchParams(next, { replace });
     },
     [searchParams, setSearchParams],
   );
-
+  useEffect(() => {
+    if (
+      scope !== "jobs" &&
+      selectedGameId !== null &&
+      catalog.isSuccess &&
+      !catalog.isFetching &&
+      !catalog.data.games.some((game) => game.gameId === selectedGameId)
+    )
+      updateSearch({ game: null }, true);
+  }, [catalog.data, catalog.isSuccess, catalog.isFetching, scope, selectedGameId, updateSearch]);
+  useEffect(() => {
+    if (candidateJob !== null && selectedJob === null) updateSearch({ job: null }, true);
+  }, [candidateJob, selectedJob, updateSearch]);
+  const refresh = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.jobs.import }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.catalog }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.databaseOverview }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.recordCorrections.all }),
+    ]);
+  };
   const singleMutation = useMutation({
     mutationFn: createImportJob,
     onSuccess: async (created) => {
-      updateSearch({ scope: "jobs", game: null, job: created.jobId });
-      await queryClient.invalidateQueries({ queryKey: queryKeys.jobs.import });
+      updateSearch({
+        scope: "jobs",
+        game: null,
+        job: created.jobId,
+        batch: null,
+        page: null,
+        q: null,
+        result: null,
+      });
+      await refresh();
+    },
+  });
+  const selectMutation = useMutation({
+    mutationFn: createImportSelection,
+    onSuccess: (value) => {
+      setSelection(value);
+      setExecutionKey(createRequestKey());
     },
   });
   const batchMutation = useMutation({
-    mutationFn: createReadyImportBatch,
+    mutationFn: () => {
+      if (selection === null) throw new Error("적재 대상을 먼저 선택하세요.");
+      return createReadyImportBatch(selection.selectionId, executionKey);
+    },
     onSuccess: async (result) => {
-      setBatchResult(result);
-      setConfirmBatch(false);
-      updateSearch({ scope: "jobs", game: null, job: result.jobs[0]?.jobId ?? null });
-      await queryClient.invalidateQueries({ queryKey: queryKeys.jobs.import });
+      setSelection(null);
+      updateSearch({
+        scope: "jobs",
+        batch: result.batchId,
+        game: null,
+        job: null,
+        page: null,
+        q: null,
+        result: null,
+      });
+      await refresh();
     },
   });
+  const cancel = useMutation({ mutationFn: cancelImportBatch, onSuccess: refresh });
+  const reconcile = useMutation({ mutationFn: reconcileImportJob, onSuccess: refresh });
   const reopen = useMutation({
     mutationFn: (game: DatabaseGameCatalogItem) =>
       reopenRevisionDraft(game.gameId, game.currentRevision),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.catalog }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
-      ]);
-      void navigate("/correct");
+    onSuccess: async (document) => {
+      await refresh();
+      void navigate(`/correct?game=${encodeURIComponent(document.metadata.gameId)}`);
     },
   });
   const recollect = useMutation({
@@ -160,107 +234,141 @@ export function DatabasePage(): React.JSX.Element {
       void navigate(`/collect?kind=job&selected=${encodeURIComponent(created.jobId)}`);
     },
   });
-  const completedSignature =
-    jobs.data
-      ?.filter((job) => terminal.has(job.status))
-      .map((job) => `${job.jobId}:${job.status}`)
-      .join(",") ?? "";
+  const completed = `${summary?.succeeded ?? 0}:${summary?.failed ?? 0}:${summary?.cancelled ?? 0}:${selectedJob?.status ?? ""}:${selectedJob?.followUpPending ?? ""}:${history.data?.activeJobs?.length ?? 0}`;
   useEffect(() => {
-    if (completedSignature === "") return;
     void Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.databaseOverview }),
       queryClient.invalidateQueries({ queryKey: queryKeys.catalog }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.recordCorrections.all }),
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
     ]);
-  }, [completedSignature, queryClient]);
-
-  const selected = selectedReady !== null || selectedStored !== null || selectedJob !== null;
+  }, [completed, queryClient]);
   const error =
     overview.error ??
     catalog.error ??
-    jobs.error ??
+    history.error ??
+    jobDetail.error ??
     singleMutation.error ??
+    selectMutation.error ??
     batchMutation.error ??
+    cancel.error ??
+    reconcile.error ??
     reopen.error ??
     recollect.error;
+  const total = scope === "jobs" ? (history.data?.total ?? 0) : (catalog.data?.total ?? 0);
+  const pending = scope === "jobs" ? history.isFetching : catalog.isFetching;
+  const selected = selectedReady !== null || selectedStored !== null || selectedJob !== null;
+  const choose = (value: ImportSelectionRequest) => selectMutation.mutate(value);
 
   return (
     <div className="page-stack operation-page database-page">
       <header className="page-header operation-page-header">
         <div>
           <h1>데이터베이스</h1>
-          <p>적재할 원장과 봉인된 revision을 한 작업공간에서 관리합니다.</p>
+          <p>검증된 경기를 저장하고 처리 결과를 확인합니다.</p>
         </div>
         <div className="operation-status-line">
-          {overview.data !== undefined ? (
+          {overview.data === undefined ? null : (
             <StatusBadge
               healthy={overview.data.database.healthy}
               healthyLabel="DB 정상"
               unhealthyLabel="DB 확인 필요"
             />
-          ) : null}
+          )}
           <span>
-            적재 대기 <strong>{String(ready.length)}</strong>
+            적재 대기 <strong>{overview.data?.counts.readyToImport ?? "—"}</strong>
           </span>
           <span>
-            저장 경기 <strong>{String(stored.length)}</strong>
+            저장 경기 <strong>{overview.data?.counts.stored ?? "—"}</strong>
           </span>
         </div>
       </header>
-
       <div className="operation-command-bar database-command-bar">
-        <div className="operation-status-line database-command-summary">
-          <strong>{scopeLabel(scope)}</strong>
-          <span>
-            {scope === "ready"
-              ? "검증된 원장을 새 불변 revision으로 적재합니다."
-              : scope === "stored"
-                ? "경기를 선택해 revision과 후속 작업을 확인합니다."
-                : "적재 처리 결과와 오류를 확인합니다."}
-          </span>
+        <div>
+          <strong>실행 대상</strong>
+          <p>
+            {selection === null
+              ? "목록에서 조건을 확인한 뒤 적재 대상을 선택하세요."
+              : `${selection.criteria.gameIds === undefined ? `${selection.criteria.season ?? "전체"} 시즌` : "개별 선택"} · ${selection.criteria.search ? `검색 ‘${selection.criteria.search}’ · ` : ""}${selection.count}경기 확정 · 표시 필터를 바꿔도 유지됩니다.`}
+          </p>
         </div>
-        <button
-          type="button"
-          className="primary-button"
-          disabled={
-            batchCandidates.length === 0 ||
-            batchMutation.isPending ||
-            overview.data?.database.healthy !== true
-          }
-          onClick={() => setConfirmBatch(true)}
-        >
-          {String(batchCandidates.length)}경기 일괄 적재
-        </button>
-      </div>
-      {confirmBatch ? (
-        <div className="import-batch-confirmation" role="alert">
-          <div>
-            <strong>{String(batchCandidates.length)}경기를 일괄 적재합니다.</strong>
-            <p>
-              서버가 실행 시점의 current를 다시 검증하며 각 경기는 독립 transaction으로 처리됩니다.
-            </p>
-          </div>
-          <button type="button" className="secondary-button" onClick={() => setConfirmBatch(false)}>
-            취소
-          </button>
+        {selection === null ? (
           <button
             type="button"
             className="primary-button"
-            disabled={batchMutation.isPending}
-            onClick={() => batchMutation.mutate()}
+            disabled={scope !== "ready" || total === 0 || pending || selectMutation.isPending}
+            onClick={() => choose(criteria)}
           >
-            {batchMutation.isPending ? "등록 중" : "일괄 적재 시작"}
+            {selectMutation.isPending ? "대상 확인 중" : "현재 조건 전체 선택"}
           </button>
-        </div>
-      ) : null}
-      {batchResult !== null ? (
+        ) : (
+          <div className="operation-detail-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={batchMutation.isPending}
+              onClick={() => setSelection(null)}
+            >
+              선택 해제
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              disabled={
+                selection.count === 0 ||
+                batchMutation.isPending ||
+                overview.data?.database.healthy !== true
+              }
+              onClick={() => batchMutation.mutate()}
+            >
+              {batchMutation.isPending ? "등록 중" : `${selection.count}경기 일괄 적재 시작`}
+            </button>
+          </div>
+        )}
+      </div>
+      {summary !== undefined && summary.total > 0 ? (
         <div className="operation-inline-stats" role="status">
-          <span>최근 일괄 등록 {String(batchResult.createdCount)}</span>
-          <span>제외 {String(batchResult.skippedCount)}</span>
+          <strong>{batchId === null ? "적재 기록" : "선택한 일괄 작업"}</strong>
+          <span>전체 {summary.total}</span>
+          <span>완료 {summary.succeeded}</span>
+          <span>실패 {summary.failed}</span>
+          <span>건너뜀·중단 {summary.cancelled}</span>
+          <span>진행 {summary.running}</span>
+          <span>대기 {summary.queued}</span>
+          {history.data?.activeJobs?.map((job) => (
+            <button
+              type="button"
+              className="text-button"
+              key={job.jobId}
+              onClick={() =>
+                updateSearch({ scope: "jobs", job: job.jobId, q: null, result: null, page: null })
+              }
+            >
+              {job.status === "succeeded" ? "저장 후 정리 중" : "처리 중"} {job.gameId}
+            </button>
+          ))}
+          {batchId !== null && summary.queued > 0 ? (
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={cancel.isPending}
+              onClick={() => cancel.mutate(batchId)}
+            >
+              대기 경기 취소
+            </button>
+          ) : null}
+          {batchId !== null ? (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => updateSearch({ batch: null, page: null, job: null })}
+            >
+              전체 작업 기록
+            </button>
+          ) : null}
         </div>
       ) : null}
-      {error !== null ? <div className="error-panel">{error.message}</div> : null}
-
+      {error === null ? null : <div className="error-panel">{error.message}</div>}
       <OperationConsole
         selected={selected}
         onBack={() => updateSearch({ game: null, job: null })}
@@ -270,18 +378,27 @@ export function DatabasePage(): React.JSX.Element {
               <div className="operation-segments" aria-label="데이터베이스 범위">
                 {(
                   [
-                    ["ready", "적재 대기", ready.length],
-                    ["stored", "저장 경기", stored.length],
-                    ["jobs", "작업 기록", jobs.data?.length ?? 0],
+                    ["ready", "적재 대기", overview.data?.counts.readyToImport ?? 0],
+                    ["stored", "저장 경기", overview.data?.counts.stored ?? 0],
+                    ["jobs", "작업 기록", summary?.total ?? 0],
                   ] as const
                 ).map(([value, label, count]) => (
                   <button
                     type="button"
-                    className={scope === value ? "selected" : undefined}
                     key={value}
-                    onClick={() => updateSearch({ scope: value, game: null, job: null })}
+                    className={scope === value ? "selected" : undefined}
+                    onClick={() =>
+                      updateSearch({
+                        scope: value,
+                        game: null,
+                        job: null,
+                        page: null,
+                        q: null,
+                        result: null,
+                      })
+                    }
                   >
-                    {label} {String(count)}
+                    {label} {count}
                   </button>
                 ))}
               </div>
@@ -289,12 +406,32 @@ export function DatabasePage(): React.JSX.Element {
                 <span>검색</span>
                 <input
                   type="search"
-                  placeholder="날짜·팀·경기 ID"
+                  placeholder={scope === "jobs" ? "경기 ID·작업 ID·오류" : "날짜·팀·경기 ID"}
                   value={query}
-                  onChange={(event) => updateSearch({ q: event.target.value }, true)}
+                  onChange={(event) =>
+                    updateSearch({ q: event.target.value, page: null, game: null, job: null }, true)
+                  }
                 />
               </label>
-              {scope !== "jobs" ? (
+              {scope === "jobs" ? (
+                <label>
+                  <span>결과</span>
+                  <select
+                    value={resultFilter ?? "all"}
+                    onChange={(event) =>
+                      updateSearch({
+                        result: event.target.value === "all" ? null : event.target.value,
+                        job: null,
+                        page: null,
+                      })
+                    }
+                  >
+                    <option value="all">전체 결과</option>
+                    <option value="failed">실패</option>
+                    <option value="cancelled">건너뜀·중단</option>
+                  </select>
+                </label>
+              ) : (
                 <label>
                   <span>시즌</span>
                   <select
@@ -302,26 +439,28 @@ export function DatabasePage(): React.JSX.Element {
                     onChange={(event) =>
                       updateSearch({
                         season: event.target.value === "all" ? null : event.target.value,
+                        page: null,
+                        game: null,
                       })
                     }
                   >
                     <option value="all">전체</option>
-                    {seasons.map((value) => (
+                    {catalog.data?.seasons.map((value) => (
                       <option key={value} value={String(value)}>
-                        {String(value)}
+                        {value}
                       </option>
                     ))}
                   </select>
                 </label>
-              ) : null}
+              )}
             </div>
             {scope === "ready" ? (
               <SelectableVirtualList
                 ariaLabel="적재 대기 경기"
-                emptyMessage="적재할 경기가 없습니다."
+                emptyMessage={pending ? "경기를 불러오는 중입니다." : "적재할 경기가 없습니다."}
                 getKey={(game) => game.gameId}
-                items={filteredReady}
-                rowHeight={72}
+                items={ready}
+                rowHeight={84}
                 selectedKey={selectedReady?.gameId ?? null}
                 onSelect={(game) => updateSearch({ game: game.gameId, job: null })}
                 renderItem={(game) => <DatabaseGameRow game={game} label="적재 가능" />}
@@ -329,14 +468,14 @@ export function DatabasePage(): React.JSX.Element {
             ) : scope === "stored" ? (
               <SelectableVirtualList
                 ariaLabel="저장된 경기"
-                emptyMessage="저장된 경기가 없습니다."
+                emptyMessage={pending ? "경기를 불러오는 중입니다." : "저장된 경기가 없습니다."}
                 getKey={(game) => game.gameId}
-                items={filteredStored}
-                rowHeight={72}
+                items={stored}
+                rowHeight={84}
                 selectedKey={selectedStored?.gameId ?? null}
                 onSelect={(game) => updateSearch({ game: game.gameId, job: null })}
                 renderItem={(game) => (
-                  <DatabaseGameRow game={game} label={`r${String(game.currentRevision)}`} />
+                  <DatabaseGameRow game={game} label={`r${game.currentRevision}`} />
                 )}
               />
             ) : (
@@ -344,24 +483,78 @@ export function DatabasePage(): React.JSX.Element {
                 ariaLabel="적재 작업 기록"
                 emptyMessage="적재 작업이 없습니다."
                 getKey={(job) => job.jobId}
-                items={filteredJobs}
-                rowHeight={72}
+                items={history.data?.jobs ?? []}
+                rowHeight={84}
                 selectedKey={selectedJob?.jobId ?? null}
                 onSelect={(job) => updateSearch({ game: null, job: job.jobId })}
                 renderItem={(job) => <ImportJobRow job={job} />}
               />
             )}
+            <div className="operation-list-toolbar" aria-label="목록 페이지">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={page <= 1 || pending}
+                onClick={() => updateSearch({ page: String(page - 1), game: null, job: null })}
+              >
+                이전
+              </button>
+              <span>
+                {page} / {Math.max(1, Math.ceil(total / 50))} · {total}건
+              </span>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={page * 50 >= total || pending}
+                onClick={() => updateSearch({ page: String(page + 1), game: null, job: null })}
+              >
+                다음
+              </button>
+            </div>
           </>
         }
         detail={
           selectedReady !== null ? (
-            <ReadyGameDetail
-              game={selectedReady}
-              active={activeGameIds.has(selectedReady.gameId)}
-              pending={singleMutation.isPending || batchMutation.isPending}
-              databaseHealthy={overview.data?.database.healthy === true}
-              onImport={() => singleMutation.mutate(selectedReady.gameId)}
-            />
+            <>
+              <ReadyGameDetail
+                game={selectedReady}
+                active={activeGameIds.has(selectedReady.gameId)}
+                pending={singleMutation.isPending || batchMutation.isPending}
+                databaseHealthy={overview.data?.database.healthy === true}
+                onImport={() => singleMutation.mutate(selectedReady.gameId)}
+              />
+              <div className="operation-detail-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={selectMutation.isPending || batchMutation.isPending}
+                  onClick={() => choose({ gameIds: [selectedReady.gameId] })}
+                >
+                  이 경기만 대상으로 선택
+                </button>
+                {selection === null ? null : (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={selectMutation.isPending || batchMutation.isPending}
+                    onClick={() =>
+                      choose({
+                        ...selection.criteria,
+                        selectionId: selection.selectionId,
+                        excludedGameIds: [
+                          ...new Set([
+                            ...(selection.criteria.excludedGameIds ?? []),
+                            selectedReady.gameId,
+                          ]),
+                        ],
+                      })
+                    }
+                  >
+                    확정 대상에서 이 경기 제외
+                  </button>
+                )}
+              </div>
+            </>
           ) : selectedStored !== null ? (
             <StoredGameDetail
               game={selectedStored}
@@ -370,16 +563,59 @@ export function DatabasePage(): React.JSX.Element {
               onRecollect={() => recollect.mutate(selectedStored.gameId)}
               onReplay={(revision) =>
                 void navigate(
-                  `/replay?gameId=${encodeURIComponent(selectedStored.gameId)}&revision=${String(revision)}`,
+                  `/replay?gameId=${encodeURIComponent(selectedStored.gameId)}&revision=${revision}`,
                 )
               }
             />
           ) : selectedJob !== null ? (
-            <ImportJobDetail job={selectedJob} />
+            <>
+              <ImportJobDetail job={selectedJob} />
+              {selectedJob.batchId === undefined || selectedJob.batchId === batchId ? null : (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() =>
+                    updateSearch({
+                      batch: selectedJob.batchId ?? null,
+                      page: null,
+                      q: null,
+                      result: null,
+                    })
+                  }
+                >
+                  이 일괄 작업 전체 보기
+                </button>
+              )}
+              {selectedJob.status === "succeeded" ? (
+                <div className="operation-detail-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() =>
+                      void navigate(
+                        `/replay?gameId=${encodeURIComponent(selectedJob.gameId)}&revision=${selectedJob.revision}`,
+                      )
+                    }
+                  >
+                    저장 경기 재생
+                  </button>
+                  {selectedJob.followUpPending === true && selectedJob.error !== null ? (
+                    <button
+                      type="button"
+                      className="primary-button"
+                      disabled={reconcile.isPending}
+                      onClick={() => reconcile.mutate(selectedJob.jobId)}
+                    >
+                      후속 정리 재시도
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
           ) : (
             <OperationEmptyDetail
               title="항목을 선택하세요"
-              description="행마다 버튼을 반복하지 않습니다. 경기나 작업을 선택하면 필요한 행동과 이력을 이곳에 표시합니다."
+              description="경기를 선택하면 보정·적재·재생 동작을 확인할 수 있습니다."
             />
           )
         }
@@ -387,7 +623,6 @@ export function DatabasePage(): React.JSX.Element {
     </div>
   );
 }
-
 function DatabaseGameRow({
   game,
   label,
@@ -605,22 +840,6 @@ function ImportJobDetail({ job }: { readonly job: ImportJob }): React.JSX.Elemen
       {job.error !== null ? <div className="inline-error">{job.error}</div> : null}
     </div>
   );
-}
-
-function gameMatches(
-  game: ReadyGame | DatabaseGameCatalogItem,
-  season: string,
-  query: string,
-): boolean {
-  if (season !== "all" && String(game.season) !== season) return false;
-  if (query === "") return true;
-  return `${game.gameId} ${game.gameDate} ${game.teams.away.name} ${game.teams.home.name}`
-    .toLocaleLowerCase("ko-KR")
-    .includes(query);
-}
-
-function scopeLabel(scope: DatabaseScope): string {
-  return { ready: "적재 대기", stored: "저장된 경기", jobs: "적재 작업 기록" }[scope];
 }
 
 function importStatusLabel(status: ImportJob["status"]): string {

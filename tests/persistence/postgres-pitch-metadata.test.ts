@@ -2,13 +2,18 @@ import { randomUUID, createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { Pool, type PoolClient } from "pg";
-import { parseStagingGameDocumentV2, type StagingGameDocumentV2 } from "@kbo/contracts";
+import {
+  canonicalStringify,
+  parseStagingGameDocumentV2,
+  type StagingGameDocumentV2,
+} from "@kbo/contracts";
 import { compileStagingGameDocumentV2, stagingDocumentHash } from "@kbo/game-core";
 import {
   buildRelationalProjection,
   GameRevisionStore,
   hashProjectionTables,
   replaySemanticHash,
+  PlayerHeightRepository,
 } from "@kbo/persistence";
 import { buildReplayBundle } from "@kbo/replay";
 
@@ -142,6 +147,95 @@ const dsn = process.env.KBO_TEST_POSTGRES_DSN;
           };
           expect(hashProjectionTables(corrupted)).not.toBe(v4.projectionHash);
         }
+
+      const manifestsBeforeZoneFix = (await pool.query("SELECT * FROM workbench.game_revisions"))
+        .rows;
+      const trackingBeforeZoneFix = (
+        await pool.query("SELECT * FROM workbench.tracking_observations")
+      ).rows;
+      await migrate(pool, "0005_tracking_plate_height");
+      await migrate(pool, "0006_tracking_zone_parallel_safety");
+      const correctedStore = new GameRevisionStore(pool, "0006_tracking_zone_parallel_safety");
+      expect((await pool.query("SELECT * FROM workbench.game_revisions")).rows).toEqual(
+        manifestsBeforeZoneFix,
+      );
+      expect((await pool.query("SELECT * FROM workbench.tracking_observations")).rows).toEqual(
+        trackingBeforeZoneFix,
+      );
+      for (const revision of [1, 2]) {
+        const stored = await correctedStore.loadCompiled(document.metadata.gameId, revision);
+        expect(stored.projectionHash).toBe(
+          revision === 1 ? projection.projectionHash : v4.projectionHash,
+        );
+        expect(replaySemanticHash(stored.replay)).toBe(
+          replaySemanticHash(revision === 1 ? old.replay : current.replay),
+        );
+      }
+      // Historical samples without a vertical trajectory remain unknown, even with cross_plate_y.
+      expect(
+        (await pool.query("SELECT DISTINCT in_zone,chase FROM analytics.current_pitches")).rows,
+      ).toEqual([{ in_zone: null, chase: null }]);
+      expect(
+        (
+          await pool.query(
+            "SELECT zone_formula_version FROM catalog.tracking_measurement_profiles WHERE measurement_profile_id='naver_pts_v1'",
+          )
+        ).rows,
+      ).toEqual([{ zone_formula_version: 2 }]);
+      await migrate(pool, "0007_batter_height_strike_zone");
+      await migrate(pool, "0008_naver_player_heights");
+      const legacyHeight = {
+        gameId: document.metadata.gameId,
+        season: document.metadata.season,
+        sourceBundleHash: document.source.sourceBundleHash,
+        observations: [],
+      };
+      const legacyHash = createHash("sha256")
+        .update(canonicalStringify(legacyHeight))
+        .digest("hex");
+      await pool.query(
+        `INSERT INTO registry.game_height_bundles
+        (game_id,source_bundle_hash,season,dataset_hash,observation_count) VALUES ($1,$2,$3,$4,0)`,
+        [legacyHeight.gameId, legacyHeight.sourceBundleHash, legacyHeight.season, legacyHash],
+      );
+      await pool.query("UPDATE registry.game_height_bundles SET sealed=TRUE");
+      await migrate(pool, "0009_player_height_supplements");
+      await migrate(pool, "0010_player_height_lookup");
+      await new PlayerHeightRepository(pool).importDataset(legacyHeight);
+      expect(
+        (
+          await pool.query(
+            "SELECT extraction_version,dataset_hash,sealed FROM registry.game_height_bundles ORDER BY extraction_version",
+          )
+        ).rows,
+      ).toEqual([
+        { extraction_version: 1, dataset_hash: legacyHash, sealed: true },
+        { extraction_version: 2, dataset_hash: legacyHash, sealed: true },
+      ]);
+      await expect(
+        pool.query(
+          "UPDATE registry.game_height_bundles SET extraction_version=2 WHERE extraction_version=1",
+        ),
+      ).rejects.toThrow(/immutable/);
+      const heightStore = new GameRevisionStore(pool, "0010_player_height_lookup");
+      expect((await pool.query("SELECT * FROM workbench.game_revisions")).rows).toEqual(
+        manifestsBeforeZoneFix,
+      );
+      expect((await pool.query("SELECT * FROM workbench.tracking_observations")).rows).toEqual(
+        trackingBeforeZoneFix,
+      );
+      for (const revision of [1, 2]) {
+        expect(
+          (await heightStore.loadCompiled(document.metadata.gameId, revision)).projectionHash,
+        ).toBe(revision === 1 ? projection.projectionHash : v4.projectionHash);
+      }
+      expect(
+        (
+          await pool.query(
+            "SELECT DISTINCT top_sz,bottom_sz,batter_height_cm,in_zone FROM analytics.current_pitches",
+          )
+        ).rows,
+      ).toEqual([{ top_sz: null, bottom_sz: null, batter_height_cm: null, in_zone: null }]);
     } finally {
       await pool.end();
       await admin.query(`DROP DATABASE ${database}`);

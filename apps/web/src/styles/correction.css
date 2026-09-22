@@ -10,6 +10,49 @@
   gap: 14px;
 }
 
+.correction-period-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.correction-period-filters label {
+  display: grid;
+  gap: 5px;
+  min-width: 120px;
+}
+
+.correction-completion-content {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.finding-group {
+  border: 1px solid #dfe3e0;
+  border-radius: 5px;
+  margin: 8px 0;
+}
+
+.finding-group > summary {
+  padding: 10px;
+  cursor: pointer;
+  color: #314a3e;
+  background: #f4f7f5;
+  font-size: 12px;
+}
+
+.finding-group > summary b {
+  white-space: nowrap;
+}
+
+.finding-first-cause {
+  margin-top: 8px;
+  width: 100%;
+}
+
 .correction-source-heading,
 .correction-source-controls,
 .session-identity,
@@ -2101,4 +2144,28 @@
 .original-difference section > strong {
   overflow-wrap: anywhere;
   font-size: 12px;
+}
+
+.observed-state-editor {
+  display: block;
+  padding: 12px;
+  border: 1px solid #d3ddd7;
+  border-radius: 6px;
+}
+
+.observed-state-editor > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.observed-state-editor > p {
+  color: #58685e;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.observed-state-editor > label {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
 }

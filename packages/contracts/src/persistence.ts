@@ -1,6 +1,11 @@
 import { type Static, Type } from "@sinclair/typebox";
 
-import { ApiErrorSchema, ErrorCategorySchema, JobStatusSchema } from "./collection.js";
+import {
+  ApiErrorSchema,
+  ErrorCategorySchema,
+  JobStatusSchema,
+  GameCatalogItemSchema,
+} from "./collection.js";
 import { DatabaseStatusSchema } from "./system.js";
 
 const strict = { additionalProperties: false } as const;
@@ -20,6 +25,7 @@ export const ImportJobCreateRequestSchema = Type.Object(
   {
     gameId: GameIdSchema,
     idempotencyKey: Type.String({ minLength: 8, maxLength: 200 }),
+    expectedDocumentHash: Type.Optional(HashSchema),
   },
   strict,
 );
@@ -38,6 +44,9 @@ export const ImportJobSchema = Type.Object(
     projectionHash: Type.Union([HashSchema, Type.Null()]),
     error: Type.Union([Type.String(), Type.Null()]),
     errorCategory: Type.Union([ErrorCategorySchema, Type.Null()]),
+    batchId: Type.Optional(IdSchema),
+    interrupted: Type.Optional(Type.Boolean()),
+    followUpPending: Type.Optional(Type.Boolean()),
   },
   strict,
 );
@@ -48,7 +57,10 @@ export const ImportJobCreatedSchema = Type.Object(
 );
 
 export const ImportReadyBatchCreateRequestSchema = Type.Object(
-  { idempotencyKey: Type.String({ minLength: 8, maxLength: 200 }) },
+  {
+    idempotencyKey: Type.String({ minLength: 8, maxLength: 200 }),
+    selectionId: Type.Optional(GameIdSchema),
+  },
   strict,
 );
 
@@ -117,3 +129,119 @@ export type ImportReadyBatchJob = Static<typeof ImportReadyBatchJobSchema>;
 export type DatabaseOverview = Static<typeof DatabaseOverviewSchema>;
 export type RevisionCatalog = Static<typeof RevisionCatalogSchema>;
 export type RevisionCatalogItem = Static<typeof RevisionCatalogItemSchema>;
+
+export const ImportSelectionRequestSchema = Type.Object(
+  {
+    selectionId: Type.Optional(GameIdSchema),
+    season: Type.Optional(Type.Integer({ minimum: 1982, maximum: 9999 })),
+    search: Type.Optional(Type.String({ maxLength: 200 })),
+    gameIds: Type.Optional(Type.Array(GameIdSchema, { maxItems: 50_000, uniqueItems: true })),
+    excludedGameIds: Type.Optional(
+      Type.Array(GameIdSchema, { maxItems: 50_000, uniqueItems: true }),
+    ),
+  },
+  strict,
+);
+export const ImportSelectionSchema = Type.Object(
+  {
+    selectionId: GameIdSchema,
+    createdAt: DateTimeSchema,
+    count: Type.Integer({ minimum: 0 }),
+    criteria: ImportSelectionRequestSchema,
+  },
+  strict,
+);
+export const ImportTargetSchema = Type.Object(
+  {
+    gameId: GameIdSchema,
+    season: Type.Integer({ minimum: 1982, maximum: 9999 }),
+    documentHash: HashSchema,
+    revision: Type.Integer({ minimum: 1 }),
+  },
+  strict,
+);
+export const ImportSelectionRecordSchema = Type.Object(
+  {
+    selection: ImportSelectionSchema,
+    targets: Type.Array(ImportTargetSchema, { maxItems: 50_000 }),
+  },
+  strict,
+);
+export const ImportJobRecordSchema = Type.Object(
+  {
+    request: ImportJobCreateRequestSchema,
+    job: ImportJobSchema,
+    sourceSeason: Type.Union([Type.Integer({ minimum: 1982, maximum: 9999 }), Type.Null()]),
+    target: Type.Union([ImportTargetSchema, Type.Null()]),
+  },
+  strict,
+);
+export const ImportBatchRecordSchema = Type.Object(
+  {
+    request: ImportReadyBatchCreateRequestSchema,
+    batch: ImportReadyBatchCreatedSchema,
+    records: Type.Array(ImportJobRecordSchema, { maxItems: 50_000 }),
+  },
+  strict,
+);
+export const ImportHistoryQuerySchema = Type.Object(
+  {
+    page: Type.Optional(Type.Integer({ minimum: 1, default: 1 })),
+    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, default: 50 })),
+    search: Type.Optional(Type.String({ maxLength: 200 })),
+    batchId: Type.Optional(IdSchema),
+    status: Type.Optional(JobStatusSchema),
+  },
+  strict,
+);
+export const ImportHistorySchema = Type.Object(
+  {
+    jobs: Type.Array(ImportJobSchema, { maxItems: 200 }),
+    activeJobs: Type.Optional(Type.Array(ImportJobSchema, { maxItems: 200 })),
+    total: Type.Integer({ minimum: 0 }),
+    page: Type.Integer({ minimum: 1 }),
+    limit: Type.Integer({ minimum: 1, maximum: 200 }),
+    summary: Type.Object(
+      {
+        total: Type.Integer({ minimum: 0 }),
+        queued: Type.Integer({ minimum: 0 }),
+        running: Type.Integer({ minimum: 0 }),
+        succeeded: Type.Integer({ minimum: 0 }),
+        failed: Type.Integer({ minimum: 0 }),
+        cancelled: Type.Integer({ minimum: 0 }),
+      },
+      strict,
+    ),
+  },
+  strict,
+);
+export const DatabaseGamesQuerySchema = Type.Object(
+  {
+    page: Type.Optional(Type.Integer({ minimum: 1, default: 1 })),
+    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, default: 50 })),
+    season: Type.Optional(Type.Integer({ minimum: 1982, maximum: 9999 })),
+    search: Type.Optional(Type.String({ maxLength: 200 })),
+    authority: Type.Union([Type.Literal("staging"), Type.Literal("database")]),
+  },
+  strict,
+);
+export const DatabaseGamesSchema = Type.Object(
+  {
+    games: Type.Array(GameCatalogItemSchema, { maxItems: 200 }),
+    total: Type.Integer({ minimum: 0 }),
+    page: Type.Integer({ minimum: 1 }),
+    limit: Type.Integer({ minimum: 1, maximum: 200 }),
+    seasons: Type.Array(Type.Integer({ minimum: 1982, maximum: 9999 })),
+  },
+  strict,
+);
+export type ImportSelectionRequest = Static<typeof ImportSelectionRequestSchema>;
+export type ImportSelection = Static<typeof ImportSelectionSchema>;
+export type ImportTarget = Static<typeof ImportTargetSchema>;
+export type ImportSelectionRecord = Static<typeof ImportSelectionRecordSchema>;
+export type ImportJobRecord = Static<typeof ImportJobRecordSchema>;
+export type ImportBatchRecord = Static<typeof ImportBatchRecordSchema>;
+export type ImportHistoryQuery = Static<typeof ImportHistoryQuerySchema>;
+export type ImportHistory = Static<typeof ImportHistorySchema>;
+export type DatabaseGamesQuery = Static<typeof DatabaseGamesQuerySchema>;
+export type DatabaseGames = Static<typeof DatabaseGamesSchema>;

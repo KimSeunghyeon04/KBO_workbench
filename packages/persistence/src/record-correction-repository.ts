@@ -368,14 +368,13 @@ export class RecordCorrectionRepository {
        JOIN workbench.game_team_snapshots home_team
          ON home_team.game_id=r.game_id AND home_team.revision=r.revision AND home_team.side='home'
        WHERE r.season=$1 AND r.game_date=$2 AND away_team.team_name=$3
-         AND home_team.team_name=$4 AND r.stadium=$5
+         AND home_team.team_name=$4
        ORDER BY r.source_game_id,r.game_id`,
       [
         Number(notice.gameDate.slice(0, 4)),
         notice.gameDate,
         notice.awayTeamName,
         notice.homeTeamName,
-        notice.venueName,
       ],
     );
     return result.rows.map((row) => ({

@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { CorrectionCommand, StagingRelayEventKind } from "@kbo/contracts";
+import type {
+  CorrectionCommand,
+  CorrectionGameCatalogItem,
+  StagingRelayEventKind,
+} from "@kbo/contracts";
 import { useSearchParams } from "react-router-dom";
 
 import {
@@ -34,6 +38,8 @@ import { kboLiveTextLink } from "../correction/kbo-live";
 import { compareWithOriginal } from "../correction/original-comparison";
 import { parseOfficialRecordIdentity, type RecordKind } from "../correction/record-comparison";
 import { useCorrectionSessionController } from "../correction/use-correction-session-controller";
+import { rememberedCorrectionSessionId } from "../correction/use-owned-session";
+import { CommitCompletionPanel } from "../correction/commit-completion-panel";
 import { CorrectionDrawer } from "../correction/correction-drawer";
 import { RecordCorrectionProposalPanel } from "../correction/record-correction-proposal-panel";
 import {
@@ -53,11 +59,14 @@ type EventKindFilter = "all" | StagingRelayEventKind;
 
 export function CorrectPage(): React.JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
-  const requestedSessionId = searchParams.get("sessionId");
+  const requestedSessionId = searchParams.get("sessionId") ?? rememberedCorrectionSessionId();
   const recordCorrectionNoticeId = searchParams.get("noticeId");
   const catalog = useQuery(correctionGamesQueryOptions());
   const [scope, setScope] = useState<CorrectionGameScope>("review");
   const [gameQuery, setGameQuery] = useState("");
+  const [gameSeason, setGameSeason] = useState("all");
+  const [gameStart, setGameStart] = useState("");
+  const [gameEnd, setGameEnd] = useState("");
   const [selectedKey, setSelectedKey] = useState("");
   const [eventQuery, setEventQuery] = useState("");
   const [eventKind, setEventKind] = useState<EventKindFilter>("all");
@@ -84,8 +93,14 @@ export function CorrectPage(): React.JSX.Element {
     all: catalogGames.length,
   };
   const games = useMemo(
-    () => filterCorrectionGames(catalogGames, scope, gameQuery),
-    [catalogGames, gameQuery, scope],
+    () =>
+      filterCorrectionGames(catalogGames, scope, gameQuery).filter(
+        (game) =>
+          (gameSeason === "all" || String(game.season) === gameSeason) &&
+          (gameStart === "" || game.gameDate >= gameStart) &&
+          (gameEnd === "" || game.gameDate <= gameEnd),
+      ),
+    [catalogGames, gameQuery, scope, gameSeason, gameStart, gameEnd],
   );
   const selectedGame = games.find((item) => correctionGameKey(item) === selectedKey) ?? null;
   useEffect(() => {
@@ -94,6 +109,16 @@ export function CorrectPage(): React.JSX.Element {
       setSelectedKey(correctionGameKey(first));
   }, [games, selectedKey]);
   useEffect(() => setConfirmOpen(false), [selectedKey]);
+  useEffect(() => {
+    const requestedGame = searchParams.get("game");
+    const found = catalogGames.find((game) => game.gameId === requestedGame);
+    if (found === undefined) return;
+    setScope(found.authority === "quarantine" ? "review" : "ready");
+    setSelectedKey(correctionGameKey(found));
+    const next = new URLSearchParams(searchParams);
+    next.delete("game");
+    setSearchParams(next, { replace: true });
+  }, [catalogGames, searchParams, setSearchParams]);
 
   const {
     session,
@@ -112,6 +137,7 @@ export function CorrectPage(): React.JSX.Element {
     commit,
     original,
     loadOriginal,
+    closeSession,
     busy,
     error: sessionError,
   } = useCorrectionSessionController(selectedGame);
@@ -223,14 +249,18 @@ export function CorrectPage(): React.JSX.Element {
     ...correctionSourceEvidenceQueryOptions(
       session?.sessionId ?? "inactive",
       selectedSourceEventId ?? "inactive",
+      session?.sessionVersion ?? 0,
     ),
     enabled: session !== null && selectedSourceEventId !== null,
     retry: false,
   });
-  const comparison =
-    session !== null && original.data !== undefined
-      ? compareWithOriginal(original.data, session.draftDocument)
-      : null;
+  const comparison = useMemo(
+    () =>
+      session !== null && original.data !== undefined
+        ? compareWithOriginal(original.data, session.draftDocument)
+        : null,
+    [original.data, session?.draftDocument],
+  );
   const live = kboLiveTextLink(session?.gameId ?? selectedGame?.gameId);
   const promotionAvailable =
     session?.authority === "quarantine" && session.blockingCount === 0 && !session.dirty;
@@ -284,9 +314,19 @@ export function CorrectPage(): React.JSX.Element {
     if (command !== null) apply(command);
   };
 
+  const openGame = (game?: CorrectionGameCatalogItem): void => {
+    openSession.mutate(game, {
+      onSuccess: () => {
+        const next = new URLSearchParams(searchParams);
+        next.delete("sessionId");
+        next.delete("noticeId");
+        setSearchParams(next, { replace: true });
+      },
+    });
+  };
   const requestOpenSession = (): void => {
     if (session?.dirty === true) setConfirmOpen(true);
-    else openSession.mutate();
+    else openGame();
   };
   const selectLedgerEvent = (eventId: string): void => {
     setRecordView(null);
@@ -389,6 +429,9 @@ export function CorrectPage(): React.JSX.Element {
     setSelectedEventId(pitchEventId);
   };
   const error = sessionError ?? catalog.error;
+  const nextReview =
+    games.find((game) => game.authority === "quarantine" && game.gameId !== lastCommit?.gameId) ??
+    null;
 
   return (
     <div className="page-stack correction-page">
@@ -426,13 +469,45 @@ export function CorrectPage(): React.JSX.Element {
             ))}
           </div>
         </div>
+        <div className="correction-period-filters">
+          <label>
+            <span>시즌</span>
+            <select value={gameSeason} onChange={(event) => setGameSeason(event.target.value)}>
+              <option value="all">전체</option>
+              {[...new Set(catalogGames.map((game) => game.season))]
+                .sort((a, b) => b - a)
+                .map((season) => (
+                  <option key={season} value={season}>
+                    {season}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label>
+            <span>시작일</span>
+            <input
+              type="date"
+              value={gameStart}
+              onChange={(event) => setGameStart(event.target.value)}
+            />
+          </label>
+          <label>
+            <span>종료일</span>
+            <input
+              type="date"
+              value={gameEnd}
+              min={gameStart}
+              onChange={(event) => setGameEnd(event.target.value)}
+            />
+          </label>
+        </div>
         <div className="correction-source-controls">
           <label>
             <span>경기 검색</span>
             <input
               value={gameQuery}
               onChange={(event) => setGameQuery(event.target.value)}
-              placeholder="경기 ID·시즌"
+              placeholder="팀·날짜·경기 ID"
             />
           </label>
           <label>
@@ -487,7 +562,7 @@ export function CorrectPage(): React.JSX.Element {
               disabled={busy}
               onClick={() => {
                 setConfirmOpen(false);
-                openSession.mutate();
+                openGame();
               }}
             >
               변경 버리고 열기
@@ -512,17 +587,17 @@ export function CorrectPage(): React.JSX.Element {
           {lastCommit === null ? (
             <p>파일 원장을 선택해 작업 사본을 여세요.</p>
           ) : (
-            <div>
-              <strong>{lastCommit.gameId} 저장 완료</strong>
-              <p>
-                {lastCommit.outcome === "promoted"
-                  ? "staging으로 승격되어 DB 적재 가능한 현재 원장이 되었습니다."
-                  : lastCommit.outcome === "staging_saved"
-                    ? "DB 적재 가능한 staging 현재 원장으로 저장했습니다."
-                    : "차단 finding과 함께 quarantine 현재 원장으로 저장했습니다."}
-              </p>
-              <span>작업 사본을 닫았습니다. 목록에서 다음 경기를 열 수 있습니다.</span>
-            </div>
+            <CommitCompletionPanel
+              key={lastCommit.sessionId}
+              completion={lastCommit}
+              nextLabel={nextReview === null ? null : correctionGameLabel(nextReview)}
+              onNext={() => {
+                if (nextReview !== null) {
+                  setSelectedKey(correctionGameKey(nextReview));
+                  openGame(nextReview);
+                }
+              }}
+            />
           )}
         </section>
       ) : (
@@ -560,6 +635,28 @@ export function CorrectPage(): React.JSX.Element {
             />
           ) : null}
           <section className="panel correction-toolbar" aria-label="원장 작업">
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={busy}
+              onClick={() => {
+                if (
+                  !session.dirty ||
+                  globalThis.confirm("저장하지 않은 변경을 버리고 작업 사본을 닫을까요?")
+                ) {
+                  closeSession.mutate(undefined, {
+                    onSuccess: () => {
+                      const next = new URLSearchParams(searchParams);
+                      next.delete("sessionId");
+                      next.delete("noticeId");
+                      setSearchParams(next, { replace: true });
+                    },
+                  });
+                }
+              }}
+            >
+              작업 사본 닫기
+            </button>
             <button
               type="button"
               className="secondary-button"
@@ -611,6 +708,12 @@ export function CorrectPage(): React.JSX.Element {
           {lastPreview !== null ? (
             <div className="panel correction-last-change" role="status">
               <strong>최근 반영</strong>
+              {lastPreview.resolvedBlockingCount === undefined ? null : (
+                <span>
+                  해소된 차단 {lastPreview.resolvedBlockingCount} · 새 차단{" "}
+                  {lastPreview.newBlockingCount ?? 0}
+                </span>
+              )}
               <span>
                 차단 {String(lastPreview.beforeBlockingCount)} →{" "}
                 {String(lastPreview.afterBlockingCount)}

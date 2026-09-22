@@ -1,0 +1,16 @@
+.model-refresh-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.model-refresh-actions .secondary-button {
+  height: 36px;
+  margin-left: 0;
+}
+
+.model-status-table td:first-child {
+  text-align: left;
+}

@@ -1,3 +1,6 @@
+import { WinProbabilityPanel } from "../analysis/win-probability-panel";
+import { CountRunValuePanel } from "../analysis/count-run-value-panel";
+import { RunValuePanel } from "../analysis/run-value-panel";
 import type {
   ReplayFielder,
   ReplayFrame,
@@ -141,6 +144,19 @@ export function ReplayPage(): React.JSX.Element {
             <StateView state={state} frame={frame} />
             <TrackingView frame={frame} />
           </div>
+          {[RunValuePanel, CountRunValuePanel, WinProbabilityPanel].map((Panel, panelIndex) => (
+            <Panel
+              key={`${loadedReplay.manifest.gameId}-${loadedReplay.manifest.revision}-${panelIndex}`}
+              manifest={loadedReplay.manifest}
+              onSelect={(playId) => {
+                const next = loadedReplay.frames.findIndex((p) => p.playId === playId);
+                if (next >= 0) {
+                  setPlaying(false);
+                  setIndex(next);
+                }
+              }}
+            />
+          ))}
         </>
       )}
     </div>
@@ -671,7 +687,7 @@ function TrackingCandidateView({
       <div className="tracking-observation-grid">
         {plot === null ? (
           <div className="tracking-plot-empty">
-            좌표 metric이 완전하지 않아 스트라이크존을 표시하지 않습니다.
+            타자 키 또는 투구 좌표가 없어 스트라이크존을 계산할 수 없습니다.
           </div>
         ) : (
           <StrikeZone plot={plot} />
@@ -695,7 +711,7 @@ function StrikeZone({ plot }: { readonly plot: StrikeZonePlot }): React.JSX.Elem
     padding.left + ((value + horizontalLimit) / (horizontalLimit * 2)) * innerWidth;
   const y = (value: number): number =>
     padding.top + ((maximumZ - value) / (maximumZ - minimumZ)) * innerHeight;
-  const zoneHalfWidthFeet = 17 / 24;
+  const zoneHalfWidthFeet = plot.halfWidthFeet;
   const zoneLeft = x(-zoneHalfWidthFeet);
   const zoneRight = x(zoneHalfWidthFeet);
   const pointX = x(plot.xFeet);
@@ -774,8 +790,8 @@ function trackingMetricEntries(observation: ReplayTrackingCandidate): TrackingMe
     ["az", observation.az],
     ["crossPlateX", observation.crossPlateX],
     ["crossPlateY", observation.crossPlateY],
-    ["topSz", observation.topSz],
-    ["bottomSz", observation.bottomSz],
+    ["존 기준 연도", observation.strikeZone?.ruleYear ?? null],
+    ["타자 키 (cm)", observation.strikeZone?.batterHeightCm ?? null],
   ].map(([key, value]) => ({ key: String(key), value: value as string | number | null }));
 }
 

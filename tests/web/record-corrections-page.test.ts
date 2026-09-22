@@ -15,6 +15,49 @@ afterEach(() => {
 });
 
 describe("KBO 기록정정 운영 콘솔", () => {
+  it("수정 저장 후 적재 대기 배지·반영 완료·선택 경기 DB 적재 링크를 표시한다", async () => {
+    const draftProgress = {
+      state: "ready_to_import",
+      blockingCount: 0,
+      message: "정정 후 내용이 작업본에 저장됐습니다. DB에 적재하면 정정 처리가 완료됩니다.",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const pathname = new URL(String(input), "http://local.test").pathname;
+        if (pathname === "/api/v2/record-corrections/summary") return Response.json(summary());
+        if (pathname === "/api/v2/record-correction-jobs") return Response.json({ jobs: [] });
+        if (pathname === "/api/v2/record-corrections")
+          return Response.json({
+            cases: [
+              {
+                ...recordCorrectionListItem(),
+                status: "manual_review",
+                draftProgress,
+              },
+            ],
+          });
+        if (pathname === "/api/v2/record-corrections/2024%3A0%3A10")
+          return Response.json({
+            ...recordCorrectionCase(),
+            status: "manual_review",
+            draftProgress,
+          });
+        throw new Error(`unexpected request: ${pathname}`);
+      }),
+    );
+    const queryClient = renderPage("/record-corrections?notice=2024%3A0%3A10");
+    expect(await screen.findByText("수정 완료 · DB 적재 대기")).toBeTruthy();
+    expect(await screen.findByRole("option", { name: /DB 적재 대기/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "DB 적재하러 가기" }).getAttribute("href")).toBe(
+      "/database?scope=ready&game=anon-game",
+    );
+    expect(screen.getByRole("button", { name: "저장한 작업본 보기" })).toBeTruthy();
+    expect(screen.queryByText("서버 후보")).toBeNull();
+    expect(screen.getByText("작업본 검증 완료")).toBeTruthy();
+    expect(screen.getByText(/현재 목록 · 검토 필요 0 · DB 적재 대기 1/)).toBeTruthy();
+    queryClient.clear();
+  });
   it("기본 미처리 큐는 경량 목록만 받고 선택한 공지 상세만 조회한다", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const requestPath = String(input);

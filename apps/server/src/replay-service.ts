@@ -1,8 +1,14 @@
 import { createHash } from "node:crypto";
 
-import { canonicalStringify, type ReplayFramePage, type ReplayManifest } from "@kbo/contracts";
+import {
+  canonicalStringify,
+  type ReplayFramePage,
+  type ReplayManifest,
+  type BatterStrikeZone,
+} from "@kbo/contracts";
 import type { GameRevisionStore } from "@kbo/persistence";
 import { buildReplayBundle, DEFAULT_REPLAY_CHUNK_SIZE, type ReplayBundle } from "@kbo/replay";
+import { BoundedReadCache } from "./bounded-read-cache.js";
 
 type ReplayRevisionStore = Pick<GameRevisionStore, "loadCompiled">;
 
@@ -26,10 +32,18 @@ export class InvalidReplayCursorError extends Error {
 }
 
 export class ReplayService {
-  public constructor(private readonly revisionStore: ReplayRevisionStore) {}
+  private readonly downloads = new BoundedReadCache<ReplayBundle>(64 * 1024 * 1024, 16, 60_000);
+  public constructor(
+    private readonly revisionStore: ReplayRevisionStore,
+    private readonly readZones: (
+      gameId: string,
+      revision: number,
+    ) => Promise<ReadonlyMap<string, BatterStrikeZone>> = async () => new Map(),
+  ) {}
 
   public async manifest(gameId: string, revision: number): Promise<ReplayManifest> {
-    return (await this.bundle(gameId, revision)).manifest;
+    // A new download always revalidates the sealed DB snapshot.
+    return structuredClone((await this.bundle(gameId, revision, true)).manifest);
   }
 
   public async frames(
@@ -61,7 +75,7 @@ export class ReplayService {
       documentHash: bundle.manifest.documentHash,
       frameHash: bundle.manifest.frameHash,
       startIndex: offset,
-      frames: bundle.frames.slice(offset, end),
+      frames: structuredClone(bundle.frames.slice(offset, end)),
       nextCursor:
         end < bundle.frames.length
           ? encodeCursor({
@@ -75,15 +89,26 @@ export class ReplayService {
     };
   }
 
-  private async bundle(gameId: string, revision: number): Promise<ReplayBundle> {
-    const stored = await this.revisionStore.loadCompiled(gameId, revision);
-    return buildReplayBundle({
-      source: stored.source,
-      revision: stored.revision,
-      documentHash: stored.documentHash,
-      projectionHash: stored.projectionHash,
-      compiled: stored.replay,
-    });
+  public close(): void {
+    this.downloads.clear();
+  }
+
+  private bundle(gameId: string, revision: number, refresh = false): Promise<ReplayBundle> {
+    return this.downloads.load(
+      `${gameId}:${String(revision)}`,
+      async () => {
+        const stored = await this.revisionStore.loadCompiled(gameId, revision);
+        return buildReplayBundle({
+          strikeZones: await this.readZones(gameId, revision),
+          source: stored.source,
+          revision: stored.revision,
+          documentHash: stored.documentHash,
+          projectionHash: stored.projectionHash,
+          compiled: stored.replay,
+        });
+      },
+      refresh,
+    );
   }
 }
 

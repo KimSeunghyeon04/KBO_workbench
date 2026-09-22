@@ -2,7 +2,7 @@ import { mkdtempDisposable, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { parseStagingGameDocumentV2 } from "@kbo/contracts";
+import { parseStagingGameDocumentV2, type DatabaseGamesQuery } from "@kbo/contracts";
 import { stagingDocumentHash } from "@kbo/game-core";
 import { StagingWorkspace } from "@kbo/persistence";
 import type { Pool } from "pg";
@@ -30,15 +30,39 @@ describe("import HTTP API", () => {
       }),
     });
     const pool = { end: vi.fn(async () => undefined) } as unknown as Pool;
+    const readDocument = vi.spyOn(workspace, "readDocument");
+    const hydrate = vi.fn(async () => {
+      throw new Error("unexpected hydrate");
+    });
     const app = createApp(testConfig(temporary.path), pool, {
       workspace,
       collectionJobs: emptyCollectionJobs(),
       revisionStore: {
-        catalog: async () => [],
-        countStoredGames: async () => 0,
-        hydrate: async () => {
-          throw new Error("unexpected hydrate");
+        catalog: async () => {
+          throw new Error("paged catalog must not load every game");
         },
+        catalogSeasons: async () => [2026],
+        catalogPage: async (query: DatabaseGamesQuery) => ({
+          total: 10_000,
+          page: query.page ?? 1,
+          limit: query.limit ?? 50,
+          seasons: [2026],
+          games: Array.from({ length: query.limit ?? 50 }, (_, index) => ({
+            gameId: `anon-${String(((query.page ?? 1) - 1) * (query.limit ?? 50) + index).padStart(5, "0")}`,
+            authority: "database" as const,
+            season: 2026,
+            gameDate: "2026-08-30",
+            teams: document.teams,
+            currentRevision: 1,
+            revisionCount: 1,
+            updatedAt: "2026-08-30T00:00:00.000Z",
+            blockingFindings: 0,
+            warningFindings: 0,
+          })),
+        }),
+        storedGameIds: async () => [],
+        countStoredGames: async () => 0,
+        hydrate,
         revisions: async () => ({
           gameId: document.metadata.gameId,
           currentRevision: 1,
@@ -53,6 +77,24 @@ describe("import HTTP API", () => {
       },
     });
 
+    const page = await app.inject({
+      method: "GET",
+      url: "/api/v2/database/games?authority=database&page=2&limit=50",
+    });
+    expect(page.statusCode).toBe(200);
+    expect(page.json()).toMatchObject({ total: 10_000, page: 2, limit: 50 });
+    expect(page.json<{ games: { gameId: string }[] }>().games).toHaveLength(50);
+    expect(page.json<{ games: { gameId: string }[] }>().games[0]?.gameId).toBe("anon-00050");
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/v2/database/games?authority=database&limit=201",
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(readDocument).not.toHaveBeenCalled();
+    expect(hydrate).not.toHaveBeenCalled();
     const created = await app.inject({
       method: "POST",
       url: "/api/v2/import-jobs",

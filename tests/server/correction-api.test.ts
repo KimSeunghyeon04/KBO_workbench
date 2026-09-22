@@ -13,6 +13,157 @@ import type { AppConfig } from "../../apps/server/src/config.js";
 import { CorrectionSessionManager } from "../../apps/server/src/correction-session-manager.js";
 
 describe("correction HTTP API", () => {
+  it("관측·문구 교정의 검증·version·undo/redo·저장과 원본 보존을 함께 확인한다", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-observation-api-"));
+    const workspace = await StagingWorkspace.open(temporary.path);
+    const initialDocument = parseStagingGameDocumentV2(
+      JSON.parse(
+        await readFile("tests/fixtures/correction/in-play-observation.anonymized.json", "utf8"),
+      ) as unknown,
+    );
+    const sourceBundle: RawGameBundle = {
+      gameId: initialDocument.metadata.gameId,
+      collectedAt: initialDocument.source.collectedAt,
+      missingEndpoints: [],
+      payloads: {
+        "test-relay": {
+          result: {
+            textRelayData: {
+              textRelays: [
+                {
+                  textOptions: initialDocument.events.map((event, seqno) => ({
+                    seqno,
+                    text: event.relayText,
+                  })),
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const sourceBundleHash = hashRawGameBundle(sourceBundle);
+    const document = parseStagingGameDocumentV2({
+      ...initialDocument,
+      source: { ...initialDocument.source, sourceBundleHash },
+    });
+    await workspace.saveSourceBundle({
+      ...sourceBundle,
+      sourceBundleHash,
+      season: document.metadata.season,
+    });
+    await workspace.saveQuarantine(document, []);
+    const sessions = new CorrectionSessionManager(workspace, undefined, extractNaverSourceEvidence);
+    const pool = { end: vi.fn(async () => undefined) } as unknown as Pool;
+    const app = createApp(testConfig(temporary.path), pool, {
+      workspace,
+      collectionJobs: emptyCollectionJobs(),
+      revisionStore: emptyRevisionStore(),
+      importJobs: emptyImportJobs(),
+      correctionSessions: sessions,
+      async close() {
+        sessions.close();
+        await workspace.close();
+      },
+    });
+    try {
+      const initial = await sessions.create({
+        authority: "quarantine",
+        gameId: document.metadata.gameId,
+      });
+      const url = `/api/v2/correction-sessions/${initial.sessionId}`;
+      const pitch = document.events[3];
+      if (pitch === undefined) throw new Error("missing anonymous pitch");
+      const observationCommand = {
+        commandId: "correct-count",
+        kind: "update_observed_state",
+        eventId: "e3",
+        observedStateAfter: { ...pitch.observedStateAfter, balls: 0 },
+      };
+      const relayText = "2구 타격 · 수동 확인 문구";
+      const command = {
+        commandId: "correct-count-and-text",
+        kind: "correction_batch",
+        commands: [
+          observationCommand,
+          {
+            commandId: "edit-text",
+            kind: "replace_event",
+            eventId: "e3",
+            event: { ...pitch, relayText },
+          },
+        ],
+      };
+      const invalid = await app.inject({
+        method: "POST",
+        url: `${url}/commands`,
+        payload: {
+          expectedSessionVersion: 0,
+          apply: true,
+          command: { ...observationCommand, observedStateAfter: { balls: -1 } },
+        },
+      });
+      expect(invalid.statusCode).toBe(400);
+      expect(sessions.get(initial.sessionId)).toEqual(initial);
+      const applied = await app.inject({
+        method: "POST",
+        url: `${url}/commands`,
+        payload: { expectedSessionVersion: 0, apply: true, command },
+      });
+      expect(applied.statusCode, applied.body).toBe(200);
+      const corrected = sessions.get(initial.sessionId);
+      expect(corrected.findings.filter((finding) => finding.severity === "blocking")).toEqual([]);
+      expect(corrected.calculatedRecords).toEqual(initial.calculatedRecords);
+      expect(corrected.draftDocument.events[3]?.relayText).toBe(relayText);
+      const stale = await app.inject({
+        method: "POST",
+        url: `${url}/commands`,
+        payload: { expectedSessionVersion: 0, apply: true, command },
+      });
+      expect(stale.statusCode).toBe(409);
+      const undo = await app.inject({
+        method: "POST",
+        url: `${url}/undo`,
+        payload: { expectedSessionVersion: 1 },
+      });
+      expect(undo.statusCode).toBe(200);
+      expect(sessions.get(initial.sessionId).draftDocument).toEqual(document);
+      const redo = await app.inject({
+        method: "POST",
+        url: `${url}/redo`,
+        payload: { expectedSessionVersion: 2 },
+      });
+      expect(redo.statusCode).toBe(200);
+      expect(sessions.get(initial.sessionId).draftDocument).toEqual(corrected.draftDocument);
+      const committed = await app.inject({
+        method: "POST",
+        url: `${url}/commit`,
+        payload: { expectedSessionVersion: 3, allowBlockingStaging: false },
+      });
+      expect(committed.statusCode, committed.body).toBe(200);
+      expect(
+        await workspace.readOriginal(document.metadata.season, document.metadata.gameId),
+      ).toEqual(document);
+      const reopened = await sessions.create({
+        authority: "staging",
+        gameId: document.metadata.gameId,
+      });
+      expect(reopened.draftDocument).toEqual(corrected.draftDocument);
+      expect(reopened.canUndo).toBe(false);
+      const evidence = await app.inject({
+        method: "GET",
+        url: `/api/v2/correction-sessions/${reopened.sessionId}/source-evidence/e3`,
+      });
+      expect(evidence.statusCode, evidence.body).toBe(200);
+      const sourceRows = evidence.json<{
+        relayRows: Array<{ selected: boolean; canonicalJson: string }>;
+      }>().relayRows;
+      expect(sourceRows.find((row) => row.selected)?.canonicalJson).toContain('"text":"2구 타격"');
+      expect(sourceRows.find((row) => row.selected)?.canonicalJson).not.toContain(relayText);
+    } finally {
+      await app.close();
+    }
+  });
   it("session preview/apply/undo/commit과 stale version을 strict API로 제공한다", async () => {
     await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-correction-api-"));
     const workspace = await StagingWorkspace.open(temporary.path);
@@ -116,11 +267,17 @@ describe("correction HTTP API", () => {
     expect(original.json()).toMatchObject({
       metadata: { gameId: document.metadata.gameId },
     });
+    const readSource = vi.spyOn(workspace, "readSourceBundle");
     const evidence = await app.inject({
       method: "GET",
       url: `/api/v2/correction-sessions/${sessionId}/source-evidence/e2`,
     });
     expect(evidence.statusCode, evidence.body).toBe(200);
+    await app.inject({
+      method: "GET",
+      url: `/api/v2/correction-sessions/${sessionId}/source-evidence/e1`,
+    });
+    expect(readSource).toHaveBeenCalledTimes(1);
     expect(evidence.json()).toMatchObject({
       eventId: "e2",
       endpoint: "relay",
@@ -235,6 +392,7 @@ describe("correction HTTP API", () => {
 function emptyRevisionStore() {
   return {
     catalog: async () => [],
+    storedGameIds: async () => [],
     countStoredGames: async () => 0,
     hydrate: async () => {
       throw new Error("unexpected hydrate");

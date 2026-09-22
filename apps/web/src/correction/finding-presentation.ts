@@ -2,6 +2,7 @@ import {
   compareCanonicalStrings,
   type CorrectionFinding,
   type CorrectionSession,
+  type StagingGameDocumentV2,
 } from "@kbo/contracts";
 
 export type FindingOrigin = "stored" | "current" | "both";
@@ -53,6 +54,32 @@ export function findingIdentity(finding: CorrectionFinding): string {
     finding.message,
     JSON.stringify(finding.details),
   ].join(":");
+}
+
+export function groupDisplayFindings(
+  findings: readonly DisplayFinding[],
+  document: StagingGameDocumentV2,
+): {
+  readonly key: string;
+  readonly label: string;
+  readonly findings: readonly DisplayFinding[];
+}[] {
+  const events = new Map(document.events.map((event) => [event.identity.eventId, event]));
+  const groups = new Map<string, { key: string; label: string; findings: DisplayFinding[] }>();
+  for (const finding of findings) {
+    const event = finding.eventId === undefined ? undefined : events.get(finding.eventId);
+    const location =
+      event === undefined ? "경기 전체" : `${event.inning}회${event.half === "top" ? "초" : "말"}`;
+    const key = `${finding.origin}:${finding.severity}:${finding.category}:${location}:${finding.code}`;
+    const group = groups.get(key) ?? {
+      key,
+      label: `${location} · ${finding.message}`,
+      findings: [],
+    };
+    group.findings.push(finding);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
 }
 
 function findingCorrelationIdentity(finding: CorrectionFinding): string {

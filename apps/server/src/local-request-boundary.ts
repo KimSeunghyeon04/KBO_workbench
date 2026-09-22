@@ -4,24 +4,22 @@ const allowedHostnames = new Set(["127.0.0.1", "localhost", "api", "web"]);
 
 export function installLocalRequestBoundary(app: FastifyInstance): void {
   app.addHook("onRequest", async (request, reply) => {
-    const host = hostnameFromHostHeader(request.headers.host ?? "");
-    if (!allowedHostnames.has(host)) {
-      await reply.code(403).send({ error: "허용되지 않은 Host입니다." });
-      return;
-    }
-    const origin = request.headers.origin;
-    if (origin === undefined) return;
-    let originHostname = "";
-    try {
-      originHostname = new URL(origin).hostname;
-    } catch {
-      await reply.code(403).send({ error: "유효하지 않은 Origin입니다." });
-      return;
-    }
-    if (!allowedHostnames.has(originHostname)) {
-      await reply.code(403).send({ error: "허용되지 않은 Origin입니다." });
-    }
+    const error = localRequestError(request.headers.host, request.headers.origin);
+    if (error !== null) await reply.code(403).send({ error });
   });
+}
+
+export function localRequestError(
+  host: string | undefined,
+  origin: string | undefined,
+): string | null {
+  if (!allowedHostnames.has(hostnameFromHostHeader(host ?? ""))) return "허용되지 않은 Host입니다.";
+  if (origin === undefined) return null;
+  try {
+    return allowedHostnames.has(new URL(origin).hostname) ? null : "허용되지 않은 Origin입니다.";
+  } catch {
+    return "유효하지 않은 Origin입니다.";
+  }
 }
 
 function hostnameFromHostHeader(host: string): string {

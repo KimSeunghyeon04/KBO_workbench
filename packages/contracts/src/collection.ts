@@ -11,6 +11,7 @@ const DateTimeSchema = Type.String({
 });
 
 export const CollectionScopeSchema = Type.Union([
+  Type.Object({ kind: Type.Literal("selection"), selectionId: GameIdSchema }, strict),
   Type.Object(
     { kind: Type.Literal("date_range"), startDate: IsoDateSchema, endDate: IsoDateSchema },
     strict,
@@ -53,6 +54,7 @@ export const CollectionJobSummarySchema = Type.Object(
     ready: Type.Integer({ minimum: 0 }),
     quarantined: Type.Integer({ minimum: 0 }),
     sourceFailures: Type.Integer({ minimum: 0 }),
+    unchanged: Type.Optional(Type.Integer({ minimum: 0 })),
   },
   strict,
 );

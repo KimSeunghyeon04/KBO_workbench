@@ -18,9 +18,15 @@ import {
   type CorrectionTimelinePresentation,
   type EventPresentation,
 } from "./event-presentation";
-import { buildDisplayFindings, findingIdentity, type DisplayFinding } from "./finding-presentation";
+import {
+  buildDisplayFindings,
+  findingIdentity,
+  groupDisplayFindings,
+  type DisplayFinding,
+} from "./finding-presentation";
 import type { OriginalComparison } from "./original-comparison";
 import { PitchTrackingDetail } from "./pitch-tracking-detail";
+import { focusedSourceEvidence } from "./source-evidence-presentation";
 import {
   buildPlayerRecordComparisons,
   parseOfficialRecordIdentity,
@@ -129,6 +135,14 @@ export function FindingPanel({
     );
   });
 
+  const groups = groupDisplayFindings(visibleFindings, session.draftDocument);
+  const firstRejected = session.eventContexts.find(
+    (context) =>
+      !context.applied &&
+      session.findings.some(
+        (finding) => finding.severity === "blocking" && finding.eventId === context.eventId,
+      ),
+  );
   return (
     <section className="panel correction-findings">
       <div className="panel-title-row">
@@ -175,47 +189,74 @@ export function FindingPanel({
         </select>
       </div>
       <div className="finding-list">
+        {firstRejected === undefined ? null : (
+          <button
+            type="button"
+            className="secondary-button finding-first-cause"
+            onClick={() => onSelectEvent(firstRejected.eventId)}
+          >
+            먼저 확인할 미적용 행으로 이동
+          </button>
+        )}
+        {groups.length > 0 ? (
+          <p className="muted-text">
+            같은 반이닝·검증 유형별로 묶었습니다. 각 항목의 원인은 별도로 확인하세요.
+          </p>
+        ) : null}
         {visibleFindings.length === 0 ? (
           <p className="muted-text">조건에 맞는 finding이 없습니다.</p>
         ) : (
-          visibleFindings.map((finding) => {
-            const record = parseOfficialRecordIdentity(finding.recordIdentity);
-            const tracking = trackingCandidateForFinding(session.draftDocument, finding);
-            const selected =
-              record !== null
-                ? finding.recordIdentity === selectedRecordIdentity
-                : tracking !== null
-                  ? tracking.trackingId === selectedTrackingId
-                  : finding.eventId === selectedEventId;
-            const className = `finding-item ${finding.severity} ${selected ? "selected" : ""}`;
-            const content = (
-              <FindingContents
-                finding={finding}
-                document={session.draftDocument}
-                eventContexts={session.eventContexts}
-              />
-            );
-            const eventId = finding.eventId;
-            return record === null && tracking === null && eventId === undefined ? (
-              <article className={className} key={findingIdentity(finding)}>
-                {content}
-              </article>
-            ) : (
-              <button
-                key={findingIdentity(finding)}
-                type="button"
-                className={className}
-                onClick={() => {
-                  if (record !== null && finding.recordIdentity !== undefined)
-                    onSelectRecord(finding.recordIdentity);
-                  else if (tracking !== null) onSelectTracking(tracking.trackingId);
-                  else if (eventId !== undefined) onSelectEvent(eventId);
-                }}
-              >
-                {content}
-              </button>
-            );
-          })
+          groups.map((group, index) => (
+            <details
+              className="finding-group"
+              key={group.key}
+              open={
+                index === 0 || group.findings.some((finding) => finding.eventId === selectedEventId)
+              }
+            >
+              <summary>
+                {group.label} <b>{group.findings.length}건</b>
+              </summary>
+              {group.findings.map((finding) => {
+                const record = parseOfficialRecordIdentity(finding.recordIdentity);
+                const tracking = trackingCandidateForFinding(session.draftDocument, finding);
+                const selected =
+                  record !== null
+                    ? finding.recordIdentity === selectedRecordIdentity
+                    : tracking !== null
+                      ? tracking.trackingId === selectedTrackingId
+                      : finding.eventId === selectedEventId;
+                const className = `finding-item ${finding.severity} ${selected ? "selected" : ""}`;
+                const content = (
+                  <FindingContents
+                    finding={finding}
+                    document={session.draftDocument}
+                    eventContexts={session.eventContexts}
+                  />
+                );
+                const eventId = finding.eventId;
+                return record === null && tracking === null && eventId === undefined ? (
+                  <article className={className} key={findingIdentity(finding)}>
+                    {content}
+                  </article>
+                ) : (
+                  <button
+                    key={findingIdentity(finding)}
+                    type="button"
+                    className={className}
+                    onClick={() => {
+                      if (record !== null && finding.recordIdentity !== undefined)
+                        onSelectRecord(finding.recordIdentity);
+                      else if (tracking !== null) onSelectTracking(tracking.trackingId);
+                      else if (eventId !== undefined) onSelectEvent(eventId);
+                    }}
+                  >
+                    {content}
+                  </button>
+                );
+              })}
+            </details>
+          ))
         )}
       </div>
     </section>
@@ -902,7 +943,7 @@ function SourceEvidenceRows({
 }): React.JSX.Element {
   return (
     <div className="source-evidence-rows">
-      <h4>immutable source relay 원문</h4>
+      <h4>선택 행과 앞뒤 원문</h4>
       {evidence.relayRows.map((row) => (
         <article className={row.selected ? "selected" : ""} key={`relay:${String(row.rowIndex)}`}>
           <strong>
@@ -910,7 +951,11 @@ function SourceEvidenceRows({
             {row.sourceSequence === null ? "없음" : String(row.sourceSequence)}
             {row.selected ? " · 선택 행" : ""}
           </strong>
-          <pre>{prettyCanonicalJson(row.canonicalJson)}</pre>
+          <pre>{focusedSourceEvidence(row.canonicalJson)}</pre>
+          <details>
+            <summary>전체 원문 JSON</summary>
+            <pre>{prettyCanonicalJson(row.canonicalJson)}</pre>
+          </details>
         </article>
       ))}
       <h4>같은 block의 관련 PTS 원문</h4>

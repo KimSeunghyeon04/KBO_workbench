@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createElement } from "react";
 import { MemoryRouter } from "react-router-dom";
@@ -21,6 +21,7 @@ describe("보정 저장 완료 UI", () => {
     const document = parseStagingGameDocumentV2(makeDocument([]));
     const openedSession = session(document, "quarantine");
     let promoted = false;
+    let jobReads = 0;
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const path = String(input);
       if (path === "/api/v2/correction-games") {
@@ -48,8 +49,38 @@ describe("보정 저장 완료 UI", () => {
       if (path === "/api/v2/correction-sessions/anonymous-session/commit") {
         promoted = true;
         return Response.json({
-          session: { ...openedSession, authority: "staging" },
+          session: { ...openedSession, authority: "staging", sessionVersion: 1 },
           committedAuthority: "staging",
+        });
+      }
+      if (
+        path === "/api/v2/correction-sessions/anonymous-session?expectedSessionVersion=1" &&
+        init?.method === "DELETE"
+      )
+        return new Response(null, { status: 204 });
+      if (path === "/api/v2/import-jobs" && init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toMatchObject({
+          gameId: "test-game",
+          expectedDocumentHash: "1".repeat(64),
+        });
+        return Response.json({ jobId: "saved-game-import", status: "queued" }, { status: 202 });
+      }
+      if (path === "/api/v2/import-jobs/saved-game-import") {
+        jobReads += 1;
+        return Response.json({
+          jobId: "saved-game-import",
+          gameId: "test-game",
+          kind: "import",
+          status: "succeeded",
+          createdAt: "2026-09-03T00:00:00.000Z",
+          startedAt: null,
+          finishedAt: "2026-09-03T00:00:01.000Z",
+          revision: 1,
+          documentHash: "1".repeat(64),
+          projectionHash: "2".repeat(64),
+          error: null,
+          errorCategory: null,
+          followUpPending: jobReads === 1,
         });
       }
       throw new Error(`unexpected request: ${path}`);
@@ -67,20 +98,30 @@ describe("보정 저장 완료 UI", () => {
     );
 
     const user = userEvent.setup();
-    await screen.findByRole("option", { name: "test-game · 검토 필요" });
+    await screen.findByRole("option", { name: /2026-08-20 원정–홈.*검토 필요.*test-game/ });
     await user.selectOptions(screen.getByLabelText("경기"), "quarantine:test-game");
     await user.click(screen.getByRole("button", { name: "작업 사본 열기" }));
     await user.click(await screen.findByRole("button", { name: "staging으로 승격" }));
 
-    expect(await screen.findByText("test-game 저장 완료")).toBeTruthy();
-    expect(
-      screen.getByText("staging으로 승격되어 DB 적재 가능한 현재 원장이 되었습니다."),
-    ).toBeTruthy();
-    expect(screen.getByText(/작업 사본을 닫았습니다/)).toBeTruthy();
+    expect(await screen.findByText(/2026-08-20 원정–홈 · 보정 저장 완료/)).toBeTruthy();
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v2/correction-sessions/anonymous-session?expectedSessionVersion=1",
+        expect.objectContaining({ method: "DELETE", keepalive: true }),
+      ),
+    );
+    expect(screen.getByRole("button", { name: "이 경기 DB 적재" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "작업 사본 저장" })).toBeNull();
     expect(screen.getByRole("status").textContent).toContain(
       "test-game을 staging으로 승격했습니다",
     );
+    await user.click(screen.getByRole("button", { name: "이 경기 DB 적재" }));
+    expect(await screen.findByRole("link", { name: "저장 경기 재생" })).toBeTruthy();
+    await waitFor(() => expect(jobReads).toBeGreaterThanOrEqual(2), { timeout: 3_000 });
+    expect(await screen.findByText("검증된 경기 기록을 DB에 저장했습니다.")).toBeTruthy();
+    expect(
+      fetchMock.mock.calls.filter(([input]) => input === "/api/v2/correction-games").length,
+    ).toBeGreaterThanOrEqual(3);
     queryClient.clear();
   });
 });

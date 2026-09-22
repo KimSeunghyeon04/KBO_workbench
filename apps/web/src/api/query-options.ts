@@ -33,8 +33,8 @@ export const queryKeys = {
   correction: {
     games: ["correction", "games"] as const,
     original: (sessionId: string) => ["correction", sessionId, "original"] as const,
-    sourceEvidence: (sessionId: string, eventId: string) =>
-      ["correction", sessionId, "source-evidence", eventId] as const,
+    sourceEvidence: (sessionId: string, eventId: string, sessionVersion: number) =>
+      ["correction", sessionId, "source-evidence", eventId, sessionVersion] as const,
   },
   recordCorrections: {
     all: ["record-corrections"] as const,
@@ -52,7 +52,12 @@ export const queryKeys = {
 } as const;
 
 export const catalogQueryOptions = () =>
-  queryOptions({ queryKey: queryKeys.catalog, queryFn: getGameCatalog });
+  queryOptions({ queryKey: queryKeys.catalog, queryFn: () => getGameCatalog() });
+export const storedCatalogQueryOptions = () =>
+  queryOptions({
+    queryKey: [...queryKeys.catalog, "database"],
+    queryFn: () => getGameCatalog("database"),
+  });
 export const correctionGamesQueryOptions = () =>
   queryOptions({ queryKey: queryKeys.correction.games, queryFn: getCorrectionGameCatalog });
 export const dashboardQueryOptions = () =>
@@ -105,10 +110,15 @@ export const correctionOriginalQueryOptions = (sessionId: string) =>
     queryKey: queryKeys.correction.original(sessionId),
     queryFn: () => getCorrectionOriginal(sessionId),
   });
-export const correctionSourceEvidenceQueryOptions = (sessionId: string, eventId: string) =>
+export const correctionSourceEvidenceQueryOptions = (
+  sessionId: string,
+  eventId: string,
+  sessionVersion: number,
+) =>
   queryOptions({
-    queryKey: queryKeys.correction.sourceEvidence(sessionId, eventId),
-    queryFn: () => getCorrectionSourceEvidence(sessionId, eventId),
+    queryKey: queryKeys.correction.sourceEvidence(sessionId, eventId, sessionVersion),
+    queryFn: ({ signal }) => getCorrectionSourceEvidence(sessionId, eventId, signal),
+    staleTime: Infinity,
   });
 
 export type QueryRefreshTarget = "catalog" | "collectionJobs" | "dashboard";

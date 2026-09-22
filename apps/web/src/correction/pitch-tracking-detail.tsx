@@ -255,7 +255,6 @@ function TrackingMetricSummary({
     ["vx0/vy0/vz0", joinNumbers(candidate.vx0, candidate.vy0, candidate.vz0)],
     ["ax/ay/az", joinNumbers(candidate.ax, candidate.ay, candidate.az)],
     ["plate x/y", joinNumbers(candidate.crossPlateX, candidate.crossPlateY)],
-    ["zone top/bottom", joinNumbers(candidate.topSz, candidate.bottomSz)],
   ].filter((entry): entry is [string, string] => entry[1] !== undefined);
   return (
     <dl className="tracking-review-metrics">
