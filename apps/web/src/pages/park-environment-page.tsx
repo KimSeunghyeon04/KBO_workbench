@@ -1,18 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { useSearchParams, Link } from "react-router-dom";
-import { AnalysisScopeFields, scopeFromParams } from "../analysis/analysis-scope-fields";
+import { Link } from "react-router-dom";
+import { AnalysisScopeFields } from "../analysis/analysis-scope-fields";
+import { useAnalysisScope } from "../analysis/use-analysis-scope";
 import { getParkEnvironment } from "../api/park-environment-client";
 import "../styles/pitch-analysis.css";
 const n = (v: number | null) => v?.toFixed(3) ?? "—";
 export function ParkEnvironmentPage() {
-  const [params, setParams] = useSearchParams(),
-    selected = new URLSearchParams(params),
-    season = Number(params.get("season") ?? 2025),
-    [page, setPage] = useState(0);
-  if (!selected.has("competition")) selected.set("competition", "regular");
-  const scope = scopeFromParams(season, selected),
-    query = { season, ...scope.options },
+  const { selected, season, scope, change: changeScope } = useAnalysisScope();
+  const [page, setPage] = useState(0);
+  const query = { season, ...scope.options },
     result = useQuery({
       queryKey: ["park-environment", query],
       enabled: scope.error === null,
@@ -20,15 +17,8 @@ export function ParkEnvironmentPage() {
     }),
     data = result.data;
   function change(key: string, value: string) {
-    const next = new URLSearchParams(params);
-    if (value === "") next.delete(key);
-    else next.set(key, value);
-    if (key === "season") {
-      next.delete("dateFrom");
-      next.delete("dateTo");
-    }
     setPage(0);
-    setParams(next);
+    changeScope(key, value);
   }
   return (
     <div className="page-stack">

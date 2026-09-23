@@ -1,3 +1,4 @@
+import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import { createHash } from "node:crypto";
 import type { Pool } from "pg";
 import { Type } from "@sinclair/typebox";
@@ -22,12 +23,8 @@ export class BaserunningAnalysisRepository {
   public constructor(private readonly pool: Pool) {}
   public async read(input: AnalysisScopeQuery, playerId: string | null = null) {
     const query = Value.Decode(AnalysisScopeQuerySchema, input),
-      scope = resolveAnalysisScope(query, "regular"),
-      client = await this.pool.connect();
-    let released = false;
-    try {
-      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      await client.query("SET LOCAL statement_timeout='30s'");
+      scope = resolveAnalysisScope(query, "regular");
+    return withAnalysisSnapshot(this.pool, async (client, release) => {
       const manifest = await analysisSourceHash(client, scope);
       const raw = await client.query<Record<string, unknown>>(
         `SELECT f.player_identity_key AS identity,f.player_id AS "playerId",COALESCE(min(s.name),f.player_id) AS name,t.team_id AS "teamId",min(t.team_name) AS "teamName",count(DISTINCT f.game_id)::integer AS games,
@@ -58,9 +55,7 @@ export class BaserunningAnalysisRepository {
               ).rows,
             ).map((r) => r.id);
       const plays = await readAnalysisPlays(client, gameIds);
-      await client.query("COMMIT");
-      client.release();
-      released = true;
+      await release();
       const rate = (r: BaserunningTotals) => ({
         ...r,
         stealRate:
@@ -84,11 +79,6 @@ export class BaserunningAnalysisRepository {
         opportunities,
         opportunitySummary: summarizeBaserunningOpportunities(opportunities),
       });
-    } catch (error) {
-      if (!released) await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      if (!released) client.release();
-    }
+    });
   }
 }

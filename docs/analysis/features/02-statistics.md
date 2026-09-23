@@ -28,10 +28,17 @@ RBI는 compiler가 가진 값과 근거 한계를 유지하고 이번 첫 순위
 선수의 이적 전후 소속은 해당 경기 team/roster snapshot 기준이며 현재 소속을 과거에 덮어쓰지 않는다.
 canonical identity가 확정되지 않은 선수는 원 ID 범위를 유지한다.
 
-`GET /api/v2/analysis/statistics/batting`과 `/pitching`을 별도 strict 계약으로 제안한다.
-query는 season/date/competition, group=player|team, 명시적 sort, minPA 또는 minBF, page/limit다.
+`GET /api/v2/analysis/statistics/batting`과 `/pitching`을 별도 strict 계약으로 제공한다.
+query는 season/date/competition, group=player|team, 선택적 playerId, 명시적 sort,
+minPA 또는 minBF, page/limit다. playerId는 SQL 집계 전에 적용하며 group=team과 함께 요청하면
+400으로 거부한다. 전체 팀 기록처럼 보이는 선수 부분 합계를 만들지 않는다.
 minPA/minBF는 탐색 기준이며 공식 규정타석/규정이닝 충족으로 표시하지 않는다.
 기본값은 순위 필터 0으로 표본을 보여주고 UI에서 선택한 기준을 URL에 보존한다.
+
+선수별 `/analysis/player-statistics`는 투수·타자 분석의 **기본 기록** 탭이다. 기존 리그 성적과
+표를 공유하고 선택한 선수·시즌·경기 범위를 유지한다. 상황별 투구 조건은 적용하지 않는다.
+공개 기록과의 대조는 [별도 조사](../2026-09-23-public-records-audit.md)로 정리하며 화면에 외부
+비교나 자동 교정 경로를 추가하지 않는다.
 
 ## 구현 순서
 

@@ -12,12 +12,9 @@ import {
   qualityDesign,
   qualityHash,
 } from "./pitch-quality-features.js";
-import {
-  fitQualityTarget,
-  qualityPredictor,
-  evaluateQualityTarget,
-  qualitySubgroupGate,
-} from "./pitch-quality.js";
+import { fitQualityTarget } from "./pitch-quality-fit.js";
+import { qualityPredictor } from "./pitch-quality-target.js";
+import { evaluateQualityTarget, qualitySubgroupGate } from "./pitch-quality-evaluation.js";
 import { gameLossInterval } from "./game-bootstrap.js";
 import { MATCHUP_RADII, validateShapeProbabilities } from "./matchup-similarity.js";
 import {

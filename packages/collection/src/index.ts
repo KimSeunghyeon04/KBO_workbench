@@ -38,6 +38,7 @@ export {
   type KboRecordCorrectionRawPage,
 } from "./kbo-record-correction/client.js";
 export {
+  KBO_RECORD_CORRECTION_FIRST_SEASON,
   KboRecordCorrectionCollector,
   recordCorrectionContentHash,
   type KboRecordCorrectionCollectionOptions,

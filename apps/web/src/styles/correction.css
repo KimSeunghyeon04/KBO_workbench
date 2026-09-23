@@ -1068,7 +1068,7 @@
   font-size: 10px;
 }
 
-.record-kind-tabs button[aria-selected="true"] {
+.record-kind-tabs button[aria-pressed="true"] {
   border-color: #8fb7a1;
   color: #145c3e;
   background: #eaf4ed;

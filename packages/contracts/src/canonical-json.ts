@@ -60,20 +60,25 @@ function serializeObject(value: object, path: string, ancestors: WeakSet<object>
   }
   ancestors.add(value);
   try {
+    if (Object.getOwnPropertySymbols(value).length > 0) {
+      throw new CanonicalJsonError("symbol key는 허용되지 않습니다.", path);
+    }
     if (Array.isArray(value)) {
-      return `[${value
-        .map((item, index) => serialize(item, `${path}[${index}]`, ancestors))
-        .join(",")}]`;
+      const items: string[] = [];
+      for (let index = 0; index < value.length; index += 1) {
+        const itemPath = `${path}[${index}]`;
+        if (!Object.hasOwn(value, index)) {
+          throw new CanonicalJsonError("배열의 빈 항목은 허용되지 않습니다.", itemPath);
+        }
+        items.push(serialize(value[index], itemPath, ancestors));
+      }
+      return `[${items.join(",")}]`;
     }
 
     const prototype = Object.getPrototypeOf(value) as object | null;
     if (prototype !== Object.prototype && prototype !== null) {
       throw new CanonicalJsonError("plain object만 허용됩니다.", path);
     }
-    if (Object.getOwnPropertySymbols(value).length > 0) {
-      throw new CanonicalJsonError("symbol key는 허용되지 않습니다.", path);
-    }
-
     const record = value as Record<string, unknown>;
     const normalizedKeys = new Map<string, string>();
     for (const originalKey of Object.keys(record)) {

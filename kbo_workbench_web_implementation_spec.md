@@ -95,6 +95,10 @@ source 위치와 sequence를 유지한다.
 
 ## 4. Source bundle과 collection
 
+제공자 preview의 숫자 상태 `0`·`4`는 relay summary의 type 99 종료 footer와 3아웃 관측이
+함께 있을 때만 `final`로 해석한다. 코드만으로 종료를 추정하지 않으며, 원장·공식 기록·종료 조건은
+기존 compiler가 다시 검증한다. 실제 상태 `4` 응답의 비식별 fixture로 증거 누락 거부도 확인한다.
+
 수집한 endpoint payload는 canonical JSON 후 gzip으로 `.data/source/<season>/<gameId>/`에 불변
 저장한다. manifest에는 endpoint, 응답 hash와 최초 수집 시각을 기록한다. 같은 source bundle hash로
 현재 DB revision을 재수집하면 새 draft나 revision을 만들지 않는다. hash가 바뀌면 current revision을
@@ -160,6 +164,7 @@ current actual pitch 중 `직구`를 포심 기준 집단으로 사용한다. �
 2이며 설정한 K와 실제 배정 군집 수, 미수렴을 구분한다. 서버는 DB 연결 반환 뒤 최대 2개의 worker로
 계산하며 sourceHash·투수·K·모델 설정별 최대 32개 결과를 메모리에 재사용한다.
 상단 데이터 관리/분석 영역에 메뉴를 나누며 경기 재생은 분석에 포함하고 영역별 마지막 주소를 복원한다.
+분석의 최초 진입은 `/analysis/players`의 선수 탐색이며, 선택한 선수의 기능은 공통 분석 항목에서 이동한다.
 기준은 투수·구종 필터와 독립이며 빠른 공은 통과 후 외삽으로 표시한다. 계산·제외 기준,
 같은 시각의 의미, sourceHash와 읽기 API 계약은 [투구 움직임 분석](docs/pitch-shape-analysis.md)을 따른다.
 포심 기대 비교는 같은 snapshot의 시즌 포심으로 3D 공분산과 경험적 50%·90% 타원체를 만든다.
@@ -255,13 +260,25 @@ coverage 부재 가능 필드는 미제공으로 유지하며 원천 원장과 p
 생략된 선택 계수의 0이 공지 전후와 모두 다르면 KBO 정정 후 값으로 보완하는 명시적 제안을
 제공한다. 명시된 기존 값의 충돌과 coverage 누락은 보완하지 않는다. 제안은 선수명·통계명·
 미제공 여부를 표시하며 기존 원자적 command와 검증·undo/redo·저장·적재 경로를 따른다.
+명령이 없는 제안도 지원 통계의 공식값과 compiler 계산값이 정정 후 값인지 확인한다. 자책점은
+공식값만 검증하며, 계산값 차이를 해결할 근거 있는 batch가 없으면 수동 검토로 남긴다.
+`반영 필요`는 실제 적용 가능한 batch가 있는 경우만 표시한다.
 타석 매칭은 이전 교체 행의 명시 또는 승계 타순을 확인하고 수비 위치만 바뀌어도 유지한다.
 여러 투수의 공식 기록은 같은 팀의 개별 이름에 연결하며 참가자 나열 순서에 의존하지 않는다.
 통계 지원 여부는 scope와 stat code 조합으로 판정하고, 투수 피희생플라이처럼 현재 집계하지 않는
 항목은 원문 증거로만 보존한다. 적용·검증 가능한 변경이 전혀 없는 공지는 `지원 범위 외`로 분류해
 수동 검토 알림에서 제외한다.
+시즌을 생략한 기록정정 수동·예약 job은 보유 sealed 시즌 중 공식 공지 서비스 시작 연도인
+2022년 이후만 선택한다. 명시한 과거 시즌은 자동 제외하지 않고 기존 공식 control 검증을
+수행한다. 제도 이전의 빈 응답을 완전한 source revision으로 봉인하지 않는다. 공지 원문을
+유지하면서 괄호 안 통계 항목 줄바꿈과 괄호 뒤 쉼표만 해석하며 불완전·모호한 그룹은 연결하지 않는다.
 blocking draft는 quarantine에만 commit할 수 있다. sealed revision은 직접 수정하지 않고 correction
 draft로 reopen한 뒤 새 revision으로 적재한다.
+DB revision의 correction draft 열기는 workspace가 주입된 compiler로 한 번 검증하고 결과에 따라
+ready/quarantine을 선택한다. 서버는 공용 bounded worker를 주입하며 route에서 재컴파일하지 않는다.
+검증이 실패하면 original/current를 쓰지 않는다. 기존 저장 API의 blocking 거부와 current 전환 검증은
+유지한다. 기록정정 저장소는 jobs, sources, cases 내부 모듈을 공개 repository가 조립하며 SQL과
+트랜잭션 경계를 유지한다. 보정 drawer의 상태·명령 조정과 종류별 입력 UI도 별도 모듈이 소유한다.
 
 `lifecycle=while_event_unresolved` finding은 대응 행이 현재도 `unresolved`일 때만 현재 차단으로 병합한다. 사람이
 typed 행으로 교체하거나 명시적으로 삭제한 행의 finding은 immutable original의 저장 당시 기록에는
@@ -339,7 +356,6 @@ hash 파일로 원자적으로 공개한다. 잘못된/손상된 모델, 원천 
 투수 변화는 저장된 보정·포심 기준을 먼저 확인한 뒤 대상 투수만 조회한다. 완료 경기 전용 기준의
 키를 구분한다. 품질 재조회는 current revision·분류·유효 신장을 같은 snapshot에서 검증한 뒤
 용량 제한 캐시를 사용하므로 신장 보충도 존 집계를 무효화한다.
-
 
 `0011_game_competition`은 공식 일정의 불변 evidence dataset과 시즌 current 포인터를
 `reference` schema에 추가한다. `current_analysis_games`는 current sealed revision에 확인된
@@ -445,6 +461,58 @@ route page는 lazy chunk로 로드하며 기록정정·Database는 공통 운영
 상세 중 하나만 표시한다. 검색어 변경은 URL history를 replace하고 범위·항목 선택은 history entry를
 추가한다. 기록정정 목록은 경량 DTO를 사용하고 원문·후보·통계 변경은 단건 endpoint에서만 읽는다.
 
+분석 사이드 메뉴는 `선수 분석`, `리그·경기`, `분석 관리`로 구성하고 내부 스크롤을 제공한다.
+`/analysis/players`와 `/analysis`는 시즌·선수 유형·이름/ID로 선수를 찾는 목록이다. 투수를 선택하면
+코스·결정구를 열고 기본 기록, 구질·움직임, 최근 변화, 배합·궤적, 등판·운용, 매치업으로 이어진다. 타자는
+반응·성적에서 기본 기록, 선구안과 매치업으로 이동한다. 선수·팀 성적, 주루, 구장 환경, 재생은 리그·경기에,
+자료 품질과 모델 관리는 분석 관리에 둔다. 개별 분석 주소는 계속 직접 접근할 수 있으며 사이드
+메뉴에 없는 상세 주소도 작업 영역 전환 시 query와 hash까지 복원한다.
+
+선수별 항목 링크는 `pitcher` 또는 `batter`, `season`, 실효 `competition`, `dateFrom`/`dateTo`를
+전달한다. 매치업과 기본 기록에는 `playerRole`로 탐색 중인 주선수를 표시한다. 다른 기능으로 이동할 때 군집·
+차트·카운트 등 기능 고유 조건을 전달하지 않으며 뒤로 가면 원래 URL이 복원된다. `선수 변경`은
+같은 유형·시즌·경기 범위의 선수 목록으로 돌아간다. 새 목록은 regular가 기본이고, 기존 구질·선구안
+deep link의 all 기본값과 투수 변화의 기본 종료일인 시즌 12월 31일은 유지한다.
+
+기본 기록은 기존 성적 API의 선택적 `playerId`를 사용해 SQL 집계 전에 선수를 제한한다.
+선수 조건과 팀 합계의 동시 요청은 400이며, 응답의 query·범위·선수 ID를 웹에서 검증한다.
+이적 당시 팀별 행, 공식 PA/BF, 정수 아웃 수와 ER 확인 범위를 유지한다. 공통 범위의 빈
+`competition=`은 유효하지 않은 입력으로 거부해 선수 목록과 성적의 기본 경기 종류가 달라지지
+않도록 한다. [기본 기록 구현](docs/reviews/2026-09-23-basic-records.md)을 따른다.
+
+선수 탐색은 기존 투수/타자 catalog의 이름·ID·실제 투구 수를 사용한다. 현재 범위의 실제 투구 기록이
+있는 선수만 목록화하며 정규 등록 명단으로 확대 해석하지 않는다. 선택한 유형만 조회하고 이름/ID
+검색·페이지 이동은 받은 목록에서 수행한다. 페이지당 최대 48명만 DOM에 표시하며 검색어 `q`는
+history replace로 갱신한다. 공통 `PlayerAnalysisFrame`은 같은 catalog query identity를 비활성
+observer로 관찰하므로 추가 목록 요청이나 다른 분석의 선행 계산을 만들지 않는다. 기존 페이지가
+query·선수 결정·입력 검증을 계속 소유한다. 탐색 모듈은 기존 기본값을 읽어 링크에 명시한다.
+
+`PitcherScopeFields`는 `AnalysisFilterBar`를 사용해 시즌·투수를 기본 조건에, 경기 범위와 배합 등
+부가 필터를 native details의 세부 조건에 배치한다. 매치업의 타자는 `primary` 슬롯으로 기본 조건에
+유지한다. 접힌 범위 요약은 현재 URL을 반영하며 상태 변경과 계산은 각 페이지가 담당한다.
+[선수 중심 탐색 기록](docs/reviews/2026-09-22-player-centered-navigation.md)에 경계와 검증을 정리했다.
+
+본문 건너뛰기, 모바일 메뉴 닫기와 포커스 복귀, 목록의 단일 키보드 진입, 실제 탭의 방향키 이동은
+공통 UI 컴포넌트가 소유한다. 분석의 비활성 query는 로딩으로 표시하지 않고, 관련 화면 링크는
+기간·경기 종류를 유지한다. 대시보드는
+실제 화면으로 연결하며 기록정정 조회 실패를 0건으로 표시하지 않는다.
+[UI 점검 기록](docs/reviews/2026-09-22-frontend-ui.md)에 변경 범위와 검증 결과를 정리했다.
+
+분석 작업 영역의 시각 규칙은 scoped stylesheet로 관리한다. 코스·결정구/타자 반응 화면은 API의
+집계를 핵심 지표로 표시하고, 위치 지도·선택 코스 요약·상황별 비교·근거 기록을 분리한다.
+공통 `AnalysisFilterBar`는 기본 입력과 native details의 세부 입력을 배치하며 조건 상태는 각
+화면의 URL이 계속 소유한다. 접힌 상태에도 적용 범위를 표시한다. 비교 전환과 상세 열 표시는
+이미 받은 응답의 표현이며 추가 요청이나 별도 통계 계산을 만들지 않는다. 지도의 소표본 표시와
+기록별 revision-bound 재생 링크를 유지한다. [설계 기록](docs/reviews/2026-09-22-analysis-design.md).
+
+선수 리포트 머리글의 catalog 투구 수는 시즌·경기 종류·기간 범위이며, 개별 구종·타석·카운트 조건을
+적용한 결과 표본과 구분한다. 빠른 상황 조건은 URL의 관련 키를 한 번에 갱신한다. 2스트라이크는
+볼 조건을 제거하며 초기화는 `pitchType`·`stance`·`balls`·`strikes`·`cohort`만 지우고 선수와 공통
+조회 범위를 유지한다. 비교 표는 응답의 숫자값으로 정렬하고 null은 양방향 모두 마지막에 두며
+동률은 원래 순서를 유지한다. 상세 열을 숨길 때 그 열의 정렬은 해제한다. 분모 설명은 native
+details로 제공하며 1,500px 이상에서는 비교 표와 지도를 두 열로 표시한다. API·모델·외부 자료는
+추가하지 않았다. [참고 사이트와 구현 경계](docs/reviews/2026-09-23-reference-analytics-ux.md).
+
 수집은 `수집 현황`/`수집 기록` 탭과 월→일→경기 탐색을 사용한다. URL 상태, 마지막 로컬 탐색 상태,
 한국 시간 오늘 순서로 범위를 복원하고, 입력 중 외부 요청 없이 명시적 경기 확인으로 schedule-only
 background discovery를 생성한다. 저장된 조회와 시각을 먼저 표시하고 새로 확인·취소를 제공한다.
@@ -494,6 +562,20 @@ writer lock·원자 쓰기로 저장하여 기간 변경과 재시작에 재사�
 완료 품질 응답의 값·hash·분모는 유지한다. [계약과 검증](docs/analysis/2026-09-21-coverage-preparation.md)을 따른다.
 
 ## 11. 검증과 초기화
+
+분석의 읽기 전용 snapshot 수명은 persistence 내부 공통 helper가 소유하고 각 repository가
+SQL·grain·hash를 소유한다. 모델 manifest·의미 검증·파일 공개, 구질 fitting·평가·학습·조회는
+각 책임으로 나눈다. 서버는 계산 protocol·호출 어댑터·worker 실행기를 구분하며, 웹의 동일 범위
+선수 목록은 같은 query identity를 사용한다. [모듈 경계 점검](docs/reviews/2026-09-22-modularity-refactor.md)에
+구체적인 소유권과 유지한 불변식을 설명했다.
+
+DB 적재 transaction과 seal은 `GameRevisionStore`가 소유한다. manifest 검증, typed relay decode,
+원장 hydration, 저장 fact의 replay 변환은 별도 내부 모듈이며 replay 변환은 전체 원장 hydration이나
+compiler를 실행하지 않는다. `StagingWorkspace`는 writer lock·경기별 직렬화·catalog 무효화를,
+`WorkspaceCurrentStore`는 검증 callback과 함께 current CAS·journal·archive·복구를 소유한다.
+보정 session store는 용량·유휴 회수·mutex·version 검사를 맡고 manager는 컴파일·history·commit을
+조정한다. 공개 API·저장 형식·projection hash 계약은 유지한다.
+[분리 경계와 검증](docs/reviews/2026-09-23-persistence-boundaries.md).
 
 대량 데이터 경로는 검증된 read 결과만 제한적으로 재사용한다. current manifest와 결합된 적재 대상
 식별 정보, 수집 이력 32MiB/16작업, 원문 32MiB/8bundle/미사용 5분, replay 64MiB/16bundle/미사용

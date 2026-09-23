@@ -48,4 +48,29 @@ describe("Naver HTTP client", () => {
       CollectionCancelledError,
     );
   });
+
+  it("본문을 읽는 중 취소해도 reader를 해제하고 수집 취소로 분류한다", async () => {
+    const controller = new AbortController();
+    let response: Response | undefined;
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+      response = new Response(
+        new ReadableStream<Uint8Array>({
+          start(body) {
+            init?.signal?.addEventListener("abort", () => body.error(init.signal?.reason), {
+              once: true,
+            });
+          },
+        }),
+      );
+      return response;
+    });
+    const client = new NaverHttpClient({ fetch: fetchMock, requestsPerSecond: 1000 });
+    const pending = client.fetchJson(url, controller.signal);
+    const cancelled = expect(pending).rejects.toBeInstanceOf(CollectionCancelledError);
+    await vi.waitFor(() => expect(response?.body?.locked).toBe(true));
+    controller.abort();
+    await cancelled;
+    expect(response?.body?.locked).toBe(false);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
 });

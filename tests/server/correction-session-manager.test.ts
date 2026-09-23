@@ -158,6 +158,71 @@ describe("CorrectionSessionManager", () => {
     }
   });
 
+  it("미리보기 계산 중인 clean session은 유휴 시간이 지나도 회수하지 않는다", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-active-session-"));
+    const workspace = await StagingWorkspace.open(temporary.path);
+    const document = parseStagingGameDocumentV2(
+      JSON.parse(
+        await readFile("tests/fixtures/correction-record-mismatch.anonymized.json", "utf8"),
+      ) as unknown,
+    );
+    await workspace.saveQuarantine(
+      document,
+      compilerFindings(compileStagingGameDocumentV2(document).findings),
+    );
+    let now = 0;
+    let release = (): void => undefined;
+    let notifyStarted = (): void => undefined;
+    const started = new Promise<void>((resolve) => {
+      notifyStarted = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const manager = new CorrectionSessionManager(workspace, undefined, undefined, () => now, {
+      async run(input) {
+        if (input.kind === "command") {
+          notifyStarted();
+          await released;
+        }
+        return inlineComputation.run(input);
+      },
+    });
+    try {
+      const session = await manager.create({
+        authority: "quarantine",
+        gameId: document.metadata.gameId,
+      });
+      const event = document.events[0];
+      if (event === undefined) throw new Error("missing anonymized event");
+      const preview = manager.command(
+        session.sessionId,
+        0,
+        {
+          kind: "delete_event",
+          commandId: "active-preview",
+          eventId: event.identity.eventId,
+        },
+        false,
+      );
+      await started;
+      now = 31 * 60_000;
+      await manager.create({ authority: "quarantine", gameId: document.metadata.gameId });
+      expect(manager.get(session.sessionId)).toEqual(session);
+      release();
+      await expect(preview).resolves.toMatchObject({
+        session: { sessionVersion: 0, dirty: false },
+      });
+      now += 31 * 60_000;
+      await manager.create({ authority: "quarantine", gameId: document.metadata.gameId });
+      expect(() => manager.get(session.sessionId)).toThrow(CorrectionSessionNotFoundError);
+    } finally {
+      release();
+      manager.close();
+      await workspace.close();
+    }
+  });
+
   it("작업 사본 상한을 넘겨도 기존 세션을 지우지 않는다", async () => {
     await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-session-bound-"));
     const workspace = await StagingWorkspace.open(temporary.path);

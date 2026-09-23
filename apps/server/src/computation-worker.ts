@@ -2,10 +2,10 @@ import { parentPort } from "node:worker_threads";
 import { CorrectionCommandError, createRecordCorrectionProposalBuilder } from "@kbo/correction";
 import { stagingDocumentHash } from "@kbo/game-core";
 import { NaverSourceFormatError, NaverSourceEvidenceError } from "@kbo/collection";
-import type { Computation, ComputationReply, ComputationRequest } from "./computation.js";
-const { compute }: typeof import("./computation.js") = await import(
+import type { Computation, ComputationReply, ComputationRequest } from "./computation-protocol.js";
+const { compute }: typeof import("./computation-executor.js") = await import(
   new URL(
-    import.meta.url.endsWith(".ts") ? "./computation.ts" : "./computation.js",
+    import.meta.url.endsWith(".ts") ? "./computation-executor.ts" : "./computation-executor.js",
     import.meta.url,
   ).href
 );

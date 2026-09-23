@@ -1,5 +1,4 @@
 import { Worker } from "node:worker_threads";
-import { setImmediate } from "node:timers/promises";
 import { CorrectionCommandError } from "@kbo/correction";
 import { NaverSourceFormatError, NaverSourceEvidenceError } from "@kbo/collection";
 import type {
@@ -7,7 +6,8 @@ import type {
   ComputationReply,
   ComputationResult,
   ComputationRunner,
-} from "./computation.js";
+} from "./computation-protocol.js";
+import { sendWorkerRows } from "./worker-row-transport.js";
 
 export class ComputationBusyError extends Error {}
 interface Job {
@@ -114,20 +114,16 @@ export class ComputationPool implements ComputationRunner {
 
   private async send(slot: Slot, job: Job): Promise<void> {
     const input = job.input;
-    if (!("rows" in input) || input.rows.length <= 5000) {
+    if (!("rows" in input)) {
       slot.worker.postMessage({ id: job.id, input, append: false, complete: true });
       return;
     }
-    for (let offset = 0; offset < input.rows.length; offset += 5000) {
-      if (!this.slots.has(slot) || slot.job !== job) return;
-      slot.worker.postMessage({
-        id: job.id,
-        input: { ...input, rows: input.rows.slice(offset, offset + 5000) },
-        append: offset > 0,
-        complete: offset + 5000 >= input.rows.length,
-      });
-      await setImmediate();
-    }
+    await sendWorkerRows<(typeof input.rows)[number]>(
+      input.rows,
+      ({ rows, append, complete }) =>
+        slot.worker.postMessage({ id: job.id, input: { ...input, rows }, append, complete }),
+      () => this.slots.has(slot) && slot.job === job,
+    );
   }
 
   private spawn(): Slot {

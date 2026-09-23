@@ -99,7 +99,8 @@ export { evaluateWinValues } from "./win-probability-value.js";
 export { analyzeParkEnvironment } from "./park-environment.js";
 export { trainParkEnvironment } from "./park-environment-model.js";
 
-export { trainPitchQuality, summarizePitchQuality } from "./pitch-quality.js";
+export { trainPitchQuality } from "./pitch-quality-training.js";
+export { summarizePitchQuality } from "./pitch-quality.js";
 export { trainMatchupModel } from "./matchup-training.js";
 export {
   modelTrainingPeriod,

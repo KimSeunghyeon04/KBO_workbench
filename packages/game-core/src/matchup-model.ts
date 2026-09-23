@@ -6,8 +6,8 @@ import type {
   PitchQualityRow,
   PitchQualityCoverage,
 } from "@kbo/contracts";
-import { prepareQualityRows, qualityCohort, qualityDesign } from "./pitch-quality-features.js";
-import { qualityPredictor } from "./pitch-quality.js";
+import { prepareQualityRows, qualityCohort } from "./pitch-quality-features.js";
+import { prepareQualityPredictors } from "./pitch-quality-target.js";
 import { offsetProbability, usableBatterEffect } from "./matchup-effects.js";
 import { shapeBuckets, shapeCondition, shapeDistance } from "./matchup-similarity.js";
 function unavailable(rows: readonly PitchQualityRow[]): PitchQualityCoverage {
@@ -127,16 +127,13 @@ export function summarizeMatchupModel(
     trainingGames: effects[i]?.games ?? 0,
     penalty: m.penalty,
   }));
-  const designs = new Map<"shape" | "location", ReturnType<typeof qualityDesign>>();
-  const predict = model.base.targets.map((m, i) => {
-    if (response.effects[i]?.status !== "ready") return null;
-    if (m.fitted.kind !== "baseline" && !designs.has(m.fitted.kind))
-      designs.set(m.fitted.kind, qualityDesign(pitcher.samples, pre, m.fitted.kind));
-    return qualityPredictor(
-      m.fitted,
-      m.fitted.kind === "baseline" ? null : (designs.get(m.fitted.kind) ?? null),
-    );
-  });
+  const predict = prepareQualityPredictors(
+    pitcher.samples,
+    pre,
+    model.base.targets.map((target, i) =>
+      response.effects[i]?.status === "ready" ? target.fitted : null,
+    ),
+  );
   const stances = new Set(
     ownBatter.filter((r) => r.eligible && r.stance !== null).map((r) => r.stance),
   );

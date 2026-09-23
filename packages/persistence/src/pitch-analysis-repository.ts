@@ -1,3 +1,4 @@
+import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import {
   resolveAnalysisScope,
   inAnalysisPeriod,
@@ -169,18 +170,7 @@ export class PitchAnalysisRepository {
   ): Promise<PitchAnalysisSample> {
     const scope = resolveAnalysisScope({ season, ...options });
     const referenceScope = { ...scope, dateFrom: null, dateTo: null };
-    const client = await this.pool.connect();
-    let released = false;
-    const releaseSnapshot = async () => {
-      if (!released) {
-        await client.query("COMMIT");
-        client.release();
-        released = true;
-      }
-    };
-    try {
-      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      await client.query("SET LOCAL statement_timeout='30s'");
+    return withAnalysisSnapshot(this.pool, async (client, releaseSnapshot) => {
       const referenceHash = await analysisSourceHash(client, referenceScope);
       const sourceHash = createHash("sha256")
         .update(canonicalStringify({ referenceHash, scope }))
@@ -261,12 +251,7 @@ export class PitchAnalysisRepository {
           : await this.samples.load(cacheKey, calculateSample);
       await releaseSnapshot();
       return structuredClone(sample);
-    } catch (error: unknown) {
-      if (!released) await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      if (!released) client.release();
-    }
+    });
   }
 }
 

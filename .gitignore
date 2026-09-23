@@ -27,3 +27,6 @@ analysis/park-movement-2020-2025/calibration-search/run.json
 *.log
 .DS_Store
 kbo_workbench_web_implementation_spec
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

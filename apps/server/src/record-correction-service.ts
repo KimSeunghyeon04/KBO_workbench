@@ -187,8 +187,9 @@ export class RecordCorrectionService {
     const hasChange = built?.changes.some((change) => change.state === "change") === true;
     const supported = built?.changes.some((change) => change.kind !== "evidence_only") === true;
     const conflicts = built?.reasons.length ?? 0;
+    const cannotApply = hasChange && (built?.eligible !== true || built.batch === null);
     const status =
-      built === null || conflicts > 0 || !supported
+      built === null || conflicts > 0 || !supported || cannotApply
         ? !supported && built !== null && conflicts === 0
           ? "out_of_scope"
           : "manual_review"
@@ -211,18 +212,22 @@ export class RecordCorrectionService {
             ? "proposal_conflict"
             : !supported
               ? "evidence_only_notice"
-              : hasChange
-                ? "supported_change_available"
-                : "kbo_after_state_satisfied",
+              : cannotApply
+                ? "proposal_not_applicable"
+                : hasChange
+                  ? "supported_change_available"
+                  : "kbo_after_state_satisfied",
       reasonMessage:
         built === null
           ? "공지 참가자를 경기 roster에서 유일하게 식별할 수 없습니다."
           : built.reasons.join(" ") ||
             (!supported
               ? "현 계약 범위 밖의 변경만 있어 증거로 보존했습니다."
-              : hasChange
-                ? "검증 가능한 원자적 정정 제안을 만들었습니다."
-                : "현재 플레이와 지원 공식 기록이 이미 KBO 정정 후 값입니다."),
+              : cannotApply
+                ? "미반영 변경이 있지만 적용 가능한 정정 명령을 만들 수 없어 수동 검토가 필요합니다."
+                : hasChange
+                  ? "검증 가능한 원자적 정정 제안을 만들었습니다."
+                  : "현재 플레이와 지원 기록이 이미 KBO 정정 후 값입니다."),
       proposalHash: null,
       candidates,
       assessedAt: this.now().toISOString(),

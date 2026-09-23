@@ -14,7 +14,7 @@ export async function getBattingStatistics(query: BattingStatisticsQuery, signal
     BattingStatisticsResponseSchema,
     await requestJson(`/api/v2/analysis/statistics/batting?${params}`, { signal }),
   );
-  const { group, sort, minPA, page, limit, ...scope } = query;
+  const { group, playerId, sort, minPA, page, limit, ...scope } = query;
   void sort;
   void minPA;
   if (
@@ -22,6 +22,7 @@ export async function getBattingStatistics(query: BattingStatisticsQuery, signal
     result.group !== (group ?? "player") ||
     result.page !== (page ?? 1) ||
     result.limit !== (limit ?? 50) ||
+    (playerId !== undefined && result.rows.some((row) => row.playerId !== playerId)) ||
     canonicalStringify(result.scope) !== canonicalStringify(resolveAnalysisScope(scope, "regular"))
   )
     throw new Error("성적 조회 범위가 요청과 다릅니다.");
@@ -33,7 +34,7 @@ export async function getPitchingStatistics(query: PitchingStatisticsQuery, sign
     PitchingStatisticsResponseSchema,
     await requestJson(`/api/v2/analysis/statistics/pitching?${params}`, { signal }),
   );
-  const { group, sort, minBF, page, limit, ...scope } = query;
+  const { group, playerId, sort, minBF, page, limit, ...scope } = query;
   void sort;
   void minBF;
   if (
@@ -41,6 +42,7 @@ export async function getPitchingStatistics(query: PitchingStatisticsQuery, sign
     result.group !== (group ?? "player") ||
     result.page !== (page ?? 1) ||
     result.limit !== (limit ?? 50) ||
+    (playerId !== undefined && result.rows.some((row) => row.playerId !== playerId)) ||
     canonicalStringify(result.scope) !== canonicalStringify(resolveAnalysisScope(scope, "regular"))
   )
     throw new Error("성적 조회 범위가 요청과 다릅니다.");

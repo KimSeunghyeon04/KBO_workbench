@@ -15,7 +15,7 @@ function Location() {
   return createElement(
     "output",
     { "aria-label": "현재 주소" },
-    location.pathname + location.search,
+    location.pathname + location.search + location.hash,
   );
 }
 it("switches workspace menus and restores each workspace's URL including analysis filters", async () => {
@@ -31,7 +31,7 @@ it("switches workspace menus and restores each workspace's URL including analysi
   expect(within(menu).queryByRole("link", { name: "수집" })).toBeNull();
   expect(within(menu).getByRole("link", { name: "경기 재생" })).toBeTruthy();
   await user.click(screen.getByRole("link", { name: "데이터 관리" }));
-  expect(within(menu).queryByRole("link", { name: "투구 움직임" })).toBeNull();
+  expect(within(menu).queryByRole("link", { name: "선수 분석" })).toBeNull();
   await user.click(within(menu).getByRole("link", { name: "수집" }));
   await user.click(screen.getByRole("link", { name: "분석", exact: true }));
   expect(screen.getByLabelText("현재 주소").textContent).toBe(
@@ -40,10 +40,51 @@ it("switches workspace menus and restores each workspace's URL including analysi
   await user.click(screen.getByRole("link", { name: "데이터 관리" }));
   expect(screen.getByLabelText("현재 주소").textContent).toBe("/collect");
 });
-it("ignores external or unknown remembered destinations", async () => {
-  sessionStorage.setItem("kbo.workspace.analysis", "//example.com/analysis/pitch-shape");
+it.each([
+  "//example.com/analysis/pitch-shape",
+  "https://example.com/analysis/players",
+  "/analysis/unknown",
+  "/collect",
+])("ignores the invalid remembered analysis destination %s", (destination) => {
+  sessionStorage.setItem("kbo.workspace.analysis", destination);
   render(createElement(MemoryRouter, null, createElement(AppShell)));
   expect(screen.getByRole("link", { name: "분석", exact: true }).getAttribute("href")).toBe(
-    "/analysis/pitch-shape",
+    "/analysis/players",
   );
+});
+
+it("opens player discovery when analysis has no remembered destination", async () => {
+  const user = userEvent.setup();
+  render(createElement(MemoryRouter, null, createElement(AppShell, null, createElement(Location))));
+  await user.click(screen.getByRole("link", { name: "분석", exact: true }));
+  expect(screen.getByLabelText("현재 주소").textContent).toBe("/analysis/players");
+  expect(screen.getByRole("link", { name: "선수 분석" }).getAttribute("aria-current")).toBe("page");
+});
+
+it("remembers a batter detail outside the sidebar and returns to player discovery with its scope", async () => {
+  const user = userEvent.setup();
+  const destination =
+    "/analysis/matchups?season=2024&competition=all&dateFrom=2024-04-01&dateTo=2024-04-30&batter=ab1&playerRole=batter#comparison";
+  sessionStorage.setItem("kbo.workspace.analysis", destination);
+  render(createElement(MemoryRouter, null, createElement(AppShell, null, createElement(Location))));
+  await user.click(screen.getByRole("link", { name: "분석", exact: true }));
+  expect(screen.getByLabelText("현재 주소").textContent).toBe(destination);
+  const playerLink = within(screen.getByRole("navigation", { name: "주 메뉴" })).getByRole("link", {
+    name: "선수 분석",
+  });
+  expect(playerLink.getAttribute("aria-current")).toBe("page");
+  await user.click(playerLink);
+  const directory = new URL(
+    screen.getByLabelText("현재 주소").textContent ?? "",
+    "http://localhost",
+  );
+  expect(directory.pathname).toBe("/analysis/players");
+  expect(Object.fromEntries(directory.searchParams)).toEqual({
+    season: "2024",
+    competition: "all",
+    dateFrom: "2024-04-01",
+    dateTo: "2024-04-30",
+    role: "batter",
+  });
+  expect(directory.hash).toBe("");
 });

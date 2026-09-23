@@ -1,8 +1,9 @@
+import { AnalysisScopeFields, competitionLabels } from "../analysis/analysis-scope-fields";
 import {
-  AnalysisScopeFields,
+  analysisScopeSearch,
+  changeAnalysisParams,
   scopeFromParams,
-  competitionLabels,
-} from "../analysis/analysis-scope-fields";
+} from "../analysis/analysis-scope";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import "../styles/pitch-analysis.css";
 import { Link, useSearchParams } from "react-router-dom";
@@ -96,7 +97,9 @@ export function AnalysisCoveragePage() {
           <select
             aria-label="시즌"
             value={season}
-            onChange={(event) => setParams({ season: event.target.value })}
+            onChange={(event) =>
+              setParams(changeAnalysisParams(params, "season", event.target.value))
+            }
           >
             {[2020, 2021, 2022, 2023, 2024, 2025].map((year) => (
               <option key={year}>{year}</option>
@@ -107,7 +110,7 @@ export function AnalysisCoveragePage() {
         <AnalysisScopeFields params={params} onChange={change} />
       </section>
       {scope.error && <p role="alert">{scope.error}</p>}
-      {query.isPending && (
+      {query.isLoading && (
         <p className="panel" role="status">
           분석 가능 표본을 확인하고 있습니다.
         </p>
@@ -195,12 +198,14 @@ export function AnalysisCoveragePage() {
                 </tbody>
               </table>
             </div>
-            {data.total.games === 0 && <p>이 시즌의 저장 경기가 없습니다.</p>}
+            {data.total.games === 0 && <p>선택한 기간과 경기 종류에 저장된 경기가 없습니다.</p>}
             <p>
               실제 투구 = 트래킹 누락 + 궤적 부적합 + 유효 궤적. 유효 궤적 = 보정 적용 + 자료 부족 +
               구장 미지원.
             </p>
-            <Link to={`/analysis/pitch-shape?season=${season}`}>투수별 구질 보기</Link>
+            <Link to={`/analysis/pitch-shape?${analysisScopeSearch(season, scope.options)}`}>
+              투수별 구질 보기
+            </Link>
           </section>
         </>
       )}

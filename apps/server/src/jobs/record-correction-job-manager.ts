@@ -5,10 +5,30 @@ import type {
   RecordCorrectionJobCreateRequest,
   RecordCorrectionJobCreated,
 } from "@kbo/contracts";
-import type { KboRecordCorrectionCollector } from "@kbo/collection";
-import { RecordCorrectionRepository, RecordCorrectionWorkspace } from "@kbo/persistence";
+import {
+  KBO_RECORD_CORRECTION_FIRST_SEASON,
+  type KboRecordCorrectionCollector,
+} from "@kbo/collection";
+import { type RecordCorrectionRepository, RecordCorrectionWorkspace } from "@kbo/persistence";
 
 import type { RecordCorrectionService } from "../record-correction-service.js";
+
+type Repository = Pick<
+  RecordCorrectionRepository,
+  | "resumableJobs"
+  | "summary"
+  | "seasonsWithSealedGames"
+  | "createJob"
+  | "job"
+  | "jobs"
+  | "setJobCancelling"
+  | "setJobRunning"
+  | "markSeasonRunning"
+  | "importSeason"
+  | "seasonHasPendingAssessments"
+  | "finishJob"
+  | "markSeasonFailed"
+>;
 
 export class RecordCorrectionJobNotFoundError extends Error {}
 export class RecordCorrectionJobConflictError extends Error {}
@@ -30,9 +50,9 @@ export class RecordCorrectionJobManager {
   private closed = false;
 
   public constructor(
-    private readonly collector: KboRecordCorrectionCollector,
-    private readonly repository: RecordCorrectionRepository,
-    private readonly service: RecordCorrectionService,
+    private readonly collector: Pick<KboRecordCorrectionCollector, "collect">,
+    private readonly repository: Repository,
+    private readonly service: Pick<RecordCorrectionService, "assessSeason">,
     private readonly workspaceRoot: string,
     private readonly scheduleOptions: RecordCorrectionScheduleOptions,
     private readonly now: () => Date = () => new Date(),
@@ -60,10 +80,16 @@ export class RecordCorrectionJobManager {
     trigger: "manual" | "scheduled" = "manual",
   ): Promise<RecordCorrectionJobCreated> {
     if (this.closed) throw new Error("종료 중에는 기록정정 동기화를 시작할 수 없습니다.");
-    const seasons = [...(request.seasons ?? (await this.repository.seasonsWithSealedGames()))].sort(
-      (left, right) => left - right,
-    );
-    if (seasons.length === 0) throw new RecordCorrectionJobConflictError("sealed 경기가 없습니다.");
+    const requestedSeasons =
+      request.seasons ??
+      (await this.repository.seasonsWithSealedGames()).filter(
+        (season) => season >= KBO_RECORD_CORRECTION_FIRST_SEASON,
+      );
+    const seasons = [...requestedSeasons].sort((left, right) => left - right);
+    if (seasons.length === 0)
+      throw new RecordCorrectionJobConflictError(
+        "공식 기록정정 조회 범위에 해당하는 sealed 경기가 없습니다.",
+      );
     if (seasons.some((season) => this.activeSeasons.has(season)))
       throw new RecordCorrectionJobConflictError("같은 시즌의 기록정정 동기화가 실행 중입니다.");
     const jobId = this.newId();

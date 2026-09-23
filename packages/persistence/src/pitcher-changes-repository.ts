@@ -1,3 +1,4 @@
+import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import type { Pool } from "pg";
 import { Value } from "@sinclair/typebox/value";
 import { createHash } from "node:crypto";
@@ -44,18 +45,7 @@ export class PitcherChangesRepository {
     const query = Value.Decode(PitcherChangesQuerySchema, input),
       scope = resolveAnalysisScope(query, "regular"),
       referenceScope = { ...scope, dateFrom: null };
-    const client = await this.pool.connect();
-    let released = false;
-    const release = async () => {
-      if (!released) {
-        await client.query("COMMIT");
-        client.release();
-        released = true;
-      }
-    };
-    try {
-      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      await client.query("SET LOCAL statement_timeout='30s'");
+    return withAnalysisSnapshot(this.pool, async (client, release) => {
       const referenceHash = createHash("sha256")
           .update(
             canonicalStringify({
@@ -173,11 +163,6 @@ export class PitcherChangesRepository {
           : await this.options.cache.load(sourceHash, calculate);
       await release();
       return structuredClone(result);
-    } catch (error) {
-      if (!released) await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      if (!released) client.release();
-    }
+    });
   }
 }

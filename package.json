@@ -16,6 +16,7 @@
     "build:web": "pnpm --filter @kbo/web run build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "graft:build": "graft build --only-dir apps --only-dir packages --only-dir tests --only-dir scripts --only-dir eslint.config.mjs --only-dir vitest.config.ts --only-dir vitest.analytics-performance.config.ts",
     "lint": "eslint .",
     "maintenance:rebuild-derived": "pnpm build:server && node apps/server/dist/maintenance/rebuild-derived-workspace.js",
     "maintenance:enrich-pitch-metadata": "pnpm build:server && node apps/server/dist/maintenance/enrich-pitch-metadata.js",

@@ -687,6 +687,154 @@ try {
   const page = await browser.newPage();
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  const menu = page.getByRole("navigation", { name: "\uc8fc \uba54\ub274" });
+  const playerNavigation = page.getByRole("navigation", { name: "\uc120\uc218 \ubd84\uc11d \ud56d\ubaa9" });
+  const playerScope = { season: "2024", competition: "all", dateFrom: "2024-06-01", dateTo: "2024-06-01" };
+  async function assertPlayerDestination(path, selection) {
+    const expected = Object.entries({ ...playerScope, ...selection });
+    await page.waitForURL((url) => url.pathname === path && expected.every(([key, value]) => url.searchParams.get(key) === value));
+    const actual = new URL(page.url());
+    if (actual.pathname !== path) throw new Error(`Unexpected player destination: ${actual.pathname}`);
+    for (const [key, value] of expected) {
+      if (actual.searchParams.get(key) !== value) throw new Error(`Player navigation lost ${key}: ${actual}`);
+    }
+  }
+  async function selectPlayer(role) {
+    const list = page.getByRole("list", { name: role === "pitcher" ? "\ud22c\uc218 \ubaa9\ub85d" : "\ud0c0\uc790 \ubaa9\ub85d" });
+    const firstPlayer = list.getByRole("link").first();
+    await firstPlayer.waitFor();
+    const href = await firstPlayer.getAttribute("href");
+    const id = href === null ? null : new URL(href, page.url()).searchParams.get(role);
+    if (!id) throw new Error(`Missing ${role} identity in player directory.`);
+    await page.getByLabel("\uc120\uc218 \uac80\uc0c9", { exact: true }).fill(id);
+    await assertPlayerDestination("/analysis/players", { q: id });
+    if (new URL(page.url()).searchParams.get("q") !== id) throw new Error("Player search was not reflected in the URL.");
+    await page.waitForFunction(({ role, id, label }) => {
+      const node = [...document.querySelectorAll("ul")].find((list) => list.getAttribute("aria-label") === label);
+      if (!node) return false;
+      const needle = id.normalize("NFC").toLowerCase();
+      const links = [...node.querySelectorAll("a")];
+      return links.length > 0 && links.every((link) => {
+        const playerId = new URL(link.href).searchParams.get(role) ?? "";
+        const name = link.querySelector("strong")?.textContent ?? "";
+        return playerId.normalize("NFC").toLowerCase().includes(needle) || name.normalize("NFC").toLowerCase().includes(needle);
+      });
+    }, { role, id, label: await list.getAttribute("aria-label") });
+    await firstPlayer.click();
+    await assertPlayerDestination(role === "pitcher" ? "/analysis/pitch-location" : "/analysis/batter-profile", { [role]: id });
+    await playerNavigation.waitFor();
+    await page.locator("table:visible").first().waitFor();
+    return id;
+  }
+  async function inspectPlayerStatistics(role, id) {
+    await playerNavigation.getByRole("link", { name: "\uae30\ubcf8 \uae30\ub85d", exact: true }).click();
+    await assertPlayerDestination("/analysis/player-statistics", { [role]: id, playerRole: role });
+    await page.getByRole("heading", { name: "\uae30\ubcf8 \uae30\ub85d", exact: true }).waitFor();
+    await playerNavigation.locator('a[aria-current="page"]').filter({ hasText: "\uae30\ubcf8 \uae30\ub85d" }).waitFor();
+    const table = page.getByRole("table", { name: role === "pitcher" ? "\ud22c\uad6c \uc131\uc801" : "\ud0c0\uaca9 \uc131\uc801", exact: true });
+    await table.waitFor();
+    await table.locator("tbody tr").first().waitFor();
+    if (await page.getByRole("table", { name: role === "pitcher" ? "\ud0c0\uaca9 \uc131\uc801" : "\ud22c\uad6c \uc131\uc801", exact: true }).count() !== 0) throw new Error("Basic records rendered the wrong player role.");
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)) throw new Error(`Player ${role} statistics horizontal overflow.`);
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+  }
+
+  await page.goto("http://web/", { waitUntil: "networkidle" });
+  await page.getByRole("link", { name: "\ubd84\uc11d", exact: true }).click();
+  await page.waitForURL((url) => url.pathname === "/analysis/players");
+  await page.getByRole("heading", { name: "\uc120\uc218 \ubd84\uc11d", exact: true }).waitFor();
+  if (new URL(page.url()).pathname !== "/analysis/players") throw new Error("Analysis did not open player discovery by default.");
+  const analysisDestinations = await menu.getByRole("link").evaluateAll((links) => links.map((link) => new URL(link.href).pathname));
+  if (JSON.stringify(analysisDestinations) !== JSON.stringify([
+    "/analysis/players", "/analysis/statistics", "/analysis/baserunning", "/analysis/park-environment", "/replay", "/analysis/coverage", "/analysis/models",
+  ])) throw new Error("Analysis sidebar did not expose exactly the seven workspace destinations.");
+  await page.getByLabel("\uc120\uc218 \ubd84\uc11d \uc2dc\uc98c", { exact: true }).selectOption("2024");
+  await page.waitForURL((url) => url.searchParams.get("season") === playerScope.season);
+  await page.locator(".analysis-advanced-filters > summary").click();
+  await page.getByLabel("\uacbd\uae30 \uc885\ub958", { exact: true }).selectOption("all");
+  await page.waitForURL((url) => url.searchParams.get("competition") === playerScope.competition);
+  await page.getByLabel("\ubd84\uc11d \uc2dc\uc791\uc77c", { exact: true }).fill(playerScope.dateFrom);
+  await page.waitForURL((url) => url.searchParams.get("dateFrom") === playerScope.dateFrom);
+  await page.getByLabel("\ubd84\uc11d \uc885\ub8cc\uc77c", { exact: true }).fill(playerScope.dateTo);
+  await assertPlayerDestination("/analysis/players", {});
+  await page.getByRole("list", { name: "\ud22c\uc218 \ubaa9\ub85d" }).waitFor();
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)) throw new Error("Player directory horizontal overflow.");
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const pitcher = await selectPlayer("pitcher");
+  if (await playerNavigation.getByRole("link").count() !== 7) throw new Error("Pitcher detail navigation is incomplete.");
+  if (await playerNavigation.getByRole("link", { name: "\ucf54\uc2a4\u00b7\uacb0\uc815\uad6c", exact: true }).getAttribute("aria-current") !== "page") throw new Error("Current pitcher analysis is not identified.");
+  if (await menu.getByRole("link", { name: "\uc120\uc218 \ubd84\uc11d", exact: true }).getAttribute("aria-current") !== "page") throw new Error("Player analysis sidebar state was lost on detail navigation.");
+  const quickFilters = page.getByRole("region", { name: "\ube60\ub978 \uc0c1\ud669 \uc870\uac74" });
+  for (const [name, stance] of [["\uc88c\ud0c0\uc790", "L"], ["\uc6b0\ud0c0\uc790", "R"]]) {
+    await quickFilters.getByRole("button", { name, exact: true }).click();
+    await assertPlayerDestination("/analysis/pitch-location", { pitcher, stance });
+    await quickFilters.getByRole("button", { name, exact: true, pressed: true }).waitFor();
+  }
+  await quickFilters.getByRole("button", { name: "\ucd08\uad6c", exact: true }).click();
+  await assertPlayerDestination("/analysis/pitch-location", { pitcher, stance: "R", balls: "0", strikes: "0" });
+  await quickFilters.getByRole("button", { name: "\ucd08\uad6c", exact: true, pressed: true }).waitFor();
+  const countTransitions = [];
+  const recordCountTransition = (frame) => {
+    if (frame === page.mainFrame()) countTransitions.push(new URL(frame.url()));
+  };
+  page.on("framenavigated", recordCountTransition);
+  try {
+    await quickFilters.getByRole("button", { name: "2\uc2a4\ud2b8\ub77c\uc774\ud06c", exact: true }).click();
+    await assertPlayerDestination("/analysis/pitch-location", { pitcher, stance: "R", balls: null, strikes: "2" });
+    await quickFilters.getByRole("button", { name: "2\uc2a4\ud2b8\ub77c\uc774\ud06c", exact: true, pressed: true }).waitFor();
+  } finally {
+    page.off("framenavigated", recordCountTransition);
+  }
+  if (countTransitions.length !== 1 || countTransitions.some((url) => url.searchParams.has("balls") || url.searchParams.get("strikes") !== "2")) throw new Error("Two-strike preset did not update both count fields atomically.");
+  const stanceChip = quickFilters.getByRole("button", { name: "\uc6b0\ud0c0\uc790 \uc870\uac74 \ud574\uc81c", exact: true });
+  await stanceChip.click();
+  await assertPlayerDestination("/analysis/pitch-location", { pitcher, stance: null, balls: null, strikes: "2" });
+  await stanceChip.waitFor({ state: "hidden" });
+  await quickFilters.getByRole("button", { name: "2\uc2a4\ud2b8\ub77c\uc774\ud06c", exact: true, pressed: true }).waitFor();
+  await quickFilters.getByRole("button", { name: "\uc88c\ud0c0\uc790", exact: true }).click();
+  await assertPlayerDestination("/analysis/pitch-location", { pitcher, stance: "L", balls: null, strikes: "2" });
+  await quickFilters.getByRole("button", { name: "\uc88c\ud0c0\uc790", exact: true, pressed: true }).waitFor();
+  const resetConditions = quickFilters.getByRole("button", { name: "\uc0c1\ud669 \uc870\uac74 \ucd08\uae30\ud654", exact: true });
+  await resetConditions.click();
+  await assertPlayerDestination("/analysis/pitch-location", { pitcher, pitchType: null, stance: null, balls: null, strikes: null, cohort: null });
+  await quickFilters.getByRole("button", { name: "\uc804\uccb4 \ud0c0\uc11d", exact: true, pressed: true }).waitFor();
+  await quickFilters.getByRole("button", { name: "\uc804\uccb4 \uce74\uc6b4\ud2b8", exact: true, pressed: true }).waitFor();
+  if (!(await quickFilters.locator(".outcome-filter-reset").isDisabled())) throw new Error("Reset left an active situation condition.");
+  const pitchRateTable = page.getByRole("table", { name: "\uad6c\uc885\ubcc4 \ubc18\uc751", exact: true });
+  await pitchRateTable.waitFor();
+  await pitchRateTable.getByRole("button", { name: "Whiff% \ub0b4\ub9bc\ucc28\uc21c \uc815\ub82c", exact: true }).click();
+  await pitchRateTable.locator('thead th[aria-sort="descending"]').filter({ hasText: "Whiff%" }).waitFor();
+  await pitchRateTable.getByRole("button", { name: "Whiff% \uc624\ub984\ucc28\uc21c \uc815\ub82c", exact: true }).click();
+  await pitchRateTable.locator('thead th[aria-sort="ascending"]').filter({ hasText: "Whiff%" }).waitFor();
+  await assertPlayerDestination("/analysis/pitch-location", { pitcher, pitchType: null, stance: null, balls: null, strikes: null, cohort: null });
+  await inspectPlayerStatistics("pitcher", pitcher);
+  await playerNavigation.getByRole("link", { name: "\uad6c\uc9c8\u00b7\uc6c0\uc9c1\uc784", exact: true }).click();
+  await assertPlayerDestination("/analysis/pitch-shape", { pitcher });
+  await page.getByRole("img", { name: /\ud3c9\uade0 \ud3ec\uc2ec/ }).waitFor();
+  await page.getByRole("link", { name: "\uc120\uc218 \ubcc0\uacbd", exact: true }).click();
+  await assertPlayerDestination("/analysis/players", { role: "pitcher", q: null });
+  await page.getByRole("list", { name: "\ud22c\uc218 \ubaa9\ub85d" }).waitFor();
+  if (await page.getByLabel("\uc120\uc218 \uac80\uc0c9", { exact: true }).inputValue() !== "") throw new Error("Player-specific search leaked into player change.");
+  const playerRoles = page.getByRole("group", { name: "\uc120\uc218 \uc720\ud615" });
+  await playerRoles.getByRole("button", { name: "\ud0c0\uc790", exact: true }).click();
+  await assertPlayerDestination("/analysis/players", { role: "batter" });
+  const batter = await selectPlayer("batter");
+  if (await playerNavigation.getByRole("link").count() !== 4) throw new Error("Batter detail navigation is incomplete.");
+  await inspectPlayerStatistics("batter", batter);
+  await playerNavigation.getByRole("link", { name: "\uc120\uad6c\uc548", exact: true }).click();
+  await assertPlayerDestination("/analysis/batter-discipline", { batter });
+  await page.locator(".discipline-map").waitFor();
+  await page.getByRole("link", { name: "\uc120\uc218 \ubcc0\uacbd", exact: true }).click();
+  await assertPlayerDestination("/analysis/players", { role: "batter", q: null });
+  await page.getByRole("list", { name: "\ud0c0\uc790 \ubaa9\ub85d" }).waitFor();
+  if (await playerRoles.getByRole("button", { name: "\ud0c0\uc790", exact: true }).getAttribute("aria-pressed") !== "true") throw new Error("Player change lost the selected player role.");
+
   await page.goto("http://web/analysis/pitch-shape?season=2024", { waitUntil: "networkidle" });
   const chart = page.getByRole("img", { name: /\ud3c9\uade0 \ud3ec\uc2ec/ });
   await chart.waitFor();
@@ -705,7 +853,6 @@ try {
   await page.waitForFunction((before) => document.querySelector(".pitch-shape-chart canvas")?.toDataURL() !== before, withReference);
   await referenceToggle.check();
 
-  const menu = page.getByRole("navigation", { name: "\uc8fc \uba54\ub274" });
   if (await menu.getByRole("link", { name: "\uc218\uc9d1", exact: true }).count() !== 0) throw new Error("Analysis exposes management menu.");
   await page.getByRole("button", { name: "\ud074\ub7ec\uc2a4\ud130\ub9c1 \uae30\uc900" }).click();
   const clusterCount = page.getByLabel("\uad70\uc9d1 \uc218", { exact: true });
@@ -721,7 +868,7 @@ try {
   await page.getByLabel("\ubd84\uc11d \ud074\ub7ec\uc2a4\ud130").selectOption("\ud074\ub7ec\uc2a4\ud130 1");
   await page.getByRole("link", { name: "\ub370\uc774\ud130 \uad00\ub9ac", exact: true }).click();
   await menu.getByRole("link", { name: "\uc218\uc9d1", exact: true }).waitFor();
-  if (await menu.getByRole("link", { name: "\ud22c\uad6c \uc6c0\uc9c1\uc784" }).count() !== 0) throw new Error("Management exposes analysis menu.");
+  if (await menu.getByRole("link", { name: "\uc120\uc218 \ubd84\uc11d", exact: true }).count() !== 0) throw new Error("Management exposes analysis menu.");
   await page.getByRole("link", { name: "\ubd84\uc11d", exact: true }).click();
   await chart.waitFor();
   if (await page.getByLabel("\ubd84\uc11d \ud074\ub7ec\uc2a4\ud130").inputValue() !== "\ud074\ub7ec\uc2a4\ud130 1") throw new Error("Workspace did not restore filter.");
@@ -767,17 +914,20 @@ try {
   if (await page.locator(".discipline-course-comparison table").count() !== 3) throw new Error("Course / expectation comparison missing.");
   await page.locator(".discipline-pitch-list button").first().click();
   await page.locator(".discipline-selected").waitFor();
+  await page.locator(".analysis-advanced-filters > summary").click();
   await page.locator('select[aria-label="\uc120\uad6c\uc548 \uce74\uc6b4\ud2b8"]').selectOption("0-0");
   await page.locator(".discipline-map").waitFor();
   if (!page.url().includes("balls=0")) throw new Error("Discipline count URL not updated.");
   await page.reload({ waitUntil: "networkidle" });
   await page.locator(".discipline-map").waitFor();
+  await page.locator(".analysis-advanced-filters > summary").click();
   if (await page.locator('select[aria-label="\uc120\uad6c\uc548 \uce74\uc6b4\ud2b8"]').inputValue() !== "0-0") throw new Error("Discipline URL restoration failed.");
   await page.getByRole("button", { name: "\uc870\uac74 \ucd08\uae30\ud654" }).click();
   await page.locator(".discipline-map").waitFor();
   await page.locator('select[aria-label="\uc120\uad6c\uc548 \uce74\uc6b4\ud2b8"]').selectOption("*-2");
   if (!page.url().includes("strikes=2") || page.url().includes("balls=")) throw new Error("Strike-only filter incorrect.");
   await page.reload({ waitUntil: "networkidle" });
+  await page.locator(".analysis-advanced-filters > summary").click();
   if (await page.locator('select[aria-label="\uc120\uad6c\uc548 \uce74\uc6b4\ud2b8"]').inputValue() !== "*-2") throw new Error("Strike-only restoration failed.");
   await page.getByRole("button", { name: "\uc870\uac74 \ucd08\uae30\ud654" }).click();
   await page.locator(".discipline-map").waitFor();
@@ -794,8 +944,8 @@ try {
     ["http://web/analysis/park-environment?season=2024&competition=all", "table"],
     ["http://web/analysis/statistics?season=2024&competition=all", "table"],
     ["http://web/analysis/statistics?season=2024&competition=all&kind=pitching", "table"],
-    ["http://web/analysis/pitch-location?season=2024&competition=all", "table"],
-    ["http://web/analysis/batter-profile?season=2024&competition=all", "table"],
+    ["http://web/analysis/pitch-location?season=2024&competition=all", "table:visible"],
+    ["http://web/analysis/batter-profile?season=2024&competition=all", "table:visible"],
     ["http://web/analysis/pitcher-changes?season=2024&competition=all", "table"],
     ["http://web/analysis/pitch-sequences?season=2024&competition=all", "table"],
     ["http://web/analysis/pitcher-workload?season=2024&competition=all", "table"],
@@ -832,7 +982,7 @@ try {
     }
   }
   if (errors.length > 0) throw new Error(errors.join(" | "));
-  console.log(JSON.stringify({ pitchAnalysis: "ok", seasons: [2024, 2025], workspaces: "ok", clustering: "ok", rotation: "ok", keyboard: "ok", canvas: "ok", responsive: "ok" }));
+  console.log(JSON.stringify({ playerDiscovery: "ok", playerScopeNavigation: "ok", playerBasicStatistics: "ok", quickSituationFilters: "ok", pitchRateSorting: "ok", pitchAnalysis: "ok", seasons: [2024, 2025], workspaces: "ok", clustering: "ok", rotation: "ok", keyboard: "ok", canvas: "ok", responsive: "ok" }));
 } finally { await browser.close(); }
 '@
   $analysisSmoke | & docker compose exec -T --workdir /app/packages/collection api node --input-type=module

@@ -25,7 +25,7 @@ Naver 응답
   -> collection 정규화
   -> StagingGameDocumentV2 평탄 원장
   -> game-core 전체 컴파일 및 검증
-  -> .data/staging 또는 .data/quarantine
+  -> versioned current manifest와 active artifact (ready/quarantine/source_failure)
   -> persistence 트랜잭션 투영 및 봉인
   -> PostgreSQL typed facts
   -> replay API
@@ -34,14 +34,14 @@ Naver 응답
 
 각 계층의 권위는 분리되어 있다.
 
-| 계층                                 | 권위와 책임                                                                       |
-| ------------------------------------ | --------------------------------------------------------------------------------- |
-| 외부 응답과 원문                     | 관찰된 증거. 신뢰할 수 없는 값도 출처와 함께 보존한다.                            |
-| `StagingGameDocumentV2`              | 사람이 교정할 수 있는 소스 원장. 최종 경기 상태나 공식 통계 자체가 아니다.        |
-| `game-core` 컴파일러                 | 볼·스트라이크·아웃·주자·점수·타석·통계에 대한 유일한 계산 권위다.                 |
-| `.data/staging` / `.data/quarantine` | 현재 교정 문서의 파일 권위다. 하나의 경기는 둘 중 정확히 한 위치에만 존재한다.    |
-| PostgreSQL sealed revision           | 가져오기가 끝난 불변의 분석·재생 권위다.                                          |
-| 웹 클라이언트                        | 서버 상태의 표현과 명령 전송을 담당한다. 경기 규칙이나 영속 상태의 권위가 아니다. |
+| 계층                             | 권위와 책임                                                                                |
+| -------------------------------- | ------------------------------------------------------------------------------------------ |
+| 외부 응답과 원문                 | 관찰된 증거. 신뢰할 수 없는 값도 출처와 함께 보존한다.                                     |
+| `StagingGameDocumentV2`          | 사람이 교정할 수 있는 소스 원장. 최종 경기 상태나 공식 통계 자체가 아니다.                 |
+| `game-core` 컴파일러             | 볼·스트라이크·아웃·주자·점수·타석·통계에 대한 유일한 계산 권위다.                          |
+| `.data/current` / `.data/active` | 현재 교정 문서의 파일 권위다. current manifest가 정확히 하나의 active artifact를 가리킨다. |
+| PostgreSQL sealed revision       | 가져오기가 끝난 불변의 분석·재생 권위다.                                                   |
+| 웹 클라이언트                    | 서버 상태의 표현과 명령 전송을 담당한다. 경기 규칙이나 영속 상태의 권위가 아니다.          |
 
 이 경계를 흐리는 캐시, 병렬 계산기, 브라우저 전용 규칙, 데이터베이스 직접 교정 경로를 만들지 않는다.
 
@@ -76,7 +76,7 @@ Naver 응답
 
 ### 3. 컴파일러만 파생 상태를 계산한다
 
-`compileStagingGameDocument`는 외부 문서를 먼저 strict decode한 뒤 전체 경기를 계산하는 유일한 진입점이다. 다음 시점마다 전체 컴파일을 수행한다.
+`compileStagingGameDocumentV2`는 외부 문서를 먼저 strict decode한 뒤 전체 경기를 계산하는 유일한 진입점이다. 다음 시점마다 전체 컴파일을 수행한다.
 
 - collection mapping이 끝난 뒤
 - 모든 correction command 또는 atomic batch 뒤
@@ -174,7 +174,7 @@ Canonical JSON은 해시, fingerprint, idempotency의 기반이다.
 
 ### Correction
 
-- correction은 staging/quarantine 문서만 수정한다. PostgreSQL sealed revision을 직접 수정하지 않는다.
+- correction은 current의 ready/quarantine 작업 문서만 수정한다. API의 `staging`은 ready 상태를 뜻하며 별도의 staging 디렉터리를 뜻하지 않는다. PostgreSQL sealed revision을 직접 수정하지 않는다.
 - 자유 형식 JSON 편집기를 만들지 않는다. 모든 변경은 검증 가능한 structured command여야 한다.
 - command와 batch는 원자적이다. 적용 후 resequence하고 전체 strict compile한다.
 - 중간 교정을 위해 blocking draft는 허용할 수 있지만, blocking 문서는 staging으로 승격하거나 DB로 import할 수 없다. 명시적으로 quarantine에만 commit한다.
@@ -208,7 +208,7 @@ Canonical JSON은 해시, fingerprint, idempotency의 기반이다.
 - 도메인 오류는 안정적인 HTTP category/status로 변환한다.
 - host와 origin은 localhost 기반 경계를 유지한다. API와 DB를 불필요하게 외부에 노출하지 않는다.
 - 오래 걸리는 collection/import는 server-side job으로 수행한다. idempotency fingerprint, bounded concurrency, abort propagation, 단조 증가하는 SSE event, journal recovery를 보존한다.
-- 브라우저 요청 handler 안에서 무거운 수집이나 전체 컴파일을 동기식 장기 작업으로 실행하지 않는다.
+- 브라우저 요청 handler 안에서 무거운 수집이나 전체 컴파일을 동기식 장기 작업으로 실행하지 않는다. 서버 workspace의 compiler도 공용 bounded worker로 주입한다. DB correction draft 열기는 workspace에서 한 번 컴파일해 ready/quarantine을 결정한다.
 - correction 화면은 page, controller, workbench panel, drawer, player picker, editor registry의 기존 책임 경계를 유지한다.
 - 타임라인은 JSON 이벤트 하나당 UI row 하나다. 숨은 주자 이동이나 파생 이벤트를 만들지 않는다.
 - 고정 높이 virtual list에서 이동, 삭제, 선택은 필터링된 DOM이 아니라 canonical 전체 배열 index를 기준으로 한다.
@@ -220,16 +220,21 @@ Canonical JSON은 해시, fingerprint, idempotency의 기반이다.
 
 ```text
 .data/
+  source/<season>/<gameId>/           # 불변 원문 bundle과 manifest
   original/<season>/<gameId>.json      # 최초 원본, 덮어쓰기 금지
-  staging/<season>/<gameId>.json       # blocking finding 없음
-  quarantine/<season>/<gameId>.json    # blocking finding 있음
-  quarantine/source-failures/          # 소스 취득 실패 기록
+  current/<gameId>.json               # V2 manifest: ready/quarantine/source_failure
+  active/<gameId>/<generation>-<contentHash>.document.json
+  active/<gameId>/<generation>-<contentHash>.failure.json
+  superseded/<gameId>/                # 교체된 generation의 불변 artifact
   journals/                            # crash recovery
   exports/
   logs/
 ```
 
-- 한 게임의 현재 문서는 staging 또는 quarantine 중 정확히 한 곳에 둔다.
+- 한 게임의 current manifest는 ready, quarantine, source_failure 중 하나의 active artifact를 정확히 하나 가리킨다. ready는 blocking finding이 없고 quarantine은 blocking finding이 있는 원장이다.
+- ready/quarantine manifest의 `displaySummary`는 strict 원장에서 만든다. source_failure에서는 관찰되지 않은 경기 정보를 합성하지 않는다.
+- 전환은 target fsync, transition journal, current atomic replace와 directory sync, 이전 artifact의 superseded 이동, journal 제거 순서를 유지한다. journal 없는 dual active나 hash 불일치는 startup을 차단한다.
+- legacy staging/quarantine 배치나 V1 current manifest는 자동 보완하지 않는다. 검증된 DB/workspace 백업 쌍과 명시적 migration을 사용한다.
 - 빈 finding sidecar는 만들지 않거나 삭제한다.
 - writer lock을 우회해 동시에 파일을 쓰지 않는다.
 - 파일 교체는 임시 파일 쓰기, file fsync, atomic rename, directory sync 순서를 유지한다.
@@ -317,3 +322,49 @@ pnpm build
 ## 준수 사항
 
 - Correction의 구현 오류가 발생되어 수정할 시 해당 데이터를 선수 정보, 팀 정보를 비식별 처리한 fixture로 만들고 이후에 같은 오류가 발생하지 않도록 회귀 테스트로 만든다.
+
+<!-- graft:start -->
+
+## Graft — repo context graph
+
+This repo is indexed in `graft/`: small linked markdown nodes that explain each
+system and carry exact file:line spans, kept in sync with the code through git.
+
+For ANY task here — understanding how something works, finding where code lives,
+or scoping a change — get context from the graph before grepping or opening
+source files. Re-ask freely (it's cheap) and reuse literal identifiers you
+already have (symbol, error string, file name) as the query. New to this repo?
+Run `pnpm graft:build` once to set the index scope, then `graft map` for a
+token-budgeted orientation (dir clusters, hubs, hotspots), no LLM, no key.
+
+- Run `graft ask "<your question>" --source` → ranked nodes with the relevant
+  code spans inlined (each hit's ≤8-line crux by default; `--full` for whole
+  definitions when the crux isn't enough). Match the tool to the task shape:
+  for understanding or editing, the top node IS the answer — cite its
+  `covers:` file:line spans and edit straight from `--source`. For
+  exhaustive tasks ("every occurrence / every caller of this pattern"), ranked
+  results are top-N, not complete — run `graft grep "<literal>"` instead
+  (exhaustive over indexed files, grouped by enclosing symbol), falling back
+  to raw `grep -rn` only for unindexed files.
+- `graft skeleton <file>` → every definition's signature + span, ~10× cheaper
+  than reading the file; use it to skim an API surface.
+- `graft callers <symbol>` gives precomputed, exact edges — who calls this.
+  Add `--direction out` for what it calls, or `--depth N` to walk
+  transitively for the full blast radius. For structural questions, skip
+  ranking and use this directly.
+- Or browse: `graft/INDEX.md` lists every node; follow the links.
+- Monorepos and folders of multiple repos rank fairly across sub-projects —
+  hits carry `[scope/]` labels naming which one they're from. Narrow with
+  `graft ask "<task>" --in <scope>/` once you know where you're working.
+
+If a returned span is truncated ("+N more lines"), open the file at that exact
+range before finalizing. Only open source files when a node genuinely lacks a
+needed detail, and then at the exact file:line the node points to — never
+re-read whole files.
+
+For the first build and after big code changes, run `pnpm graft:build`
+(deterministic, no API key, $0). The checked-in command limits indexing to
+apps, packages, tests, scripts, and root code configuration; subsequent queries
+retain that scope. Do not index test-results or analysis snapshots: filesystem
+fallbacks can include ignored copies and make symbol identities ambiguous.
+<!-- graft:end -->

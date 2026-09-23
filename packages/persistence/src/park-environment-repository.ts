@@ -1,3 +1,4 @@
+import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import { createHash } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { Type } from "@sinclair/typebox";
@@ -26,12 +27,8 @@ export class ParkEnvironmentRepository {
     model: ParkEnvironmentModel | null = null,
     modelHash: string | null = null,
   ) {
-    const scope = resolveAnalysisScope(query, "regular"),
-      client = await this.pool.connect();
-    let released = false;
-    try {
-      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      await client.query("SET LOCAL statement_timeout='30s'");
+    const scope = resolveAnalysisScope(query, "regular");
+    return withAnalysisSnapshot(this.pool, async (client, release) => {
       const hash = await analysisSourceHash(client, scope),
         rows = await readParkRows(client, scope);
       if (
@@ -42,27 +39,17 @@ export class ParkEnvironmentRepository {
         model = null;
         modelHash = null;
       }
-      await client.query("COMMIT");
-      client.release();
-      released = true;
+      await release();
       return Value.Decode(
         ParkEnvironmentResponseSchema,
         analyzeParkEnvironment(scope, hash, rows, model, modelHash),
       );
-    } catch (error) {
-      if (!released) await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      if (!released) client.release();
-    }
+    });
   }
   public async training(through: number, signal?: AbortSignal) {
     if (!Number.isInteger(through) || through < 2020 || through > 2024)
       throw new Error("Invalid training season");
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      await client.query("SET LOCAL statement_timeout='30s'");
+    return withAnalysisSnapshot(this.pool, async (client, release) => {
       const manifest = await parkManifest(client, through),
         rows: ParkEnvironmentRow[] = [];
       for (let season = 2020; season <= through + 1; season++) {
@@ -71,14 +58,9 @@ export class ParkEnvironmentRepository {
           ...(await readParkRows(client, resolveAnalysisScope({ season, competition: "regular" }))),
         );
       }
-      await client.query("COMMIT");
+      await release();
       return { manifest, rows };
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 }
 export async function parkManifest(client: PoolClient, through: number) {

@@ -12,6 +12,9 @@ import {
 import { KboRecordCorrectionHttpClient } from "./client.js";
 import { parseKboRecordCorrectionControl, parseKboRecordCorrectionResponse } from "./parser.js";
 
+// The official record-review notice service began with the 2022 season.
+export const KBO_RECORD_CORRECTION_FIRST_SEASON = 2022;
+
 export interface RecordCorrectionPageArtifact {
   readonly artifactKey: string;
   readonly contentHash: string;

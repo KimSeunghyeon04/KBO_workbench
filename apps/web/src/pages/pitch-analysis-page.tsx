@@ -2,13 +2,16 @@ import { PitchQualityPanel } from "../analysis/pitch-quality-panel";
 import { PitchAnglesPanel } from "../analysis/pitch-angles-panel";
 import { PitchProfilePanel } from "../analysis/pitch-profile-panel";
 import { canonicalStringify, resolveAnalysisScope } from "@kbo/contracts";
-import { AnalysisScopeFields, scopeFromParams } from "../analysis/analysis-scope-fields";
+import { AnalysisScopeFields, analysisScopeSummary } from "../analysis/analysis-scope-fields";
+import { AnalysisFilterBar } from "../analysis/analysis-filter-bar";
+import { scopeFromParams } from "../analysis/analysis-scope";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { PitchAnalysisPoint } from "@kbo/contracts";
 
-import { getPitchAnalysis, getPitchAnalysisCatalog } from "../api/pitch-analysis-client";
+import { getPitchAnalysis } from "../api/pitch-analysis-client";
+import { pitcherCatalogQueryOptions } from "../api/analysis-catalog-query-options";
 import { PitchShapeChart, signed } from "../analysis/pitch-shape-chart";
 import { PitchExpectationPanel, referenceBandLabel } from "../analysis/pitch-expectation-panel";
 import { groupLabel, pointColor, type ColorMode } from "../analysis/pitch-presentation";
@@ -26,8 +29,7 @@ export function PitchAnalysisPage(): React.JSX.Element {
       : 2025;
   const scope = scopeFromParams(season, params);
   const catalog = useQuery({
-    queryKey: ["pitch-analysis-catalog", season, scope.options],
-    queryFn: ({ signal }) => getPitchAnalysisCatalog(season, signal, scope.options),
+    ...pitcherCatalogQueryOptions(season, scope.options),
     enabled: scope.error === null,
   });
   const requestedPitcher = params.get("pitcher") ?? "";
@@ -102,6 +104,7 @@ export function PitchAnalysisPage(): React.JSX.Element {
   const data = analysis.data;
   const baseline = data?.baseline;
   const error = catalog.error ?? analysis.error;
+  const scopeSummary = analysisScopeSummary(params);
   function change(key: string, value: string): void {
     const next = new URLSearchParams(params);
     if (value === "") next.delete(key);
@@ -140,8 +143,11 @@ export function PitchAnalysisPage(): React.JSX.Element {
         기준 포심과 구장 보정은 같은 시즌·경기 종류 전체를 사용합니다. 기간은 대상 투구에
         적용합니다.
       </p>
-      <section className="panel pitch-analysis-toolbar" aria-label="분석 대상">
-        <AnalysisScopeFields params={params} onChange={change} />
+      <AnalysisFilterBar
+        label="분석 대상"
+        summary={scopeSummary}
+        advanced={<AnalysisScopeFields params={params} onChange={change} />}
+      >
         <label>
           시즌
           <select
@@ -193,11 +199,11 @@ export function PitchAnalysisPage(): React.JSX.Element {
             void catalog.refetch();
             void analysis.refetch();
           }}
-          disabled={analysis.isFetching || pitcherId === "" || invalidCount}
+          disabled={analysis.isFetching || pitcherId === "" || invalidCount || scope.error !== null}
         >
           새로 계산
         </button>
-      </section>
+      </AnalysisFilterBar>
       {invalidCount && (
         <p role="alert" className="panel">
           군집 수는 양의 정수여야 합니다.{" "}
@@ -216,13 +222,13 @@ export function PitchAnalysisPage(): React.JSX.Element {
           )}
         </p>
       )}
-      {catalog.isPending || (analysis.isPending && pitcherId !== "" && !invalidCount) ? (
+      {catalog.isLoading || analysis.isLoading ? (
         <p role="status" className="panel">
           시즌 평균 포심과 투구 궤적을 계산하는 중입니다.
         </p>
       ) : null}
       {catalog.data?.pitchers.length === 0 && (
-        <p className="panel">이 시즌에 저장된 투구가 없습니다.</p>
+        <p className="panel">선택한 기간과 경기 종류에 저장된 투구가 없습니다.</p>
       )}
       {data !== undefined && baseline === null && (
         <p className="panel">계산 가능한 직구가 없어 시즌 기준 궤적을 만들 수 없습니다.</p>

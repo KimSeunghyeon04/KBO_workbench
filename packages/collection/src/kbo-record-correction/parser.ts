@@ -153,8 +153,9 @@ function parseNoticeRow(
   const afterRecordText = plainText(cells[9] ?? "");
   const contentText = htmlLines(cells[10] ?? "").join("\n");
   const correctionDateText = requiredText(plainText(cells[11] ?? ""), "정정일");
-  const participants = parseParticipants(rawPlayerLines, contentText);
-  const statChanges = parseStatChanges(contentText, participants);
+  const playerStatGroups = parsePlayerStatGroups(contentText);
+  const participants = parseParticipants(rawPlayerLines, playerStatGroups);
+  const statChanges = parseStatChanges(playerStatGroups, participants);
   const stable = {
     season,
     seriesId,
@@ -200,9 +201,82 @@ function parseNoticeRow(
   });
 }
 
+interface PlayerStatGroup {
+  readonly name: string;
+  readonly rawTeamName: string | null;
+  readonly statsText: string;
+}
+
+function parsePlayerStatGroups(contentText: string): PlayerStatGroup[] {
+  const groups: PlayerStatGroup[] = [];
+  let currentTeam: string | null = null;
+  let pending: { name: string; rawTeamName: string | null; parts: string[] } | null = null;
+  for (const line of contentText.split("\n")) {
+    if (TEAM_NAMES.has(line)) {
+      currentTeam = line;
+      pending = null;
+      continue;
+    }
+    const complete = /^([^(),，]+?)\s*\(([^()]+)\)\s*[,，]?$/.exec(line);
+    if (complete !== null) {
+      groups.push({
+        name: normalizeText(complete[1] ?? ""),
+        rawTeamName: currentTeam,
+        statsText: complete[2] ?? "",
+      });
+      pending = null;
+      continue;
+    }
+    const opening = /^([^(),，]+?)\s*\(([^()]*)$/.exec(line);
+    if (opening !== null) {
+      const firstPart = opening[2] ?? "";
+      pending = isStatListFragment(firstPart)
+        ? { name: normalizeText(opening[1] ?? ""), rawTeamName: currentTeam, parts: [firstPart] }
+        : null;
+      continue;
+    }
+    if (pending === null) continue;
+    const closing = /^([^()]*)\)\s*[,，]?$/.exec(line);
+    const nextPart = closing?.[1] ?? line;
+    const previousPart = pending.parts.at(-1) ?? "";
+    // Only join complete stat items inside an explicit open group. A new player,
+    // team, missing separator or unrecognized line must not inherit that group.
+    const boundary =
+      previousPart.trim() === "" ||
+      /[,，]\s*$/.test(previousPart) ||
+      /^\s*[,，]/.test(nextPart) ||
+      (closing !== null && nextPart.trim() === "");
+    if (!boundary || !isStatListFragment(nextPart)) {
+      pending = null;
+      continue;
+    }
+    pending.parts.push(nextPart);
+    if (closing !== null) {
+      groups.push({
+        name: pending.name,
+        rawTeamName: pending.rawTeamName,
+        statsText: pending.parts.join(" "),
+      });
+      pending = null;
+    }
+  }
+  return groups;
+}
+
+function isStatListFragment(value: string): boolean {
+  const text = value
+    .trim()
+    .replace(/^[,，]|[,，]$/g, "")
+    .trim();
+  return (
+    text.length === 0 ||
+    text.split(/[,，]/).every((item) => /^[^()]+?\s*-?\d+\s*(?:→|->)\s*-?\d+\s*$/.test(item))
+  );
+}
+
 function parseParticipants(
   lines: readonly string[],
-  contentText: string,
+  groups: readonly PlayerStatGroup[],
 ): RecordCorrectionParticipant[] {
   const result: RecordCorrectionParticipant[] = [];
   for (const line of lines) {
@@ -217,33 +291,25 @@ function parseParticipants(
       parenthesized,
     });
   }
-  let currentTeam: string | null = null;
-  for (const line of contentText.split("\n")) {
-    if (TEAM_NAMES.has(line)) {
-      currentTeam = line;
-      continue;
-    }
-    const match = /^([^()]+?)\s*\((.+)\)$/.exec(line);
-    if (match === null) continue;
-    const name = normalizeText(match[1] ?? "");
+  for (const { name, rawTeamName, statsText } of groups) {
     if (name.length === 0) continue;
     const existing = result.find((participant) => participant.rawPlayerName === name);
     if (existing === undefined) {
       result.push({
         participantIndex: result.length,
-        rawTeamName: currentTeam,
+        rawTeamName,
         rawPlayerName: name,
-        role: inferRole(match[2] ?? "", false),
+        role: inferRole(statsText, false),
         parenthesized: false,
       });
     } else if (existing.rawTeamName === null || existing.role === "unknown") {
       const index = existing.participantIndex;
       result[index] = {
         ...existing,
-        rawTeamName: existing.rawTeamName ?? currentTeam,
+        rawTeamName: existing.rawTeamName ?? rawTeamName,
         role:
           existing.role === "unknown"
-            ? inferRole(match[2] ?? "", existing.parenthesized)
+            ? inferRole(statsText, existing.parenthesized)
             : existing.role,
       };
     }
@@ -252,16 +318,12 @@ function parseParticipants(
 }
 
 function parseStatChanges(
-  contentText: string,
+  groups: readonly PlayerStatGroup[],
   participants: readonly RecordCorrectionParticipant[],
 ): RecordCorrectionStatChange[] {
   const changes: RecordCorrectionStatChange[] = [];
-  for (const line of contentText.split("\n")) {
-    const playerMatch = /^([^()]+?)\s*\((.+)\)$/.exec(line);
-    if (playerMatch === null) continue;
-    const playerName = normalizeText(playerMatch[1] ?? "");
-    const participant = participants.find((item) => item.rawPlayerName === playerName);
-    const statsText = playerMatch[2] ?? "";
+  for (const { name, statsText } of groups) {
+    const participant = participants.find((item) => item.rawPlayerName === name);
     const matcher = /([^,，]+?)\s*(-?\d+)\s*(?:→|->)\s*(-?\d+)/g;
     for (const match of statsText.matchAll(matcher)) {
       const rawStatName = normalizeText(match[1] ?? "");
@@ -274,7 +336,7 @@ function parseStatChanges(
         beforeValue < 0 ||
         afterValue < 0
       ) {
-        throw new Error(`KBO 기록정정 통계 변경 형식이 올바르지 않습니다: ${line}`);
+        throw new Error(`KBO 기록정정 통계 변경 형식이 올바르지 않습니다: ${name}(${statsText})`);
       }
       const scope = participant?.role === "pitcher" ? "pitcher" : inferScope(rawStatName);
       const statCode = mapStatCode(rawStatName, scope);

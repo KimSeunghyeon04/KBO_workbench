@@ -1,3 +1,4 @@
+import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import { createHash } from "node:crypto";
 import type { Pool } from "pg";
 import { Type } from "@sinclair/typebox";
@@ -15,11 +16,8 @@ export class WorkloadComparisonRepository {
   public constructor(private readonly pool: Pool) {}
   public async read(input: AnalysisScopeQuery, pitcherId: string) {
     const query = Value.Decode(AnalysisScopeQuerySchema, input),
-      scope = resolveAnalysisScope(query, "regular"),
-      client = await this.pool.connect();
-    try {
-      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      await client.query("SET LOCAL statement_timeout='30s'");
+      scope = resolveAnalysisScope(query, "regular");
+    return withAnalysisSnapshot(this.pool, async (client, release) => {
       const { manifest, history, selected } = await readWorkloadContext(client, scope, pitcherId);
       // Rank actual pitches/encounters before any comparison eligibility filter.
       // Read the narrow typed facts, avoiding the wide trajectory/zone view entirely.
@@ -63,7 +61,7 @@ export class WorkloadComparisonRepository {
         [selected, pitcherId],
       );
       const cells = Value.Decode(Type.Array(WorkloadComparisonCellSchema), result.rows);
-      await client.query("COMMIT");
+      await release();
       return {
         query,
         scope,
@@ -74,11 +72,6 @@ export class WorkloadComparisonRepository {
           .update(canonicalStringify({ version: 1, manifest, history }))
           .digest("hex"),
       };
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 }

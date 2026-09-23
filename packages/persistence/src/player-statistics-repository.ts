@@ -1,9 +1,11 @@
+import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import { createHash } from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type { Pool } from "pg";
 import {
   canonicalStringify,
+  InvalidAnalysisScopeError,
   resolveAnalysisScope,
   BattingStatisticsQuerySchema,
   PitchingStatisticsQuerySchema,
@@ -33,7 +35,7 @@ const joins = `JOIN analytics.current_analysis_games r USING(game_id,revision)
   LEFT JOIN LATERAL(SELECT min(player_name COLLATE "C") AS name FROM workbench.game_roster_snapshots s
     WHERE s.game_id=f.game_id AND s.revision=f.revision AND s.side=f.side AND s.player_id=f.player_id) roster ON TRUE`;
 const battingSql = `WITH selected AS (SELECT ${identity},f.* FROM analytics.current_player_game_batting f ${joins}
-  WHERE ${ANALYSIS_GAME_WHERE})
+  WHERE ${ANALYSIS_GAME_WHERE} AND ($6::text IS NULL OR f.player_id=$6))
   SELECT identity,"playerId",min(name COLLATE "C") AS name,"teamId",min("teamName" COLLATE "C") AS "teamName",
     count(DISTINCT game_id)::integer AS games,
     sum(plate_appearances)::integer AS "plateAppearances",sum(at_bats)::integer AS "atBats",
@@ -44,7 +46,7 @@ const battingSql = `WITH selected AS (SELECT ${identity},f.* FROM analytics.curr
     sum(sacrifice_bunts)::integer AS "sacrificeBunts",sum(runs)::integer AS runs
   FROM selected GROUP BY identity,"playerId","teamId" ORDER BY identity COLLATE "C","teamId" COLLATE "C"`;
 const pitchingSql = `WITH selected AS (SELECT ${identity},f.* FROM analytics.current_player_game_pitching f ${joins}
-  WHERE ${ANALYSIS_GAME_WHERE}), per_game AS (
+  WHERE ${ANALYSIS_GAME_WHERE} AND ($6::text IS NULL OR f.player_id=$6)), per_game AS (
   SELECT identity,"playerId","teamId",game_id,min(name COLLATE "C") AS name,min("teamName" COLLATE "C") AS "teamName",
     sum(batters_faced) AS bf,sum(outs_recorded) AS outs,sum(hits) AS hits,sum(runs) AS runs,
     sum(walks) AS walks,sum(intentional_walks) AS ibb,sum(hit_by_pitch) AS hbp,sum(strikeouts) AS so,
@@ -69,9 +71,10 @@ export class PlayerStatisticsRepository {
       minPA = 0,
       page = 1,
       limit = 50,
+      playerId,
       ...scopeInput
     } = query;
-    const snapshot = await this.read(scopeInput, group, battingSql);
+    const snapshot = await this.read(scopeInput, group, battingSql, playerId);
     const rows = Value.Decode(Type.Array(BattingStatisticsTotalsSchema), snapshot.rows)
       .map(battingStatistics)
       .filter((r) => r.plateAppearances >= minPA);
@@ -95,9 +98,10 @@ export class PlayerStatisticsRepository {
       minBF = 0,
       page = 1,
       limit = 50,
+      playerId,
       ...scopeInput
     } = query;
-    const snapshot = await this.read(scopeInput, group, pitchingSql);
+    const snapshot = await this.read(scopeInput, group, pitchingSql, playerId);
     const rows = Value.Decode(Type.Array(PitchingStatisticsTotalsSchema), snapshot.rows)
       .map(pitchingStatistics)
       .filter((r) => r.battersFaced >= minBF);
@@ -117,28 +121,32 @@ export class PlayerStatisticsRepository {
     input: Parameters<typeof resolveAnalysisScope>[0],
     group: "player" | "team",
     sql: string,
+    playerId: string | undefined,
   ) {
+    if (group === "team" && playerId !== undefined)
+      throw new InvalidAnalysisScopeError("팀 합계 조회에는 선수 조건을 함께 사용할 수 없습니다.");
     const scope = resolveAnalysisScope(input, "regular");
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      await client.query("SET LOCAL statement_timeout='30s'");
+    return withAnalysisSnapshot(this.pool, async (client, release) => {
       const manifest = await analysisSourceHash(client, scope);
       const result = await client.query<Record<string, unknown>>(sql, [
         ...analysisScopeParameters(scope),
         group,
+        playerId ?? null,
       ]);
       const sourceHash = createHash("sha256")
-        .update(canonicalStringify({ version: 1, manifest, group, rows: result.rows }))
+        .update(
+          canonicalStringify({
+            version: 1,
+            manifest,
+            group,
+            ...(playerId === undefined ? {} : { playerId }),
+            rows: result.rows,
+          }),
+        )
         .digest("hex");
-      await client.query("COMMIT");
+      await release();
       return { scope, sourceHash, rows: result.rows };
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 }
 function compareMetric(a: number | null, b: number | null, ascending: boolean) {

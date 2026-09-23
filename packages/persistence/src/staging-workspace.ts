@@ -1,17 +1,40 @@
-import { AnalysisCoverageWorkspace } from "./analysis-coverage-workspace.js";
-import { readImmutableSourceBundle } from "./source-bundle-reader.js";
-import { AnalysisModelJobWorkspace } from "./analysis-model-job-workspace.js";
+import { createHash, randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
-import { access, mkdir, open, readFile, readdir, rename, unlink } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
-import { createHash, randomUUID } from "node:crypto";
-import { gunzip, gzip } from "node:zlib";
 import { promisify } from "node:util";
+import { gunzip, gzip } from "node:zlib";
+import { AnalysisCoverageWorkspace } from "./analysis-coverage-workspace.js";
+import { AnalysisModelJobWorkspace } from "./analysis-model-job-workspace.js";
+import { readImmutableSourceBundle } from "./source-bundle-reader.js";
+import {
+  WorkspaceCurrentStore,
+  removeIfPresent,
+  snapshotContentHash,
+} from "./workspace-current-store.js";
+import {
+  StaleStagingDocumentError,
+  WorkspaceMigrationRequiredError,
+  WorkspacePersistenceBlockedError,
+} from "./workspace-errors.js";
+export {
+  StaleStagingDocumentError,
+  WorkspaceMigrationRequiredError,
+  WorkspacePersistenceBlockedError,
+} from "./workspace-errors.js";
 
 import {
   canonicalStringify,
   compareCanonicalStrings,
+  parseCollectionJob,
+  parseCorrectionJournal,
+  parseSourceBundleManifest,
+  parseSourceFailureRecord,
+  parseStagingCorrectionCommit,
+  parseStagingGameDocumentV2,
+  parseStoredFindingEnvelopeV2,
+  parseStoredFindings,
   type CollectionJob,
   type CorrectionGameCatalog,
   type CorrectionJournal,
@@ -25,22 +48,23 @@ import {
   type StoredFinding,
   type StoredFindingEnvelopeV2,
   type WriterLockOwner,
-  type WorkspaceTransitionJournal,
-  type WorkspaceManifestUpgradeJournal,
-  parseCurrentWorkspaceEntry,
-  parseCorrectionJournal,
-  parseSourceBundleManifest,
-  parseSourceFailureRecord,
-  parseStagingCorrectionCommit,
-  parseStagingGameDocumentV2,
-  parseCollectionJob,
-  parseStoredFindings,
-  parseStoredFindingEnvelopeV2,
-  parseWorkspaceTransitionJournal,
-  parseWorkspaceManifestUpgradeJournal,
 } from "@kbo/contracts";
-import { compileStagingGameDocumentV2, stagingDocumentHash } from "@kbo/game-core";
+import {
+  compileStagingGameDocumentV2,
+  stagingDocumentHash,
+  type ReplayResult,
+} from "@kbo/game-core";
 
+import { CollectionWorkspace } from "./collection-workspace.js";
+import { CompetitionSourceWorkspace } from "./competition-source-workspace.js";
+import { ImportWorkspace } from "./import-workspace.js";
+import { MatchupModelWorkspace } from "./matchup-model-workspace.js";
+import { ParkEnvironmentWorkspace } from "./park-environment-workspace.js";
+import { PitchCalibrationWorkspace } from "./pitch-calibration-workspace.js";
+import { PitchQualityWorkspace } from "./pitch-quality-workspace.js";
+import { PitchReferenceWorkspace } from "./pitch-reference-workspace.js";
+import { RunExpectancyWorkspace } from "./run-expectancy-workspace.js";
+import { WorkspaceCatalog, workspaceCatalogItem } from "./workspace-catalog.js";
 import {
   acquireWriterLock,
   atomicWrite,
@@ -50,16 +74,6 @@ import {
   removeTemporaryFiles,
 } from "./workspace-files.js";
 import { assertGameId, assertJobId, assertSeason, isGameId } from "./workspace-path-policy.js";
-import { CollectionWorkspace } from "./collection-workspace.js";
-import { ImportWorkspace } from "./import-workspace.js";
-import { PitchReferenceWorkspace } from "./pitch-reference-workspace.js";
-import { PitchCalibrationWorkspace } from "./pitch-calibration-workspace.js";
-import { RunExpectancyWorkspace } from "./run-expectancy-workspace.js";
-import { PitchQualityWorkspace } from "./pitch-quality-workspace.js";
-import { MatchupModelWorkspace } from "./matchup-model-workspace.js";
-import { ParkEnvironmentWorkspace } from "./park-environment-workspace.js";
-import { CompetitionSourceWorkspace } from "./competition-source-workspace.js";
-import { WorkspaceCatalog, workspaceCatalogItem } from "./workspace-catalog.js";
 import { WorkspaceValidationPool } from "./workspace-validation-pool.js";
 import {
   readVerifiedDocument,
@@ -93,28 +107,8 @@ export interface CurrentDocumentSnapshot {
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
-export class StaleStagingDocumentError extends Error {
-  public constructor(message: string) {
-    super(message);
-    this.name = "StaleStagingDocumentError";
-  }
-}
-
-export class WorkspaceMigrationRequiredError extends Error {
-  public constructor(message: string) {
-    super(message);
-    this.name = "WorkspaceMigrationRequiredError";
-  }
-}
-
-export class WorkspacePersistenceBlockedError extends Error {
-  public constructor(message: string) {
-    super(message);
-    this.name = "WorkspacePersistenceBlockedError";
-  }
-}
-
 export class StagingWorkspace {
+  private readonly currentStorage: WorkspaceCurrentStore;
   public readonly analysisModelJobs: AnalysisModelJobWorkspace;
   public readonly collection: CollectionWorkspace;
   public readonly imports: ImportWorkspace;
@@ -138,8 +132,15 @@ export class StagingWorkspace {
     root: string,
     private readonly owner: WriterLockOwner,
     private readonly now: () => Date,
+    private readonly compile: (document: StagingGameDocumentV2) => Promise<ReplayResult>,
   ) {
     this.root = path.resolve(root);
+    this.currentStorage = new WorkspaceCurrentStore(
+      this.root,
+      this.now,
+      () => this.verifyLock(),
+      (current) => this.readCurrentFindings(current),
+    );
     this.lockPath = path.join(this.root, ".writer.lock");
     this.analysisModelJobs = new AnalysisModelJobWorkspace(this.root, async () => {
       this.assertOpen();
@@ -191,6 +192,8 @@ export class StagingWorkspace {
   public static async open(
     root: string,
     now: () => Date = () => new Date(),
+    compile: (document: StagingGameDocumentV2) => Promise<ReplayResult> = async (document) =>
+      compileStagingGameDocumentV2(document),
   ): Promise<StagingWorkspace> {
     const resolved = path.resolve(root);
     await mkdir(resolved, { recursive: true });
@@ -202,12 +205,12 @@ export class StagingWorkspace {
       acquiredAt: now().toISOString(),
     };
     await acquireWriterLock(path.join(resolved, ".writer.lock"), owner);
-    const workspace = new StagingWorkspace(resolved, owner, now);
+    const workspace = new StagingWorkspace(resolved, owner, now, compile);
     try {
       await workspace.initializeDirectories();
       await workspace.recoverTemporaryFiles();
-      await workspace.recoverManifestUpgradeJournals();
-      await workspace.recoverWorkspaceTransitions();
+      await workspace.currentStorage.recoverManifestUpgradeJournals();
+      await workspace.currentStorage.recoverWorkspaceTransitions();
       await workspace.assertNoUnmigratedCurrentFiles();
       await workspace.recoverCorrectionJournals();
       await workspace.assertWorkspaceIntegrity();
@@ -225,7 +228,7 @@ export class StagingWorkspace {
   ): Promise<void> {
     const parsed = parseStagingGameDocumentV2(document);
     const storedFindings = parseStoredFindings(findings);
-    const compiled = compileStagingGameDocumentV2(parsed);
+    const compiled = await this.compile(parsed);
     if (
       storedFindings.some((finding) => finding.severity === "blocking") ||
       compiled.findings.some((finding) => finding.severity === "blocking")
@@ -243,7 +246,7 @@ export class StagingWorkspace {
   ): Promise<void> {
     const parsed = parseStagingGameDocumentV2(document);
     const storedFindings = parseStoredFindings(findings);
-    const compiled = compileStagingGameDocumentV2(parsed);
+    const compiled = await this.compile(parsed);
     if (
       !storedFindings.some((finding) => finding.severity === "blocking") &&
       !compiled.findings.some((finding) => finding.severity === "blocking")
@@ -252,6 +255,31 @@ export class StagingWorkspace {
     }
     await this.saveOriginalIfAbsent(parsed, storedFindings);
     await this.transitionDocument("quarantine", parsed, storedFindings, false, expectedToken);
+  }
+
+  /** Compile once before publishing a reopened sealed revision as a correction draft. */
+  public async saveCorrectionDraft(document: StagingGameDocumentV2): Promise<void> {
+    const parsed = parseStagingGameDocumentV2(document);
+    const compiled = await this.compile(parsed);
+    const findings = parseStoredFindings(
+      compiled.findings.map((finding) => ({
+        producer: "compiler",
+        lifecycle: "recomputed",
+        code: finding.code,
+        category: finding.category,
+        severity: finding.severity,
+        message: finding.message,
+        ...(finding.eventId === undefined ? {} : { eventId: finding.eventId }),
+        ...(finding.eventSequence === undefined ? {} : { eventSequence: finding.eventSequence }),
+        ...(finding.recordIdentity === undefined ? {} : { recordIdentity: finding.recordIdentity }),
+        ...(finding.details.length === 0 ? {} : { details: finding.details }),
+      })),
+    );
+    const authority = findings.some((finding) => finding.severity === "blocking")
+      ? "quarantine"
+      : "staging";
+    await this.saveOriginalIfAbsent(parsed, findings);
+    await this.transitionDocument(authority, parsed, findings);
   }
 
   /** Resume a saved correction without replacing its edits, findings or sealed base. */
@@ -263,7 +291,7 @@ export class StagingWorkspace {
     if (existing !== null) return existing;
     const parsed = parseStagingGameDocumentV2(document);
     const storedFindings = parseStoredFindings(findings);
-    const compiled = compileStagingGameDocumentV2(parsed);
+    const compiled = await this.compile(parsed);
     const authority = [...storedFindings, ...compiled.findings].some(
       (finding) => finding.severity === "blocking",
     )
@@ -287,9 +315,9 @@ export class StagingWorkspace {
     assertGameId(gameId);
     if (season !== null) assertSeason(season);
     await this.verifyLock();
-    const previous = await this.readCurrentEntry(gameId);
+    const previous = await this.currentStorage.readCurrentEntry(gameId);
     this.assertCollectionToken(previous, expectedToken);
-    const generation = await this.nextGeneration(gameId, previous);
+    const generation = await this.currentStorage.nextGeneration(gameId, previous);
     const record = parseSourceFailureRecord({
       gameId,
       season,
@@ -298,11 +326,11 @@ export class StagingWorkspace {
     });
     const canonical = canonicalStringify(record);
     const contentHash = sha256(canonical);
-    const artifactPath = this.activeArtifactPath(
+    const artifactPath = this.currentStorage.activeArtifactPath(
       gameId,
       `${String(generation)}-${contentHash}.failure.json`,
     );
-    await atomicWrite(this.absoluteArtifactPath(artifactPath), `${canonical}\n`);
+    await atomicWrite(this.currentStorage.absoluteArtifactPath(artifactPath), `${canonical}\n`);
     await this.transitionCurrent(previous, {
       schemaVersion: 2,
       gameId,
@@ -405,7 +433,7 @@ export class StagingWorkspace {
   public async removeCollectionJobJournal(jobId: string): Promise<void> {
     this.assertOpen();
     await this.verifyLock();
-    await this.removeIfPresent(this.collectionJobJournalPath(jobId));
+    await removeIfPresent(this.collectionJobJournalPath(jobId));
   }
 
   public async recoverInterruptedCollectionJobs(): Promise<readonly CollectionJob[]> {
@@ -466,7 +494,7 @@ export class StagingWorkspace {
   ): Promise<CurrentDocumentSnapshot | null> {
     this.assertOpen();
     assertGameId(gameId);
-    const current = await this.readCurrentEntry(gameId);
+    const current = await this.currentStorage.readCurrentEntry(gameId);
     if (current === null || current.authority === "source_failure") return null;
     if (current.season === null) {
       throw new Error(`원장 current manifest에 season이 없습니다: ${gameId}`);
@@ -487,7 +515,7 @@ export class StagingWorkspace {
     gameId: string,
   ): Promise<StagingGameDocumentV2> {
     this.assertOpen();
-    const current = await this.requiredCurrentEntry(gameId);
+    const current = await this.currentStorage.requiredCurrentEntry(gameId);
     if (current.authority !== currentDocumentAuthority(authority) || current.season !== season) {
       throw new Error(`요청한 current 원장 권위가 다릅니다: ${gameId}`);
     }
@@ -508,7 +536,7 @@ export class StagingWorkspace {
         gameIds.slice(offset, offset + 16).map(async (gameId) => {
           assertGameId(gameId);
           await this.currentTransitions.get(gameId)?.catch(() => undefined);
-          const current = await this.requiredCurrentEntry(gameId);
+          const current = await this.currentStorage.requiredCurrentEntry(gameId);
           if (current.authority !== "ready" || current.season === null) {
             throw new StaleStagingDocumentError(
               `대상 확정 중 적재 가능 상태가 변경되었습니다: ${gameId}`,
@@ -540,7 +568,7 @@ export class StagingWorkspace {
     gameId: string,
   ): Promise<readonly StoredFinding[]> {
     this.assertOpen();
-    const current = await this.requiredCurrentEntry(gameId);
+    const current = await this.currentStorage.requiredCurrentEntry(gameId);
     if (current.authority !== currentDocumentAuthority(authority) || current.season !== season) {
       throw new Error(`요청한 current finding 권위가 다릅니다: ${gameId}`);
     }
@@ -554,7 +582,7 @@ export class StagingWorkspace {
     this.assertOpen();
     assertGameId(gameId);
     const expectedContentHash = snapshotContentHash(snapshotId);
-    const documentPath = this.supersededArtifactPath(gameId, snapshotId);
+    const documentPath = this.currentStorage.supersededArtifactPath(gameId, snapshotId);
     const document = parseStagingGameDocumentV2(
       JSON.parse(await readFile(documentPath, "utf8")) as unknown,
     );
@@ -567,7 +595,7 @@ export class StagingWorkspace {
     if (actualContentHash !== expectedContentHash) {
       throw new Error(`superseded snapshot content hash 검증에 실패했습니다: ${snapshotId}`);
     }
-    const current = await this.readCurrentEntry(gameId);
+    const current = await this.currentStorage.readCurrentEntry(gameId);
     if (current !== null) await this.readCurrentFindings(current);
     return {
       snapshotId,
@@ -600,7 +628,7 @@ export class StagingWorkspace {
         `적재 후 staging 정리 중 문서 hash가 변경되었습니다: expected=${expectedDocumentHash}, actual=${actualHash}`,
       );
     }
-    const current = await this.requiredCurrentEntry(gameId);
+    const current = await this.currentStorage.requiredCurrentEntry(gameId);
     if (current.authority !== "ready" || current.season !== season) {
       throw new StaleStagingDocumentError(`현재 staging 권위가 아닙니다: ${gameId}`);
     }
@@ -700,7 +728,7 @@ export class StagingWorkspace {
     assertSeason(document.metadata.season);
     assertGameId(document.metadata.gameId);
     await this.verifyLock();
-    const previous = await this.readCurrentEntry(document.metadata.gameId);
+    const previous = await this.currentStorage.readCurrentEntry(document.metadata.gameId);
     this.assertCollectionToken(previous, expectedToken);
     if (preserveCurrentDocument && previous !== null && previous.authority !== "source_failure")
       return;
@@ -716,21 +744,22 @@ export class StagingWorkspace {
     }
     const reusable = await this.reusableActiveDocument(document.metadata.gameId, contentHash);
     const generation =
-      reusable?.generation ?? (await this.nextGeneration(document.metadata.gameId, previous));
+      reusable?.generation ??
+      (await this.currentStorage.nextGeneration(document.metadata.gameId, previous));
     const artifactPath =
       reusable?.artifactPath ??
-      this.activeArtifactPath(
+      this.currentStorage.activeArtifactPath(
         document.metadata.gameId,
         `${String(generation)}-${contentHash}.document.json`,
       );
     if (reusable === null) {
       await atomicWrite(
-        this.absoluteArtifactPath(artifactPath),
+        this.currentStorage.absoluteArtifactPath(artifactPath),
         `${canonicalStringify(document)}\n`,
       );
-      const findingsPath = this.findingsArtifactPath(artifactPath);
+      const findingsPath = this.currentStorage.findingsArtifactPath(artifactPath);
       if (findings.length === 0) {
-        await this.removeIfPresent(findingsPath);
+        await removeIfPresent(findingsPath);
       } else {
         await atomicWrite(findingsPath, `${canonicalStringify(envelope)}\n`);
       }
@@ -797,109 +826,6 @@ export class StagingWorkspace {
     }
   }
 
-  private activeArtifactPath(gameId: string, fileName: string): string {
-    assertGameId(gameId);
-    if (!/^[A-Za-z0-9_.-]{1,300}$/.test(fileName)) {
-      throw new Error("허용되지 않은 workspace artifact 이름입니다.");
-    }
-    return path.posix.join("active", gameId, fileName);
-  }
-
-  private absoluteArtifactPath(artifactPath: string): string {
-    if (!/^active\/[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(artifactPath)) {
-      throw new Error("허용되지 않은 workspace artifact 경로입니다.");
-    }
-    const absolute = path.resolve(this.root, ...artifactPath.split("/"));
-    if (!absolute.startsWith(`${this.root}${path.sep}`)) {
-      throw new Error("workspace artifact가 root 밖을 가리킵니다.");
-    }
-    return absolute;
-  }
-
-  private findingsArtifactPath(artifactPath: string): string {
-    if (!artifactPath.endsWith(".document.json")) {
-      throw new Error("원장 artifact만 finding sidecar를 가질 수 있습니다.");
-    }
-    return this.absoluteArtifactPath(
-      `${artifactPath.slice(0, -".document.json".length)}.findings.json`,
-    );
-  }
-
-  private supersededArtifactPath(gameId: string, snapshotId: string): string {
-    assertGameId(gameId);
-    snapshotContentHash(snapshotId);
-    const directory = path.resolve(this.root, "superseded", gameId);
-    const absolute = path.resolve(directory, snapshotId);
-    if (!absolute.startsWith(`${directory}${path.sep}`)) {
-      throw new Error("superseded snapshot이 경기 디렉터리 밖을 가리킵니다.");
-    }
-    return absolute;
-  }
-
-  private currentEntryPath(gameId: string): string {
-    assertGameId(gameId);
-    return path.join(this.root, "current", `${gameId}.json`);
-  }
-
-  private transitionJournalPath(gameId: string, transitionId: string): string {
-    assertGameId(gameId);
-    if (!/^[A-Za-z0-9-]{1,200}$/.test(transitionId)) {
-      throw new Error("허용되지 않은 workspace transition ID입니다.");
-    }
-    return path.join(this.root, "journals", `workspace-${gameId}-${transitionId}.json`);
-  }
-
-  private async readCurrentEntry(gameId: string): Promise<CurrentWorkspaceEntry | null> {
-    assertGameId(gameId);
-    try {
-      const value = JSON.parse(await readFile(this.currentEntryPath(gameId), "utf8")) as unknown;
-      if (
-        typeof value === "object" &&
-        value !== null &&
-        !Array.isArray(value) &&
-        "schemaVersion" in value &&
-        value.schemaVersion === 1
-      ) {
-        throw new WorkspaceMigrationRequiredError(
-          `current manifest V1이 남아 있습니다: ${gameId}. pnpm workspace:migrate -- --dry-run으로 먼저 검증하세요.`,
-        );
-      }
-      const current = parseCurrentWorkspaceEntry(value);
-      this.assertCurrentEntryContext(current, gameId);
-      return current;
-    } catch (error: unknown) {
-      if (isMissing(error)) return null;
-      throw error;
-    }
-  }
-
-  private async requiredCurrentEntry(gameId: string): Promise<CurrentWorkspaceEntry> {
-    const current = await this.readCurrentEntry(gameId);
-    if (current === null) throw new Error(`현재 workspace 권위가 없습니다: ${gameId}`);
-    return current;
-  }
-
-  private assertCurrentEntryContext(current: CurrentWorkspaceEntry, gameId: string): void {
-    if (current.gameId !== gameId) {
-      throw new Error(`current manifest gameId가 파일 문맥과 다릅니다: ${gameId}`);
-    }
-    const segments = current.artifactPath.split("/");
-    if (segments[1] !== gameId) {
-      throw new Error(`current manifest artifact 경로가 다른 경기를 가리킵니다: ${gameId}`);
-    }
-    if (current.authority === "source_failure") {
-      if (current.documentHash !== null || !current.artifactPath.endsWith(".failure.json")) {
-        throw new Error(`source failure current manifest 형식이 올바르지 않습니다: ${gameId}`);
-      }
-    } else if (
-      current.season === null ||
-      current.documentHash === null ||
-      !current.artifactPath.endsWith(".document.json")
-    ) {
-      throw new Error(`원장 current manifest 형식이 올바르지 않습니다: ${gameId}`);
-    }
-  }
-
   private async readCurrentDocument(
     current: CurrentWorkspaceEntry,
   ): Promise<StagingGameDocumentV2> {
@@ -912,7 +838,7 @@ export class StagingWorkspace {
     if (current.authority === "source_failure") {
       const record = parseSourceFailureRecord(
         JSON.parse(
-          await readFile(this.absoluteArtifactPath(current.artifactPath), "utf8"),
+          await readFile(this.currentStorage.absoluteArtifactPath(current.artifactPath), "utf8"),
         ) as unknown,
       );
       if (
@@ -934,16 +860,16 @@ export class StagingWorkspace {
     current: CurrentWorkspaceEntry,
   ): Promise<readonly StoredFinding[]> {
     if (current.authority === "source_failure") return this.readCurrentFindings(current);
-    return readFindings(this.findingsArtifactPath(current.artifactPath));
+    return readFindings(this.currentStorage.findingsArtifactPath(current.artifactPath));
   }
 
   private async readCatalogItem(gameId: string): Promise<GameCatalogItem | null> {
     await this.currentTransitions.get(gameId)?.catch(() => undefined);
-    const current = await this.readCurrentEntry(gameId);
+    const current = await this.currentStorage.readCurrentEntry(gameId);
     if (current === null) return null;
     const [findings, supersededCount] = await Promise.all([
       this.readCatalogFindings(current),
-      this.supersededCount(gameId),
+      this.currentStorage.supersededCount(gameId),
     ]);
     return workspaceCatalogItem(current, findings, supersededCount);
   }
@@ -969,7 +895,7 @@ export class StagingWorkspace {
     const pending = this.currentTransitions.get(gameId) ?? Promise.resolve();
     const next = pending
       .catch(() => undefined)
-      .then(() => this.performCurrentTransition(previous, target));
+      .then(() => this.currentStorage.performCurrentTransition(previous, target));
     this.currentTransitions.set(gameId, next);
     this.catalogIndex.invalidate(gameId);
     try {
@@ -986,7 +912,7 @@ export class StagingWorkspace {
   public async collectionToken(gameId: string): Promise<string | null> {
     this.assertOpen();
     assertGameId(gameId);
-    const current = await this.readCurrentEntry(gameId);
+    const current = await this.currentStorage.readCurrentEntry(gameId);
     return current === null ? null : sha256(canonicalStringify(current));
   }
 
@@ -1013,167 +939,6 @@ export class StagingWorkspace {
       (current === null ? null : sha256(canonicalStringify(current))) !== expected
     )
       throw new StaleStagingDocumentError("수집 중 현재 작업본이 변경되어 저장을 건너뜁니다.");
-  }
-
-  private async performCurrentTransition(
-    previous: CurrentWorkspaceEntry | null,
-    target: CurrentWorkspaceEntry | null,
-  ): Promise<void> {
-    await this.verifyLock();
-    const gameId = target?.gameId ?? previous?.gameId;
-    if (gameId === undefined) throw new Error("빈 workspace transition은 허용되지 않습니다.");
-    const actual = await this.readCurrentEntry(gameId);
-    if (!sameCurrentEntry(actual, previous)) {
-      throw new StaleStagingDocumentError(`workspace current manifest가 변경되었습니다: ${gameId}`);
-    }
-    if (target !== null) {
-      this.assertCurrentEntryContext(target, gameId);
-      await this.readCurrentFindings(target);
-    }
-    const transitionId = randomUUID();
-    const journal: WorkspaceTransitionJournal = {
-      schemaVersion: 1,
-      transitionId,
-      gameId,
-      previous,
-      target,
-      createdAt: this.now().toISOString(),
-    };
-    const journalPath = this.transitionJournalPath(gameId, transitionId);
-    await atomicWrite(journalPath, `${canonicalStringify(journal)}\n`);
-    await this.rollForwardWorkspaceTransition(journal);
-    await unlink(journalPath);
-  }
-
-  private async rollForwardWorkspaceTransition(journal: WorkspaceTransitionJournal): Promise<void> {
-    this.assertWorkspaceTransitionContext(journal);
-    if (journal.target !== null) await this.readCurrentFindings(journal.target);
-    await this.writeCurrentEntry(journal.gameId, journal.target);
-    if (
-      journal.previous !== null &&
-      journal.previous.artifactPath !== journal.target?.artifactPath
-    ) {
-      await this.archiveCurrentArtifact(journal.previous);
-    }
-  }
-
-  private assertWorkspaceTransitionContext(journal: WorkspaceTransitionJournal): void {
-    if (journal.previous === null && journal.target === null) {
-      throw new Error("빈 workspace transition journal은 허용되지 않습니다.");
-    }
-    for (const entry of [journal.previous, journal.target]) {
-      if (entry !== null) this.assertCurrentEntryContext(entry, journal.gameId);
-    }
-  }
-
-  private async writeCurrentEntry(
-    gameId: string,
-    target: CurrentWorkspaceEntry | null,
-  ): Promise<void> {
-    if (target === null) {
-      await this.removeIfPresent(this.currentEntryPath(gameId));
-      await syncDirectory(path.join(this.root, "current"));
-      return;
-    }
-    await atomicWrite(this.currentEntryPath(gameId), `${canonicalStringify(target)}\n`);
-  }
-
-  private async archiveCurrentArtifact(current: CurrentWorkspaceEntry): Promise<void> {
-    const source = this.absoluteArtifactPath(current.artifactPath);
-    const destinationDirectory = path.join(this.root, "superseded", current.gameId);
-    await mkdir(destinationDirectory, { recursive: true });
-    await moveArtifactForRecovery(source, path.join(destinationDirectory, path.basename(source)));
-    if (current.authority !== "source_failure") {
-      const findingsSource = this.findingsArtifactPath(current.artifactPath);
-      const findingsDestination = path.join(destinationDirectory, path.basename(findingsSource));
-      await moveOptionalArtifactForRecovery(findingsSource, findingsDestination);
-    }
-    await syncDirectory(path.dirname(source));
-    await syncDirectory(destinationDirectory);
-  }
-
-  private async recoverWorkspaceTransitions(): Promise<void> {
-    const directory = path.join(this.root, "journals");
-    const entries = (await readdir(directory, { withFileTypes: true }))
-      .filter(
-        (entry) =>
-          entry.isFile() && entry.name.startsWith("workspace-") && entry.name.endsWith(".json"),
-      )
-      .sort((left, right) => compareCanonicalStrings(left.name, right.name));
-    for (const entry of entries) {
-      const journalPath = path.join(directory, entry.name);
-      const journal = parseWorkspaceTransitionJournal(
-        JSON.parse(await readFile(journalPath, "utf8")) as unknown,
-      );
-      await this.rollForwardWorkspaceTransition(journal);
-      await unlink(journalPath);
-    }
-  }
-
-  private async recoverManifestUpgradeJournals(): Promise<void> {
-    const directory = path.join(this.root, "journals");
-    const entries = (await readdir(directory, { withFileTypes: true }))
-      .filter(
-        (entry) =>
-          entry.isFile() &&
-          entry.name.startsWith("manifest-upgrade-") &&
-          entry.name.endsWith(".json"),
-      )
-      .sort((left, right) => compareCanonicalStrings(left.name, right.name));
-    for (const entry of entries) {
-      const journalPath = path.join(directory, entry.name);
-      const journal = parseWorkspaceManifestUpgradeJournal(
-        JSON.parse(await readFile(journalPath, "utf8")) as unknown,
-      );
-      await this.rollForwardManifestUpgrade(journal);
-      await unlink(journalPath);
-    }
-  }
-
-  private async rollForwardManifestUpgrade(
-    journal: WorkspaceManifestUpgradeJournal,
-  ): Promise<void> {
-    this.assertCurrentEntryContext(journal.target, journal.gameId);
-    const raw = JSON.parse(
-      await readFile(this.currentEntryPath(journal.gameId), "utf8"),
-    ) as unknown;
-    const canonical = canonicalStringify(raw);
-    if (
-      canonical !== canonicalStringify(journal.previous) &&
-      canonical !== canonicalStringify(journal.target)
-    ) {
-      throw new WorkspacePersistenceBlockedError(
-        `manifest upgrade 중 current가 변경되었습니다: ${journal.gameId}`,
-      );
-    }
-    await this.readCurrentFindings(journal.target);
-    await this.writeCurrentEntry(journal.gameId, journal.target);
-  }
-
-  private async supersededCount(gameId: string): Promise<number> {
-    assertGameId(gameId);
-    return (await readDirectoryIfPresent(path.join(this.root, "superseded", gameId))).filter(
-      (entry) =>
-        entry.isFile() &&
-        (entry.name.endsWith(".document.json") || entry.name.endsWith(".failure.json")),
-    ).length;
-  }
-
-  private async nextGeneration(
-    gameId: string,
-    current: CurrentWorkspaceEntry | null,
-  ): Promise<number> {
-    let maximum = current?.generation ?? 0;
-    for (const directory of ["active", "superseded"]) {
-      for (const entry of await readDirectoryIfPresent(path.join(this.root, directory, gameId))) {
-        if (!entry.isFile()) continue;
-        const match = /^(\d+)-/.exec(entry.name);
-        if (match?.[1] === undefined) continue;
-        const generation = Number(match[1]);
-        if (Number.isSafeInteger(generation)) maximum = Math.max(maximum, generation);
-      }
-    }
-    return maximum + 1;
   }
 
   private async assertNoUnmigratedCurrentFiles(): Promise<void> {
@@ -1220,10 +985,10 @@ export class StagingWorkspace {
         );
       }
       try {
-        const current = await this.requiredCurrentEntry(gameId);
+        const current = await this.currentStorage.requiredCurrentEntry(gameId);
         const [result, supersededCount] = await Promise.all([
           validation.validate(this.root, current),
-          this.supersededCount(gameId),
+          this.currentStorage.supersededCount(gameId),
         ]);
         this.catalogIndex.seed({
           ...workspaceCatalogItem(current, [], supersededCount),
@@ -1290,11 +1055,15 @@ export class StagingWorkspace {
         `active 원장 generation이 올바르지 않습니다: ${matches[0].name}`,
       );
     }
-    const artifactPath = this.activeArtifactPath(gameId, matches[0].name);
+    const artifactPath = this.currentStorage.activeArtifactPath(gameId, matches[0].name);
     const storedDocument = parseStagingGameDocumentV2(
-      JSON.parse(await readFile(this.absoluteArtifactPath(artifactPath), "utf8")) as unknown,
+      JSON.parse(
+        await readFile(this.currentStorage.absoluteArtifactPath(artifactPath), "utf8"),
+      ) as unknown,
     );
-    const storedEnvelope = await readFindingEnvelope(this.findingsArtifactPath(artifactPath));
+    const storedEnvelope = await readFindingEnvelope(
+      this.currentStorage.findingsArtifactPath(artifactPath),
+    );
     if (
       storedDocument.metadata.gameId !== gameId ||
       sha256(canonicalStringify({ document: storedDocument, findingEnvelope: storedEnvelope })) !==
@@ -1332,7 +1101,7 @@ export class StagingWorkspace {
       document.metadata.gameId,
     );
     if (findings.length === 0) {
-      await this.removeIfPresent(findingsTarget);
+      await removeIfPresent(findingsTarget);
     } else {
       await atomicWrite(findingsTarget, `${canonicalStringify(findingEnvelope(findings))}\n`);
     }
@@ -1385,14 +1154,6 @@ export class StagingWorkspace {
     }
   }
 
-  private async removeIfPresent(target: string): Promise<void> {
-    try {
-      await unlink(target);
-    } catch (error: unknown) {
-      if (!isMissing(error)) throw error;
-    }
-  }
-
   private assertOpen(): void {
     if (this.closed) throw new Error("닫힌 workspace는 사용할 수 없습니다.");
   }
@@ -1434,58 +1195,8 @@ function currentDocumentAuthority(authority: "staging" | "quarantine"): "ready" 
   return authority === "staging" ? "ready" : "quarantine";
 }
 
-function sameCurrentEntry(
-  left: CurrentWorkspaceEntry | null,
-  right: CurrentWorkspaceEntry | null,
-): boolean {
-  return canonicalStringify(left) === canonicalStringify(right);
-}
-
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
-}
-
-function snapshotContentHash(snapshotId: string): string {
-  const match = /^(\d+)-([0-9a-f]{64})\.document\.json$/.exec(snapshotId);
-  if (match?.[2] === undefined) {
-    throw new Error(`허용되지 않은 superseded snapshot ID입니다: ${snapshotId}`);
-  }
-  return match[2];
-}
-
-async function moveArtifactForRecovery(source: string, destination: string): Promise<void> {
-  try {
-    await rename(source, destination);
-  } catch (error: unknown) {
-    if (!isMissing(error)) throw error;
-    await access(destination, fsConstants.R_OK);
-  }
-}
-
-async function moveOptionalArtifactForRecovery(source: string, destination: string): Promise<void> {
-  try {
-    await rename(source, destination);
-  } catch (error: unknown) {
-    if (!isMissing(error)) throw error;
-    try {
-      await access(destination, fsConstants.R_OK);
-    } catch (destinationError: unknown) {
-      if (!isMissing(destinationError)) throw destinationError;
-    }
-  }
-}
-
-async function syncDirectory(directory: string): Promise<void> {
-  try {
-    const handle = await open(directory, "r");
-    try {
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-  } catch {
-    // Windows와 일부 파일시스템은 디렉터리 fsync를 지원하지 않는다.
-  }
 }
 
 function errorMessage(error: unknown): string {

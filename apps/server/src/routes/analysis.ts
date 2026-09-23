@@ -1,6 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import type {
-  PitchAnalysisComputation,
   AnalysisCoverageWorkspace,
   PitchReferenceWorkspace,
   PitchCalibrationWorkspace,
@@ -9,6 +8,7 @@ import type {
   PitchQualityWorkspace,
   MatchupModelWorkspace,
 } from "@kbo/persistence";
+import { createPitchAnalysisComputation } from "../pitch-analysis-computation.js";
 import { ComputationPool } from "../computation-pool.js";
 import type { RouteContext } from "./context.js";
 import { pitchAnalysisRoutes } from "./pitch-analysis.js";
@@ -39,44 +39,7 @@ type Options = Pick<RouteContext, "pool"> & {
 /** Composition only: trajectory and fixed-model consumers share a bounded CPU pool. */
 export const analysisRoutes: FastifyPluginAsyncTypebox<Options> = async (app, context) => {
   const workers = new ComputationPool(1, 16);
-  const computation: PitchAnalysisComputation = {
-    async calibration(season, sourceHash, rows, previous, signal) {
-      const result = await workers.run(
-        {
-          kind: "pitch_calibration",
-          season,
-          sourceHash,
-          rows,
-          previous,
-        },
-        signal,
-      );
-      if (result.kind !== "pitch_calibration") throw new Error("Unexpected calibration result");
-      return result.value;
-    },
-    async reference(rows, calibration) {
-      const result = await workers.run({
-        kind: "pitch_reference",
-        rows,
-        ...(calibration === null ? {} : { calibration }),
-      });
-      if (result.kind !== "pitch_reference") throw new Error("Unexpected reference result");
-      return result.value;
-    },
-    async sample(season, pitcherId, sourceHash, rows, reference, calibration) {
-      const result = await workers.run({
-        kind: "pitch_sample",
-        season,
-        pitcherId,
-        sourceHash,
-        rows,
-        reference,
-        calibration,
-      });
-      if (result.kind !== "pitch_sample") throw new Error("Unexpected sample result");
-      return result.value;
-    },
-  };
+  const computation = createPitchAnalysisComputation(workers);
   await app.register(pitchAnalysisRoutes, { ...context, computation });
   await app.register(batterDisciplineRoutes, {
     pool: context.pool,

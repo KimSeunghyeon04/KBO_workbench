@@ -9,6 +9,18 @@ import {
 } from "@kbo/contracts";
 const key = (row: { gameId: string; revision: number; sequence: number }) =>
   JSON.stringify([row.gameId, row.revision, row.sequence]);
+const playIdentitySchema = Type.Pick(AnalysisPlaySchema, ["gameId", "revision", "sequence"]);
+const movementRowsSchema = Type.Array(
+  Type.Object(
+    {
+      gameId: Type.String(),
+      revision: Type.Integer(),
+      playSequence: Type.Integer(),
+      ...AnalysisMovementSchema.properties,
+    },
+    { additionalProperties: false },
+  ),
+);
 const stateColumns = [
   "inning",
   "half",
@@ -77,20 +89,7 @@ export async function readAnalysisPlays(
         )
       : Promise.resolve({ rows: [] }),
   ]);
-  const decoded = Value.Decode(
-    Type.Array(
-      Type.Object(
-        {
-          gameId: Type.String(),
-          revision: Type.Integer(),
-          playSequence: Type.Integer(),
-          ...AnalysisMovementSchema.properties,
-        },
-        { additionalProperties: false },
-      ),
-    ),
-    movements.rows,
-  );
+  const decoded = Value.Decode(movementRowsSchema, movements.rows);
   const grouped = new Map<string, AnalysisPlay["movements"]>();
   for (const row of decoded) {
     const { gameId, revision, playSequence, ...movement } = row,
@@ -100,10 +99,11 @@ export async function readAnalysisPlays(
     grouped.set(id, group);
   }
   return plays.rows.map((row) => {
-    const identity = Value.Decode(
-      Type.Pick(AnalysisPlaySchema, ["gameId", "revision", "sequence"]),
-      { gameId: row.gameId, revision: row.revision, sequence: row.sequence },
-    );
+    const identity = Value.Decode(playIdentitySchema, {
+      gameId: row.gameId,
+      revision: row.revision,
+      sequence: row.sequence,
+    });
     return Value.Decode(AnalysisPlaySchema, {
       ...identity,
       gameDate: row.gameDate,

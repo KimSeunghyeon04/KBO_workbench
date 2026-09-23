@@ -1,11 +1,14 @@
-import { AnalysisScopeFields, scopeFromParams } from "../analysis/analysis-scope-fields";
+import { AnalysisScopeFields, analysisScopeSummary } from "../analysis/analysis-scope-fields";
+import { AnalysisFilterBar } from "../analysis/analysis-filter-bar";
+import { scopeFromParams } from "../analysis/analysis-scope";
 import { DisciplinePeriodComparison } from "../analysis/discipline-period-comparison";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { DisciplineQuerySchema, type DisciplinePoint } from "@kbo/contracts";
 import { Value } from "@sinclair/typebox/value";
-import { getBatterDiscipline, getDisciplineCatalog } from "../api/batter-discipline-client";
+import { getBatterDiscipline } from "../api/batter-discipline-client";
+import { batterCatalogQueryOptions } from "../api/analysis-catalog-query-options";
 import { DisciplineCourseComparison } from "../analysis/discipline-course-comparison";
 import {
   ComparisonTable,
@@ -39,8 +42,7 @@ export function BatterDisciplinePage() {
   };
   const valid = scope.error === null && Value.Check(DisciplineQuerySchema, candidate);
   const catalog = useQuery({
-    queryKey: ["discipline-catalog", season, scope.options],
-    queryFn: ({ signal }) => getDisciplineCatalog(season, signal, scope.options),
+    ...batterCatalogQueryOptions(season, scope.options),
     enabled: scope.error === null,
   });
   const requested = params.get("batter");
@@ -68,6 +70,25 @@ export function BatterDisciplinePage() {
   const selected = points.find((p) => identity(p) === selection);
   const shown = points.slice(page * 20, page * 20 + 20);
   const course = data?.courseComparison.conventional.batter;
+  const scopeSummary = [
+    analysisScopeSummary(params),
+    ...(params.has("balls") ? [`${params.get("balls")}볼`] : []),
+    ...(params.has("strikes") ? [`${params.get("strikes")}스트라이크`] : []),
+    ...(params.has("stance")
+      ? [
+          params.get("stance") === "L"
+            ? "좌타석"
+            : params.get("stance") === "R"
+              ? "우타석"
+              : params.get("stance") === "S"
+                ? "스위치 표기"
+                : "타석 조건 확인 필요",
+        ]
+      : []),
+    params.get("leaguePeriod") === "target"
+      ? "리그 비교: 대상과 같은 기간"
+      : "리그 비교: 시즌 전체",
+  ].join(" · ");
   function change(key: string, value: string) {
     const next = new URLSearchParams(params);
     if (key === "reset") {
@@ -112,19 +133,77 @@ export function BatterDisciplinePage() {
         사용합니다.
       </p>
       {scope.error && <p role="alert">{scope.error}</p>}
-      <section className="panel pitch-analysis-toolbar" aria-label="선구안 분석 조건">
-        <AnalysisScopeFields params={params} onChange={change} />
-        <label>
-          리그 비교 기간
-          <select
-            aria-label="리그 비교 기간"
-            value={params.get("leaguePeriod") ?? "season"}
-            onChange={(e) => change("leaguePeriod", e.target.value)}
-          >
-            <option value="season">시즌 전체</option>
-            <option value="target">대상과 같은 기간</option>
-          </select>
-        </label>
+      <AnalysisFilterBar
+        label="선구안 분석 조건"
+        summary={scopeSummary}
+        advanced={
+          <>
+            <AnalysisScopeFields params={params} onChange={change} />
+            <label>
+              리그 비교 기간
+              <select
+                aria-label="리그 비교 기간"
+                value={params.get("leaguePeriod") ?? "season"}
+                onChange={(e) => change("leaguePeriod", e.target.value)}
+              >
+                <option value="season">시즌 전체</option>
+                <option value="target">대상과 같은 기간</option>
+              </select>
+            </label>
+            <label>
+              카운트
+              <select
+                aria-label="선구안 카운트"
+                value={
+                  params.has("balls") || params.has("strikes")
+                    ? `${params.get("balls") ?? "*"}-${params.get("strikes") ?? "*"}`
+                    : ""
+                }
+                onChange={(e) => change("count", e.target.value)}
+              >
+                <option value="">전체 카운트</option>
+                <optgroup label="스트라이크별">
+                  {[0, 1, 2].map((s) => (
+                    <option key={s} value={`*-${s}`}>
+                      {s}스트라이크 · 모든 볼카운트
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="볼별">
+                  {[0, 1, 2, 3].map((b) => (
+                    <option key={b} value={`${b}-*`}>
+                      {b}볼 · 모든 스트라이크
+                    </option>
+                  ))}
+                </optgroup>
+                {[0, 1, 2, 3].flatMap((b) =>
+                  [0, 1, 2].map((s) => (
+                    <option key={`${b}-${s}`} value={`${b}-${s}`}>
+                      {b}B {s}S
+                    </option>
+                  )),
+                )}
+              </select>
+            </label>
+            <label>
+              타석
+              <select
+                aria-label="선구안 타석"
+                value={params.get("stance") ?? ""}
+                onChange={(e) => change("stance", e.target.value)}
+              >
+                <option value="">전체 · 미상 포함</option>
+                <option value="L">좌타석</option>
+                <option value="R">우타석</option>
+                <option value="S">스위치 표기</option>
+              </select>
+            </label>
+            <button type="button" onClick={() => change("reset", "")}>
+              조건 초기화
+            </button>
+          </>
+        }
+      >
         <label>
           시즌
           <select
@@ -156,41 +235,6 @@ export function BatterDisciplinePage() {
           </select>
         </label>
         <label>
-          카운트
-          <select
-            aria-label="선구안 카운트"
-            value={
-              params.has("balls") || params.has("strikes")
-                ? `${params.get("balls") ?? "*"}-${params.get("strikes") ?? "*"}`
-                : ""
-            }
-            onChange={(e) => change("count", e.target.value)}
-          >
-            <option value="">전체 카운트</option>
-            <optgroup label="스트라이크별">
-              {[0, 1, 2].map((s) => (
-                <option key={s} value={`*-${s}`}>
-                  {s}스트라이크 · 모든 볼카운트
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="볼별">
-              {[0, 1, 2, 3].map((b) => (
-                <option key={b} value={`${b}-*`}>
-                  {b}볼 · 모든 스트라이크
-                </option>
-              ))}
-            </optgroup>
-            {[0, 1, 2, 3].flatMap((b) =>
-              [0, 1, 2].map((s) => (
-                <option key={`${b}-${s}`} value={`${b}-${s}`}>
-                  {b}B {s}S
-                </option>
-              )),
-            )}
-          </select>
-        </label>
-        <label>
           중계 구종
           <select
             aria-label="선구안 구종"
@@ -208,23 +252,7 @@ export function BatterDisciplinePage() {
             ))}
           </select>
         </label>
-        <label>
-          타석
-          <select
-            aria-label="선구안 타석"
-            value={params.get("stance") ?? ""}
-            onChange={(e) => change("stance", e.target.value)}
-          >
-            <option value="">전체 · 미상 포함</option>
-            <option value="L">좌타석</option>
-            <option value="R">우타석</option>
-            <option value="S">스위치 표기</option>
-          </select>
-        </label>
-        <button type="button" onClick={() => change("reset", "")}>
-          조건 초기화
-        </button>
-      </section>
+      </AnalysisFilterBar>
       {!valid && <p role="alert">분석 조건이 올바르지 않습니다. 조건 초기화로 다시 시작하세요.</p>}
       {(catalog.error || analysis.error) && (
         <div className="panel" role="alert">

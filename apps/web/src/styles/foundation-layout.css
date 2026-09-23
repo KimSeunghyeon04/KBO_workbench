@@ -18,7 +18,7 @@
 }
 
 body {
-  min-width: 320px;
+  min-width: 0;
   min-height: 100vh;
   margin: 0;
   background: #f4f5f4;
@@ -40,9 +40,24 @@ a {
   text-decoration: none;
 }
 
-a:focus-visible {
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
   outline: 2px solid #18794e;
   outline-offset: 2px;
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 100;
+  top: 8px;
+  left: 12px;
+  padding: 12px 18px;
+  border-radius: 4px;
+  color: #ffffff;
+  background: #145c3e;
+  transform: translateY(-160%);
+}
+.skip-link:focus {
+  transform: translateY(0);
 }
 
 h1,
@@ -113,6 +128,17 @@ dd {
   gap: 3px;
   border-right: 1px solid #dfe3e0;
   background: #fafbfa;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.navigation-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.navigation-group + .navigation-group {
+  margin-top: 16px;
 }
 
 .nav-link {
@@ -365,6 +391,13 @@ dd {
   font-size: 13px;
 }
 
+.workflow-item:hover {
+  background: #f4faf6;
+}
+.workflow-item:hover strong {
+  color: #145c3e;
+}
+
 .workflow-item p,
 .diagnostic-card p,
 .placeholder-panel p {
@@ -592,9 +625,11 @@ dd {
   font-weight: 650;
 }
 .sidebar-section-label {
-  padding: 2px 12px 12px;
+  margin: 0;
+  padding: 2px 12px 8px;
   font-size: 11px;
-  color: #7a877f;
+  font-weight: 650;
+  color: #606e65;
 }
 @media (max-width: 600px) {
   .topbar {

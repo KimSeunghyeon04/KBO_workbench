@@ -2,21 +2,36 @@
   max-width: 1200px;
   margin-inline: auto;
 }
+.analysis-empty-state {
+  padding: 28px;
+  border-style: dashed;
+}
+.analysis-empty-state h2 {
+  margin-bottom: 10px;
+  font-size: 17px;
+}
+.analysis-empty-state p {
+  color: #59665f;
+  font-size: 13px;
+  line-height: 1.7;
+}
 .pitch-analysis-toolbar {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
   align-items: end;
   gap: 16px;
   padding: 18px 22px;
 }
 .pitch-analysis-toolbar label {
   display: grid;
+  min-width: 0;
   gap: 7px;
   color: #59665f;
   font-size: 12px;
 }
 .pitch-analysis-toolbar select {
-  min-width: 110px;
+  min-width: 0;
+  width: 100%;
   max-width: 100%;
   padding: 9px 30px 9px 10px;
   border: 1px solid #d4ddd7;
@@ -29,10 +44,6 @@
   padding: 8px;
   border: 1px solid #d4ddd7;
   border-radius: 5px;
-}
-.pitch-analysis-toolbar label:nth-child(2) {
-  flex: 1;
-  min-width: 180px;
 }
 .pitch-analysis-toolbar button {
   padding: 10px 16px;
@@ -207,9 +218,6 @@
   .pitch-analysis-toolbar {
     padding: 15px;
     gap: 12px;
-  }
-  .pitch-analysis-toolbar label:nth-child(2) {
-    min-width: 140px;
   }
   .pitch-selected {
     padding: 18px;

@@ -1,6 +1,6 @@
 import type { MatchupEffect, PitchQualityFit } from "@kbo/contracts";
 import type { QualitySample } from "./pitch-quality-features.js";
-import { qualityOutcome } from "./pitch-quality.js";
+import { qualityOutcome } from "./pitch-quality-target.js";
 export const MATCHUP_PENALTIES = [20, 100, 500] as const;
 export function offsetProbability(p: number, offset: number): number {
   const bounded = Math.max(1e-12, Math.min(1 - 1e-12, p));

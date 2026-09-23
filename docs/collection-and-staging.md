@@ -74,6 +74,12 @@ import 직전에는 원장 읽기·전체 컴파일·hash와 expected target 일
    검증한다.
 8. 차단 finding이 없으면 staging, 있으면 quarantine으로 저장한다.
 
+preview의 숫자 상태 `0`·`4`만으로 종료를 추정하지 않는다. relay summary에 type 99의 명시적
+승리투수·무승부·경기종료 footer와 3아웃 관측이 함께 있을 때만 `final`로 해석한다. 네트워크 취득이
+완료됐더라도 이 증거가 없으면 원천 형식 오류를 유지한다. 이 상태 해석은 원장을 합성하거나
+compiler의 공식 기록·경기 종료 검증을 생략하지 않는다. 비식별 `status-four-final.anonymized.json`은
+실제 완료 경기의 상태 `4`·종료 footer·3아웃 조합과, 증거가 빠지면 거부하는 회귀를 고정한다.
+
 종료 경기의 명시적 `called_game` 선언 뒤 이닝·타자·교체 표시만 남고 이후 투구·타석 결과·주자 이동이
 없으면 그 표시들을 원문·identity·소스 위치가 있는 안내 행으로 보존한다. 실제 진행 행이나 미해결 종류가
 뒤따르면 이 예외를 적용하지 않는다. 단순 종료 footer만으로 교체·반이닝 경계를 무효화하지 않는다.
@@ -304,6 +310,17 @@ KBO 기록정정현황도 별도 source 권위다. 수집기는 landing HTML, �
 선수 `<br>` 목록과 `값 A→B`를 strict하게 파싱한다. `루타/루타수`, `자책/자책점`처럼 실제 표에
 존재하는 명칭 변형만 명시적으로 canonical stat으로 바꾼다. 알 수 없는 통계는 버리지 않고
 `unknown` 증거로 남긴다.
+괄호 안에서 통계 항목이 `<br>`로 나뉘거나 완전한 선수 통계 뒤에 쉼표가 있어도 참가자와 통계
+변경을 함께 해석한다. `contentText`와 source 위치는 그대로 유지한다. 닫히지 않은 괄호,
+새 선수·팀 경계, 중첩 괄호나 구분자 없는 통계 줄은 추측해 이어 붙이지 않는다.
+
+공식 기록 이의신청 제도와 공지 조회는 2022시즌부터 시작한다
+([KBO 2024 리그 규정, 75쪽](https://lgcxydabfbch3774324.cdn.ntruss.com/KBO_FILE/ebook/pdf/2024_%EB%A6%AC%EA%B7%B8%EA%B7%9C%EC%A0%95.pdf)).
+신설 발표일은 2022년 4월 29일이며, 실제 적용은 5월 17일 경기부터다
+([KBO 공식 안내](https://www.koreabaseball.com/MediaNews/Notice/View.aspx?bdSe=8342)).
+이 제공자 범위의 소유자는 collection의 `KBO_RECORD_CORRECTION_FIRST_SEASON`이다. 서버는 시즌을
+생략한 수동·예약 job의 보유 시즌에만 이 하한을 적용한다. 명시한 2020·2021 요청은 collector의
+실제 공식 연도 control 검증을 통과해야 하며, 빈 records 응답만 보고 정상 완료하지 않는다.
 
 한 source revision은 control과 모든 시리즈 pagination이 완전할 때만 seal한다. 동일 bundle hash는
 새 revision을 만들지 않는다. 중단된 run은 저장된 gzip과 metadata hash를 검증한 뒤 남은 request만

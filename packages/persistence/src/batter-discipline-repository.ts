@@ -1,3 +1,4 @@
+import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import { resolveAnalysisScope, type AnalysisScopeOptions } from "@kbo/contracts";
 import {
   ANALYSIS_GAME_WHERE,
@@ -89,18 +90,7 @@ export class BatterDisciplineRepository {
   ): Promise<DisciplineSnapshot> {
     const selectedScope = resolveAnalysisScope({ season, ...options });
     const scope = { ...selectedScope, dateFrom: null, dateTo: null };
-    const client = await this.pool.connect();
-    let released = false;
-    const releaseSnapshot = async () => {
-      if (!released) {
-        await client.query("COMMIT");
-        client.release();
-        released = true;
-      }
-    };
-    try {
-      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      await client.query("SET LOCAL statement_timeout='30s'");
+    return withAnalysisSnapshot(this.pool, async (client, releaseSnapshot) => {
       const referenceHash = await analysisSourceHash(client, scope);
       // Hash effective frozen heights: supplement imports leave sealed game hashes unchanged.
       const heights = await client.query<Record<string, unknown>>(
@@ -121,7 +111,7 @@ export class BatterDisciplineRepository {
         )
         .digest("hex");
       if (sourceHash === knownHash) {
-        await client.query("COMMIT");
+        await releaseSnapshot();
         return { season, sourceHash, reference: null, rows: null };
       }
       const result = await client.query<Record<string, unknown>>(
@@ -167,11 +157,6 @@ export class BatterDisciplineRepository {
       );
       await releaseSnapshot();
       return { season, sourceHash, reference, rows };
-    } catch (error: unknown) {
-      if (!released) await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      if (!released) client.release();
-    }
+    });
   }
 }

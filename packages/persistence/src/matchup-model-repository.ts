@@ -1,3 +1,4 @@
+import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import type { Pool } from "pg";
 import { Value } from "@sinclair/typebox/value";
 import {
@@ -18,11 +19,8 @@ export class MatchupModelRepository {
     // HTTP query parsers may use a custom prototype; canonical hashes own a plain decoded value.
     const query = { ...Value.Decode(MatchupQuerySchema, input) },
       { pitcherId, batterId, ...scopeQuery } = query,
-      scope = resolveAnalysisScope(scopeQuery, "regular"),
-      client = await this.pool.connect();
-    try {
-      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      await client.query("SET LOCAL statement_timeout='30s'");
+      scope = resolveAnalysisScope(scopeQuery, "regular");
+    return withAnalysisSnapshot(this.pool, async (client, release) => {
       const manifest = await analysisSourceHash(client, scope);
       if (
         scope.competition !== "regular" ||
@@ -37,7 +35,7 @@ export class MatchupModelRepository {
       }
       const pitcherRows = await readPitchQualityRows(client, scope, pitcherId),
         batterRows = await readPitchQualityRows(client, scope, batterId, "batter");
-      await client.query("COMMIT");
+      await release();
       return {
         query,
         scope,
@@ -54,11 +52,6 @@ export class MatchupModelRepository {
           modelHash,
         }),
       };
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 }

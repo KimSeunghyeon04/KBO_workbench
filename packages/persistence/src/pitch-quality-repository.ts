@@ -1,10 +1,8 @@
-import { createHash } from "node:crypto";
-import { Type, type Static } from "@sinclair/typebox";
+import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { TypeCompiler } from "@sinclair/typebox/compiler";
 import type { Pool, PoolClient } from "pg";
 import {
-  canonicalStringify,
   resolveAnalysisScope,
   PitchQualityRowSchema,
   type PitchQualityRow,
@@ -20,24 +18,18 @@ import {
 import { pitchGeometrySql, pitchEligibilitySql } from "./analysis-pitch-input.js";
 import { analysisVenueId } from "./analysis-venues.js";
 import { pitchQualityHeightCache } from "./pitch-quality-height-cache.js";
-const strict = { additionalProperties: false } as const,
-  hash = Type.String({ pattern: "^[a-f0-9]{64}$" });
-export const PitchQualityManifestSchema = Type.Object(
-  {
-    version: Type.Literal(1),
-    through: Type.Integer(),
-    seasons: Type.Array(
-      Type.Object({ season: Type.Integer(), sourceHash: hash, heightHash: hash }, strict),
-    ),
-    games: Type.Array(
-      Type.Object({ gameId: Type.String(), revision: Type.Integer(), documentHash: hash }, strict),
-    ),
-  },
-  strict,
-);
-export type PitchQualityManifest = Static<typeof PitchQualityManifestSchema>;
-export const pitchQualitySourceHash = (value: unknown) =>
-  createHash("sha256").update(canonicalStringify(value)).digest("hex");
+import { withAnalysisSnapshot } from "./analysis-snapshot.js";
+import {
+  PitchQualityManifestSchema,
+  pitchQualitySourceHash,
+  type PitchQualityManifest,
+} from "./pitch-quality-manifest.js";
+export {
+  PitchQualityManifestSchema,
+  pitchQualitySourceHash,
+  type PitchQualityManifest,
+} from "./pitch-quality-manifest.js";
+const strict = { additionalProperties: false } as const;
 const heightRowsValidator = TypeCompiler.Compile(
   Type.Array(
     Type.Object(
@@ -145,10 +137,7 @@ export class PitchQualityRepository {
   public async training(through: number, signal?: AbortSignal) {
     if (!Number.isInteger(through) || through < 2020 || through > 2024)
       throw new Error("훈련 마지막 시즌은 2020–2024여야 합니다.");
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      await client.query("SET LOCAL statement_timeout='30s'");
+    return withAnalysisSnapshot(this.pool, async (client) => {
       const source = await manifest(client, through),
         rows: PitchQualityRow[] = [];
       for (let season = 2020; season <= through + 1; season++)
@@ -163,14 +152,8 @@ export class PitchQualityRepository {
           );
           for (const row of batch) rows.push(row);
         }
-      await client.query("COMMIT");
       return { rows, manifest: source };
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
   public async read(
     query: AnalysisScopeQuery,
@@ -178,13 +161,9 @@ export class PitchQualityRepository {
     model: PitchQualityModel | null,
     modelHash: string | null,
   ) {
-    const scope = resolveAnalysisScope(query, "regular"),
-      client = await this.pool.connect();
-    let rows: PitchQualityRow[], sourceHash: string;
-    try {
-      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      await client.query("SET LOCAL statement_timeout='30s'");
-      sourceHash = await analysisSourceHash(client, scope);
+    const scope = resolveAnalysisScope(query, "regular");
+    const { rows, sourceHash } = await withAnalysisSnapshot(this.pool, async (client) => {
+      const sourceHash = await analysisSourceHash(client, scope);
       if (scope.competition !== "regular") {
         model = null;
         modelHash = null;
@@ -198,14 +177,8 @@ export class PitchQualityRepository {
         model = null;
         modelHash = null;
       }
-      rows = await readRows(client, scope, pitcherId);
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+      return { rows: await readRows(client, scope, pitcherId), sourceHash };
+    });
     return {
       rows,
       scope,

@@ -7,6 +7,7 @@ const group = Type.Union([Type.Literal("player"), Type.Literal("team")]);
 const commonQuery = {
   ...AnalysisScopeQuerySchema.properties,
   group: Type.Optional(group),
+  playerId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
   page: Type.Optional(Type.Integer({ minimum: 1, maximum: 10000 })),
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),
 };

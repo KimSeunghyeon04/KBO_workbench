@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { AnalysisScopeFields, scopeFromParams } from "../analysis/analysis-scope-fields";
+import { AnalysisScopeFields } from "../analysis/analysis-scope-fields";
+import { changeAnalysisParams, scopeFromParams } from "../analysis/analysis-scope";
 import { getBaserunning } from "../api/baserunning-client";
 import "../styles/pitch-analysis.css";
 const percent = (v: number | null) => (v === null ? "—" : `${(v * 100).toFixed(1)}%`);
@@ -29,13 +30,7 @@ export function BaserunningPage() {
     queryFn: ({ signal }) => getBaserunning(query, playerId, signal),
   });
   function change(key: string, value: string) {
-    const next = new URLSearchParams(params);
-    if (value === "") next.delete(key);
-    else next.set(key, value);
-    if (key === "season") {
-      next.delete("dateFrom");
-      next.delete("dateTo");
-    }
+    const next = changeAnalysisParams(params, key, value);
     if (key !== "playerPage" && key !== "player") next.delete("playerPage");
     setPage(0);
     setParams(next);

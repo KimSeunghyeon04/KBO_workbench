@@ -348,6 +348,7 @@ function buildProposal(
     });
 
   if (commands.length === 0) {
+    verifyAfterState(document, replay, notice, binding, reasons);
     return {
       eligible: false,
       reasons,
@@ -421,6 +422,10 @@ function verifyAfterState(
         numericField(record, descriptor) !== stat.afterValue
       )
         reasons.push(`제안 적용 후 ${stat.rawStatName} 공식 기록이 KBO 정정 후 값과 다릅니다.`);
+      if (descriptor !== undefined) {
+        const line = replay.batterLines.find((item) => item.playerId === playerId);
+        verifyCompiledValue(line?.[descriptor.field], stat, playerId, reasons);
+      }
     } else if (stat.scope === "pitcher") {
       const descriptor = PITCHER_FIELDS[stat.statCode];
       const record = document.officialRecords.pitchers.find((item) => item.playerId === playerId);
@@ -430,8 +435,26 @@ function verifyAfterState(
         numericField(record, descriptor) !== stat.afterValue
       )
         reasons.push(`제안 적용 후 ${stat.rawStatName} 공식 기록이 KBO 정정 후 값과 다릅니다.`);
+      // ER is source evidence, not a compiler-derived statistic.
+      if (descriptor !== undefined && descriptor.field !== "earnedRuns") {
+        const line = replay.pitcherLines.find((item) => item.playerId === playerId);
+        verifyCompiledValue(line?.[descriptor.field], stat, playerId, reasons);
+      }
     }
   }
+}
+
+function verifyCompiledValue(
+  actual: unknown,
+  stat: RecordCorrectionNotice["statChanges"][number],
+  playerId: string,
+  reasons: string[],
+): void {
+  if (actual === stat.afterValue) return;
+  const value = typeof actual === "number" ? String(actual) : "미확인";
+  reasons.push(
+    `선수 ${playerId}의 ${stat.rawStatName} compiler 계산값(${value})이 KBO 정정 후 값(${String(stat.afterValue)})과 다릅니다. 원장을 수동 검토해야 합니다.`,
+  );
 }
 
 function targetPlateResult(

@@ -1,3 +1,4 @@
+import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import {
   resolveAnalysisScope,
   canonicalStringify,
@@ -75,18 +76,7 @@ export class AnalysisCoverageRepository {
     signal?.throwIfAborted();
     const scope = resolveAnalysisScope({ season, ...options });
     const referenceScope = { ...scope, dateFrom: null, dateTo: null };
-    const client = await this.pool.connect();
-    let released = false;
-    const release = async () => {
-      if (!released) {
-        await client.query("COMMIT");
-        client.release();
-        released = true;
-      }
-    };
-    try {
-      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      await client.query("SET LOCAL statement_timeout='30s'");
+    return withAnalysisSnapshot(this.pool, async (client, release) => {
       const referenceHash = await analysisSourceHash(client, referenceScope);
       const heights = Value.Decode(
         Type.Array(
@@ -172,12 +162,7 @@ export class AnalysisCoverageRepository {
       signal?.throwIfAborted();
       if (this.cache !== undefined) await this.cache.load(sourceKey, async () => summary);
       return result(summary);
-    } catch (error) {
-      if (!released) await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      if (!released) client.release();
-    }
+    });
   }
 }
 

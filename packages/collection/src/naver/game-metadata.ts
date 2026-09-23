@@ -75,7 +75,9 @@ function mapStatus(
   if (value === "BEFORE" || value === "SCHEDULED") return "scheduled";
   if (value === "LIVE" || value === "IN_PROGRESS") return "in_progress";
   if (value === "RESULT" || value === "FINAL" || value === "1") return "final";
-  if (value === "0" && hasTerminalRelayEvidence) return "final";
+  // Legacy numeric codes also occur on completed games. The code alone is not
+  // sufficient: require the provider's explicit final footer and terminal outs.
+  if ((value === "0" || value === "4") && hasTerminalRelayEvidence) return "final";
   throw new NaverSourceFormatError(`알 수 없는 경기 상태입니다: ${value ?? "없음"}`);
 }
 

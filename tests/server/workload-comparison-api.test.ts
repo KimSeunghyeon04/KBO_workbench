@@ -9,7 +9,7 @@ import { Value } from "@sinclair/typebox/value";
 import { resolveAnalysisScope, WorkloadComparisonResponseSchema } from "@kbo/contracts";
 import { WorkloadComparisonRepository } from "@kbo/persistence";
 import { pitcherWorkloadRoutes } from "../../apps/server/src/routes/pitcher-workload.js";
-import { compute } from "../../apps/server/src/computation.js";
+import { compute } from "../../apps/server/src/computation-executor.js";
 import { installHttpErrorHandler } from "../../apps/server/src/http-error-handler.js";
 import { workloadComparisonFixture } from "../helpers/workload-comparison.js";
 it("strictly validates scope and sends only hydrated workload input to the existing worker", async () => {

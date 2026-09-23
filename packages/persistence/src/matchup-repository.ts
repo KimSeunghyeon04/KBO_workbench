@@ -1,3 +1,4 @@
+import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import { createHash } from "node:crypto";
 import type { Pool } from "pg";
 import { Type } from "@sinclair/typebox";
@@ -23,12 +24,8 @@ export class MatchupRepository {
   public async analyze(input: MatchupQuery) {
     const query = Value.Decode(MatchupQuerySchema, input),
       { pitcherId, batterId, ...scopeQuery } = query,
-      scope = resolveAnalysisScope(scopeQuery, "regular"),
-      client = await this.pool.connect();
-    let released = false;
-    try {
-      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      await client.query("SET LOCAL statement_timeout='30s'");
+      scope = resolveAnalysisScope(scopeQuery, "regular");
+    return withAnalysisSnapshot(this.pool, async (client, release) => {
       const manifest = await analysisSourceHash(client, scope);
       const { rows, plateAppearances } = await readPitchOutcomeRows(
         client,
@@ -58,9 +55,7 @@ export class MatchupRepository {
    ORDER BY kind,"pitchType",balls,strikes,stance,"speedBand"`,
         [...analysisScopeParameters(scope), pitcherId, batterId],
       );
-      await client.query("COMMIT");
-      client.release();
-      released = true;
+      await release();
       const decoded = Value.Decode(
         Type.Array(
           Type.Object(
@@ -99,11 +94,6 @@ export class MatchupRepository {
         MatchupResponseSchema,
         analyzeMatchup(query, scope, sourceHash, rows, plateAppearances, target, league),
       );
-    } catch (error) {
-      if (!released) await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      if (!released) client.release();
-    }
+    });
   }
 }

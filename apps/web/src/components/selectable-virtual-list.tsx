@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useId, useMemo } from "react";
 import * as React from "react";
 
 import { useFixedVirtualList } from "./use-fixed-virtual-list";
@@ -22,6 +22,7 @@ export function SelectableVirtualList<Item>({
   readonly rowHeight: number;
   readonly selectedKey: string | null;
 }): React.JSX.Element {
+  const idPrefix = useId();
   const selectedIndex = useMemo(
     () => items.findIndex((item) => getKey(item) === selectedKey),
     [getKey, items, selectedKey],
@@ -47,13 +48,17 @@ export function SelectableVirtualList<Item>({
       className="selectable-virtual-list"
       role="listbox"
       aria-label={ariaLabel}
-      aria-activedescendant={selectedKey === null ? undefined : `operation-option-${selectedKey}`}
+      aria-activedescendant={
+        selectedIndex >= virtual.window.start && selectedIndex < virtual.window.end
+          ? `${idPrefix}-${selectedKey}`
+          : undefined
+      }
       tabIndex={0}
       onKeyDown={(event) => {
         const fallback = selectedIndex < 0 ? 0 : selectedIndex;
         if (event.key === "ArrowDown") {
           event.preventDefault();
-          selectIndex(Math.min(fallback + 1, items.length - 1));
+          selectIndex(Math.min(selectedIndex + 1, items.length - 1));
         } else if (event.key === "ArrowUp") {
           event.preventDefault();
           selectIndex(Math.max(fallback - 1, 0));
@@ -78,8 +83,9 @@ export function SelectableVirtualList<Item>({
             return (
               <button
                 type="button"
-                id={`operation-option-${key}`}
+                id={`${idPrefix}-${key}`}
                 role="option"
+                tabIndex={-1}
                 aria-posinset={index + 1}
                 aria-setsize={items.length}
                 aria-selected={selected}
@@ -89,7 +95,10 @@ export function SelectableVirtualList<Item>({
                   transform: `translateY(${String(index * rowHeight)}px)`,
                 }}
                 key={key}
-                onClick={() => onSelect(item)}
+                onClick={() => {
+                  virtual.containerRef.current?.focus({ preventScroll: true });
+                  onSelect(item);
+                }}
               >
                 {renderItem(item)}
               </button>

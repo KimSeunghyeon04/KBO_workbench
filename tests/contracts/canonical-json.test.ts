@@ -12,6 +12,36 @@ describe("canonicalStringify", () => {
     expect(canonicalStringify([2, -0, 1])).toBe("[2,0,1]");
   });
 
+  it("빈 배열 항목을 생략하거나 null로 바꾸지 않고 정확한 위치에서 거부한다", () => {
+    const sparse = [1, 2];
+    delete sparse[0];
+    expect(() => canonicalStringify(sparse)).toThrow(CanonicalJsonError);
+    expect(() => canonicalStringify({ values: sparse })).toThrow("$.values[0]");
+    expect(() => canonicalStringify([undefined])).toThrow(CanonicalJsonError);
+    expect(canonicalStringify([])).toBe("[]");
+  });
+
+  it("배열에서도 symbol key를 거부한다", () => {
+    const values = [1, 2];
+    Object.defineProperty(values, Symbol("hidden"), { value: 3 });
+    expect(() => canonicalStringify(values)).toThrow(CanonicalJsonError);
+    expect(() => canonicalStringify({ values })).toThrow("$.values");
+  });
+
+  it("정상적인 배열은 순서와 기존 canonical 바이트를 유지한다", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.oneof(fc.integer(), fc.string(), fc.boolean(), fc.constant(null))),
+        (values) => {
+          const normalized = values.map((value) =>
+            typeof value === "string" ? value.normalize("NFC") : value,
+          );
+          expect(canonicalStringify(values)).toBe(JSON.stringify(normalized));
+        },
+      ),
+    );
+  });
+
   it("정규화한 key를 재사용해도 삽입 순서·결합 문자·이스케이프의 결과를 보존한다", () => {
     const keys = ["z", "a", "e\u0301", "한", "😀", "\uffff", 'a"', "a\\", "\n"];
     const expected = `{${keys

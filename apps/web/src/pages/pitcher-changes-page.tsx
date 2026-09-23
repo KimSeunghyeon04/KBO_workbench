@@ -1,11 +1,11 @@
 import { PitcherScopeFields } from "../analysis/pitcher-scope-fields";
 import { PitchAnglesPanel } from "../analysis/pitch-angles-panel";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Value } from "@sinclair/typebox/value";
 import { PitcherChangesQuerySchema } from "@kbo/contracts";
-import { scopeFromParams } from "../analysis/analysis-scope-fields";
-import { getPitchAnalysisCatalog } from "../api/pitch-analysis-client";
+import { useAnalysisScope } from "../analysis/use-analysis-scope";
+import { pitcherCatalogQueryOptions } from "../api/analysis-catalog-query-options";
 import { getPitcherChanges } from "../api/pitcher-changes-client";
 import "../styles/pitch-analysis.css";
 const n = (v: number | null) => v?.toFixed(2) ?? "—";
@@ -17,18 +17,15 @@ const labels = {
   usage: "사용률",
 };
 export function PitcherChangesPage() {
-  const [params, setParams] = useSearchParams(),
-    selected = new URLSearchParams(params),
-    season = Number(params.get("season") ?? 2025);
-  if (!selected.has("competition")) selected.set("competition", "regular");
-  if (!selected.has("dateTo")) selected.set("dateTo", `${season}-12-31`);
-  const scope = scopeFromParams(season, selected),
-    query = { season, ...scope.options, dateTo: selected.get("dateTo") ?? "" };
+  const { params, selected, season, scope, change } = useAnalysisScope({
+    seasonSelectionKeys: ["pitcher"],
+    throughSeasonEnd: true,
+  });
+  const query = { season, ...scope.options, dateTo: selected.get("dateTo") ?? "" };
   const valid = scope.error === null && Value.Check(PitcherChangesQuerySchema, query);
   const catalog = useQuery({
-    queryKey: ["changes-catalog", season, scope.options],
+    ...pitcherCatalogQueryOptions(season, scope.options),
     enabled: valid,
-    queryFn: ({ signal }) => getPitchAnalysisCatalog(season, signal, scope.options),
   });
   const id = params.get("pitcher") ?? catalog.data?.pitchers[0]?.pitcherId ?? "";
   const result = useQuery({
@@ -36,17 +33,6 @@ export function PitcherChangesPage() {
     enabled: valid && id !== "",
     queryFn: ({ signal }) => getPitcherChanges(query, id, signal),
   });
-  function change(key: string, value: string) {
-    const next = new URLSearchParams(params);
-    if (value === "") next.delete(key);
-    else next.set(key, value);
-    if (key === "season") {
-      next.delete("dateFrom");
-      next.delete("dateTo");
-      next.delete("pitcher");
-    }
-    setParams(next);
-  }
   const data = result.data;
   return (
     <div className="page-stack">

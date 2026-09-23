@@ -21,14 +21,13 @@ export async function writeAnalysisModelFile<S extends TSchema>(
   assertWriter: () => Promise<void>,
   signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted();
   const decoded = Value.Decode(schema, payload),
-    contentHash = hash(decoded);
+    contents = canonicalStringify(decoded),
+    contentHash = createHash("sha256").update(contents).digest("hex");
   signal?.throwIfAborted();
   await assertWriter();
-  await atomicWrite(
-    path.join(root, "analysis", kind, `${contentHash}.json`),
-    canonicalStringify(decoded),
-  );
+  await atomicWrite(path.join(root, "analysis", kind, `${contentHash}.json`), contents);
   signal?.throwIfAborted();
   await assertWriter();
   await atomicWrite(

@@ -375,7 +375,7 @@ export function DatabasePage(): React.JSX.Element {
         master={
           <>
             <div className="operation-list-toolbar database-list-toolbar">
-              <div className="operation-segments" aria-label="데이터베이스 범위">
+              <div className="operation-segments" role="group" aria-label="데이터베이스 범위">
                 {(
                   [
                     ["ready", "적재 대기", overview.data?.counts.readyToImport ?? 0],
@@ -386,6 +386,7 @@ export function DatabasePage(): React.JSX.Element {
                   <button
                     type="button"
                     key={value}
+                    aria-pressed={scope === value}
                     className={scope === value ? "selected" : undefined}
                     onClick={() =>
                       updateSearch({

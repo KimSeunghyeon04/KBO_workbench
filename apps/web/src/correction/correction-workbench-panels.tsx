@@ -373,19 +373,17 @@ export function RecordDetail({
           원장 행 상세
         </button>
       </div>
-      <div className="record-kind-tabs" role="tablist" aria-label="기록 종류">
+      <div className="record-kind-tabs" role="group" aria-label="기록 종류">
         <button
           type="button"
-          role="tab"
-          aria-selected={kind === "batter"}
+          aria-pressed={kind === "batter"}
           onClick={() => onKindChange("batter")}
         >
           타자 {String(batterCount)}명
         </button>
         <button
           type="button"
-          role="tab"
-          aria-selected={kind === "pitcher"}
+          aria-pressed={kind === "pitcher"}
           onClick={() => onKindChange("pitcher")}
         >
           투수 {String(pitcherCount)}명

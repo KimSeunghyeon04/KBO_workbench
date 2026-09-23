@@ -124,10 +124,34 @@ export async function readBoundedResponseText(
 ): Promise<string> {
   const limit = positiveInteger(maxResponseBytes, "maxResponseBytes");
   const declaredLength = Number(response.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declaredLength) && declaredLength > limit) throw error();
-  const text = await response.text();
-  if (Buffer.byteLength(text, "utf8") > limit) throw error();
-  return text.replace(/^\uFEFF/, "");
+  if (Number.isFinite(declaredLength) && declaredLength > limit) {
+    await response.body?.cancel().catch(() => {});
+    throw error();
+  }
+  if (response.body === null) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const parts: string[] = [];
+  let bytes = 0;
+  let complete = false;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) {
+        complete = true;
+        break;
+      }
+      bytes += chunk.value.byteLength;
+      if (bytes > limit) throw error();
+      parts.push(decoder.decode(chunk.value, { stream: true }));
+    }
+    parts.push(decoder.decode());
+    return parts.join("").replace(/^\uFEFF/, "");
+  } finally {
+    // Stop an oversized or failed body without replacing its original domain/abort error.
+    if (!complete) await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
 }
 
 export function responseCookies(headers: Headers): string | null {

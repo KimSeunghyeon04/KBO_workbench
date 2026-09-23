@@ -18,6 +18,20 @@ it("binds matchup models to the immutable base model and rejects corruption, fal
     await expect(
       workspace.matchupModels.save({ ...model, baseModelHash: "a".repeat(64) }, manifest),
     ).rejects.toThrow("provenance");
+    const invalidBase = {
+      ...base,
+      preprocessing: { ...base.preprocessing, scales: base.preprocessing.scales.map(() => 0) },
+    };
+    await expect(
+      workspace.matchupModels.save(
+        {
+          ...model,
+          base: invalidBase,
+          baseModelHash: pitchQualitySourceHash({ model: invalidBase, manifest }),
+        },
+        manifest,
+      ),
+    ).rejects.toThrow("provenance");
     await expect(
       workspace.matchupModels.save(
         { ...model, targets: model.targets.map((m) => ({ ...m, adopted: true })) },

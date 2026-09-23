@@ -1,3 +1,4 @@
+import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import { createHash } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { Type } from "@sinclair/typebox";
@@ -26,27 +27,16 @@ export async function readPitchOutcomes(
   role: "pitcher" | "batter",
 ) {
   const scope = resolveAnalysisScope({ season, ...options }, "regular");
-  const client = await pool.connect();
-  let released = false;
-  try {
-    await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-    await client.query("SET LOCAL statement_timeout='30s'");
+  return withAnalysisSnapshot(pool, async (client, release) => {
     const manifest = await analysisSourceHash(client, scope);
     const { rows, plateAppearances } = await readPitchOutcomeRows(client, scope, actorId, role);
-    await client.query("COMMIT");
-    client.release();
-    released = true;
+    await release();
     // Effective heights and source-plane geometry are included, so supplement imports invalidate the result.
     const sourceHash = createHash("sha256")
       .update(canonicalStringify({ version: 1, manifest, role, actorId, rows, plateAppearances }))
       .digest("hex");
     return { scope, sourceHash, rows, plateAppearances };
-  } catch (error) {
-    if (!released) await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    if (!released) client.release();
-  }
+  });
 }
 
 /** Reuses the caller's snapshot when several actor cohorts must be compared. */

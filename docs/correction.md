@@ -17,6 +17,12 @@ session mutex는 계산 완료까지 유지하며 실패하면 문서·version·
 
 ## 범위
 
+Database에서 current revision을 다시 열면 workspace가 공용 worker에서 한 번 전체 컴파일하고
+그 findings로 ready/quarantine을 결정한다. route는 compiler를 실행하지 않는다. 계산 실패 시
+기존 original/current가 유지되고, 차단 finding은 quarantine과 함께 저장한다.
+drawer는 입력 상태·명령 제출·포커스를 관리한다. `event-fields`는 타석·투구, 주자 이동, 교체,
+판독·안내 입력을 종류별 컴포넌트로 연결하며 기존 editor registry와 autofill 규칙을 사용한다.
+
 보정 대상은 `staging`과 `quarantine`의 `StagingGameDocumentV2` 원장이다. sealed DB fact는 직접
 수정하지 않는다. Database 화면에서 current revision을 V2 correction draft로 reopen한 뒤 같은 파일
 경로에서 교정하고 current+1 revision으로 적재한다. 브라우저는 정본이 아니며 API가 session 작업
@@ -442,6 +448,11 @@ compile 뒤 새 blocking finding이 없고 지원 필드가 정정 후 값과 �
 session version을 한 번 증가시키는 하나의 undo/redo 단위이며 저장과 DB import는 기존 절차로 별도
 수행한다. import 후 승인 document hash가 current revision으로 seal되고 정정 후 상태를 만족할 때만
 `해결됨`과 적용 revision을 기록한다.
+
+변경 명령이 없는 경우에도 지원 통계의 공식값과 compiler 계산값이 모두 공지의 정정 후 값인지
+검증한다. 공식값만 맞고 원장의 RBI·장타 등 계산값이 다르면 이미 반영으로 처리하지 않는다.
+자책점은 compiler 계산 대상이 아니므로 공식값만 확인한다. 차이가 남았으나 적용 가능한 batch가
+없으면 구체적인 이유와 함께 수동 검토로 남기며, 알 수 없는 타점이나 물리적 이동을 합성하지 않는다.
 
 추가 API는 다음과 같다.
 

@@ -573,6 +573,33 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       era: null,
       knownGamesEra: null,
     });
+    const selectedBat = await repository.batting({
+      season: 2024,
+      competition: "all",
+      playerId: "a1",
+    });
+    expect(selectedBat.rows).toEqual(bat.rows.filter((r) => r.playerId === "a1"));
+    expect(selectedBat.query.playerId).toBe("a1");
+    const selectedPitcher = await repository.pitching({
+      season: 2024,
+      competition: "all",
+      playerId: "hp1",
+    });
+    expect(selectedPitcher.rows).toEqual(pitcher.rows.filter((r) => r.playerId === "hp1"));
+    expect(selectedPitcher.query.playerId).toBe("hp1");
+    for (const kind of ["batting", "pitching"] as const) {
+      expect(
+        await repository[kind]({ season: 2024, competition: "all", playerId: "missing-player" }),
+      ).toMatchObject({ rows: [], total: 0 });
+      await expect(
+        repository[kind]({
+          season: 2024,
+          competition: "all",
+          group: "team",
+          playerId: "a1",
+        }),
+      ).rejects.toThrow("팀 합계 조회");
+    }
     const teams = await repository.batting({ season: 2024, competition: "all", group: "team" });
     expect(teams.rows.reduce((n, r) => n + r.plateAppearances, 0)).toBe(
       bat.rows.reduce((n, r) => n + r.plateAppearances, 0),
@@ -586,6 +613,48 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect((await repository.batting({ season: 2024, competition: "all", minPA: 2 })).rows).toEqual(
       [],
     );
+  });
+
+  it("filters the selected player's game facts before aggregation without changing PA/BF denominators", async () => {
+    await store.importRevision(pitchAnalysisFixture(2024));
+    const otherPitcher = pitchAnalysisFixture(2024, "hp2");
+    await store.importRevision({
+      ...otherPitcher,
+      metadata: { ...otherPitcher.metadata, gameDate: "2024-07-01" },
+    });
+    await store.importRevision(pitchAnalysisFixture(2025));
+    const repository = new PlayerStatisticsRepository(pool);
+    const query = { season: 2024, competition: "all" as const };
+    const selectedBat = await repository.batting({ ...query, playerId: "a1" });
+    expect(selectedBat.rows).toHaveLength(1);
+    expect(selectedBat.rows[0]).toMatchObject({
+      games: 2,
+      plateAppearances: 2,
+      atBats: 2,
+      strikeouts: 2,
+      kRate: 1,
+    });
+    const selectedPitcher = await repository.pitching({ ...query, playerId: "hp1" });
+    expect(selectedPitcher.rows).toHaveLength(1);
+    expect(selectedPitcher.rows[0]).toMatchObject({
+      playerId: "hp1",
+      games: 1,
+      battersFaced: 1,
+      pitches: 4,
+      strikeouts: 1,
+      kRate: 1,
+    });
+    expect(
+      (await repository.pitching(query)).rows.reduce((total, row) => total + row.battersFaced, 0),
+    ).toBe(2);
+    const june = await repository.batting({
+      ...query,
+      playerId: "a1",
+      dateFrom: "2024-06-01",
+      dateTo: "2024-06-30",
+    });
+    expect(june.rows[0]).toMatchObject({ games: 1, plateAppearances: 1, atBats: 1 });
+    expect(june.sourceHash).not.toBe(selectedBat.sourceHash);
   });
 
   it("releases the read snapshot before calibration, reference and sample CPU work", async () => {

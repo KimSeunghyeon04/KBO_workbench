@@ -1,31 +1,36 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { scopeFromParams } from "../analysis/analysis-scope-fields";
+import { Link } from "react-router-dom";
+import { useAnalysisScope } from "../analysis/use-analysis-scope";
+import { AnalysisEmptyState } from "../analysis/analysis-empty-state";
 import { PitcherScopeFields } from "../analysis/pitcher-scope-fields";
-import { getPitchAnalysisCatalog } from "../api/pitch-analysis-client";
-import { getDisciplineCatalog } from "../api/batter-discipline-client";
+import {
+  pitcherCatalogQueryOptions,
+  batterCatalogQueryOptions,
+} from "../api/analysis-catalog-query-options";
 import { getMatchup } from "../api/matchup-client";
 import { MatchupModelPanel } from "../analysis/matchup-model-panel";
 import "../styles/pitch-analysis.css";
 const percent = (n: number | null) => (n === null ? "—" : `${(n * 100).toFixed(1)}%`);
 export function MatchupPage() {
-  const [params, setParams] = useSearchParams(),
-    selected = new URLSearchParams(params),
-    season = Number(params.get("season") ?? 2025),
-    [sample, setSample] = useState<"direct" | "similar">("direct"),
-    [page, setPage] = useState(0);
-  if (!selected.has("competition")) selected.set("competition", "regular");
-  const scope = scopeFromParams(season, selected),
-    catalog = useQuery({
-      queryKey: ["matchup-pitchers", season, scope.options],
+  const {
+    params,
+    selected,
+    season,
+    scope,
+    change: changeScope,
+  } = useAnalysisScope({
+    seasonSelectionKeys: ["pitcher", "batter"],
+  });
+  const [sample, setSample] = useState<"direct" | "similar">("direct");
+  const [page, setPage] = useState(0);
+  const catalog = useQuery({
+      ...pitcherCatalogQueryOptions(season, scope.options),
       enabled: scope.error === null,
-      queryFn: ({ signal }) => getPitchAnalysisCatalog(season, signal, scope.options),
     }),
     batters = useQuery({
-      queryKey: ["matchup-batters", season, scope.options],
+      ...batterCatalogQueryOptions(season, scope.options),
       enabled: scope.error === null,
-      queryFn: ({ signal }) => getDisciplineCatalog(season, signal, scope.options),
     });
   const pitcherId = params.get("pitcher") ?? catalog.data?.pitchers[0]?.pitcherId ?? "",
     batterId = params.get("batter") ?? batters.data?.batters[0]?.batterId ?? "",
@@ -36,14 +41,8 @@ export function MatchupPage() {
     queryFn: ({ signal }) => getMatchup(query, signal),
   });
   function change(key: string, value: string) {
-    const next = new URLSearchParams(params);
-    if (value === "") next.delete(key);
-    else next.set(key, value);
-    if (key === "season") {
-      for (const k of ["dateFrom", "dateTo", "pitcher", "batter"]) next.delete(k);
-    }
     setPage(0);
-    setParams(next);
+    changeScope(key, value);
   }
   const data = result.data;
   return (
@@ -60,22 +59,33 @@ export function MatchupPage() {
         pitchers={catalog.data?.pitchers ?? []}
         pitcherId={pitcherId}
         onChange={change}
-      >
-        <label>
-          타자
-          <select value={batterId} onChange={(e) => change("batter", e.target.value)}>
-            {batters.data?.batters.map((b) => (
-              <option key={b.batterId} value={b.batterId}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      </PitcherScopeFields>
+        primary={
+          <label>
+            타자
+            <select value={batterId} onChange={(e) => change("batter", e.target.value)}>
+              {batters.data?.batters.map((b) => (
+                <option key={b.batterId} value={b.batterId}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        }
+      />
       {(result.error || catalog.error || batters.error || scope.error) && (
         <p role="alert">{String(result.error ?? catalog.error ?? batters.error ?? scope.error)}</p>
       )}
-      {result.isFetching && <p role="status">매치업을 읽고 있습니다.</p>}
+      {(catalog.isLoading || batters.isLoading || result.isFetching) && (
+        <p role="status">매치업을 읽고 있습니다.</p>
+      )}
+      {scope.error === null &&
+        !catalog.isFetching &&
+        !batters.isFetching &&
+        !catalog.error &&
+        !batters.error &&
+        (catalog.data?.pitchers.length === 0 || batters.data?.batters.length === 0) && (
+          <AnalysisEmptyState season={season} options={scope.options} />
+        )}
       {scope.error === null && pitcherId !== "" && batterId !== "" && (
         <MatchupModelPanel query={query} />
       )}

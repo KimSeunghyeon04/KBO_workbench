@@ -1,0 +1,41 @@
+{
+  "gameInfo": {
+    "aCode": "AA",
+    "aName": "원정",
+    "cancelFlag": "N",
+    "gameFlag": "0",
+    "gdate": 20260715,
+    "gtime": "18:30",
+    "hCode": "BB",
+    "hName": "홈",
+    "isPostSeason": false,
+    "statusCode": "4"
+  },
+  "relaySummary": {
+    "result": {
+      "textRelayData": {
+        "inn": 9,
+        "homeOrAway": "0",
+        "textRelays": [
+          {
+            "no": 97,
+            "textOptions": [
+              {
+                "seqno": 485,
+                "type": 99,
+                "text": "=====================================",
+                "currentGameState": { "out": "3", "awayScore": "0", "homeScore": "10" }
+              },
+              {
+                "seqno": 486,
+                "type": 99,
+                "text": "승리투수: 홈 투수",
+                "currentGameState": { "out": "3", "awayScore": "0", "homeScore": "10" }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

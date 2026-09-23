@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { PitchAnalysisPoint, PitchReferenceDistribution } from "@kbo/contracts";
 import { createReferenceContours } from "./pitch-reference-geometry";
 import { createPitchPlotGeometry, type PlotView } from "./pitch-plot-geometry";
-import { groupLabel, pointColor, type ColorMode } from "./pitch-presentation";
+import { groupLabel, type ColorMode } from "./pitch-presentation";
+import { renderPitchPlotBackground, renderPitchPlotSelection } from "./pitch-plot-renderer";
 
 interface Props {
   readonly points: readonly PitchAnalysisPoint[];
@@ -26,6 +27,7 @@ export function PitchShapeChart({
 }: Props): React.JSX.Element {
   const wrapper = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const backgroundCanvas = useRef<HTMLCanvasElement | null>(null);
   const drag = useRef<{ x: number; y: number; view: PlotView; moved: boolean } | null>(null);
   const [width, setWidth] = useState(720);
   const [view, setView] = useState(initialView);
@@ -69,100 +71,51 @@ export function PitchShapeChart({
     () => [...new Set(allPoints.map((p) => p.pitchType ?? "구종 미상"))].sort(),
     [allPoints],
   );
+  const pixelRatio = Math.min(typeof window === "undefined" ? 1 : window.devicePixelRatio || 1, 2);
+  const scene = useMemo(
+    () => ({
+      width,
+      height,
+      pixelRatio,
+      geometry,
+      projected,
+      colorMode,
+      types,
+      referenceGeometry,
+      showReference,
+    }),
+    [
+      width,
+      height,
+      pixelRatio,
+      geometry,
+      projected,
+      colorMode,
+      types,
+      referenceGeometry,
+      showReference,
+    ],
+  );
+  const visiblePoints = useMemo(() => new Set(points), [points]);
+  const activeHover = hover !== null && visiblePoints.has(hover) ? hover : null;
+  const active =
+    activeHover ?? (selected !== null && visiblePoints.has(selected) ? selected : null);
+  useEffect(() => {
+    const background = document.createElement("canvas");
+    renderPitchPlotBackground(background, scene);
+    backgroundCanvas.current = background;
+    return () => {
+      backgroundCanvas.current = null;
+      background.width = 0;
+      background.height = 0;
+    };
+  }, [scene]);
   useEffect(() => {
     const element = canvas.current;
-    const context = element?.getContext("2d");
-    if (element === null || context === null || context === undefined) return;
-    const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    element.width = width * ratio;
-    element.height = height * ratio;
-    context.scale(ratio, ratio);
-    context.clearRect(0, 0, width, height);
-    context.font = "12px system-ui, sans-serif";
-    context.lineWidth = 1;
-    context.strokeStyle = "#dce4df";
-    context.strokeRect(1, 1, width - 2, height - 2);
-    context.save();
-    context.beginPath();
-    context.rect(2, 2, width - 4, height - 4);
-    context.clip();
-    for (const [a, b] of geometry.edges) {
-      context.beginPath();
-      context.moveTo(a.x, a.y);
-      context.lineTo(b.x, b.y);
-      context.stroke();
-    }
-    if (showReference && referenceGeometry !== null) {
-      for (const contour of referenceGeometry.contours) {
-        context.strokeStyle = contour.key === "central50" ? "#586d8a" : "#8896a8";
-        context.globalAlpha = contour.key === "central50" ? 0.45 : 0.3;
-        context.setLineDash(contour.key === "central50" ? [] : [4, 4]);
-        for (const line of contour.lines) {
-          context.beginPath();
-          line.forEach((vector, i) => {
-            const p = geometry.project(vector);
-            if (i === 0) context.moveTo(p.x, p.y);
-            else context.lineTo(p.x, p.y);
-          });
-          context.stroke();
-        }
-      }
-      context.setLineDash([]);
-      context.globalAlpha = 1;
-    }
-    for (const { point, position } of projected) {
-      context.globalAlpha = colorMode === "cluster" && point.clusterId === null ? 0.35 : 0.7;
-      context.fillStyle = pointColor(point, colorMode, types);
-      context.beginPath();
-      context.arc(position.x, position.y, width < 500 ? 2.4 : 3.1, 0, Math.PI * 2);
-      context.fill();
-    }
-    context.globalAlpha = 1;
-    const active = hover !== null && points.includes(hover) ? hover : selected;
-    if (active !== null && points.includes(active)) {
-      const p = geometry.project([active.xCm, active.distanceToPlateCm, active.zCm]);
-      context.strokeStyle = "#172c21";
-      context.lineWidth = 2;
-      context.beginPath();
-      context.arc(p.x, p.y, 7, 0, 2 * Math.PI);
-      context.stroke();
-    }
-    const origin = geometry.project([0, 0, 0]);
-    context.strokeStyle = "#172c21";
-    context.lineWidth = 2;
-    context.beginPath();
-    context.moveTo(origin.x - 6, origin.y);
-    context.lineTo(origin.x + 6, origin.y);
-    context.moveTo(origin.x, origin.y - 6);
-    context.lineTo(origin.x, origin.y + 6);
-    context.stroke();
-    context.restore();
-    context.fillStyle = "#365341";
-    context.textBaseline = "middle";
-    context.textAlign = "center";
-    const occupied: { x: number; y: number; w: number }[] = [];
-    for (const label of geometry.labels) {
-      const w = context.measureText(label.text).width;
-      const x = Math.max(w / 2 + 5, Math.min(width - w / 2 - 5, label.x));
-      const y = Math.max(14, Math.min(height - 14, label.y));
-      if (occupied.some((p) => Math.abs(p.x - x) < (p.w + w) / 2 + 5 && Math.abs(p.y - y) < 18))
-        continue;
-      occupied.push({ x, y, w });
-      context.fillText(label.text, x, y);
-    }
-  }, [
-    points,
-    projected,
-    selected,
-    hover,
-    width,
-    height,
-    geometry,
-    colorMode,
-    types,
-    referenceGeometry,
-    showReference,
-  ]);
+    const background = backgroundCanvas.current;
+    if (element !== null && background !== null)
+      renderPitchPlotSelection(element, background, scene, active);
+  }, [scene, active]);
   function nearest(event: React.PointerEvent<HTMLCanvasElement>): PitchAnalysisPoint | null {
     const rect = event.currentTarget.getBoundingClientRect();
     const px = ((event.clientX - rect.left) * width) / rect.width;
@@ -178,7 +131,6 @@ export function PitchShapeChart({
     }
     return result;
   }
-  const activeHover = hover !== null && points.includes(hover) ? hover : null;
   return (
     <div className="pitch-shape-chart" ref={wrapper}>
       <div className="pitch-view-controls">

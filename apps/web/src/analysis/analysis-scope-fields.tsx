@@ -1,10 +1,3 @@
-import {
-  AnalysisScopeQuerySchema,
-  resolveAnalysisScope,
-  type AnalysisScopeOptions,
-} from "@kbo/contracts";
-import { Value } from "@sinclair/typebox/value";
-
 export const competitionLabels = {
   all: "수집 경기 전체",
   regular: "확인된 정규시즌",
@@ -12,29 +5,17 @@ export const competitionLabels = {
   postseason: "포스트시즌",
   unknown: "경기 종류 미상",
 };
-export function scopeFromParams(
-  season: number,
-  params: URLSearchParams,
-): { options: AnalysisScopeOptions; error: string | null } {
-  const candidate = {
-    season,
-    ...Object.fromEntries(
-      ["competition", "dateFrom", "dateTo"].flatMap((key) => {
-        const value = params.get(key);
-        return value === null || value === "" ? [] : [[key, value]];
-      }),
-    ),
-  };
-  if (!Value.Check(AnalysisScopeQuerySchema, candidate))
-    return { options: {}, error: "분석 범위가 올바르지 않습니다." };
-  try {
-    resolveAnalysisScope(candidate);
-  } catch (error) {
-    return { options: {}, error: error instanceof Error ? error.message : "잘못된 분석 범위" };
-  }
-  const { season: unused, ...options } = candidate;
-  void unused;
-  return { options, error: null };
+
+export function analysisScopeSummary(params: URLSearchParams): string {
+  const competition =
+    Object.entries(competitionLabels).find(
+      ([key]) => key === (params.get("competition") ?? "all"),
+    )?.[1] ?? "경기 종류 미상";
+  const period =
+    params.has("dateFrom") || params.has("dateTo")
+      ? `${params.get("dateFrom") ?? "시즌 시작"} ~ ${params.get("dateTo") ?? "시즌 끝"}`
+      : "시즌 전체";
+  return `${competition} · ${period}`;
 }
 export function AnalysisScopeFields({
   params,

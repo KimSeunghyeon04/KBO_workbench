@@ -9,10 +9,10 @@ import {
 import { StatusBadge } from "../components/status-badge";
 
 const workflowItems = [
-  ["수집", "Naver 경기 데이터 수집"],
-  ["보정", "오류 검토 및 수정"],
-  ["저장", "검증 데이터 DB 적재"],
-  ["재생", "DB 경기 데이터 재생"],
+  ["수집", "경기 데이터를 수집하고 진행 상황을 확인합니다.", "/collect"],
+  ["보정", "검토가 필요한 기록을 확인하고 수정합니다.", "/correct"],
+  ["저장", "검증된 경기를 데이터베이스에 적재합니다.", "/database"],
+  ["재생", "저장된 경기의 투구와 플레이를 살펴봅니다.", "/replay"],
 ] as const;
 
 export function DashboardPage(): React.JSX.Element {
@@ -58,27 +58,39 @@ export function DashboardPage(): React.JSX.Element {
       <Link className="panel dashboard-record-correction" to="/record-corrections">
         <div>
           <strong>KBO 기록정정 검토</strong>
-          <p>미반영과 수동 검토 공지를 확인합니다.</p>
+          <p>
+            {recordCorrections.isError
+              ? "공지 현황을 불러오지 못했습니다. 검토 화면에서 다시 확인하세요."
+              : "미반영과 수동 검토 공지를 확인합니다."}
+          </p>
         </div>
-        <span>{String(recordCorrections.data?.alertCount ?? 0)}건</span>
+        <span>
+          {recordCorrections.isError
+            ? "확인 필요"
+            : recordCorrections.data
+              ? `${recordCorrections.data.alertCount.toLocaleString()}건`
+              : "확인 중"}
+        </span>
       </Link>
 
       <section className="content-grid">
         <article className="panel workflow-panel">
           <div className="section-heading">
             <h2>작업 흐름</h2>
-            <span className="phase-label">2단계</span>
+            <span className="phase-label">바로 이동</span>
           </div>
           <div className="workflow-list">
-            {workflowItems.map(([title, description], index) => (
-              <div className="workflow-item" key={title}>
+            {workflowItems.map(([title, description, to], index) => (
+              <Link className="workflow-item" key={title} to={to}>
                 <span className="step-number">{index + 1}</span>
                 <div>
                   <strong>{title}</strong>
                   <p>{description}</p>
                 </div>
-                <span className="item-state">{index === 0 ? "사용 가능" : "준비 중"}</span>
-              </div>
+                <span className="item-state" aria-hidden="true">
+                  열기 →
+                </span>
+              </Link>
             ))}
           </div>
         </article>

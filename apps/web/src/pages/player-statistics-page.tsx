@@ -2,18 +2,15 @@ import { useQuery } from "@tanstack/react-query";
 import "../styles/pitch-analysis.css";
 import { Link, useSearchParams } from "react-router-dom";
 import { Value } from "@sinclair/typebox/value";
+import { BattingStatisticsQuerySchema, PitchingStatisticsQuerySchema } from "@kbo/contracts";
+import { BattingTable, PitchingTable } from "../analysis/player-statistics-tables";
+import { AnalysisScopeFields } from "../analysis/analysis-scope-fields";
 import {
-  BattingStatisticsQuerySchema,
-  PitchingStatisticsQuerySchema,
-  type BattingStatisticsRow,
-  type PitchingStatisticsRow,
-} from "@kbo/contracts";
-import { AnalysisScopeFields, scopeFromParams } from "../analysis/analysis-scope-fields";
+  analysisScopeSearch,
+  changeAnalysisParams,
+  scopeFromParams,
+} from "../analysis/analysis-scope";
 import { getBattingStatistics, getPitchingStatistics } from "../api/player-statistics-client";
-const number = (n: number | null, digits = 3) => (n === null ? "—" : n.toFixed(digits));
-const percent = (n: number | null) => (n === null ? "—" : `${(n * 100).toFixed(1)}%`);
-const innings = (outs: number) =>
-  `${Math.floor(outs / 3)}${outs % 3 === 0 ? "" : outs % 3 === 1 ? "⅓" : "⅔"}`;
 
 export function PlayerStatisticsPage() {
   const [params, setParams] = useSearchParams();
@@ -61,17 +58,11 @@ export function PlayerStatisticsPage() {
   const active = kind === "batting" ? bat : pitch;
   const valid = scope.error === null && (kind === "batting" ? validBatting : validPitching);
   function change(key: string, value: string) {
-    const next = new URLSearchParams(params);
-    if (value === "") next.delete(key);
-    else next.set(key, value);
+    const next = changeAnalysisParams(params, key, value);
     if (key !== "page") next.delete("page");
     if (key === "kind") {
       next.delete("sort");
       next.delete("minimum");
-    }
-    if (key === "season") {
-      next.delete("dateFrom");
-      next.delete("dateTo");
     }
     setParams(next);
   }
@@ -184,7 +175,9 @@ export function PlayerStatisticsPage() {
           {active.data.total === 0 && (
             <p>
               선택 범위의 자료가 없습니다.{" "}
-              <Link to={`/analysis/coverage?season=${season}`}>경기 분류와 수집 범위 확인</Link>
+              <Link to={`/analysis/coverage?${analysisScopeSearch(season, scope.options)}`}>
+                경기 분류와 수집 범위 확인
+              </Link>
             </p>
           )}
           <nav aria-label="성적 페이지">
@@ -209,163 +202,5 @@ export function PlayerStatisticsPage() {
         </section>
       )}
     </div>
-  );
-}
-function BattingTable({
-  rows,
-  detail,
-}: {
-  rows: BattingStatisticsRow[];
-  detail: (id: string) => string;
-}) {
-  return (
-    <div className="table-scroll" tabIndex={0}>
-      <table aria-label="타격 성적">
-        <thead>
-          <tr>
-            {[
-              "선수/팀",
-              "당시 팀",
-              "경기",
-              "PA",
-              "AB",
-              "H",
-              "2B",
-              "3B",
-              "HR",
-              "BB (IBB)",
-              "HBP",
-              "SO",
-              "SF",
-              "SH",
-              "R",
-              "TB",
-              "AVG",
-              "OBP",
-              "SLG",
-              "OPS",
-              "K%",
-              "BB%",
-            ].map((h) => (
-              <th key={h}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={JSON.stringify([r.identity, r.teamId])}>
-              <th>
-                {r.playerId === null ? r.name : <Link to={detail(r.playerId)}>{r.name}</Link>}
-              </th>
-              <td>{r.teamName}</td>
-              {[
-                r.games,
-                r.plateAppearances,
-                r.atBats,
-                r.hits,
-                r.doubles,
-                r.triples,
-                r.homeRuns,
-                `${r.walks} (${r.intentionalWalks})`,
-                r.hitByPitch,
-                r.strikeouts,
-                r.sacrificeFlies,
-                r.sacrificeBunts,
-                r.runs,
-                r.totalBases,
-                number(r.avg),
-                number(r.obp),
-                number(r.slg),
-                number(r.ops),
-                percent(r.kRate),
-                percent(r.bbRate),
-              ].map((x, i) => (
-                <td key={i}>{x}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-function PitchingTable({
-  rows,
-  detail,
-}: {
-  rows: PitchingStatisticsRow[];
-  detail: (id: string) => string;
-}) {
-  return (
-    <>
-      <p>
-        자책점 미확인 경기가 있으면 전체 ERA는 —입니다. 확인 경기 ERA는 해당 경기의 아웃 수만 분모에
-        넣습니다.
-      </p>
-      <div className="table-scroll" tabIndex={0}>
-        <table aria-label="투구 성적">
-          <thead>
-            <tr>
-              {[
-                "선수/팀",
-                "당시 팀",
-                "경기",
-                "BF",
-                "이닝",
-                "H",
-                "R",
-                "BB (IBB)",
-                "HBP",
-                "SO",
-                "투구",
-                "스트라이크",
-                "K%",
-                "BB%",
-                "K−BB%",
-                "ERA",
-                "ER 확인 경기",
-                "확인 이닝",
-                "확인 ER",
-                "확인 경기 ERA",
-              ].map((h) => (
-                <th key={h}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={JSON.stringify([r.identity, r.teamId])}>
-                <th>
-                  {r.playerId === null ? r.name : <Link to={detail(r.playerId)}>{r.name}</Link>}
-                </th>
-                <td>{r.teamName}</td>
-                {[
-                  r.games,
-                  r.battersFaced,
-                  innings(r.outsRecorded),
-                  r.hits,
-                  r.runs,
-                  `${r.walks} (${r.intentionalWalks})`,
-                  r.hitByPitch,
-                  r.strikeouts,
-                  r.pitches,
-                  r.strikes,
-                  percent(r.kRate),
-                  percent(r.bbRate),
-                  percent(r.kMinusBbRate),
-                  number(r.era, 2),
-                  `${r.knownErGames}/${r.games}`,
-                  innings(r.knownErOuts),
-                  r.knownErGames === 0 ? "—" : r.knownEarnedRuns,
-                  number(r.knownGamesEra, 2),
-                ].map((x, i) => (
-                  <td key={i}>{x}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
   );
 }

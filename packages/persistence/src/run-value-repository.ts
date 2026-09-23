@@ -1,3 +1,4 @@
+import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import { createHash } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { Type } from "@sinclair/typebox";
@@ -40,10 +41,7 @@ export class RunValueRepository {
   ) {
     if (!Number.isInteger(through) || through < 2020 || through > 2024)
       throw new Error("훈련 마지막 시즌은 2020–2024여야 합니다.");
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      await client.query("SET LOCAL statement_timeout='30s'");
+    return withAnalysisSnapshot(this.pool, async (client, release) => {
       const manifest = await readRunManifest(client, through),
         games = manifest.games.filter(
           (g) =>
@@ -87,14 +85,9 @@ export class RunValueRepository {
             );
         }
       }
-      await client.query("COMMIT");
+      await release();
       return { observations, countObservations, winObservations, manifest };
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
   public async game(
     gameId: string,
@@ -159,11 +152,7 @@ export class RunValueRepository {
     model: { sourceHash: string; trainedThrough: number } | null,
     expectedSeason?: number,
   ) {
-    const client = await this.pool.connect();
-    let released = false;
-    try {
-      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      await client.query("SET LOCAL statement_timeout='30s'");
+    return withAnalysisSnapshot(this.pool, async (client, release) => {
       const games = Value.Decode(
           Type.Array(RunTrainingGameSchema),
           (
@@ -175,7 +164,7 @@ export class RunValueRepository {
         ),
         game = games[0];
       if (game === undefined || (expectedSeason !== undefined && game.season !== expectedSeason)) {
-        await client.query("COMMIT");
+        await release();
         return null;
       }
       const confirmed = await client.query<{ regular: boolean }>(
@@ -187,16 +176,9 @@ export class RunValueRepository {
         model !== null &&
         model.sourceHash === runTrainingHash(await readRunManifest(client, model.trainedThrough));
       const plays = await readAnalysisPlays(client, [gameId], revision);
-      await client.query("COMMIT");
-      client.release();
-      released = true;
+      await release();
       return { game, plays, modelCurrent };
-    } catch (error) {
-      if (!released) await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      if (!released) client.release();
-    }
+    });
   }
 }
 export function runTrainingHash(

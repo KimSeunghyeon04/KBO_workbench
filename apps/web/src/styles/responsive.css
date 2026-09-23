@@ -167,6 +167,7 @@
     display: none;
     width: auto;
     height: auto;
+    max-height: calc(100dvh - 56px);
     padding: 8px 12px 12px;
     border-right: 0;
     border-bottom: 1px solid #dfe3e0;
@@ -176,15 +177,20 @@
 
   .sidebar.open {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .navigation-group + .navigation-group {
+    margin-top: 0;
   }
 
   .nav-link {
-    padding: 8px 10px;
+    padding: 11px 10px;
     border: 0;
     border-radius: 4px;
     border-left: 0;
-    text-align: center;
+    text-align: left;
   }
 
   .nav-link.active {
@@ -193,7 +199,7 @@
 
   .mobile-menu-button {
     display: inline-flex;
-    height: 30px;
+    min-height: 40px;
     align-items: center;
     padding: 0 10px;
     border: 1px solid #cfd6d1;
@@ -677,5 +683,6 @@
   }
   .sidebar.open {
     top: 96px;
+    max-height: calc(100dvh - 96px);
   }
 }

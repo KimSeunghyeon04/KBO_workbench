@@ -79,18 +79,20 @@ export interface AppRuntime {
 }
 
 export async function createRuntime(config: AppConfig, pool: Pool): Promise<AppRuntime> {
-  const workspace = await StagingWorkspace.open(config.workspacePath);
   const client = new NaverHttpClient({
     maxAttempts: config.collection.maxAttempts,
     requestsPerSecond: config.collection.requestsPerSecond,
     timeoutMs: config.collection.timeoutMs,
   });
   const computation = new ComputationPool();
+  let workspace: StagingWorkspace;
   try {
     await computation.warmup();
+    workspace = await StagingWorkspace.open(config.workspacePath, undefined, (document) =>
+      compileDocument(computation, document),
+    );
   } catch (error: unknown) {
     await computation.close();
-    await workspace.close();
     throw error;
   }
   const revisionStore = new GameRevisionStore(

@@ -2,6 +2,10 @@ import { lazy, Suspense } from "react";
 import { Route, Routes } from "react-router-dom";
 
 import { AppShell } from "./components/app-shell";
+import { PlayerAnalysisFrame } from "./analysis/player-analysis-frame";
+const AnalysisPlayersPage = lazy(() =>
+  import("./pages/analysis-players-page").then((m) => ({ default: m.AnalysisPlayersPage })),
+);
 const AnalysisModelsPage = lazy(() =>
   import("./pages/analysis-models-page").then((m) => ({ default: m.AnalysisModelsPage })),
 );
@@ -29,6 +33,11 @@ const PitchOutcomesPage = lazy(() =>
 const PlayerStatisticsPage = lazy(() =>
   import("./pages/player-statistics-page").then((module) => ({
     default: module.PlayerStatisticsPage,
+  })),
+);
+const PlayerBasicStatisticsPage = lazy(() =>
+  import("./pages/player-basic-statistics-page").then((module) => ({
+    default: module.PlayerBasicStatisticsPage,
   })),
 );
 
@@ -73,28 +82,33 @@ export function App(): React.JSX.Element {
   return (
     <AppShell>
       <Suspense fallback={<div className="panel loading-panel">화면을 불러오는 중입니다.</div>}>
-        <Routes>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/collect" element={<CollectPage />} />
-          <Route path="/correct" element={<CorrectPage />} />
-          <Route path="/record-corrections" element={<RecordCorrectionsPage />} />
-          <Route path="/database" element={<DatabasePage />} />
-          <Route path="/replay" element={<ReplayPage />} />
-          <Route path="/analysis/pitch-shape" element={<PitchAnalysisPage />} />
-          <Route path="/analysis/batter-discipline" element={<BatterDisciplinePage />} />
-          <Route path="/analysis/coverage" element={<AnalysisCoveragePage />} />
-          <Route path="/analysis/models" element={<AnalysisModelsPage />} />
-          <Route path="/analysis/park-environment" element={<ParkEnvironmentPage />} />
-          <Route path="/analysis/pitcher-changes" element={<PitcherChangesPage />} />
-          <Route path="/analysis/pitch-sequences" element={<PitchSequencesPage />} />
-          <Route path="/analysis/baserunning" element={<BaserunningPage />} />
-          <Route path="/analysis/pitcher-workload" element={<PitcherWorkloadPage />} />
-          <Route path="/analysis/matchups" element={<MatchupPage />} />
-          <Route path="/analysis/pitch-location" element={<PitchOutcomesPage role="pitcher" />} />
-          <Route path="/analysis/batter-profile" element={<PitchOutcomesPage role="batter" />} />
-          <Route path="/analysis/statistics" element={<PlayerStatisticsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
+        <PlayerAnalysisFrame>
+          <Routes>
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/collect" element={<CollectPage />} />
+            <Route path="/correct" element={<CorrectPage />} />
+            <Route path="/record-corrections" element={<RecordCorrectionsPage />} />
+            <Route path="/database" element={<DatabasePage />} />
+            <Route path="/replay" element={<ReplayPage />} />
+            <Route path="/analysis" element={<AnalysisPlayersPage />} />
+            <Route path="/analysis/players" element={<AnalysisPlayersPage />} />
+            <Route path="/analysis/pitch-shape" element={<PitchAnalysisPage />} />
+            <Route path="/analysis/batter-discipline" element={<BatterDisciplinePage />} />
+            <Route path="/analysis/coverage" element={<AnalysisCoveragePage />} />
+            <Route path="/analysis/models" element={<AnalysisModelsPage />} />
+            <Route path="/analysis/park-environment" element={<ParkEnvironmentPage />} />
+            <Route path="/analysis/pitcher-changes" element={<PitcherChangesPage />} />
+            <Route path="/analysis/pitch-sequences" element={<PitchSequencesPage />} />
+            <Route path="/analysis/baserunning" element={<BaserunningPage />} />
+            <Route path="/analysis/pitcher-workload" element={<PitcherWorkloadPage />} />
+            <Route path="/analysis/matchups" element={<MatchupPage />} />
+            <Route path="/analysis/pitch-location" element={<PitchOutcomesPage role="pitcher" />} />
+            <Route path="/analysis/batter-profile" element={<PitchOutcomesPage role="batter" />} />
+            <Route path="/analysis/statistics" element={<PlayerStatisticsPage />} />
+            <Route path="/analysis/player-statistics" element={<PlayerBasicStatisticsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
+        </PlayerAnalysisFrame>
       </Suspense>
     </AppShell>
   );

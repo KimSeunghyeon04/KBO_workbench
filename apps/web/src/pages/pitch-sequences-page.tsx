@@ -1,34 +1,30 @@
 import { useQuery } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
 import { Value } from "@sinclair/typebox/value";
 import { PitchSequenceQuerySchema } from "@kbo/contracts";
-import { scopeFromParams } from "../analysis/analysis-scope-fields";
+import { useAnalysisScope } from "../analysis/use-analysis-scope";
 import { PitcherScopeFields } from "../analysis/pitcher-scope-fields";
 import { PitchSequencePairs } from "../analysis/pitch-sequence-pairs";
-import { getPitchAnalysisCatalog } from "../api/pitch-analysis-client";
+import { pitcherCatalogQueryOptions } from "../api/analysis-catalog-query-options";
 import { getPitchSequences } from "../api/pitch-sequence-client";
 import "../styles/pitch-analysis.css";
 export function PitchSequencesPage() {
-  const [params, setParams] = useSearchParams(),
-    selected = new URLSearchParams(params),
-    season = Number(params.get("season") ?? 2025);
-  if (!selected.has("competition")) selected.set("competition", "regular");
-  const scope = scopeFromParams(season, selected),
-    query = {
-      season,
-      ...scope.options,
-      ...(params.has("previousType") ? { previousType: params.get("previousType") } : {}),
-      ...(params.has("pitchType") ? { pitchType: params.get("pitchType") } : {}),
-      ...(params.has("balls") ? { balls: Number(params.get("balls")) } : {}),
-      ...(params.has("strikes") ? { strikes: Number(params.get("strikes")) } : {}),
-      ...(params.has("stance") ? { stance: params.get("stance") } : {}),
-      cohort: params.get("cohort") ?? "all",
-    };
+  const { params, selected, season, scope, change } = useAnalysisScope({
+    seasonSelectionKeys: ["pitcher"],
+  });
+  const query = {
+    season,
+    ...scope.options,
+    ...(params.has("previousType") ? { previousType: params.get("previousType") } : {}),
+    ...(params.has("pitchType") ? { pitchType: params.get("pitchType") } : {}),
+    ...(params.has("balls") ? { balls: Number(params.get("balls")) } : {}),
+    ...(params.has("strikes") ? { strikes: Number(params.get("strikes")) } : {}),
+    ...(params.has("stance") ? { stance: params.get("stance") } : {}),
+    cohort: params.get("cohort") ?? "all",
+  };
   const valid = scope.error === null && Value.Check(PitchSequenceQuerySchema, query);
   const catalog = useQuery({
-      queryKey: ["sequence-catalog", season, scope.options],
+      ...pitcherCatalogQueryOptions(season, scope.options),
       enabled: scope.error === null,
-      queryFn: ({ signal }) => getPitchAnalysisCatalog(season, signal, scope.options),
     }),
     id = params.get("pitcher") ?? catalog.data?.pitchers[0]?.pitcherId ?? "";
   const analysis = useQuery({
@@ -39,17 +35,6 @@ export function PitchSequencesPage() {
       return getPitchSequences(query, id, signal);
     },
   });
-  function change(key: string, value: string) {
-    const next = new URLSearchParams(params);
-    if (value === "") next.delete(key);
-    else next.set(key, value);
-    if (key === "season") {
-      next.delete("dateFrom");
-      next.delete("dateTo");
-      next.delete("pitcher");
-    }
-    setParams(next);
-  }
   const data = analysis.data;
   return (
     <div className="page-stack">

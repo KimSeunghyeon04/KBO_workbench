@@ -1,5 +1,4 @@
 import { Worker } from "node:worker_threads";
-import { setImmediate } from "node:timers/promises";
 import {
   canonicalStringify,
   resolveAnalysisScope,
@@ -11,6 +10,7 @@ import {
 } from "@kbo/contracts";
 import { Value } from "@sinclair/typebox/value";
 import { PitchAnalysisBusyError } from "./pitch-clustering-workers.js";
+import { sendWorkerRows } from "./worker-row-transport.js";
 
 interface Repository {
   snapshot(
@@ -141,7 +141,7 @@ export class BatterDisciplineService {
       worker.once("message", message);
       const send = async () => {
         const rows = snapshot.rows;
-        if (rows === null || rows.length === 0) {
+        if (rows === null) {
           worker.postMessage({
             snapshot,
             query: job.query,
@@ -151,17 +151,18 @@ export class BatterDisciplineService {
           });
           return;
         }
-        // Structured cloning an entire season would monopolize the HTTP event loop.
-        for (let offset = 0; offset < rows.length && !finished; offset += 5000) {
-          worker.postMessage({
-            snapshot: { ...snapshot, rows: rows.slice(offset, offset + 5000) },
-            query: job.query,
-            batterId: job.batterId,
-            append: offset > 0,
-            complete: offset + 5000 >= rows.length,
-          });
-          await setImmediate();
-        }
+        await sendWorkerRows(
+          rows,
+          ({ rows, append, complete }) =>
+            worker.postMessage({
+              snapshot: { ...snapshot, rows },
+              query: job.query,
+              batterId: job.batterId,
+              append,
+              complete,
+            }),
+          () => !finished,
+        );
       };
       void send().catch((error: unknown) =>
         fail(error instanceof Error ? error : new Error("Cannot send discipline request")),

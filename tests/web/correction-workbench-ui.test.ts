@@ -275,7 +275,7 @@ describe("Correction 작업대 표시", () => {
     expect(screen.getByText("비식별 타자")).toBeTruthy();
     expect(screen.getByRole("row", { name: /타점.*1.*0.*불일치/ })).toBeTruthy();
     expect(screen.getByRole("row", { name: /삼진.*1.*1.*일치/ })).toBeTruthy();
-    await userEvent.setup().click(screen.getByRole("tab", { name: "투수 1명" }));
+    await userEvent.setup().click(screen.getByRole("button", { name: "투수 1명" }));
     expect(onKindChange).toHaveBeenCalledWith("pitcher");
 
     view.rerender(
@@ -290,6 +290,9 @@ describe("Correction 작업대 표시", () => {
       }),
     );
     expect(screen.getByText("비식별 투수")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "투수 1명" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
     expect(screen.getByRole("row", { name: /투구 수.*4.*3.*불일치/ })).toBeTruthy();
     expect(screen.getByRole("row", { name: /자책점.*0.*계산 제외.*검증 제외/ })).toBeTruthy();
   });

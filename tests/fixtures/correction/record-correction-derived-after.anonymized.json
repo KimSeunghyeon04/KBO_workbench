@@ -1,0 +1,166 @@
+{
+  "document": {
+    "schemaVersion": 2,
+    "source": {
+      "provider": "naver",
+      "sourceGameId": "anon-derived-after-source",
+      "collectedAt": "2026-09-23T00:00:00Z",
+      "sourceBundleHash": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "revisionBase": { "kind": "new_game" },
+    "metadata": {
+      "gameId": "anon-derived-after",
+      "season": 2024,
+      "gameDate": "2024-08-20",
+      "status": "suspended",
+      "scheduledInnings": 9
+    },
+    "teams": {
+      "away": { "teamId": "ANON-A", "name": "비식별원정" },
+      "home": { "teamId": "ANON-H", "name": "비식별홈" }
+    },
+    "rosters": {
+      "away": {
+        "teamId": "ANON-A",
+        "players": [
+          {
+            "playerId": "anon-batter",
+            "name": "비식별타자",
+            "battingOrder": 1,
+            "starter": true,
+            "positions": ["DH"]
+          }
+        ]
+      },
+      "home": {
+        "teamId": "ANON-H",
+        "players": [
+          {
+            "playerId": "anon-pitcher",
+            "name": "비식별투수",
+            "starter": true,
+            "positions": ["P"]
+          }
+        ]
+      }
+    },
+    "events": [
+      {
+        "identity": {
+          "kind": "source",
+          "eventId": "anon-e0",
+          "endpoint": "anonymous-relay",
+          "blockIndex": 0,
+          "eventIndex": 0
+        },
+        "sequence": 0,
+        "inning": 1,
+        "half": "top",
+        "kind": "half_inning_start",
+        "payload": {}
+      },
+      {
+        "identity": {
+          "kind": "source",
+          "eventId": "anon-e1",
+          "endpoint": "anonymous-relay",
+          "blockIndex": 0,
+          "eventIndex": 1
+        },
+        "sequence": 1,
+        "inning": 1,
+        "half": "top",
+        "kind": "batter_start",
+        "payload": { "batterId": "anon-batter", "pitcherId": "anon-pitcher" }
+      },
+      {
+        "identity": {
+          "kind": "source",
+          "eventId": "anon-e2",
+          "endpoint": "anonymous-relay",
+          "blockIndex": 0,
+          "eventIndex": 2
+        },
+        "sequence": 2,
+        "inning": 1,
+        "half": "top",
+        "kind": "plate_result",
+        "payload": {
+          "result": "home_run",
+          "batterId": "anon-batter",
+          "pitcherId": "anon-pitcher"
+        }
+      }
+    ],
+    "trackingCandidates": [],
+    "officialRecords": {
+      "batters": [
+        {
+          "playerId": "anon-batter",
+          "side": "away",
+          "plateAppearances": 1,
+          "atBats": 1,
+          "runs": 1,
+          "hits": 1,
+          "homeRuns": 1,
+          "runsBattedIn": 1,
+          "walks": 0,
+          "strikeouts": 0
+        }
+      ],
+      "pitchers": []
+    }
+  },
+  "notice": {
+    "noticeId": "2024:0:900",
+    "noticeHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sourceRequestKey": "records:2024:0:1",
+    "sourceRowIndex": 0,
+    "seriesId": 0,
+    "seriesName": "정규시즌",
+    "recordNumber": 900,
+    "gameDate": "2024-08-20",
+    "weekdayText": "",
+    "awayTeamName": "비식별원정",
+    "homeTeamName": "비식별홈",
+    "doubleheaderNumber": null,
+    "venueName": "비식별구장",
+    "inning": 1,
+    "half": "top",
+    "battingOrder": 1,
+    "decisionBefore": "hit",
+    "decisionAfter": "hit",
+    "beforeRecordText": "안타",
+    "afterRecordText": "안타",
+    "contentText": "비식별원정\n비식별타자(타점 0→1)",
+    "correctionDateText": "08/21",
+    "participants": [
+      {
+        "participantIndex": 0,
+        "rawTeamName": "비식별원정",
+        "rawPlayerName": "비식별타자",
+        "role": "batter",
+        "parenthesized": false
+      },
+      {
+        "participantIndex": 1,
+        "rawTeamName": "비식별홈",
+        "rawPlayerName": "비식별투수",
+        "role": "pitcher",
+        "parenthesized": true
+      }
+    ],
+    "statChanges": [
+      {
+        "statIndex": 0,
+        "participantIndex": 0,
+        "rawStatName": "타점",
+        "statCode": "runs_batted_in",
+        "scope": "batter",
+        "beforeValue": 0,
+        "afterValue": 1,
+        "supportKind": "direct"
+      }
+    ]
+  }
+}

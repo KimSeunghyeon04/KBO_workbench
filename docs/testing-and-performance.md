@@ -128,6 +128,12 @@ EXCEPTION subtransaction 오류 없이 정확한 존 안 투구 수를 반환하
 - `game-core`에 provider 이름·한국어 lexical 정규식·UI·DB adapter가 없음
 - production collection 코드에 특정 경기 ID·fixture 위치 분기가 없음
 - Fastify composition root와 route plugin, 보정 page와 controller/editor/component 경계가 유지됨
+- emitted runtime import를 순회해 projection 재생·원장 복원에 compiler/DB adapter가 유입되지 않음
+- current 전환·session store가 상위 workspace/manager를 역참조하지 않음
+- 기록정정 jobs/sources/cases가 공개 repository를 역참조하지 않고 이벤트 입력 UI가 drawer를 역참조하지 않음
+- DB correction draft 열기는 주입한 worker compiler를 한 번 호출하고 차단 문서를 quarantine에 저장함
+- compiler 실패 시 correction draft의 current/original을 바꾸지 않음
+- 계산 중인 clean session은 유휴 시간이 지나도 회수하지 않고 계산 종료 후 기존 유휴 정책을 적용함
 
 ### 보정과 UI
 
@@ -234,6 +240,11 @@ production build 뒤 fixture를 warm-up하고 반복 측정한다. 기본 기준
 않는다.
 
 ## 확장 분석의 학습·조회 검증
+
+snapshot 자원 수명, worker 전송과 실행기 import 경계, 동일 범위 목록의 요청 병합·취소,
+미채택 모델의 행렬 생성 생략은 별도 회귀로 고정한다. 계약의 sparse/symbol 배열 거부와
+공용 HTTP reader의 스트리밍 바이트 상한도 검증한다.
+[전체 모듈화 점검과 검증 기록](reviews/2026-09-22-modularity-refactor.md)을 참고한다.
 
 A10/A11/A14는 시간 분할과 미래 전처리 누수, 게임 단위 불확실성, 미채택·미지원, 모델 파일
 원자적 공개와 source manifest 무효화를 검증한다. RE24/카운트 RE는 atomic play 합계와

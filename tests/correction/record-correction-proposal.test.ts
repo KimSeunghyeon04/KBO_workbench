@@ -14,8 +14,113 @@ import {
 } from "@kbo/correction";
 import { compileStagingGameDocumentV2 } from "@kbo/game-core";
 import { describe, expect, it } from "vitest";
+import {
+  derivedAfterScenarios,
+  recordCorrectionDerivedAfterFixture,
+} from "../helpers/record-correction-fixture.js";
 
 describe("KBO 기록정정 correction batch", () => {
+  it.each(derivedAfterScenarios)(
+    "does not mark unsupported derived after-state as complete or guess missing RBI: %s",
+    async (scenario) => {
+      const { document, notice, binding } = await recordCorrectionDerivedAfterFixture(scenario);
+      const original = structuredClone(document);
+      const replay = compileStagingGameDocumentV2(document);
+      expect(replay.findings.filter((finding) => finding.severity === "blocking")).toEqual([]);
+      const proposal = buildRecordCorrectionBatchProposal(document, notice, binding);
+      expect(proposal.eligible).toBe(false);
+      expect(proposal.reasons).toContainEqual(
+        expect.stringContaining(
+          scenario.startsWith("rbi")
+            ? "anon-batter의 타점 compiler 계산값(0)"
+            : "anon-batter의 2루타 compiler 계산값(1)",
+        ),
+      );
+      if (scenario === "rbi_official_before") {
+        expect(proposal.batch?.commands.map((command) => command.kind)).toEqual([
+          "update_official_record",
+        ]);
+        expect(proposal.preview?.afterBlockingCount).toBe(0);
+      } else expect(proposal.batch).toBeNull();
+      if (scenario === "omitted_double_with_total_bases")
+        expect(proposal.reasons).toContainEqual(expect.stringContaining("루타 파생값"));
+      expect(document).toEqual(original);
+    },
+  );
+
+  it("recognizes an already-applied RBI only when the compiler also confirms it", async () => {
+    const source = await recordCorrectionDerivedAfterFixture("rbi_official_after");
+    const document = parseStagingGameDocumentV2({
+      ...source.document,
+      events: source.document.events.map((event) =>
+        event.kind === "plate_result"
+          ? { ...event, payload: { ...event.payload, creditedRbi: 1 } }
+          : event,
+      ),
+    });
+    expect(
+      buildRecordCorrectionBatchProposal(document, source.notice, source.binding),
+    ).toMatchObject({
+      eligible: false,
+      reasons: [],
+      batch: null,
+    });
+  });
+
+  it("keeps ER and unsupported fielding counts as source evidence outside compiler verification", async () => {
+    const source = await recordCorrectionDerivedAfterFixture("rbi_official_after");
+    const pitcher = compileStagingGameDocumentV2(source.document).pitcherLines[0];
+    if (pitcher === undefined) throw new Error("비식별 투수 기록이 없습니다.");
+    const document = parseStagingGameDocumentV2({
+      ...source.document,
+      officialRecords: {
+        ...source.document.officialRecords,
+        pitchers: [{ ...pitcher, earnedRuns: 1 }],
+      },
+    });
+    const notice: RecordCorrectionNotice = {
+      ...source.notice,
+      statChanges: [
+        {
+          statIndex: 0,
+          participantIndex: 1,
+          rawStatName: "자책점",
+          statCode: "earned_runs",
+          scope: "pitcher",
+          beforeValue: 0,
+          afterValue: 1,
+          supportKind: "direct",
+        },
+        {
+          statIndex: 1,
+          participantIndex: 1,
+          rawStatName: "실책",
+          statCode: "fielding_errors",
+          scope: "fielder",
+          beforeValue: 1,
+          afterValue: 0,
+          supportKind: "evidence_only",
+        },
+      ],
+    };
+    expect(buildRecordCorrectionBatchProposal(document, notice, source.binding)).toMatchObject({
+      eligible: false,
+      reasons: [],
+      batch: null,
+    });
+    document.officialRecords.pitchers[0] = { ...pitcher, earnedRuns: 0 };
+    const proposal = buildRecordCorrectionBatchProposal(document, notice, source.binding);
+    expect(proposal.eligible).toBe(true);
+    expect(proposal.reasons).toEqual([]);
+    expect(proposal.batch?.commands).toEqual([
+      expect.objectContaining({
+        kind: "update_official_record",
+        recordType: "pitcher",
+        record: expect.objectContaining({ earnedRuns: 1 }),
+      }),
+    ]);
+  });
+
   it("플레이 identity와 Naver 원문을 보존한 원자적 제안을 만든다", async () => {
     const document = parseStagingGameDocumentV2(
       JSON.parse(await readFile("tests/fixtures/game-document-v2.golden.json", "utf8")) as unknown,

@@ -1,3 +1,4 @@
+import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import { createHash } from "node:crypto";
 import type { Pool } from "pg";
 import { Type } from "@sinclair/typebox";
@@ -18,12 +19,8 @@ export class PitcherWorkloadRepository {
   public constructor(private readonly pool: Pool) {}
   public async analyze(input: AnalysisScopeQuery, pitcherId: string) {
     const query = Value.Decode(AnalysisScopeQuerySchema, input),
-      scope = resolveAnalysisScope(query, "regular"),
-      client = await this.pool.connect();
-    let released = false;
-    try {
-      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      await client.query("SET LOCAL statement_timeout='30s'");
+      scope = resolveAnalysisScope(query, "regular");
+    return withAnalysisSnapshot(this.pool, async (client, release) => {
       const { manifest, history, selected } = await readWorkloadContext(client, scope, pitcherId);
       const encounters = Value.Decode(
         Type.Array(WorkloadEncounterSchema),
@@ -46,9 +43,7 @@ export class PitcherWorkloadRepository {
         ).rows,
       );
       const plays = await readAnalysisPlays(client, selected);
-      await client.query("COMMIT");
-      client.release();
-      released = true;
+      await release();
       const sourceHash = createHash("sha256")
         .update(canonicalStringify({ version: 1, manifest, history }))
         .digest("hex");
@@ -66,11 +61,6 @@ export class PitcherWorkloadRepository {
           buckets,
         ),
       );
-    } catch (error) {
-      if (!released) await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      if (!released) client.release();
-    }
+    });
   }
 }

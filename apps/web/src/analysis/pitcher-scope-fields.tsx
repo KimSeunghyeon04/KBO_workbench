@@ -1,6 +1,7 @@
-import type { PropsWithChildren } from "react";
+import type { PropsWithChildren, ReactNode } from "react";
 import type { PitchAnalysisCatalog } from "@kbo/contracts";
-import { AnalysisScopeFields } from "./analysis-scope-fields";
+import { AnalysisScopeFields, analysisScopeSummary } from "./analysis-scope-fields";
+import { AnalysisFilterBar } from "./analysis-filter-bar";
 export function PitcherScopeFields({
   season,
   params,
@@ -8,15 +9,26 @@ export function PitcherScopeFields({
   pitcherId,
   onChange,
   children,
+  primary,
 }: PropsWithChildren<{
   season: number;
   params: URLSearchParams;
   pitchers: PitchAnalysisCatalog["pitchers"];
   pitcherId: string;
   onChange: (key: string, value: string) => void;
+  primary?: ReactNode;
 }>) {
   return (
-    <section className="panel pitch-analysis-toolbar">
+    <AnalysisFilterBar
+      label="투수 분석 조건"
+      summary={analysisScopeSummary(params)}
+      advanced={
+        <>
+          <AnalysisScopeFields params={params} onChange={onChange} />
+          {children}
+        </>
+      }
+    >
       <label>
         시즌
         <select value={season} onChange={(e) => onChange("season", e.target.value)}>
@@ -25,7 +37,6 @@ export function PitcherScopeFields({
           ))}
         </select>
       </label>
-      <AnalysisScopeFields params={params} onChange={onChange} />
       <label>
         투수
         <select value={pitcherId} onChange={(e) => onChange("pitcher", e.target.value)}>
@@ -36,7 +47,7 @@ export function PitcherScopeFields({
           ))}
         </select>
       </label>
-      {children}
-    </section>
+      {primary}
+    </AnalysisFilterBar>
   );
 }

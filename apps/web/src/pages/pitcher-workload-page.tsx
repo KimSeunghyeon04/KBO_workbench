@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { scopeFromParams } from "../analysis/analysis-scope-fields";
+import { Link } from "react-router-dom";
+import { useAnalysisScope } from "../analysis/use-analysis-scope";
+import { AnalysisEmptyState } from "../analysis/analysis-empty-state";
 import { PitcherScopeFields } from "../analysis/pitcher-scope-fields";
-import { getPitchAnalysisCatalog } from "../api/pitch-analysis-client";
+import { pitcherCatalogQueryOptions } from "../api/analysis-catalog-query-options";
 import { getPitcherWorkload } from "../api/pitcher-workload-client";
 import { WorkloadComparisonPanel } from "../analysis/workload-comparison-panel";
 import "../styles/pitch-analysis.css";
@@ -15,17 +16,20 @@ const inheritedLabels = {
   unknown: "미확인",
 };
 export function PitcherWorkloadPage() {
-  const [params, setParams] = useSearchParams(),
-    selected = new URLSearchParams(params),
-    season = Number(params.get("season") ?? 2025),
-    [game, setGame] = useState<string | null>(null);
-  if (!selected.has("competition")) selected.set("competition", "regular");
-  const scope = scopeFromParams(season, selected),
-    query = { season, ...scope.options };
+  const {
+    params,
+    selected,
+    season,
+    scope,
+    change: changeScope,
+  } = useAnalysisScope({
+    seasonSelectionKeys: ["pitcher"],
+  });
+  const [game, setGame] = useState<string | null>(null);
+  const query = { season, ...scope.options };
   const catalog = useQuery({
-    queryKey: ["workload-catalog", season, scope.options],
+    ...pitcherCatalogQueryOptions(season, scope.options),
     enabled: scope.error === null,
-    queryFn: ({ signal }) => getPitchAnalysisCatalog(season, signal, scope.options),
   });
   const id = params.get("pitcher") ?? catalog.data?.pitchers[0]?.pitcherId ?? "";
   const result = useQuery({
@@ -34,16 +38,8 @@ export function PitcherWorkloadPage() {
     queryFn: ({ signal }) => getPitcherWorkload(query, id, signal),
   });
   function change(key: string, value: string) {
-    const next = new URLSearchParams(params);
-    if (value === "") next.delete(key);
-    else next.set(key, value);
-    if (key === "season") {
-      next.delete("dateFrom");
-      next.delete("dateTo");
-      next.delete("pitcher");
-    }
     setGame(null);
-    setParams(next);
+    changeScope(key, value);
   }
   const data = result.data,
     detail = data?.appearances.find((r) => r.gameId === game) ?? data?.appearances.at(-1);
@@ -65,7 +61,13 @@ export function PitcherWorkloadPage() {
       {(result.error || catalog.error || scope.error) && (
         <p role="alert">{String(result.error ?? catalog.error ?? scope.error)}</p>
       )}
-      {result.isFetching && <p role="status">등판 기록을 읽고 있습니다.</p>}
+      {(catalog.isLoading || result.isFetching) && <p role="status">등판 기록을 읽고 있습니다.</p>}
+      {scope.error === null &&
+        !catalog.isFetching &&
+        !catalog.error &&
+        catalog.data?.pitchers.length === 0 && (
+          <AnalysisEmptyState season={season} options={scope.options} />
+        )}
       <section className="panel">
         <p>
           3/7일 투구 수는 대상 날짜를 제외한 이전 달력 날짜의 실제 투구 합입니다. 이전 기록은

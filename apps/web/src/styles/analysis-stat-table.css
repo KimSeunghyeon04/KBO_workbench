@@ -1,0 +1,88 @@
+.outcome-rate-panel .outcome-stat-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 100%;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.outcome-rate-panel .table-scroll .outcome-stat-table :is(th, td) {
+  padding: 9px 12px;
+  text-align: right;
+  white-space: nowrap;
+}
+.outcome-rate-panel .outcome-stat-table tr > :first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #fff;
+  box-shadow: 1px 0 #dce5e6;
+  text-align: left;
+}
+.outcome-rate-panel .table-scroll .outcome-stat-table thead th {
+  background: #f0f5f6;
+  color: #425d65;
+  font-weight: 600;
+}
+.outcome-rate-panel .outcome-stat-table thead tr > :first-child {
+  z-index: 2;
+}
+.outcome-rate-panel .outcome-stat-table thead button {
+  display: flex;
+  align-items: center;
+  justify-content: end;
+  gap: 5px;
+  width: 100%;
+  min-height: 30px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.outcome-rate-panel .outcome-stat-table thead button:hover {
+  color: #096852;
+}
+.outcome-rate-panel .outcome-stat-table thead button:focus-visible {
+  outline: 2px solid #137e69;
+  outline-offset: 3px;
+}
+.outcome-rate-panel .outcome-sort-mark {
+  color: #647c81;
+  font-size: 12px;
+}
+.outcome-rate-panel .outcome-stat-table :is([aria-sort="ascending"], [aria-sort="descending"]) {
+  box-shadow: inset 0 -2px #137e69;
+}
+.outcome-rate-panel .outcome-stat-table tbody tr:hover > :first-child {
+  background: #f5faf8;
+}
+.outcome-rate-panel .outcome-metric-guide {
+  margin-top: 14px;
+  font-size: 12px;
+}
+.outcome-rate-panel .outcome-metric-guide summary {
+  width: fit-content;
+  color: #47656c;
+  cursor: pointer;
+  line-height: 1.8;
+}
+.outcome-rate-panel .outcome-metric-guide dl {
+  display: grid;
+  gap: 12px 24px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  margin: 14px 0 0;
+  padding: 16px;
+  border: 1px solid #e1e8e9;
+  border-radius: 6px;
+  background: #f6f9fa;
+}
+.outcome-rate-panel .outcome-metric-guide dt {
+  color: #294d45;
+  font-weight: 600;
+}
+.outcome-rate-panel .outcome-metric-guide dd {
+  margin: 4px 0 0;
+  color: #536f75;
+  line-height: 1.7;
+}

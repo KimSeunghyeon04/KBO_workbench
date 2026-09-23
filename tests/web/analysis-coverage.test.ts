@@ -4,6 +4,7 @@ import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/re
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
+import { resolveAnalysisScope } from "@kbo/contracts";
 import { AnalysisCoveragePage } from "../../apps/web/src/pages/analysis-coverage-page.js";
 import { getAnalysisCoverage } from "../../apps/web/src/api/analysis-coverage-client.js";
 import { coverageFixture } from "../helpers/analysis-coverage.js";
@@ -103,4 +104,50 @@ it("rejects a preparation response for a different scope", async () => {
     ),
   );
   await expect(getAnalysisCoverage(2025, new AbortController().signal)).rejects.toThrow("일치하지");
+});
+
+it("keeps competition and dates in related analysis links, resetting dates only when season changes", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      const { season, ...options } = Object.fromEntries(url.searchParams);
+      const fixture = coverageFixture(Number(season));
+      return Response.json({
+        ...fixture,
+        scope: resolveAnalysisScope({ season: Number(season), ...options }),
+      });
+    }),
+  );
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    createElement(
+      QueryClientProvider,
+      { client },
+      createElement(
+        MemoryRouter,
+        {
+          initialEntries: [
+            "/analysis/coverage?season=2020&competition=unknown&dateFrom=2020-06-01&dateTo=2020-06-30",
+          ],
+        },
+        createElement(AnalysisCoveragePage),
+      ),
+    ),
+  );
+  const link = await screen.findByRole("link", { name: "투수별 구질 보기" });
+  const query = new URL(link.getAttribute("href") ?? "", "http://localhost").searchParams;
+  expect(Object.fromEntries(query)).toEqual({
+    season: "2020",
+    competition: "unknown",
+    dateFrom: "2020-06-01",
+    dateTo: "2020-06-30",
+  });
+  fireEvent.change(screen.getByLabelText("시즌"), { target: { value: "2021" } });
+  await waitFor(() =>
+    expect(screen.getByRole("link", { name: "투수별 구질 보기" }).getAttribute("href")).toBe(
+      "/analysis/pitch-shape?season=2021&competition=unknown",
+    ),
+  );
+  client.clear();
 });

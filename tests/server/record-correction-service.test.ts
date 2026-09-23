@@ -13,9 +13,15 @@ import {
   type RecordCorrectionAssessmentInput,
   type RecordCorrectionGameCandidate,
 } from "@kbo/persistence";
+import { buildRecordCorrectionBatchProposal } from "@kbo/correction";
 import { describe, expect, it, vi } from "vitest";
+import type { ComputationRunner } from "../../apps/server/src/computation.js";
 
-import { recordCorrectionVenueFixture } from "../helpers/record-correction-fixture.js";
+import {
+  derivedAfterScenarios,
+  recordCorrectionDerivedAfterFixture,
+  recordCorrectionVenueFixture,
+} from "../helpers/record-correction-fixture.js";
 
 import { CorrectionSessionManager } from "../../apps/server/src/correction-session-manager.js";
 import {
@@ -24,6 +30,55 @@ import {
 } from "../../apps/server/src/record-correction-service.js";
 
 describe("RecordCorrectionService 매칭", () => {
+  it.each(["missing_batch", "ineligible"] as const)(
+    "does not advertise an unappliable worker proposal as actionable: %s",
+    async (state) => {
+      const computation: ComputationRunner = {
+        async run(input) {
+          if (input.kind !== "proposal") throw new Error("Unexpected computation");
+          const proposal = buildRecordCorrectionBatchProposal(
+            input.document,
+            input.notice,
+            input.binding,
+          );
+          return {
+            kind: "proposal",
+            value: {
+              ...proposal,
+              ...(state === "missing_batch" ? { batch: null } : { eligible: false }),
+              reasons: [],
+            },
+          };
+        },
+      };
+      const fixture = await setup([game("anon-game", "anon_DH1")], computation);
+      await expect(fixture.service.assessNotice(fixture.notice)).resolves.toMatchObject({
+        status: "manual_review",
+        reasonCode: "proposal_not_applicable",
+      });
+      fixture.service.close();
+    },
+  );
+
+  it.each(derivedAfterScenarios)(
+    "requires manual review when a supported compiler value remains uncorrected: %s",
+    async (scenario) => {
+      const source = await recordCorrectionDerivedAfterFixture(scenario);
+      const fixture = await setup([
+        game(source.document.metadata.gameId, source.document.source.sourceGameId),
+      ]);
+      fixture.setDocument(source.document);
+      await expect(fixture.service.assessNotice(source.notice)).resolves.toMatchObject({
+        status: "manual_review",
+        reasonCode: "proposal_conflict",
+        reasonMessage: expect.stringContaining("compiler 계산값"),
+        eventId: source.binding.eventId,
+      });
+      expect(fixture.markProposalApplied).not.toHaveBeenCalled();
+      fixture.service.close();
+    },
+  );
+
   it("날짜·팀과 유일한 PA가 맞으면 미반영 제안을 분류한다", async () => {
     const fixture = await setup([game("anon-game", "anon_DH1")]);
 
@@ -207,7 +262,10 @@ describe("RecordCorrectionService 매칭", () => {
   });
 });
 
-async function setup(gameCandidates: readonly RecordCorrectionGameCandidate[]) {
+async function setup(
+  gameCandidates: readonly RecordCorrectionGameCandidate[],
+  computation?: ComputationRunner,
+) {
   let document = parseStagingGameDocumentV2(
     JSON.parse(await readFile("tests/fixtures/game-document-v2.golden.json", "utf8")) as unknown,
   );
@@ -313,6 +371,7 @@ async function setup(gameCandidates: readonly RecordCorrectionGameCandidate[]) {
       },
     },
     () => new Date("2026-09-01T00:00:00.000Z"),
+    computation,
   );
   return {
     assess,

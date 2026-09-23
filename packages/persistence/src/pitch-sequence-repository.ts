@@ -1,3 +1,4 @@
+import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import type { Pool } from "pg";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
@@ -26,12 +27,8 @@ export class PitchSequenceRepository {
     void stance;
     void cohort;
     void previousType;
-    const scope = resolveAnalysisScope({ season, ...options }, "regular"),
-      client = await this.pool.connect();
-    let released = false;
-    try {
-      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      await client.query("SET LOCAL statement_timeout='30s'");
+    const scope = resolveAnalysisScope({ season, ...options }, "regular");
+    return withAnalysisSnapshot(this.pool, async (client, release) => {
       const sourceHash = await analysisSourceHash(client, scope);
       const result = await client.query<Record<string, unknown>>(
         `WITH selected_games AS MATERIALIZED (
@@ -54,19 +51,12 @@ export class PitchSequenceRepository {
     ORDER BY p.game_id COLLATE "C",p.pitch_sequence`,
         [...analysisScopeParameters(scope), pitcherId],
       );
-      await client.query("COMMIT");
-      client.release();
-      released = true;
+      await release();
       const rows = Value.Decode(Type.Array(PitchSequenceRowSchema), result.rows);
       return Value.Decode(
         PitchSequenceResponseSchema,
         analyzePitchSequences(query, pitcherId, scope, sourceHash, rows),
       );
-    } catch (error) {
-      if (!released) await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      if (!released) client.release();
-    }
+    });
   }
 }

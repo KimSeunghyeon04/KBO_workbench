@@ -14,7 +14,7 @@ import {
 } from "@kbo/contracts";
 import { matchupRoutes } from "../../apps/server/src/routes/matchups.js";
 import { pitchAnglesRoutes } from "../../apps/server/src/routes/pitch-angles.js";
-import { compute } from "../../apps/server/src/computation.js";
+import { compute } from "../../apps/server/src/computation-executor.js";
 import { installHttpErrorHandler } from "../../apps/server/src/http-error-handler.js";
 afterEach(() => vi.restoreAllMocks());
 it("strictly validates modeled matchup and angle routes while keeping model absence a normal response", async () => {
