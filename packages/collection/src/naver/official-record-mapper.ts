@@ -1,6 +1,8 @@
 import type { OfficialBatterRecord, OfficialPitcherRecord, Side } from "@kbo/contracts";
 
 import { NaverSourceFormatError } from "../errors.js";
+import type { SourceFinding } from "../types.js";
+import { enrichNaverOfficialExtraBaseHits } from "./official-extra-base-hits.js";
 import {
   first,
   integer,
@@ -14,11 +16,22 @@ import {
 export function mapNaverOfficialRecords(recordValue: JsonRecord): {
   readonly batters: readonly OfficialBatterRecord[];
   readonly pitchers: readonly OfficialPitcherRecord[];
+  readonly findings: readonly SourceFinding[];
 } {
-  const batterRoot = record(first(recordValue, ["battersBoxscore", "batter", "batters"]));
+  const batterKey = ["battersBoxscore", "batter", "batters"].find(
+    (key) => recordValue[key] !== undefined,
+  );
+  const batterRoot = record(batterKey === undefined ? undefined : recordValue[batterKey]);
   const pitcherRoot = record(first(recordValue, ["pitchersBoxscore", "pitcher", "pitchers"]));
-  const batters = (["away", "home"] as const).flatMap((side) =>
-    optionalRecords(batterRoot[side]).map((row) => mapBatterRecord(row, side)),
+  const mappedBatters = (["away", "home"] as const).flatMap((side) =>
+    optionalRecords(batterRoot[side]).map((row, index) =>
+      enrichNaverOfficialExtraBaseHits(
+        row,
+        mapBatterRecord(row, side),
+        `${batterKey ?? "battersBoxscore"}.${side}`,
+        index,
+      ),
+    ),
   );
   const pitcherRows = (["away", "home"] as const).flatMap((side) =>
     optionalRecords(pitcherRoot[side]).map((row) => ({ row, side })),
@@ -32,7 +45,8 @@ export function mapNaverOfficialRecords(recordValue: JsonRecord): {
       return bf !== null && pa !== null && bf === pa;
     });
   return {
-    batters,
+    batters: mappedBatters.map((mapped) => mapped.official),
+    findings: mappedBatters.flatMap((mapped) => mapped.findings),
     pitchers: pitcherRows.map(({ row, side }) =>
       mapPitcherRecord(row, side, alternatePitchCountShape),
     ),

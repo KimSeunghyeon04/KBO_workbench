@@ -1,8 +1,18 @@
+import {
+  compareCanonicalStrings,
+  type OfficialBatterRecord,
+  type OfficialPitcherRecord,
+} from "@kbo/contracts";
+
 import type { CompileContext, MutableBatterLine, MutablePitcherLine } from "./model.js";
+
 export function compareOfficialRecords(context: CompileContext): void {
   for (const official of context.document.officialRecords.batters) {
     const calculated = context.batterLines.get(official.playerId);
-    if (calculated === undefined) continue;
+    if (calculated === undefined) {
+      reportMissingCalculatedRecord(context, official, "batter");
+      continue;
+    }
     for (const [field, expected] of Object.entries(official)) {
       if (["playerId", "side"].includes(field) || expected === undefined) continue;
       const actual = calculated[field as keyof MutableBatterLine];
@@ -38,7 +48,10 @@ export function compareOfficialRecords(context: CompileContext): void {
   }
   for (const official of context.document.officialRecords.pitchers) {
     const calculated = context.pitcherLines.get(official.playerId);
-    if (calculated === undefined) continue;
+    if (calculated === undefined) {
+      reportMissingCalculatedRecord(context, official, "pitcher");
+      continue;
+    }
     for (const [field, expected] of Object.entries(official)) {
       if (["playerId", "side", "earnedRuns"].includes(field) || expected === undefined) continue;
       const actual = calculated[field as keyof MutablePitcherLine];
@@ -55,4 +68,32 @@ export function compareOfficialRecords(context: CompileContext): void {
       }
     }
   }
+}
+
+function reportMissingCalculatedRecord(
+  context: CompileContext,
+  official: OfficialBatterRecord | OfficialPitcherRecord,
+  role: "batter" | "pitcher",
+): void {
+  // Zero-only appearances need not produce a line; earned runs are source evidence only.
+  const details = Object.entries(official)
+    .flatMap(([field, expected]) =>
+      field !== "earnedRuns" && typeof expected === "number" && expected > 0
+        ? [{ field, expected, actual: null }]
+        : [],
+    )
+    .sort((left, right) => compareCanonicalStrings(left.field, right.field));
+  if (details.length === 0) return;
+  context.findings.push({
+    code: `official_${role}_record_missing`,
+    category: "domain",
+    severity: "blocking",
+    message:
+      role === "batter"
+        ? "공식 타자 기록에 양수 실적이 있지만 compiler 계산 기록이 없습니다."
+        : "공식 투수 기록에 양수 실적이 있지만 compiler 계산 기록이 없습니다.",
+    gameId: context.document.metadata.gameId,
+    recordIdentity: `${role}:${official.playerId}`,
+    details,
+  });
 }

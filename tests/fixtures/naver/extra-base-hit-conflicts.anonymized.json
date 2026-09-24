@@ -1,0 +1,77 @@
+[
+  {
+    "case": "relay triple, boxscore double",
+    "relayResult": "triple",
+    "relayText": "원정 타자 : 우중간 3루타",
+    "row": {
+      "playerCode": "A1",
+      "name": "원정 타자",
+      "ab": 5,
+      "bb": 0,
+      "hit": 2,
+      "hr": 0,
+      "kk": 0,
+      "rbi": 0,
+      "run": 0,
+      "inn1": "우비",
+      "inn3": "우중2",
+      "inn5": "1땅",
+      "inn7": "중안",
+      "inn9": "좌비"
+    },
+    "etcRecords": [{ "how": "2루타", "result": "원정 타자(3회) \r\n\r\n" }],
+    "doubles": 1,
+    "triples": 0,
+    "mismatchField": "doubles"
+  },
+  {
+    "case": "relay single, boxscore double with another home run",
+    "relayResult": "single",
+    "relayText": "원정 타자 : 좌중간 1루타",
+    "row": {
+      "playerCode": "A1",
+      "name": "원정 타자",
+      "ab": 4,
+      "bb": 0,
+      "hit": 2,
+      "hr": 1,
+      "kk": 0,
+      "rbi": 3,
+      "run": 2,
+      "inn1": "3땅",
+      "inn3": "좌중2",
+      "inn5": "3땅",
+      "inn7": "좌중홈"
+    },
+    "etcRecords": [{ "how": "2루타", "result": "원정 타자(3회) \r\n\r\n" }],
+    "doubles": 1,
+    "triples": 0,
+    "mismatchField": "doubles"
+  },
+  {
+    "case": "relay double, boxscore triple",
+    "relayResult": "double",
+    "relayText": "원정 타자 : 우중간 2루타",
+    "row": {
+      "playerCode": "A1",
+      "name": "원정 타자",
+      "ab": 3,
+      "bb": 3,
+      "hit": 1,
+      "hr": 0,
+      "kk": 1,
+      "rbi": 1,
+      "run": 1,
+      "inn1": "우비",
+      "inn2": "우중3",
+      "inn4": "4구",
+      "inn6": "삼진",
+      "inn9": "4구",
+      "inn10": "고4"
+    },
+    "etcRecords": [{ "how": "3루타", "result": "원정 타자(2회)" }],
+    "doubles": 0,
+    "triples": 1,
+    "mismatchField": "triples"
+  }
+]

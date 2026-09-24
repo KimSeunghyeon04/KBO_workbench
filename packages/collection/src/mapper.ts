@@ -74,9 +74,13 @@ export function mapNaverGame(bundle: RawGameBundle): MappingResult {
     closeTrailingHalf: status === "final",
   });
   const tracking = mapNaverTrackingCandidates(bundle.gameId, normalized);
-  const findings = [...supplemented.findings, ...normalized.findings, ...tracking.findings];
-
-  const officialRecords = mapNaverOfficialRecords(recordPayload);
+  const { findings: recordFindings, ...officialRecords } = mapNaverOfficialRecords(recordPayload);
+  const findings = [
+    ...supplemented.findings,
+    ...normalized.findings,
+    ...tracking.findings,
+    ...recordFindings,
+  ];
   const mappedDocument = parseStagingGameDocumentV2({
     schemaVersion: 2,
     source: {

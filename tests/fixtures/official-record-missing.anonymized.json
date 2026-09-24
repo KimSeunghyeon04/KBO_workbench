@@ -1,0 +1,172 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "provider": "naver",
+    "sourceGameId": "anonymized-pitcher-identity",
+    "collectedAt": "2026-08-20T12:00:00+09:00",
+    "sourceBundleHash": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "revisionBase": { "kind": "new_game" },
+  "metadata": {
+    "gameId": "anonymized-pitcher-identity",
+    "season": 2026,
+    "gameDate": "2026-08-20",
+    "status": "suspended",
+    "scheduledInnings": 9
+  },
+  "teams": {
+    "away": { "teamId": "AWAY", "name": "원정 구단" },
+    "home": { "teamId": "HOME", "name": "홈 구단" }
+  },
+  "rosters": {
+    "away": {
+      "teamId": "AWAY",
+      "players": [
+        {
+          "playerId": "a1",
+          "name": "타자 가",
+          "battingOrder": 1,
+          "starter": true,
+          "positions": ["1B"]
+        },
+        {
+          "playerId": "a2",
+          "name": "타자 나",
+          "battingOrder": 2,
+          "starter": true,
+          "positions": ["2B"]
+        }
+      ]
+    },
+    "home": {
+      "teamId": "HOME",
+      "players": [
+        { "playerId": "hp-relay", "name": "동명 투수", "starter": false, "positions": ["P"] },
+        { "playerId": "hp-box", "name": "동명 투수", "starter": false, "positions": ["P"] },
+        { "playerId": "hp-next", "name": "후속 투수", "starter": false, "positions": ["P"] }
+      ]
+    }
+  },
+  "events": [
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e0",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 0
+      },
+      "sequence": 0,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1회초 시작",
+      "kind": "half_inning_start",
+      "payload": {}
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e1",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 1
+      },
+      "sequence": 1,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1번타자 타자 가",
+      "kind": "batter_start",
+      "payload": { "batterId": "a1", "pitcherId": "hp-relay" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e2",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 2
+      },
+      "sequence": 2,
+      "inning": 1,
+      "half": "top",
+      "relayText": "1구 타격",
+      "kind": "pitch",
+      "payload": { "call": "in_play" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e3",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 3
+      },
+      "sequence": 3,
+      "inning": 1,
+      "half": "top",
+      "relayText": "타자 가 : 홈런",
+      "kind": "plate_result",
+      "payload": {
+        "batterId": "a1",
+        "pitcherId": "hp-relay",
+        "result": "home_run",
+        "creditedRbi": 1
+      }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e4",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 4
+      },
+      "sequence": 4,
+      "inning": 1,
+      "half": "top",
+      "relayText": "2번타자 타자 나",
+      "kind": "batter_start",
+      "payload": { "batterId": "a2", "pitcherId": "hp-box" }
+    },
+    {
+      "identity": {
+        "kind": "source",
+        "eventId": "e5",
+        "endpoint": "relay",
+        "blockIndex": 0,
+        "eventIndex": 5
+      },
+      "sequence": 5,
+      "inning": 1,
+      "half": "top",
+      "relayText": "투수 동명 투수 : 투수 후속 투수 (으)로 교체",
+      "kind": "substitution",
+      "payload": {
+        "side": "home",
+        "role": "pitcher",
+        "incomingPlayerId": "hp-next",
+        "outgoingPlayerId": "hp-box"
+      }
+    }
+  ],
+  "trackingCandidates": [],
+  "officialRecords": {
+    "batters": [],
+    "pitchers": [
+      {
+        "playerId": "hp-box",
+        "side": "home",
+        "battersFaced": 1,
+        "outsRecorded": 0,
+        "hits": 1,
+        "runs": 1,
+        "earnedRuns": 1,
+        "walks": 0,
+        "hitByPitch": 0,
+        "strikeouts": 0,
+        "pitches": 1,
+        "strikes": 1
+      }
+    ]
+  }
+}
