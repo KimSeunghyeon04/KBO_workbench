@@ -19,6 +19,9 @@ Graft로 확인한 주요 조정 모듈에 DB 행 변환, current 파일 복구,
 | `projection-replay.ts`          | 저장 play·movement·PA·pitch·선수 fact의 재생 입력 변환                           |
 | `staging-workspace.ts`          | writer lock, 경기별 작업·전환 직렬화, 원장 저장, catalog·import target 갱신      |
 | `workspace-current-store.ts`    | current 경로, CAS, journal 기록·roll-forward, 이전 artifact 보존                 |
+| `workspace-original-store.ts`   | 최초 원장·finding의 immutable 보관, strict 읽기와 저장 후 hash 확인              |
+| `workspace-journal-store.ts`    | 교정·수집 저널 기록·strict 읽기, callback 성공 후 제거, 수집 중단 결과 복구      |
+| `workspace-findings.ts`         | finding envelope 생성·strict 읽기, sidecar 부재의 빈 finding 처리                |
 | `workspace-errors.ts`           | workspace 전환·복구의 공유 오류 클래스                                           |
 | `correction-session-manager.ts` | command/undo/redo의 전체 컴파일, preview, history와 commit 조정                  |
 | `correction-session-store.ts`   | session 등록·삭제·용량·유휴 회수, mutex 안의 version 검사                        |
@@ -129,3 +132,72 @@ ready/quarantine 선택과 계산 실패 후 기존 파일 보존을 검증한�
 | Graft                              | 686개 파일, 3,464개 심볼, 11,841개 연결; 제외 경로 유입 없음, freshness 통과 |
 
 통합 테스트와 E2E의 임시 컨테이너·네트워크·볼륨은 종료 후 제거했다. 운영 데이터는 변경하지 않았다.
+
+## 타석 매칭 worker와 후속 책임 분리
+
+기록정정 서비스의 `assessNotice`가 직접 실행하던 전체 컴파일과 타석 후보 계산을
+`record_correction_match` 메시지로 공용 worker에 넘긴다. `record-correction-matching.ts`는 기존
+타자·투수·타순 판정과 후보 ID 생성을 그대로 소유하며 서비스는 DB 읽기와 평가 저장을 조정한다.
+한 평가에서 읽은 원장은 제안에 재사용하고 제안 계산 후 DB current revision·document hash를
+다시 확인한다. 변경되거나 사라진 base와 worker 실패는 평가 저장으로 이어지지 않는다.
+
+`source-bundle-store.ts`는 canonical 원문·압축 파일·manifest의 immutable 저장을 맡는다.
+writer lock 확인은 workspace에 남는다. `workspace-integrity.ts`는 시작 시 legacy 파일 거부,
+current manifest 검증, orphan artifact 검사를 맡고 검증한 항목만 callback으로 전달한다.
+workspace는 catalog와 import target을 반영하며 journal 복구와 검증 순서는 유지한다.
+
+보정 화면은 저장 제어, finding 목록, 가상 타임라인, 이벤트 상세, 공식 기록 비교, 원본 비교로
+분리했다. 목록과 이벤트 상세는 finding 상세 컴포넌트를 공유한다. 기존 패널 모듈은 명시적 export로
+연결하며 canonical 배열 기준 이동, 키보드 메뉴, finding 탐색과 원천 증거 표시를 유지한다.
+
+분리한 UI·매칭 함수와 유지한 workspace 메서드 등 72개의 본문을 비교했다. 기존 JSX는 변환 후
+비교했으며 receiver 변경과 공백만 정규화했다. 회귀 테스트는 실제 worker 결과, 평가당 원장 1회
+읽기, worker 실패, 계산 중 DB revision·hash 변경 및 삭제를 검증한다. 아키텍처 검사는 새 모듈의
+상위 계층 역참조와 서비스의 직접 compiler import를 차단한다.
+
+검증 로그는 `test-results/additional-improvements-20260923/`에 보존한다.
+
+| 검사                               | 결과                                                                                      |
+| ---------------------------------- | ----------------------------------------------------------------------------------------- |
+| lint·format·typecheck·schema·build | 통과                                                                                      |
+| 관련 회귀                          | 101개 통과                                                                                |
+| 전체 Vitest                        | 188개 파일, 1,091개 통과; DB 76개는 별도 실행                                             |
+| 격리 PostgreSQL 통합               | 76개 통과                                                                                 |
+| 격리 Compose E2E                   | 보정·기록정정·적재·재생·분석 UI·재시작·백업/복구·여섯 모델 worker 통과, 브라우저 오류 0개 |
+| compiler 성능                      | 558개 이벤트, 200회: 평균 5.483ms, p95 8.033ms                                            |
+| replay 성능                        | 21개 이벤트, 500회: 평균 0.855ms, p95 1.441ms                                             |
+| Graft                              | 696개 파일, 3,469개 심볼, 11,874개 연결; 제외 경로 0개, freshness 통과                    |
+
+운영 workspace와 DB는 변경하지 않았으며 검증용 임시 자원은 종료 후 정리했다.
+
+## 원본 보관과 저널 분리 — 2026-09-24
+
+`StagingWorkspace`에 남아 있던 최초 원본·finding의 경로와 파일 처리, 교정·수집 저널의
+기록·읽기·제거를 두 내부 store로 옮겼다. 두 store는 공개 package API로 노출하지 않으며
+workspace나 current store를 역참조하지 않는다. finding envelope helper와 선택적 파일 삭제는
+하위 공통 모듈에서 공유한다. 기존 미커밋 개선을 보존하고 기록정정 중복 컴파일은 변경하지 않았다.
+
+workspace는 open 상태·writer lock, 교정 base hash·superseded current 확인, 최초 원본 보존,
+저장 분류·전체 컴파일·current 전환과 catalog 무효화를 조정한다. journal store의 callback은
+`saveReady`/`saveQuarantine`으로 돌아오며 검증을 생략하지 않는다. 원본 finding을 먼저 저장하고
+문서를 저장·재조회하는 순서, 성공 전 journal을 남기는 동작, startup 복구 순서를 유지했다.
+
+회귀 테스트는 journal 기록 직후와 current 교체 직후의 실패, 재시작을 반복해도 유지되는 current,
+최초 finding 보존, 잘못된 원본·strict journal·차단 문서 승격의 거부, 복구 실패 시 잠금 해제,
+잠금 상실·닫힌 workspace의 쓰기 거부, 수집 결과의 역순 정렬과 대상 journal만 제거하는 동작을
+검증한다. 기존 비식별 경기 fixture와 임시 workspace만 사용한다.
+
+이번 검증 로그는 `test-results/workspace-store-refactor-20260924/`에 보존한다.
+
+| 검사                               | 결과                                                                                 |
+| ---------------------------------- | ------------------------------------------------------------------------------------ |
+| 구조 비교                          | 공개 메서드 signature 유지, 조정자 메서드 34개와 이동한 본문 14개 일치               |
+| 관련 회귀                          | 49개 통과                                                                            |
+| lint·format·typecheck·schema·build | 통과                                                                                 |
+| 전체 Vitest                        | 189개 파일, 1,103개 통과; DB 76개는 별도 실행                                        |
+| 아키텍처                           | 37개 통과                                                                            |
+| 격리 PostgreSQL 통합               | 76개 통과                                                                            |
+| 격리 Compose E2E                   | 교정·기록정정·적재·재생·분석 UI·재시작·백업/복구·모델 worker 통과, 브라우저 오류 0개 |
+| Graft 재색인                       | 700개 파일, 4,182개 노드, 11,930개 연결                                              |
+
+운영 데이터는 사용하지 않았으며 테스트가 만든 컨테이너·네트워크·볼륨과 임시 workspace는 정리했다.

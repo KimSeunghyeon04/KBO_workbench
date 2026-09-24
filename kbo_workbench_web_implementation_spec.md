@@ -577,6 +577,15 @@ DB 적재 transaction과 seal은 `GameRevisionStore`가 소유한다. manifest �
 원장 hydration, 저장 fact의 replay 변환은 별도 내부 모듈이며 replay 변환은 전체 원장 hydration이나
 compiler를 실행하지 않는다. `StagingWorkspace`는 writer lock·경기별 직렬화·catalog 무효화를,
 `WorkspaceCurrentStore`는 검증 callback과 함께 current CAS·journal·archive·복구를 소유한다.
+원문 bundle의 immutable 저장은 `source-bundle-store`, 시작 시 legacy·current·orphan 검증은
+`workspace-integrity`에 둔다. workspace는 writer lock 확인과 검증 결과의 catalog·적재 대상 반영을
+맡고 기존 journal 복구 순서를 유지한다. 보정 패널은 저장 제어·finding·가상 타임라인·이벤트 상세·
+공식 기록 비교·원본 비교를 분리하고 finding 상세만 공유한다.
+최초 원장·finding의 불변 보관은 `WorkspaceOriginalStore`, 교정·수집 저널의 기록·strict decode·
+성공 후 제거는 `WorkspaceJournalStore`가 소유한다. workspace는 writer lock·open 상태와 교정 base를
+검증하고 원본 보존 뒤 journal 실행을 요청한다. 복구 callback도 기존 saveReady/saveQuarantine의
+전체 컴파일·전환 경로를 사용한다. manifest upgrade, current transition, legacy 거부, correction
+복구, 무결성 검사의 시작 순서와 중단 시 journal 보존을 유지한다.
 보정 session store는 용량·유휴 회수·mutex·version 검사를 맡고 manager는 컴파일·history·commit을
 조정한다. 공개 API·저장 형식·projection hash 계약은 유지한다.
 [분리 경계와 검증](docs/reviews/2026-09-23-persistence-boundaries.md).
