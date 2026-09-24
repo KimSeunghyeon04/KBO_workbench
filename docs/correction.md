@@ -25,6 +25,9 @@ Database에서 current revision을 다시 열면 workspace가 공용 worker에�
 기존 original/current가 유지되고, 차단 finding은 quarantine과 함께 저장한다.
 drawer는 입력 상태·명령 제출·포커스를 관리한다. `event-fields`는 타석·투구, 주자 이동, 교체,
 판독·안내 입력을 종류별 컴포넌트로 연결하며 기존 editor registry와 autofill 규칙을 사용한다.
+작업대 패널은 저장 제어, finding 목록, 가상 타임라인, 이벤트 상세, 공식 기록 비교, 원본 비교로
+나뉜다. finding 상세 표시는 목록과 이벤트 상세가 공유한다. 타임라인의 이동 가능 여부는 계속
+canonical 전체 배열을 기준으로 계산하며 메뉴 키보드 조작과 선택 행 포커스를 유지한다.
 
 보정 대상은 `staging`과 `quarantine`의 `StagingGameDocumentV2` 원장이다. sealed DB fact는 직접
 수정하지 않는다. Database 화면에서 current revision을 V2 correction draft로 reopen한 뒤 같은 파일

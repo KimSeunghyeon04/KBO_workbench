@@ -97,6 +97,24 @@ describe("persistence and session responsibility boundaries", () => {
     expect(dependencies.has("packages/persistence/src/workspace-current-store.ts")).toBe(false);
   });
 
+  it.each([
+    "correction-commit-controls",
+    "correction-finding-panel",
+    "correction-record-detail",
+    "correction-event-list",
+    "correction-event-detail",
+    "correction-finding-details",
+    "original-comparison-view",
+  ])("%s는 화면 조립 계층을 역참조하지 않는다", async (module) => {
+    const dependencies = await runtimeDependencies(`apps/web/src/correction/${module}.tsx`);
+    for (const parent of [
+      "apps/web/src/pages/correct-page.tsx",
+      "apps/web/src/correction/correction-workbench-panels.tsx",
+      "apps/web/src/correction/correction-drawer.tsx",
+    ])
+      expect(dependencies.has(parent), `${module} -> ${parent}`).toBe(false);
+  });
+
   it.each(["jobs", "sources", "cases"])(
     "record correction %s는 공개 repository를 역참조하지 않는다",
     async (part) => {
