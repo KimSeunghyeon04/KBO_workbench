@@ -63,6 +63,28 @@ async function runtimeDependencies(entry: string): Promise<ReadonlySet<string>> 
 }
 
 describe("persistence and session responsibility boundaries", () => {
+  it("기록정정 서비스는 타석 매칭 compiler를 직접 호출하지 않는다", async () => {
+    const file = "apps/server/src/record-correction-service.ts";
+    const source = ts.createSourceFile(file, await readFile(file, "utf8"), ts.ScriptTarget.Latest);
+    const coreImports = source.statements.filter(
+      (node): node is ts.ImportDeclaration =>
+        ts.isImportDeclaration(node) &&
+        ts.isStringLiteral(node.moduleSpecifier) &&
+        node.moduleSpecifier.text === "@kbo/game-core",
+    );
+    for (const node of coreImports) {
+      const bindings = node.importClause?.namedBindings;
+      expect(bindings !== undefined && ts.isNamedImports(bindings)).toBe(true);
+      if (bindings !== undefined && ts.isNamedImports(bindings)) {
+        const names = bindings.elements.map((item) => (item.propertyName ?? item.name).text);
+        for (const compiler of ["compileStagingGameDocument", "compileStagingGameDocumentV2"])
+          expect(names).not.toContain(compiler);
+      }
+    }
+    const dependencies = await runtimeDependencies(file);
+    expect(dependencies.has("apps/server/src/record-correction-matching.ts")).toBe(false);
+  });
+
   it.each([
     "source-bundle-store",
     "workspace-integrity",

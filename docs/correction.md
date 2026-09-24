@@ -14,6 +14,9 @@ session mutex는 계산 완료까지 유지하며 실패하면 문서·version·
 기록정정 제안은 worker마다 소유한 원장 하나의 strict compile을 재사용한다. 제안 결과는
 문서 hash·공지 전체 내용·binding별 8MiB/128개, compile 결과는 16MiB/16개까지 5분간 재사용한다.
 조회 때 현재 문서·source findings·DB base를 다시 확인하므로 저장·되돌림·새 revision을 반영한다.
+타석 매칭의 전체 컴파일도 같은 공용 worker에서 실행한다. 공지 평가마다 후보 경기의 검증된
+원장을 한 번 읽고 제안에 재사용한다. 제안 계산 후 DB current revision·document hash를 다시
+확인하여 변경·삭제된 base는 revision conflict로 거부한다. worker 실패 시 평가를 저장하지 않는다.
 
 ## 범위
 

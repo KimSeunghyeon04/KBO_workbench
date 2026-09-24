@@ -47,6 +47,15 @@ const { projectNaverSourceBundle }: typeof import("./source-projection.js") = aw
   ).href
 );
 
+const { matchPlateAppearances }: typeof import("./record-correction-matching.js") = await import(
+  new URL(
+    import.meta.url.endsWith(".ts")
+      ? "./record-correction-matching.ts"
+      : "./record-correction-matching.js",
+    import.meta.url,
+  ).href
+);
+
 export function compute(input: Computation): ComputationResult | Promise<ComputationResult> {
   switch (input.kind) {
     case "workload_comparison":
@@ -159,6 +168,11 @@ export function compute(input: Computation): ComputationResult | Promise<Computa
       };
     case "projection_hash":
       return { kind: input.kind, value: hashProjectionTables(input.tables, input.version) };
+    case "record_correction_match":
+      return {
+        kind: input.kind,
+        value: matchPlateAppearances(input.notice, input.game, input.document),
+      };
     case "proposal":
       return {
         kind: input.kind,

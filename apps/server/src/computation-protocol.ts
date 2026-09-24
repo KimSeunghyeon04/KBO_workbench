@@ -5,6 +5,7 @@ import type {
   GamePlayerHeightDataset,
   StagingGameDocumentV2,
   RecordCorrectionNotice,
+  RecordCorrectionMatchCandidate,
   PitchAnalysisSample,
   PitchReference,
   PitchCalibrationSeason,
@@ -34,6 +35,7 @@ import type { ReplayResult } from "@kbo/game-core";
 import type {
   PitchAnalysisRow,
   CurrentRevisionBase,
+  RecordCorrectionGameCandidate,
   ImmutableSourceBundle,
   RelationalProjection,
   ProjectionTables,
@@ -107,6 +109,12 @@ export type Computation =
       revision: number;
       version: ProjectionVersion;
     }
+  | {
+      kind: "record_correction_match";
+      document: StagingGameDocumentV2;
+      notice: RecordCorrectionNotice;
+      game: RecordCorrectionGameCandidate;
+    }
   | { kind: "projection_hash"; tables: ProjectionTables; version: ProjectionVersion }
   | {
       kind: "proposal";
@@ -157,6 +165,7 @@ export type ComputationResult =
   | { kind: "player_heights"; value: GamePlayerHeightDataset }
   | { kind: "projection"; value: RelationalProjection }
   | { kind: "projection_hash"; value: string }
+  | { kind: "record_correction_match"; value: RecordCorrectionMatchCandidate[] }
   | { kind: "proposal"; value: BuiltRecordCorrectionProposal }
   | { kind: "source"; value: SourceProjection }
   | { kind: "pitch_reference"; value: PitchReference["reference"] }

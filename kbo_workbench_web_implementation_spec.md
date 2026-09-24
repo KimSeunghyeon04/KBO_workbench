@@ -279,6 +279,10 @@ ready/quarantine을 선택한다. 서버는 공용 bounded worker를 주입하�
 검증이 실패하면 original/current를 쓰지 않는다. 기존 저장 API의 blocking 거부와 current 전환 검증은
 유지한다. 기록정정 저장소는 jobs, sources, cases 내부 모듈을 공개 repository가 조립하며 SQL과
 트랜잭션 경계를 유지한다. 보정 drawer의 상태·명령 조정과 종류별 입력 UI도 별도 모듈이 소유한다.
+기록정정 타석 매칭의 전체 컴파일은 공용 bounded worker에서 수행한다. 한 공지 평가 안에서는
+후보 경기별로 검증한 원장을 한 번 읽어 매칭과 제안에 사용한다. 제안 계산 후 current revision과
+document hash를 다시 조회하며 달라졌거나 사라졌으면 평가 저장 없이 revision conflict로 거부한다.
+worker 실패도 평가를 저장하지 않는다. 모호한 DH·동명이인 후보의 수동 검토 규칙은 유지한다.
 
 `lifecycle=while_event_unresolved` finding은 대응 행이 현재도 `unresolved`일 때만 현재 차단으로 병합한다. 사람이
 typed 행으로 교체하거나 명시적으로 삭제한 행의 finding은 immutable original의 저장 당시 기록에는

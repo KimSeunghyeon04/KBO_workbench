@@ -10,12 +10,15 @@ import {
 } from "@kbo/contracts";
 import {
   StagingWorkspace,
+  RevisionConflictError,
+  type CurrentRevisionBase,
   type RecordCorrectionAssessmentInput,
   type RecordCorrectionGameCandidate,
 } from "@kbo/persistence";
 import { buildRecordCorrectionBatchProposal } from "@kbo/correction";
 import { describe, expect, it, vi } from "vitest";
-import type { ComputationRunner } from "../../apps/server/src/computation.js";
+import { inlineComputation, type ComputationRunner } from "../../apps/server/src/computation.js";
+import { ComputationPool } from "../../apps/server/src/computation-pool.js";
 
 import {
   derivedAfterScenarios,
@@ -30,12 +33,79 @@ import {
 } from "../../apps/server/src/record-correction-service.js";
 
 describe("RecordCorrectionService 매칭", () => {
+  it("worker에서 매칭과 제안을 계산하고 검증한 원장은 평가마다 한 번만 읽는다", async () => {
+    const pool = new ComputationPool(1);
+    const run = vi.spyOn(pool, "run");
+    const fixture = await setup([game("anon-game", "anon_DH1")], pool);
+    try {
+      const first = await fixture.service.assessNotice(fixture.notice);
+      expect(first).toMatchObject({ status: "action_required", eventId: "e10" });
+      expect(first.candidates).toHaveLength(1);
+      expect(run.mock.calls.map(([input]) => input.kind)).toEqual([
+        "record_correction_match",
+        "proposal",
+      ]);
+      expect(fixture.loadCorrectionDraft).toHaveBeenCalledOnce();
+      expect(fixture.currentRevisionBase).toHaveBeenCalledOnce();
+      const repeated = await fixture.service.assessNotice(fixture.notice);
+      expect(repeated.candidates).toEqual(first.candidates);
+      expect(fixture.loadCorrectionDraft).toHaveBeenCalledTimes(2);
+    } finally {
+      fixture.service.close();
+      await pool.close();
+    }
+  });
+
+  it.each(["record_correction_match", "proposal"] as const)(
+    "%s worker 실패 시 평가를 저장하지 않는다",
+    async (kind) => {
+      const fixture = await setup([game("anon-game", "anon_DH1")], {
+        async run(input) {
+          if (input.kind === kind) throw new Error("worker failed");
+          return inlineComputation.run(input);
+        },
+      });
+      await expect(fixture.service.assessNotice(fixture.notice)).rejects.toThrow("worker failed");
+      expect(fixture.assess).not.toHaveBeenCalled();
+      expect(fixture.loadCorrectionDraft).toHaveBeenCalledOnce();
+      fixture.service.close();
+    },
+  );
+
+  it.each(["revision", "hash", "missing"] as const)(
+    "제안 계산 중 DB base가 바뀌면 오래된 평가를 저장하지 않는다: %s",
+    async (changed) => {
+      const fixture = await setup([game("anon-game", "anon_DH1")], {
+        async run(input) {
+          const result = await inlineComputation.run(input);
+          if (input.kind === "proposal")
+            fixture.currentRevisionBase.mockResolvedValue(
+              changed === "missing"
+                ? null
+                : {
+                    revision: changed === "revision" ? 2 : 1,
+                    documentHash: changed === "hash" ? "c".repeat(64) : "b".repeat(64),
+                    sourceBundleHash: fixture.document.source.sourceBundleHash,
+                  },
+            );
+          return result;
+        },
+      });
+      await expect(fixture.service.assessNotice(fixture.notice)).rejects.toThrow(
+        RevisionConflictError,
+      );
+      expect(fixture.assess).not.toHaveBeenCalled();
+      expect(fixture.loadCorrectionDraft).toHaveBeenCalledOnce();
+      fixture.service.close();
+    },
+  );
+
   it.each(["missing_batch", "ineligible"] as const)(
     "does not advertise an unappliable worker proposal as actionable: %s",
     async (state) => {
       const computation: ComputationRunner = {
         async run(input) {
-          if (input.kind !== "proposal") throw new Error("Unexpected computation");
+          if (input.kind !== "proposal") return inlineComputation.run(input);
           const proposal = buildRecordCorrectionBatchProposal(
             input.document,
             input.notice,
@@ -349,9 +419,20 @@ async function setup(
       throw new Error("unexpected review action");
     },
   };
+  const loadCorrectionDraft = vi.fn(async () => document);
+  const currentRevisionBase = vi.fn(async (gameId: string): Promise<CurrentRevisionBase | null> => {
+    const candidate = candidates.find((item) => item.gameId === gameId);
+    return candidate === undefined
+      ? null
+      : {
+          revision: candidate.revision,
+          documentHash: candidate.documentHash,
+          sourceBundleHash: document.source.sourceBundleHash,
+        };
+  });
   const service = new RecordCorrectionService(
     repository,
-    { loadCorrectionDraft: async () => document, currentRevisionBase: async () => null },
+    { loadCorrectionDraft, currentRevisionBase },
     {
       readCurrentDocumentSnapshot: async () => null,
       correctionGameCatalog: async () => ({ games: [] }),
@@ -375,6 +456,8 @@ async function setup(
   );
   return {
     assess,
+    loadCorrectionDraft,
+    currentRevisionBase,
     document,
     markProposalApplied,
     markResolvedAfterReassessment,
