@@ -85,6 +85,14 @@ export async function readDirectoryIfPresent(directory: string): Promise<readonl
   }
 }
 
+export async function removeIfPresent(target: string): Promise<void> {
+  try {
+    await unlink(target);
+  } catch (error: unknown) {
+    if (!isMissing(error)) throw error;
+  }
+}
+
 export async function readWriterLock(target: string): Promise<WriterLockOwner | null> {
   try {
     return parseWriterLockOwner(JSON.parse(await readFile(target, "utf8")) as unknown);

@@ -18,7 +18,12 @@ import {
   WorkspaceMigrationRequiredError,
   WorkspacePersistenceBlockedError,
 } from "./workspace-errors.js";
-import { atomicWrite, isMissing, readDirectoryIfPresent } from "./workspace-files.js";
+import {
+  atomicWrite,
+  isMissing,
+  readDirectoryIfPresent,
+  removeIfPresent,
+} from "./workspace-files.js";
 import { assertGameId } from "./workspace-path-policy.js";
 
 // The workspace owns the writer lock and serialization; this store owns the durable current transition.
@@ -343,13 +348,5 @@ async function syncDirectory(directory: string): Promise<void> {
     }
   } catch {
     // Windows와 일부 파일시스템은 디렉터리 fsync를 지원하지 않는다.
-  }
-}
-
-export async function removeIfPresent(target: string): Promise<void> {
-  try {
-    await unlink(target);
-  } catch (error: unknown) {
-    if (!isMissing(error)) throw error;
   }
 }

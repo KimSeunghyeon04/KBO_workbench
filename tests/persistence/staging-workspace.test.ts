@@ -482,64 +482,82 @@ describe("staging workspace", () => {
     await restarted.close();
   });
 
-  it("중단된 staging correction journal을 재시작 시 현재 상태로 roll-forward하고 원본만 보존한다", async () => {
-    await using temporary = await mkdtempDisposable(
-      path.join(tmpdir(), "kbo-correction-recovery-"),
-    );
-    const first = await StagingWorkspace.open(
-      temporary.path,
-      () => new Date("2026-08-20T03:00:00.000Z"),
-    );
-    const { document } = mapNaverGame(await sanitizedNaverBundle());
-    await first.saveReady(document, []);
-    const player = document.rosters.away.players[0];
-    if (player === undefined) {
-      throw new Error("fixture correction roster missing");
-    }
-    const command = {
-      commandId: "staging-recovery-roster-position",
-      kind: "update_roster_position" as const,
-      side: "away" as const,
-      playerId: player.playerId,
-      positions: [...player.positions, "대체"],
-    };
-    const corrected = applyCorrectionCommand(document, command);
-    await expect(
-      first.commitCorrection(
-        {
-          baseAuthority: "staging",
-          targetAuthority: "staging",
-          baseDocumentHash: stagingDocumentHash(document),
-          document: corrected.document,
-          findingEnvelope: {
-            schemaVersion: 2,
-            findings: corrected.replay.findings.map((finding) => ({
-              ...finding,
-              producer: "compiler" as const,
-              lifecycle: "recomputed" as const,
-            })),
+  it.each(["after_journal", "after_current"] as const)(
+    "%s에서 중단된 교정을 재시작 시 복구하고 원본과 최초 finding을 보존한다",
+    async (failurePoint) => {
+      await using temporary = await mkdtempDisposable(
+        path.join(tmpdir(), "kbo-correction-recovery-"),
+      );
+      const first = await StagingWorkspace.open(
+        temporary.path,
+        () => new Date("2026-08-20T03:00:00.000Z"),
+      );
+      const { document } = mapNaverGame(await sanitizedNaverBundle());
+      const originalFinding = {
+        producer: "collection" as const,
+        lifecycle: "persistent" as const,
+        code: "source.original",
+        category: "source" as const,
+        severity: "warning" as const,
+        message: "최초 관측",
+      };
+      await first.saveReady(document, [originalFinding]);
+      const player = document.rosters.away.players[0];
+      if (player === undefined) {
+        throw new Error("fixture correction roster missing");
+      }
+      const command = {
+        commandId: "staging-recovery-roster-position",
+        kind: "update_roster_position" as const,
+        side: "away" as const,
+        playerId: player.playerId,
+        positions: [...player.positions, "대체"],
+      };
+      const corrected = applyCorrectionCommand(document, command);
+      await expect(
+        first.commitCorrection(
+          {
+            baseAuthority: "staging",
+            targetAuthority: "staging",
+            baseDocumentHash: stagingDocumentHash(document),
+            document: corrected.document,
+            findingEnvelope: {
+              schemaVersion: 2,
+              findings: corrected.replay.findings.map((finding) => ({
+                ...finding,
+                producer: "compiler" as const,
+                lifecycle: "recomputed" as const,
+              })),
+            },
           },
-        },
-        "after_current",
-      ),
-    ).rejects.toThrow("injected correction failure");
-    await first.close();
+          failurePoint,
+        ),
+      ).rejects.toThrow("injected correction failure");
+      await first.close();
 
-    const restarted = await StagingWorkspace.open(temporary.path);
-    expect(
-      await restarted.readDocument("staging", document.metadata.season, document.metadata.gameId),
-    ).toEqual(corrected.document);
-    expect(
-      (await readdir(path.join(temporary.path, "journals"))).filter((name) =>
-        name.startsWith("correction-"),
-      ),
-    ).toEqual([]);
-    expect(
-      await restarted.readOriginal(document.metadata.season, document.metadata.gameId),
-    ).toEqual(document);
-    await expect(readdir(path.join(temporary.path, "history"))).rejects.toThrow();
-    await restarted.close();
-  });
+      const restarted = await StagingWorkspace.open(temporary.path);
+      expect(
+        await restarted.readDocument("staging", document.metadata.season, document.metadata.gameId),
+      ).toEqual(corrected.document);
+      expect(
+        (await readdir(path.join(temporary.path, "journals"))).filter((name) =>
+          name.startsWith("correction-"),
+        ),
+      ).toEqual([]);
+      expect(
+        await restarted.readOriginal(document.metadata.season, document.metadata.gameId),
+      ).toEqual(document);
+      expect(
+        await restarted.readOriginalFindings(document.metadata.season, document.metadata.gameId),
+      ).toEqual([originalFinding]);
+      await expect(readdir(path.join(temporary.path, "history"))).rejects.toThrow();
+      const recoveredCatalog = await restarted.catalog();
+      await restarted.close();
+      const reopened = await StagingWorkspace.open(temporary.path);
+      expect(await reopened.catalog()).toEqual(recoveredCatalog);
+      await reopened.close();
+    },
+  );
 
   it("실행 중 빈 catalog 디렉터리가 사라져도 빈 목록으로 처리하고 다음 저장 때 복구한다", async () => {
     await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-missing-catalog-"));

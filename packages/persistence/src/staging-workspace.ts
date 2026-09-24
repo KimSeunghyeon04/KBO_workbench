@@ -1,23 +1,18 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
-import { access, mkdir, readFile, readdir, unlink } from "node:fs/promises";
+import { access, mkdir, readFile, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
-import { gunzip, gzip } from "node:zlib";
 import { AnalysisCoverageWorkspace } from "./analysis-coverage-workspace.js";
 import { AnalysisModelJobWorkspace } from "./analysis-model-job-workspace.js";
 import { readImmutableSourceBundle } from "./source-bundle-reader.js";
-import {
-  WorkspaceCurrentStore,
-  removeIfPresent,
-  snapshotContentHash,
-} from "./workspace-current-store.js";
-import {
-  StaleStagingDocumentError,
-  WorkspaceMigrationRequiredError,
-  WorkspacePersistenceBlockedError,
-} from "./workspace-errors.js";
+import { saveImmutableSourceBundle, type ImmutableSourceBundle } from "./source-bundle-store.js";
+import { WorkspaceCurrentStore, snapshotContentHash } from "./workspace-current-store.js";
+import { StaleStagingDocumentError, WorkspacePersistenceBlockedError } from "./workspace-errors.js";
+import { findingEnvelope, readFindingEnvelope, readFindings } from "./workspace-findings.js";
+import { assertNoUnmigratedCurrentFiles, assertWorkspaceIntegrity } from "./workspace-integrity.js";
+import { WorkspaceJournalStore } from "./workspace-journal-store.js";
+import { WorkspaceOriginalStore } from "./workspace-original-store.js";
 export {
   StaleStagingDocumentError,
   WorkspaceMigrationRequiredError,
@@ -27,13 +22,9 @@ export {
 import {
   canonicalStringify,
   compareCanonicalStrings,
-  parseCollectionJob,
-  parseCorrectionJournal,
-  parseSourceBundleManifest,
   parseSourceFailureRecord,
   parseStagingCorrectionCommit,
   parseStagingGameDocumentV2,
-  parseStoredFindingEnvelopeV2,
   parseStoredFindings,
   type CollectionJob,
   type CorrectionGameCatalog,
@@ -42,11 +33,9 @@ import {
   type GameCatalog,
   type GameCatalogItem,
   type ImportTarget,
-  type SourceBundleManifest,
   type StagingCorrectionCommit,
   type StagingGameDocumentV2,
   type StoredFinding,
-  type StoredFindingEnvelopeV2,
   type WriterLockOwner,
 } from "@kbo/contracts";
 import {
@@ -71,24 +60,17 @@ import {
   isMissing,
   readDirectoryIfPresent,
   readWriterLock,
+  removeIfPresent,
   removeTemporaryFiles,
 } from "./workspace-files.js";
-import { assertGameId, assertJobId, assertSeason, isGameId } from "./workspace-path-policy.js";
-import { WorkspaceValidationPool } from "./workspace-validation-pool.js";
+import { assertGameId, assertSeason } from "./workspace-path-policy.js";
 import {
   readVerifiedDocument,
   readVerifiedFindings,
   verifiedImportTarget,
 } from "./workspace-validation.js";
 
-export interface ImmutableSourceBundle {
-  readonly gameId: string;
-  readonly season: number;
-  readonly collectedAt: string;
-  readonly sourceBundleHash: string;
-  readonly payloads: Readonly<Record<string, unknown>>;
-  readonly missingEndpoints: readonly string[];
-}
+export type { ImmutableSourceBundle } from "./source-bundle-store.js";
 
 export interface SupersededDocumentSnapshot {
   readonly snapshotId: string;
@@ -104,11 +86,10 @@ export interface CurrentDocumentSnapshot {
   readonly findings: readonly StoredFinding[];
 }
 
-const gzipAsync = promisify(gzip);
-const gunzipAsync = promisify(gunzip);
-
 export class StagingWorkspace {
   private readonly currentStorage: WorkspaceCurrentStore;
+  private readonly originalStorage: WorkspaceOriginalStore;
+  private readonly journals: WorkspaceJournalStore;
   public readonly analysisModelJobs: AnalysisModelJobWorkspace;
   public readonly collection: CollectionWorkspace;
   public readonly imports: ImportWorkspace;
@@ -135,6 +116,8 @@ export class StagingWorkspace {
     private readonly compile: (document: StagingGameDocumentV2) => Promise<ReplayResult>,
   ) {
     this.root = path.resolve(root);
+    this.originalStorage = new WorkspaceOriginalStore(this.root);
+    this.journals = new WorkspaceJournalStore(this.root, this.now);
     this.currentStorage = new WorkspaceCurrentStore(
       this.root,
       this.now,
@@ -211,7 +194,7 @@ export class StagingWorkspace {
       await workspace.recoverTemporaryFiles();
       await workspace.currentStorage.recoverManifestUpgradeJournals();
       await workspace.currentStorage.recoverWorkspaceTransitions();
-      await workspace.assertNoUnmigratedCurrentFiles();
+      await assertNoUnmigratedCurrentFiles(workspace.root);
       await workspace.recoverCorrectionJournals();
       await workspace.assertWorkspaceIntegrity();
       return workspace;
@@ -350,69 +333,7 @@ export class StagingWorkspace {
     assertGameId(bundle.gameId);
     assertSeason(bundle.season);
     await this.verifyLock();
-    const calculated = createHash("sha256")
-      .update(
-        canonicalStringify({
-          gameId: bundle.gameId,
-          missingEndpoints: [...bundle.missingEndpoints].sort(compareText),
-          payloads: bundle.payloads,
-        }),
-        "utf8",
-      )
-      .digest("hex");
-    if (calculated !== bundle.sourceBundleHash) {
-      throw new Error(`source bundle hash가 mapper 결과와 다릅니다: ${bundle.gameId}`);
-    }
-    const directory = path.join(
-      this.root,
-      "source",
-      String(bundle.season),
-      bundle.gameId,
-      bundle.sourceBundleHash,
-    );
-    await mkdir(directory, { recursive: true });
-    const endpoints: Array<{ readonly name: string; readonly hash: string }> = [];
-    for (const [name, payload] of Object.entries(bundle.payloads).sort(([left], [right]) =>
-      compareText(left, right),
-    )) {
-      if (!/^[A-Za-z0-9_-]{1,100}$/.test(name)) {
-        throw new Error(`source endpoint 이름이 올바르지 않습니다: ${name}`);
-      }
-      const canonical = canonicalStringify(payload);
-      const hash = createHash("sha256").update(canonical, "utf8").digest("hex");
-      endpoints.push({ name, hash });
-      const target = path.join(directory, `${name}.json.gz`);
-      try {
-        const existing = await readFile(target);
-        const existingCanonical = (await gunzipAsync(existing)).toString("utf8");
-        if (existingCanonical !== canonical)
-          throw new Error(`immutable source가 다릅니다: ${target}`);
-      } catch (error: unknown) {
-        if (!isMissing(error)) throw error;
-        await atomicWrite(target, await gzipAsync(Buffer.from(canonical, "utf8"), { level: 9 }));
-      }
-    }
-    const manifest: SourceBundleManifest = {
-      gameId: bundle.gameId,
-      season: bundle.season,
-      collectedAt: new Date(bundle.collectedAt).toISOString(),
-      sourceBundleHash: bundle.sourceBundleHash,
-      missingEndpoints: [...bundle.missingEndpoints].sort(compareText),
-      endpoints,
-    };
-    const manifestPath = path.join(directory, "manifest.json");
-    try {
-      const existing = await readFile(manifestPath, "utf8");
-      const parsed = parseSourceBundleManifest(JSON.parse(existing) as unknown);
-      if (
-        existing !== `${canonicalStringify({ ...manifest, collectedAt: parsed.collectedAt })}\n`
-      ) {
-        throw new Error(`immutable source manifest가 다릅니다: ${bundle.gameId}`);
-      }
-    } catch (error: unknown) {
-      if (!isMissing(error)) throw error;
-      await atomicWrite(manifestPath, `${canonicalStringify(manifest)}\n`);
-    }
+    await saveImmutableSourceBundle(this.root, bundle);
   }
 
   public async readSourceBundle(
@@ -427,36 +348,19 @@ export class StagingWorkspace {
   public async saveCollectionJobJournal(job: CollectionJob): Promise<void> {
     this.assertOpen();
     await this.verifyLock();
-    await atomicWrite(this.collectionJobJournalPath(job.jobId), `${canonicalStringify(job)}\n`);
+    await this.journals.saveCollectionJob(job);
   }
 
   public async removeCollectionJobJournal(jobId: string): Promise<void> {
     this.assertOpen();
     await this.verifyLock();
-    await removeIfPresent(this.collectionJobJournalPath(jobId));
+    await this.journals.removeCollectionJob(jobId);
   }
 
   public async recoverInterruptedCollectionJobs(): Promise<readonly CollectionJob[]> {
     this.assertOpen();
     await this.verifyLock();
-    const directory = path.join(this.root, "journals");
-    const recovered: CollectionJob[] = [];
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.startsWith("collection-") || !entry.name.endsWith(".json"))
-        continue;
-      const journalPath = path.join(directory, entry.name);
-      const job = parseCollectionJob(JSON.parse(await readFile(journalPath, "utf8")) as unknown);
-      recovered.push({
-        ...job,
-        status: "failed",
-        currentGameId: null,
-        finishedAt: this.now().toISOString(),
-        error: "API 재시작으로 수집 작업이 중단됐습니다.",
-        errorCategory: "persistence",
-      });
-      await unlink(journalPath);
-    }
-    return recovered.sort((left, right) => compareText(right.createdAt, left.createdAt));
+    return this.journals.recoverInterruptedCollectionJobs();
   }
 
   public async catalog(gameIds?: readonly string[]): Promise<GameCatalog> {
@@ -607,9 +511,7 @@ export class StagingWorkspace {
 
   public async readOriginal(season: number, gameId: string): Promise<StagingGameDocumentV2> {
     this.assertOpen();
-    return parseStagingGameDocumentV2(
-      JSON.parse(await readFile(this.originalDocumentPath(season, gameId), "utf8")) as unknown,
-    );
+    return this.originalStorage.readDocument(season, gameId);
   }
 
   public async removeImportedStaging(
@@ -640,7 +542,7 @@ export class StagingWorkspace {
     gameId: string,
   ): Promise<readonly StoredFinding[]> {
     this.assertOpen();
-    return readFindings(this.originalFindingsPath(season, gameId));
+    return this.originalStorage.readFindings(season, gameId);
   }
 
   public async commitCorrection(
@@ -687,23 +589,12 @@ export class StagingWorkspace {
       );
     }
     await this.saveOriginalIfAbsent(current, currentFindings);
-    const createdAt = this.now().toISOString();
-    const journalId = `${createdAt.replaceAll(":", "-")}-${parsedInput.baseDocumentHash.slice(0, 12)}`;
-    const journal: CorrectionJournal = {
-      ...parsedInput,
-      journalId,
-      beforeDocument: current,
-      createdAt,
-    };
-    const journalPath = this.correctionJournalPath(parsedInput.document.metadata.gameId, journalId);
-    await atomicWrite(journalPath, `${canonicalStringify(journal)}\n`);
-    if (failurePoint === "after_journal")
-      throw new Error("injected correction failure: after_journal");
-    await this.rollForwardCorrection(journal);
-    if (failurePoint === "after_current")
-      throw new Error("injected correction failure: after_current");
-    await unlink(journalPath);
-    return parsedInput.targetAuthority;
+    return this.journals.commitCorrection(
+      parsedInput,
+      current,
+      (journal) => this.rollForwardCorrection(journal),
+      failurePoint,
+    );
   }
 
   public async close(): Promise<void> {
@@ -812,18 +703,10 @@ export class StagingWorkspace {
   }
 
   private async recoverCorrectionJournals(): Promise<void> {
-    const directory = path.join(this.root, "journals");
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.startsWith("correction-") || !entry.name.endsWith(".json"))
-        continue;
-      const journalPath = path.join(directory, entry.name);
-      const journal = parseCorrectionJournal(
-        JSON.parse(await readFile(journalPath, "utf8")) as unknown,
-      );
+    await this.journals.recoverCorrections(async (journal) => {
       await this.saveOriginalIfAbsent(journal.beforeDocument, []);
       await this.rollForwardCorrection(journal);
-      await unlink(journalPath);
-    }
+    });
   }
 
   private async readCurrentDocument(
@@ -941,98 +824,23 @@ export class StagingWorkspace {
       throw new StaleStagingDocumentError("수집 중 현재 작업본이 변경되어 저장을 건너뜁니다.");
   }
 
-  private async assertNoUnmigratedCurrentFiles(): Promise<void> {
-    let legacyCount = 0;
-    for (const authority of ["staging", "quarantine"] as const) {
-      const root = path.join(this.root, authority);
-      for (const entry of await readDirectoryIfPresent(root)) {
-        if (!entry.isDirectory()) continue;
-        if (authority === "quarantine" && entry.name === "source-failures") continue;
-        for (const file of await readDirectoryIfPresent(path.join(root, entry.name))) {
-          if (
-            file.isFile() &&
-            file.name.endsWith(".json") &&
-            !file.name.endsWith(".findings.json")
-          ) {
-            legacyCount += 1;
-          }
-        }
-      }
-    }
-    for (const file of await readDirectoryIfPresent(
-      path.join(this.root, "quarantine", "source-failures"),
-    )) {
-      if (file.isFile() && file.name.endsWith(".json")) legacyCount += 1;
-    }
-    if (legacyCount > 0) {
-      throw new WorkspaceMigrationRequiredError(
-        `versioned current manifest가 없는 legacy current artifact ${String(legacyCount)}개가 있습니다. workspace:migrate를 먼저 실행하세요.`,
-      );
-    }
-  }
-
   private async assertWorkspaceIntegrity(): Promise<void> {
-    const referenced = new Set<string>();
-    const files = (await readDirectoryIfPresent(path.join(this.root, "current")))
-      .filter((file) => file.isFile() && file.name.endsWith(".json"))
-      .sort((a, b) => compareCanonicalStrings(a.name, b.name));
-    const validation = new WorkspaceValidationPool(files.length >= 64);
-    const validate = async (file: (typeof files)[number]) => {
-      const gameId = file.name.slice(0, -5);
-      if (!isGameId(gameId)) {
-        throw new WorkspacePersistenceBlockedError(
-          `current manifest 파일 이름이 올바르지 않습니다: ${file.name}`,
-        );
-      }
-      try {
-        const current = await this.currentStorage.requiredCurrentEntry(gameId);
-        const [result, supersededCount] = await Promise.all([
-          validation.validate(this.root, current),
-          this.currentStorage.supersededCount(gameId),
-        ]);
+    await assertWorkspaceIntegrity(
+      this.root,
+      this.currentStorage,
+      (current, result, supersededCount) => {
         this.catalogIndex.seed({
           ...workspaceCatalogItem(current, [], supersededCount),
           blockingFindings: result.blockingFindings,
           warningFindings: result.warningFindings,
         });
         if (result.target !== null)
-          this.verifiedTargets.set(gameId, {
+          this.verifiedTargets.set(current.gameId, {
             manifest: canonicalStringify(current),
             target: result.target,
           });
-        referenced.add(current.artifactPath);
-      } catch (error: unknown) {
-        throw new WorkspacePersistenceBlockedError(
-          `current manifest 무결성 검증에 실패했습니다: ${gameId}: ${errorMessage(error)}`,
-        );
-      }
-    };
-    try {
-      for (let offset = 0; offset < files.length; offset += 16) {
-        const results = await Promise.allSettled(files.slice(offset, offset + 16).map(validate));
-        for (const result of results) if (result.status === "rejected") throw result.reason;
-      }
-    } finally {
-      await validation.close();
-    }
-    for (const gameDirectory of await readDirectoryIfPresent(path.join(this.root, "active"))) {
-      if (!gameDirectory.isDirectory() || !isGameId(gameDirectory.name)) continue;
-      for (const artifact of await readDirectoryIfPresent(
-        path.join(this.root, "active", gameDirectory.name),
-      )) {
-        if (
-          !artifact.isFile() ||
-          (!artifact.name.endsWith(".document.json") && !artifact.name.endsWith(".failure.json"))
-        )
-          continue;
-        const artifactPath = path.posix.join("active", gameDirectory.name, artifact.name);
-        if (!referenced.has(artifactPath)) {
-          throw new WorkspacePersistenceBlockedError(
-            `journal 없이 current가 아닌 active artifact가 발견되었습니다: ${artifactPath}`,
-          );
-        }
-      }
-    }
+      },
+    );
   }
 
   private async reusableActiveDocument(
@@ -1084,34 +892,7 @@ export class StagingWorkspace {
     assertSeason(document.metadata.season);
     assertGameId(document.metadata.gameId);
     await this.verifyLock();
-    const target = this.originalDocumentPath(document.metadata.season, document.metadata.gameId);
-    try {
-      const existing = parseStagingGameDocumentV2(
-        JSON.parse(await readFile(target, "utf8")) as unknown,
-      );
-      if (existing.metadata.gameId !== document.metadata.gameId) {
-        throw new Error(`원본 gameId가 현재 경기와 다릅니다: ${document.metadata.gameId}`);
-      }
-      return;
-    } catch (error: unknown) {
-      if (!isMissing(error)) throw error;
-    }
-    const findingsTarget = this.originalFindingsPath(
-      document.metadata.season,
-      document.metadata.gameId,
-    );
-    if (findings.length === 0) {
-      await removeIfPresent(findingsTarget);
-    } else {
-      await atomicWrite(findingsTarget, `${canonicalStringify(findingEnvelope(findings))}\n`);
-    }
-    await atomicWrite(target, `${canonicalStringify(document)}\n`);
-    const stored = parseStagingGameDocumentV2(
-      JSON.parse(await readFile(target, "utf8")) as unknown,
-    );
-    if (stagingDocumentHash(stored) !== stagingDocumentHash(document)) {
-      throw new Error(`원본 문서 hash 검증에 실패했습니다: ${document.metadata.gameId}`);
-    }
+    await this.originalStorage.saveIfAbsent(document, findings);
   }
 
   private async rollForwardCorrection(journal: CorrectionJournal): Promise<void> {
@@ -1120,31 +901,6 @@ export class StagingWorkspace {
     } else {
       await this.saveQuarantine(journal.document, journal.findingEnvelope.findings);
     }
-  }
-
-  private originalDocumentPath(season: number, gameId: string): string {
-    assertSeason(season);
-    assertGameId(gameId);
-    return path.join(this.root, "original", String(season), `${gameId}.json`);
-  }
-
-  private originalFindingsPath(season: number, gameId: string): string {
-    assertSeason(season);
-    assertGameId(gameId);
-    return path.join(this.root, "original", String(season), `${gameId}.findings.json`);
-  }
-
-  private collectionJobJournalPath(jobId: string): string {
-    assertJobId(jobId);
-    return path.join(this.root, "journals", `collection-${jobId}.json`);
-  }
-
-  private correctionJournalPath(gameId: string, historyId: string): string {
-    assertGameId(gameId);
-    if (!/^[A-Za-z0-9_.+-]{1,200}$/.test(historyId)) {
-      throw new Error("유효하지 않은 correction history ID입니다.");
-    }
-    return path.join(this.root, "journals", `correction-${gameId}-${historyId}.json`);
   }
 
   private async verifyLock(): Promise<void> {
@@ -1159,24 +915,6 @@ export class StagingWorkspace {
   }
 }
 
-async function readFindings(target: string): Promise<readonly StoredFinding[]> {
-  return (await readFindingEnvelope(target)).findings;
-}
-
-async function readFindingEnvelope(target: string): Promise<StoredFindingEnvelopeV2> {
-  try {
-    const value = JSON.parse(await readFile(target, "utf8")) as unknown;
-    return parseStoredFindingEnvelopeV2(value);
-  } catch (error: unknown) {
-    if (isMissing(error)) return findingEnvelope([]);
-    throw error;
-  }
-}
-
-function findingEnvelope(findings: readonly StoredFinding[]): StoredFindingEnvelopeV2 {
-  return parseStoredFindingEnvelopeV2({ schemaVersion: 2, findings });
-}
-
 function workspaceDisplaySummary(document: StagingGameDocumentV2) {
   return {
     gameDate: document.metadata.gameDate,
@@ -1187,18 +925,10 @@ function workspaceDisplaySummary(document: StagingGameDocumentV2) {
   };
 }
 
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
-}
-
 function currentDocumentAuthority(authority: "staging" | "quarantine"): "ready" | "quarantine" {
   return authority === "staging" ? "ready" : "quarantine";
 }
 
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

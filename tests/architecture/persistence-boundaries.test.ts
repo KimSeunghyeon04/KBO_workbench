@@ -63,6 +63,18 @@ async function runtimeDependencies(entry: string): Promise<ReadonlySet<string>> 
 }
 
 describe("persistence and session responsibility boundaries", () => {
+  it.each([
+    "source-bundle-store",
+    "workspace-integrity",
+    "workspace-original-store",
+    "workspace-journal-store",
+    "workspace-findings",
+  ])("%s는 workspace 조정자를 역참조하지 않는다", async (module) => {
+    const dependencies = await runtimeDependencies(`packages/persistence/src/${module}.ts`);
+    expect(dependencies.has("packages/persistence/src/staging-workspace.ts")).toBe(false);
+    expect(dependencies.has("packages/persistence/src/workspace-current-store.ts")).toBe(false);
+  });
+
   it.each(["jobs", "sources", "cases"])(
     "record correction %s는 공개 repository를 역참조하지 않는다",
     async (part) => {

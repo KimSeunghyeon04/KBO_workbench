@@ -340,6 +340,11 @@ replace와 directory sync, 이전 artifact의 superseded 이동, journal 제거 
 journal을 idempotent하게 roll-forward하며 journal 없는 orphan active artifact나 hash 불일치는
 persistence-blocked로 중단한다. command history, before/after snapshot, changes audit은 만들지 않는다.
 
+`StagingWorkspace`는 잠금·검증·전환 조정을 유지하고, 최초 원장·finding의 파일 보관은
+`WorkspaceOriginalStore`, 교정·수집 저널의 파일 처리는 `WorkspaceJournalStore`에 위임한다.
+원본은 최초 finding까지 보존하며, 교정 저널은 기존 저장 경로의 검증과 전환이 성공한 뒤에만
+제거한다. current transition·manifest upgrade 저널은 계속 `WorkspaceCurrentStore`가 담당한다.
+
 legacy `staging/<season>`·`quarantine/<season>` 배치는 자동 추측하지 않는다. 먼저
 `pnpm workspace:migrate -- --dry-run`으로 충돌을 확인하고, API writer를 중지한 상태에서 검증된 DB와
 workspace 쌍 backup을 만든 뒤에만 `--apply --backup <verified-path>`를 실행한다. 둘 이상의 current

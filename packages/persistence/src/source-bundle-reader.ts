@@ -1,11 +1,11 @@
+import { canonicalStringify, parseSourceBundleManifest } from "@kbo/contracts";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { createHash } from "node:crypto";
-import { gunzip } from "node:zlib";
 import { promisify } from "node:util";
-import { canonicalStringify, parseSourceBundleManifest } from "@kbo/contracts";
+import { gunzip } from "node:zlib";
+import type { ImmutableSourceBundle } from "./source-bundle-store.js";
 import { assertGameId, assertSeason } from "./workspace-path-policy.js";
-import type { ImmutableSourceBundle } from "./staging-workspace.js";
 const gunzipAsync = promisify(gunzip);
 
 export async function readImmutableSourceBundle(
