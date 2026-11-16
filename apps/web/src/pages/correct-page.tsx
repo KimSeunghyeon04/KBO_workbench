@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type {
   CorrectionCommand,
@@ -55,14 +55,29 @@ import {
 export { VirtualEventList } from "../correction/correction-workbench-panels";
 export { CorrectionDrawer } from "../correction/correction-drawer";
 
+import { WorkflowGuide } from "../components/workflow-guide";
+
 type EventKindFilter = "all" | StagingRelayEventKind;
 
 export function CorrectPage(): React.JSX.Element {
+  const workbenchStart = useRef<HTMLElement>(null);
+  const problemReturn = useRef<{
+    readonly source: HTMLButtonElement;
+    readonly list: HTMLElement | null;
+    readonly listScrollTop: number;
+    readonly pageScrollTop: number;
+  } | null>(null);
+  const [navigationRequest, setNavigationRequest] = useState<{
+    readonly destination: "events" | "detail";
+    readonly version: number;
+  } | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedSessionId = searchParams.get("sessionId") ?? rememberedCorrectionSessionId();
   const recordCorrectionNoticeId = searchParams.get("noticeId");
   const catalog = useQuery(correctionGamesQueryOptions());
-  const [scope, setScope] = useState<CorrectionGameScope>("review");
+  const [scope, setScope] = useState<CorrectionGameScope>(() =>
+    searchParams.get("scope") === "ready" ? "ready" : "review",
+  );
   const [gameQuery, setGameQuery] = useState("");
   const [gameSeason, setGameSeason] = useState("all");
   const [gameStart, setGameStart] = useState("");
@@ -81,6 +96,7 @@ export function CorrectPage(): React.JSX.Element {
   const [allowQuarantine, setAllowQuarantine] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [selectedTrackingId, setSelectedTrackingId] = useState<string | null>(null);
+  const [selectedFindingIdentity, setSelectedFindingIdentity] = useState<string | null>(null);
   const [recordView, setRecordView] = useState<{
     readonly kind: RecordKind;
     readonly selectedRecordIdentity: string | null;
@@ -104,15 +120,24 @@ export function CorrectPage(): React.JSX.Element {
   );
   const selectedGame = games.find((item) => correctionGameKey(item) === selectedKey) ?? null;
   useEffect(() => {
+    if (searchParams.get("game") !== null) return;
     const first = games[0];
     if (first !== undefined && !games.some((item) => correctionGameKey(item) === selectedKey))
       setSelectedKey(correctionGameKey(first));
-  }, [games, selectedKey]);
+  }, [games, searchParams, selectedKey]);
   useEffect(() => setConfirmOpen(false), [selectedKey]);
   useEffect(() => {
     const requestedGame = searchParams.get("game");
-    const found = catalogGames.find((game) => game.gameId === requestedGame);
-    if (found === undefined) return;
+    if (requestedGame === null) return;
+    const readyOnly = searchParams.get("scope") === "ready";
+    if (readyOnly) setScope("ready");
+    const found = catalogGames.find(
+      (game) => game.gameId === requestedGame && (!readyOnly || game.authority === "staging"),
+    );
+    if (found === undefined) {
+      setSelectedKey("");
+      return;
+    }
     setScope(found.authority === "quarantine" ? "review" : "ready");
     setSelectedKey(correctionGameKey(found));
     const next = new URLSearchParams(searchParams);
@@ -143,6 +168,11 @@ export function CorrectPage(): React.JSX.Element {
   } = useCorrectionSessionController(selectedGame);
 
   useEffect(() => {
+    workbenchStart.current?.focus({ preventScroll: true });
+    workbenchStart.current?.scrollIntoView?.({ block: "start" });
+  }, [session?.sessionId]);
+
+  useEffect(() => {
     if (
       requestedSessionId !== null &&
       lastCommit?.sessionId !== requestedSessionId &&
@@ -169,9 +199,23 @@ export function CorrectPage(): React.JSX.Element {
     setRecordView(null);
     setSelectedTrackingId(null);
     setCollapsedInningEventIds(new Set());
+    setSelectedFindingIdentity(null);
     setCollapsedPlateEventIds(new Set());
     setCollapseAnnouncement("");
+    problemReturn.current = null;
+    setNavigationRequest(null);
   }, [session?.sessionId]);
+
+  useEffect(() => {
+    if (navigationRequest === null) return;
+    const panel = document.getElementById(
+      navigationRequest.destination === "events"
+        ? "correction-event-panel"
+        : "correction-selection-detail",
+    );
+    panel?.focus({ preventScroll: true });
+    panel?.scrollIntoView?.({ block: "start" });
+  }, [navigationRequest]);
 
   useEffect(() => {
     if (session?.blockingCount === 0) setAllowQuarantine(false);
@@ -329,11 +373,13 @@ export function CorrectPage(): React.JSX.Element {
     else openGame();
   };
   const selectLedgerEvent = (eventId: string): void => {
+    setSelectedFindingIdentity(null);
     setRecordView(null);
     setSelectedTrackingId(null);
     setSelectedEventId(eventId);
   };
-  const selectFindingEvent = (eventId: string): void => {
+  const selectFindingEvent = (eventId: string, findingIdentity?: string): void => {
+    setSelectedFindingIdentity(findingIdentity ?? null);
     const owners = collapseOwnersForEvent(collapseModel, eventId);
     const revealed: string[] = [];
     if (owners.inningEventId !== undefined && collapsedInningEventIds.has(owners.inningEventId))
@@ -349,7 +395,7 @@ export function CorrectPage(): React.JSX.Element {
     setOnlyRelated(false);
     setSelectedEventId(eventId);
     if (revealed.length > 0)
-      setCollapseAnnouncement(`선택한 finding의 ${revealed.join("과 ")}을 펼쳤습니다.`);
+      setCollapseAnnouncement(`선택한 문제의 ${revealed.join("과 ")}을 펼쳤습니다.`);
   };
   const toggleCollapse = (kind: EventCollapseKind, eventId: string): void => {
     const groups = collapseModel.groupsByEventId.get(eventId) ?? [];
@@ -429,6 +475,44 @@ export function CorrectPage(): React.JSX.Element {
     setSelectedEventId(pitchEventId);
   };
   const error = sessionError ?? catalog.error;
+  const navigateWorkbench = (destination: "events" | "detail"): void => {
+    setNavigationRequest((current) => ({ destination, version: (current?.version ?? 0) + 1 }));
+  };
+  const navigateFromProblem = (
+    destination: "events" | "detail",
+    source: HTMLButtonElement,
+  ): void => {
+    const list = source.closest<HTMLElement>(".finding-list");
+    problemReturn.current = {
+      source,
+      list,
+      listScrollTop: list?.scrollTop ?? 0,
+      pageScrollTop: globalThis.scrollY,
+    };
+    navigateWorkbench(destination);
+  };
+  const returnToProblem = (): void => {
+    const saved = problemReturn.current;
+    if (saved !== null && saved.source.isConnected) {
+      if (saved.list !== null) saved.list.scrollTop = saved.listScrollTop;
+      globalThis.scrollTo({ top: saved.pageScrollTop, behavior: "instant" });
+      saved.source.focus({ preventScroll: true });
+    } else {
+      const panel = document.getElementById("correction-problems");
+      panel?.focus({ preventScroll: true });
+      panel?.scrollIntoView?.({ block: "start" });
+    }
+  };
+  const detailNavigation = (
+    <nav className="correction-panel-navigation" aria-label="상세에서 돌아가기">
+      <button type="button" onClick={() => navigateWorkbench("events")}>
+        선택한 행으로 돌아가기
+      </button>
+      <button type="button" onClick={returnToProblem}>
+        문제 목록으로 돌아가기
+      </button>
+    </nav>
+  );
   const nextReview =
     games.find((game) => game.authority === "quarantine" && game.gameId !== lastCommit?.gameId) ??
     null;
@@ -438,16 +522,20 @@ export function CorrectPage(): React.JSX.Element {
       <header className="page-header">
         <div>
           <h1>중계 원장 보정</h1>
-          <p>
-            Naver 중계 행을 버리지 않고 정리합니다. 최종 경기 구조는 DB 적재 시 compiler가 만듭니다.
-          </p>
+          <p>원문과 검증 결과를 함께 확인하며 경기 기록을 수정합니다.</p>
         </div>
       </header>
-      <section className="panel correction-source-bar">
+      <details
+        className="panel correction-source-bar"
+        key={session?.sessionId ?? "select-game"}
+        open={session === null}
+      >
+        <summary>
+          <h2>{session === null ? "보정할 경기" : "다른 경기 선택"}</h2>
+        </summary>
         <div className="correction-source-heading">
           <div>
-            <h2>파일 원장 선택</h2>
-            <p>검토가 필요한 경기부터 열고 현재 compiler 결과를 기준으로 보정합니다.</p>
+            <p>검토가 필요한 경기를 선택해 작업 사본을 여세요.</p>
           </div>
           <div className="correction-scope-tabs" role="group" aria-label="보정 대상 범위">
             {(
@@ -512,7 +600,17 @@ export function CorrectPage(): React.JSX.Element {
           </label>
           <label>
             <span>경기</span>
-            <select value={selectedKey} onChange={(event) => setSelectedKey(event.target.value)}>
+            <select
+              value={selectedKey}
+              onChange={(event) => {
+                setSelectedKey(event.target.value);
+                if (searchParams.get("game") !== null) {
+                  const next = new URLSearchParams(searchParams);
+                  next.delete("game");
+                  setSearchParams(next, { replace: true });
+                }
+              }}
+            >
               <option value="">경기 선택</option>
               {games.map((game) => (
                 <option key={correctionGameKey(game)} value={correctionGameKey(game)}>
@@ -541,6 +639,11 @@ export function CorrectPage(): React.JSX.Element {
             KBO 문자중계
           </a>
         </div>
+        {catalog.data !== undefined && searchParams.get("game") !== null && selectedKey === "" ? (
+          <p className="inline-error" role="status">
+            요청한 경기가 이 보정 대상 범위에 없습니다. 경기 목록을 확인해 다시 선택하세요.
+          </p>
+        ) : null}
         {catalog.isPending ? (
           <div className="notice-panel" role="status" aria-live="polite">
             수집한 경기 목록을 확인하고 있습니다.
@@ -569,7 +672,7 @@ export function CorrectPage(): React.JSX.Element {
             </button>
           </div>
         ) : null}
-      </section>
+      </details>
       {error !== null ? (
         <div className="error-panel" role="alert">
           {error.message}
@@ -585,7 +688,21 @@ export function CorrectPage(): React.JSX.Element {
           className={`panel correction-empty${lastCommit === null ? "" : " correction-complete"}`}
         >
           {lastCommit === null ? (
-            <p>파일 원장을 선택해 작업 사본을 여세요.</p>
+            <WorkflowGuide
+              title="경기 기록을 확인하고 보정하세요"
+              description="위에서 경기를 선택한 뒤 작업 사본을 열면 원문과 검증 결과가 표시됩니다."
+              steps={[
+                { title: "검증 결과 확인", description: "차단 원인과 관련된 중계 행을 찾습니다." },
+                {
+                  title: "원장 보정",
+                  description: "선택한 행의 기록을 수정하고 결과를 다시 확인합니다.",
+                },
+                {
+                  title: "저장 후 DB 적재",
+                  description: "검증을 통과한 경기를 분석·재생에 반영합니다.",
+                },
+              ]}
+            />
           ) : (
             <CommitCompletionPanel
               key={lastCommit.sessionId}
@@ -602,15 +719,25 @@ export function CorrectPage(): React.JSX.Element {
         </section>
       ) : (
         <>
-          <section className="panel correction-game-summary">
+          <section
+            className="panel correction-game-summary"
+            aria-label="현재 보정 경기"
+            tabIndex={-1}
+            ref={workbenchStart}
+          >
             <div>
-              <strong>{session.gameId}</strong>
+              <strong>
+                {session.draftDocument.metadata.gameDate} · {session.draftDocument.teams.away.name}
+                {" vs "}
+                {session.draftDocument.teams.home.name}
+              </strong>
+              <span className="mono-text">{session.gameId}</span>
               <span>{catalogAuthorityLabel(session.authority)}</span>
               <code>
                 {session.dirty
                   ? "저장하지 않은 변경 있음"
                   : promotionAvailable
-                    ? "staging 승격 가능"
+                    ? "DB 적재 가능 상태로 전환 가능"
                     : "저장됨"}
               </code>
             </div>
@@ -737,14 +864,27 @@ export function CorrectPage(): React.JSX.Element {
               onSelectEvent={selectFindingEvent}
               onSelectRecord={selectRecord}
               onSelectTracking={selectTracking}
+              onNavigate={navigateFromProblem}
             />
-            <section className="panel correction-events">
+            <section id="correction-event-panel" className="panel correction-events" tabIndex={-1}>
               <div className="panel-title-row">
                 <h2>중계 원장</h2>
                 <span>
                   {String(visibleRows.length)} / {String(session.draftDocument.events.length)}행
                 </span>
               </div>
+              <nav className="correction-panel-navigation" aria-label="원장에서 이동">
+                <button type="button" onClick={returnToProblem}>
+                  문제 목록으로 돌아가기
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedEventId === null}
+                  onClick={() => navigateWorkbench("detail")}
+                >
+                  선택한 행 상세 보기
+                </button>
+              </nav>
               <div className="event-filters">
                 <input
                   type="search"
@@ -821,11 +961,15 @@ export function CorrectPage(): React.JSX.Element {
                 onSelect={selectLedgerEvent}
                 onAction={act}
                 onToggleCollapse={toggleCollapse}
+                focusRequest={
+                  navigationRequest?.destination === "events" ? navigationRequest.version : 0
+                }
               />
             </section>
             {recordView === null ? (
               <EventDetail
                 presentation={selectedPresentation}
+                selectedFindingIdentity={selectedFindingIdentity}
                 context={selectedContext}
                 findings={session.findings.filter((item) => item.eventId === selectedEventId)}
                 document={session.draftDocument}
@@ -836,6 +980,7 @@ export function CorrectPage(): React.JSX.Element {
                 sourceEvidenceError={sourceEvidence.error}
                 pending={busy}
                 onApply={apply}
+                navigation={detailNavigation}
               />
             ) : (
               <RecordDetail
@@ -846,6 +991,7 @@ export function CorrectPage(): React.JSX.Element {
                 onKindChange={(kind) => setRecordView({ kind, selectedRecordIdentity: null })}
                 onSelectRecord={selectRecord}
                 onClose={() => setRecordView(null)}
+                navigation={detailNavigation}
               />
             )}
           </div>
@@ -854,8 +1000,8 @@ export function CorrectPage(): React.JSX.Element {
               <div>
                 <h2>작업 사본 저장</h2>
                 <p className="muted-text">
-                  저장할 때 base hash를 다시 확인하고 compiler 결과에 따라 staging 또는 quarantine에
-                  반영합니다.
+                  다른 작업에서 원장이 바뀌지 않았는지 다시 확인한 뒤 저장합니다. 검증을 통과하면 DB
+                  적재가 가능하고, 차단 문제가 남으면 검토가 필요한 원장으로 저장합니다.
                 </p>
               </div>
               <span className="item-state">

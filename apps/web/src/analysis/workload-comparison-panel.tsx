@@ -6,6 +6,7 @@ import type {
   WorkloadComparisonDimension,
 } from "@kbo/contracts";
 import { getWorkloadComparison } from "../api/workload-comparison-client";
+import "../styles/analysis-evidence.css";
 
 const dimensions: { key: WorkloadComparisonDimension; label: string }[] = [
   { key: "pitchNumber", label: "경기 내 투구 수" },
@@ -39,35 +40,47 @@ export function WorkloadComparisonPanel({
     });
   return (
     <section className="panel" aria-label="조건을 맞춘 투수 운용 비교">
-      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button
+        className="analysis-button"
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
         조건을 맞춘 운용 비교 {open ? "접기" : "보기"}
       </button>
       {open && (
         <>
           <p>
-            같은 투수·시즌에서 등판 역할, 구종, 타석 좌우, 볼·스트라이크가 같은 조건끼리 비교합니다.
-            두 집단에 공통인 조건을 같은 비중으로 맞춥니다.
-          </p>
-          <p>
-            구속은 구속 확인 투구, 스윙률은 실제 투구, 헛스윙률은 스윙이 분모입니다. 차이는 비교
-            집단 − 기준 집단이며, 95% 구간은 경기 단위로 계산합니다.
-          </p>
-          <p>
-            수집 누락과 시기·구장·실제 코스·상대 타자 차이는 남습니다. 피로나 교체의 인과 효과를
-            뜻하지 않습니다. 순서가 미상인 같은 날 복수 등판과 직전 등판 미상은 휴식·최근 투구량
-            비교에서 제외합니다.
+            같은 조건을 맞춘 관측 비교입니다. 표본 충족과 변화 방향의 확실성은 별개이며, 피로의 인과
+            효과를 뜻하지 않습니다.
           </p>
           {result.isFetching && (
             <p role="status">운용 조건과 경기별 불확실성을 계산하고 있습니다.</p>
           )}
-          <p>
-            역할은 등록 선발/구원을 우선 사용합니다. 등록 정보가 없으면 첫 실제 투구 투수·후속
-            투수라는 관측 구분을 따로 사용하며, 공식 선발/구원으로 간주하지 않습니다.
-          </p>
           {result.error && <p role="alert">{result.error.message}</p>}
           {result.data && (
             <ComparisonResult key={`${pitcherId}-${result.data.sourceHash}`} data={result.data} />
           )}
+          <details>
+            <summary>비교 방법과 한계</summary>
+            <p>
+              같은 투수·시즌에서 등판 역할, 구종, 타석 좌우, 볼·스트라이크가 같은 조건끼리
+              비교합니다. 두 집단에 공통인 조건을 같은 비중으로 맞춥니다.
+            </p>
+            <p>
+              구속은 구속 확인 투구, 스윙률은 실제 투구, 헛스윙률은 스윙이 분모입니다. 차이는 비교
+              집단 − 기준 집단이며, 95% 구간은 경기 단위로 계산합니다.
+            </p>
+            <p>
+              수집 누락과 시기·구장·실제 코스·상대 타자 차이는 남습니다. 피로나 교체의 인과 효과를
+              뜻하지 않습니다. 순서가 미상인 같은 날 복수 등판과 직전 등판 미상은 휴식·최근 투구량
+              비교에서 제외합니다.
+            </p>
+            <p>
+              역할은 등록 선발/구원을 우선 사용합니다. 등록 정보가 없으면 첫 실제 투구 투수·후속
+              투수라는 관측 구분을 따로 사용하며, 공식 선발/구원으로 간주하지 않습니다.
+            </p>
+          </details>
         </>
       )}
     </section>
@@ -134,11 +147,12 @@ function ComparisonResult({ data }: { data: WorkloadComparisonResponse }) {
           첫/후속 투수 관측 {data.roleEvidence.observedPitches.toLocaleString()}구 · 미상{" "}
           {data.roleEvidence.unknownPitches.toLocaleString()}구.
         </p>
-        <table aria-label="조건을 맞춘 운용 성과">
+        <table className="analysis-sticky-table" aria-label="조건을 맞춘 운용 성과">
           <thead>
             <tr>
               {[
                 "기준 → 비교",
+                "해석",
                 "원 집계 기준 → 비교",
                 "조건 맞춤 기준 → 비교",
                 `차이 (${metric === "speed" ? "km/h" : "%p"})`,
@@ -146,7 +160,6 @@ function ComparisonResult({ data }: { data: WorkloadComparisonResponse }) {
                 "공통 분모 / 전체 분모 (기준 · 비교)",
                 "공통 경기 (기준 · 비교)",
                 "공통 조건",
-                "상태",
               ].map((label) => (
                 <th key={label}>{label}</th>
               ))}
@@ -160,6 +173,19 @@ function ComparisonResult({ data }: { data: WorkloadComparisonResponse }) {
                   <th>
                     {groupLabel(dimension, r.reference)} → {groupLabel(dimension, r.comparison)}
                   </th>
+                  <td className="workload-interpretation">
+                    {r.status === "ready"
+                      ? r.interval === null
+                        ? "표본 충족 · 구간 미확인"
+                        : r.interval.low > 0
+                          ? "표본 충족 · 관측 증가"
+                          : r.interval.high < 0
+                            ? "표본 충족 · 관측 감소"
+                            : "표본 충족 · 변화 방향 불확실"
+                      : r.status === "unstable_interval"
+                        ? "경기 재표집 불안정"
+                        : "공통 표본 부족"}
+                  </td>
                   <td>
                     {number(r.baseline.rawMean)} → {number(r.target.rawMean)}
                   </td>
@@ -180,13 +206,6 @@ function ComparisonResult({ data }: { data: WorkloadComparisonResponse }) {
                     {r.baseline.matchedGames} · {r.target.matchedGames}
                   </td>
                   <td>{r.commonStrata}</td>
-                  <td>
-                    {r.status === "ready"
-                      ? "비교 가능"
-                      : r.status === "unstable_interval"
-                        ? "경기 재표집 불안정"
-                        : "공통 표본 부족"}
-                  </td>
                 </tr>
               ))}
           </tbody>

@@ -1,0 +1,105 @@
+.dashboard-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(260px, 1fr);
+  gap: 48px;
+  padding-block: 8px;
+}
+.dashboard-workspace h2 {
+  margin-bottom: 8px;
+  font-size: 18px;
+}
+.dashboard-task {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--ui-line);
+}
+.dashboard-task:first-of-type {
+  border-top: 1px solid var(--ui-line);
+}
+.dashboard-task p {
+  margin: 4px 0 0;
+  color: var(--ui-muted);
+  font-size: 13px;
+}
+.dashboard-task > span {
+  flex-shrink: 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+.dashboard-task > span[data-attention="true"] {
+  color: var(--ui-warning);
+  font-weight: 650;
+}
+.dashboard-task:hover strong,
+.dashboard-explore-link:hover strong,
+.dashboard-page .metric-card:hover {
+  color: var(--ui-accent);
+}
+.dashboard-explore {
+  align-self: start;
+  padding: 24px;
+  background: var(--ui-surface-subtle);
+  border-radius: var(--ui-radius);
+}
+.dashboard-explore > p {
+  margin-bottom: 24px;
+  color: var(--ui-muted);
+  line-height: 1.8;
+}
+.dashboard-explore .primary-button {
+  display: inline-flex;
+  margin-bottom: 24px;
+}
+.dashboard-explore-link {
+  display: grid;
+  gap: 4px;
+  padding-block: 16px;
+  border-top: 1px solid var(--ui-line);
+}
+.dashboard-explore-link span {
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+.dashboard-system {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-top: 1px solid var(--ui-line);
+  padding-top: 20px;
+}
+.dashboard-system .system-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin: 0;
+}
+.dashboard-system .system-list > div {
+  gap: 12px;
+  border: 0;
+  padding: 0;
+}
+@media (max-width: 1050px) {
+  .dashboard-workspace {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+}
+@media (max-width: 560px) {
+  .dashboard-task {
+    align-items: start;
+    gap: 12px;
+  }
+  .dashboard-task > span {
+    max-width: 96px;
+    text-align: right;
+  }
+  .dashboard-system {
+    align-items: start;
+    flex-direction: column;
+    gap: 12px;
+  }
+}

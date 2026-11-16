@@ -175,7 +175,7 @@ export function RecordCorrectionsPage(): React.JSX.Element {
         </div>
         <div className="operation-status-line">
           <span>
-            미처리 <strong>{String(actionableCount)}</strong>
+            미처리 <strong>{summary.data ? actionableCount.toLocaleString() : "—"}</strong>
           </span>
           <span>
             최근 동기화 <strong>{formatDateTime(summary.data?.lastSuccessfulAt ?? null)}</strong>
@@ -204,7 +204,7 @@ export function RecordCorrectionsPage(): React.JSX.Element {
         master={
           <>
             <div className="operation-list-toolbar record-correction-list-toolbar">
-              <div className="operation-segments" aria-label="기록정정 큐">
+              <div className="operation-segments" role="group" aria-label="기록정정 큐">
                 {(
                   [
                     ["needs_action", "미처리", actionableCount],
@@ -215,6 +215,7 @@ export function RecordCorrectionsPage(): React.JSX.Element {
                   <button
                     type="button"
                     className={queue === value ? "selected" : undefined}
+                    aria-pressed={queue === value}
                     key={value}
                     onClick={() =>
                       updateSearch({
@@ -224,7 +225,7 @@ export function RecordCorrectionsPage(): React.JSX.Element {
                       })
                     }
                   >
-                    {label} {String(count)}
+                    {label} {summary.data ? count.toLocaleString() : "—"}
                   </button>
                 ))}
               </div>
@@ -309,7 +310,7 @@ export function RecordCorrectionsPage(): React.JSX.Element {
           selectedNoticeId === null ? (
             <OperationEmptyDetail
               title="검토할 공지를 선택하세요"
-              description="목록에는 판단에 필요한 최소 정보만 표시하고, 원문과 후보는 선택 후 불러옵니다."
+              description="공지의 원문과 대상 경기를 확인하고, 반영할 기록을 검토합니다."
             />
           ) : selected.isLoading || selected.data === undefined ? (
             <OperationEmptyDetail

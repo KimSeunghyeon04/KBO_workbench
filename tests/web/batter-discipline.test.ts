@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { resolveAnalysisScope } from "@kbo/contracts";
+import { DisciplineQuerySchema, resolveAnalysisScope } from "@kbo/contracts";
+import { Value } from "@sinclair/typebox/value";
 import { createElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router-dom";
@@ -45,6 +46,112 @@ function show(url = "/analysis/batter-discipline?season=2024") {
   );
 }
 describe("batter discipline view", () => {
+  it.each([false, true])(
+    "keeps the same batter across seasons and shows a missing-player state (explicit=%s)",
+    async (explicit) => {
+      const fetch = vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input), "http://localhost");
+        const raw = Object.fromEntries(url.searchParams);
+        const query = Value.Decode(DisciplineQuerySchema, { ...raw, season: Number(raw.season) });
+        if (url.pathname.endsWith("batter-discipline"))
+          return Response.json({
+            season: query.season,
+            scope: resolveAnalysisScope(query),
+            batters: (query.season === 2024
+              ? ["b1"]
+              : query.season === 2025
+                ? ["b2", "b1"]
+                : ["b2"]
+            ).map((batterId) => ({ batterId, name: batterId, pitches: 1 })),
+          });
+        return Response.json(response(query, url.pathname.endsWith("b1") ? "b1" : "b2"));
+      });
+      vi.stubGlobal("fetch", fetch);
+      show(
+        `/analysis/batter-discipline?season=2024&dateFrom=2024-06-01&dateTo=2024-06-30${explicit ? "&batter=b1" : ""}`,
+      );
+      await screen.findByLabelText("코스별 스윙 지도");
+      fireEvent.change(screen.getByLabelText("선구안 시즌"), { target: { value: "2025" } });
+      await waitFor(() => expect(screen.getByLabelText("분석 타자").textContent).toContain("b2"));
+      expect(screen.getByLabelText("분석 타자")).toHaveProperty("value", "b1");
+      let current = new URLSearchParams(screen.getByLabelText("현재 주소").textContent ?? "");
+      expect(Object.fromEntries(current)).toEqual({ season: "2025", batter: "b1" });
+      fireEvent.change(screen.getByLabelText("선구안 시즌"), { target: { value: "2023" } });
+      await screen.findByText("선택한 타자(ID b1)의 실제 투구가 이 조회 범위에 없습니다.");
+      expect(screen.getByLabelText("분석 타자")).toHaveProperty("value", "b1");
+      expect(screen.queryByLabelText("코스별 스윙 지도")).toBeNull();
+      current = new URLSearchParams(screen.getByLabelText("현재 주소").textContent ?? "");
+      expect(current.get("batter")).toBe("b1");
+      expect(
+        fetch.mock.calls.some(([input]) =>
+          new URL(String(input), "http://localhost").pathname.endsWith("/b2"),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it("keeps all restored situation conditions visible while collapsed without refetching on disclosure", async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      const raw = Object.fromEntries(url.searchParams);
+      const query = Value.Decode(DisciplineQuerySchema, {
+        ...raw,
+        season: Number(raw.season),
+        ...(raw.balls === undefined ? {} : { balls: Number(raw.balls) }),
+        ...(raw.strikes === undefined ? {} : { strikes: Number(raw.strikes) }),
+      });
+      if (url.pathname.endsWith("batter-discipline"))
+        return Response.json({
+          season: query.season,
+          scope: resolveAnalysisScope(query),
+          batters: [{ batterId: "b1", name: "타자", pitches: 1 }],
+        });
+      return Response.json(response(query));
+    });
+    vi.stubGlobal("fetch", fetch);
+    show(
+      "/analysis/batter-discipline?season=2024&competition=regular&batter=b1&dateFrom=2024-06-01&dateTo=2024-06-30&balls=0&strikes=2&pitchType=직구&stance=R&leaguePeriod=target",
+    );
+    await screen.findByLabelText("코스별 스윙 지도");
+    expect(screen.getByLabelText("선구안 카운트")).toHaveProperty("value", "0-2");
+    expect(screen.getByLabelText("선구안 구종")).toHaveProperty("value", "직구");
+    expect(screen.getByLabelText("선구안 타석")).toHaveProperty("value", "R");
+    const trigger = screen.getByText("조회 조건 변경");
+    const details = trigger.closest("details");
+    if (!(details instanceof HTMLDetailsElement)) throw new Error("Missing condition disclosure");
+    expect(details.open).toBe(false);
+    for (const condition of [
+      "0볼",
+      "2스트라이크",
+      "구종: 직구",
+      "우타석",
+      "리그 비교: 대상과 같은 기간",
+    ]) {
+      expect(details.querySelector("summary")?.textContent).toContain(condition);
+    }
+    const requests = fetch.mock.calls.length;
+    const search = screen.getByLabelText("현재 주소").textContent;
+    fireEvent.click(trigger);
+    expect(details.open).toBe(true);
+    fireEvent.click(trigger);
+    expect(details.open).toBe(false);
+    await act(async () => Promise.resolve());
+    expect(fetch).toHaveBeenCalledTimes(requests);
+    expect(screen.getByLabelText("현재 주소").textContent).toBe(search);
+    expect(
+      fetch.mock.calls.some(([input]) => {
+        const url = new URL(String(input), "http://localhost");
+        return (
+          url.pathname.endsWith("/b1") &&
+          url.searchParams.get("balls") === "0" &&
+          url.searchParams.get("strikes") === "2" &&
+          url.searchParams.get("pitchType") === "직구" &&
+          url.searchParams.get("stance") === "R"
+        );
+      }),
+    ).toBe(true);
+  });
+
   it("loads defaults, selects a map cell and pitch, restores filters in URL, and resets", async () => {
     const fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input), "http://localhost");

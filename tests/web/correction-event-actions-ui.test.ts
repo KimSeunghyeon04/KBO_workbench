@@ -341,7 +341,7 @@ describe("평면 원장 빠른 보정 UI", () => {
     expect(newCommandId(source)).toBe("cmd-abababab-abab-4bab-abab-abababababab");
   });
 
-  it("원장 각 행에 수정·이동·삭제·더보기 작업을 제공한다", async () => {
+  it("원장 행에는 수정·더보기만 두고 실제 원장 기준 이동·삭제를 메뉴에서 제공한다", async () => {
     const canonicalEvents = [event("e1", 0), event("e2", 1), event("e3", 2)];
     const actions = vi.fn();
     const view = render(
@@ -361,17 +361,27 @@ describe("평면 원장 빠른 보정 UI", () => {
     const rows = screen.getAllByRole("listitem");
     const firstButtons = within(rows[0] as HTMLElement).getAllByRole("button");
     const secondButtons = within(rows[1] as HTMLElement).getAllByRole("button");
-    expect(firstButtons).toHaveLength(6);
-    expect((firstButtons[2] as HTMLButtonElement).disabled).toBe(true);
-    await userEvent.setup().click(secondButtons[3] as HTMLElement);
+    expect(firstButtons).toHaveLength(3);
+    expect(within(rows[0] as HTMLElement).queryByRole("button", { name: "삭제" })).toBeNull();
+    await userEvent
+      .setup()
+      .click(within(rows[0] as HTMLElement).getByRole("button", { name: "더보기" }));
+    expect(
+      (screen.getByRole("menuitem", { name: "위로 이동" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    await userEvent.setup().keyboard("{Escape}");
+    await userEvent
+      .setup()
+      .click(within(rows[1] as HTMLElement).getByRole("button", { name: "더보기" }));
+    await userEvent.setup().click(screen.getByRole("menuitem", { name: "아래로 이동" }));
     expect(actions).toHaveBeenCalledWith("e2", "move_down");
     const list = view.container.querySelector(".virtual-event-list");
     if (!(list instanceof HTMLElement)) throw new Error("virtual list missing");
     vi.spyOn(list, "getBoundingClientRect").mockReturnValue(rect(0, 500));
-    vi.spyOn(secondButtons[5] as HTMLElement, "getBoundingClientRect").mockReturnValue(
+    vi.spyOn(secondButtons[2] as HTMLElement, "getBoundingClientRect").mockReturnValue(
       rect(424, 450),
     );
-    await userEvent.setup().click(secondButtons[5] as HTMLElement);
+    await userEvent.setup().click(secondButtons[2] as HTMLElement);
     expect(view.container.querySelector('[role="menu"]')?.classList.contains("opens-upward")).toBe(
       true,
     );
@@ -380,9 +390,56 @@ describe("평면 원장 빠른 보정 UI", () => {
     expect(view.container.querySelector('[role="menu"]')).not.toBeNull();
     await userEvent.setup().keyboard("{ArrowDown}");
     expect(screen.getByRole("menuitem", { name: "뒤에 행 추가" })).toBe(document.activeElement);
+    await userEvent.setup().keyboard("{End}");
+    expect(screen.getByRole("menuitem", { name: "행 삭제" })).toBe(document.activeElement);
     await userEvent.setup().keyboard("{Escape}");
     expect(view.container.querySelector('[role="menu"]')).toBeNull();
-    expect(secondButtons[5]).toBe(document.activeElement);
+    expect(secondButtons[2]).toBe(document.activeElement);
+  });
+
+  it("투구 판정은 한국어로 선택하며 명령에는 원래 enum을 전송한다", async () => {
+    const original = fixture();
+    const pitch = pitchEvent("anonymous-pitch", original.events.length, "ball", "1구 볼");
+    const gameDocument = parseStagingGameDocumentV2({
+      ...original,
+      events: [...original.events, pitch],
+    });
+    const onApply = vi.fn();
+    render(
+      createElement(CorrectionDrawer, {
+        request: { mode: "replace_event", eventId: pitch.identity.eventId },
+        session: session(gameDocument),
+        selectedEvent: pitch,
+        pending: false,
+        error: null,
+        onClose: vi.fn(),
+        onApply,
+      }),
+    );
+    const call = screen.getByRole("combobox", { name: "판정" });
+    const options = within(call);
+    expect(
+      (options.getByRole("option", { name: "볼", exact: true }) as HTMLOptionElement).value,
+    ).toBe("ball");
+    expect(
+      (options.getByRole("option", { name: "스트라이크", exact: true }) as HTMLOptionElement).value,
+    ).toBe("called_strike");
+    const user = userEvent.setup();
+    await user.selectOptions(call, "automatic_ball");
+    expect(options.getByRole("option", { name: "자동 볼" }).getAttribute("value")).toBe(
+      "automatic_ball",
+    );
+    await user.click(screen.getByRole("button", { name: "작업 사본에 즉시 반영" }));
+    expect(onApply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "replace_event",
+        event: expect.objectContaining({
+          kind: "pitch",
+          payload: expect.objectContaining({ call: "automatic_ball" }),
+        }),
+      }),
+    );
+    expect(pitch.payload.call).not.toBe("automatic_ball");
   });
 
   it("필터 결과가 비면 명시적인 빈 상태를 표시한다", () => {
@@ -397,6 +454,33 @@ describe("평면 원장 빠른 보정 UI", () => {
       }),
     );
     expect(screen.getByText("조건에 맞는 원장 행이 없습니다.")).toBeTruthy();
+  });
+
+  it("필터로 한 행만 보여도 이동 가능 여부와 삭제는 전체 원장을 기준으로 한다", async () => {
+    const canonicalEvents = [event("e1", 0), event("e2", 1), event("e3", 2)];
+    const target = canonicalEvents[1];
+    if (target === undefined) throw new Error("filtered event fixture missing");
+    const onAction = vi.fn();
+    render(
+      createElement(VirtualEventList, {
+        rows: [{ kind: "event", key: "e2", presentation: presentation(target) }],
+        canonicalEvents,
+        selectedEventId: "e2",
+        disabled: false,
+        onSelect: vi.fn(),
+        onAction,
+      }),
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "더보기" }));
+    expect(
+      (screen.getByRole("menuitem", { name: "위로 이동" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+    expect(
+      (screen.getByRole("menuitem", { name: "아래로 이동" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+    await user.click(screen.getByRole("menuitem", { name: "행 삭제" }));
+    expect(onAction).toHaveBeenCalledWith("e2", "delete");
   });
 
   it("이닝·타석 헤더에서 접기 상태와 숨긴 행 수를 키보드 버튼으로 전달한다", async () => {

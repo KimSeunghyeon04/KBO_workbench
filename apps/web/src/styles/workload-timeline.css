@@ -1,0 +1,90 @@
+.workload-timeline-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.workload-timeline-heading h2 {
+  margin: 0;
+}
+.workload-timeline-heading span,
+.workload-timeline > p {
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+.workload-chart-scroll {
+  overflow-x: auto;
+  margin-block: 20px;
+}
+.workload-chart-scroll svg {
+  display: block;
+  width: 100%;
+  min-width: 480px;
+}
+.workload-chart-scroll text {
+  fill: var(--ui-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.workload-chart-grid {
+  stroke: var(--ui-line);
+}
+.workload-chart-stem {
+  stroke: var(--ui-line);
+  stroke-width: 2;
+}
+.workload-chart-point {
+  fill: var(--ui-accent);
+}
+.workload-chart-point.is-selected {
+  fill: var(--ui-ink);
+  stroke: white;
+  stroke-width: 2;
+}
+.workload-appearance-picker {
+  display: grid;
+  gap: 8px;
+  max-width: 420px;
+  font-size: 12px;
+  color: var(--ui-muted);
+}
+.workload-appearance-picker select {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid var(--ui-line);
+  border-radius: 4px;
+  padding: 8px;
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+}
+.workload-selected-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding-top: 20px;
+  margin-top: 20px;
+  border-top: 1px solid var(--ui-line);
+  gap: 20px;
+}
+.workload-selected-summary dt {
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+.workload-selected-summary dd {
+  margin: 8px 0 0;
+  font-size: 26px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.workload-selected-summary small {
+  font-size: 12px;
+  margin-left: 4px;
+  font-weight: 400;
+  color: var(--ui-muted);
+}
+@media (max-width: 640px) {
+  .workload-selected-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

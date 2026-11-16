@@ -1,0 +1,144 @@
+.sequence-group-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sequence-group-header label {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 14rem;
+}
+
+.sequence-group-header select {
+  min-height: 40px;
+  max-width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--ui-line);
+  border-radius: 4px;
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  font: inherit;
+}
+
+.sequence-frequency {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem 1.5rem;
+}
+
+.sequence-frequency button {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) minmax(2rem, 1fr) 4.5rem;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 42px;
+  padding: 0.4rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ui-ink);
+  text-align: left;
+}
+
+.sequence-frequency button:hover,
+.sequence-frequency button[aria-pressed="true"] {
+  border-color: var(--ui-line);
+  background: var(--ui-selected);
+}
+
+.sequence-frequency strong {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sequence-frequency-track {
+  display: block;
+  height: 8px;
+  background: var(--ui-surface-subtle);
+}
+
+.sequence-frequency-track > span {
+  display: block;
+  height: 100%;
+  background: var(--ui-accent);
+}
+
+.sequence-pair-navigation {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.sequence-pair-navigation > span {
+  margin-right: auto;
+  color: var(--ui-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sequence-pair-navigation button {
+  min-height: 40px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--ui-line);
+  border-radius: 4px;
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  font: inherit;
+}
+
+.sequence-pair-navigation button:disabled {
+  color: var(--ui-muted);
+  background: var(--ui-surface-subtle);
+}
+
+.sequence-trajectory-plots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-block: 1rem;
+}
+
+.sequence-trajectory figure {
+  margin: 0;
+}
+
+.sequence-trajectory svg {
+  display: block;
+  fill: var(--ui-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sequence-group-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+@media (max-width: 1000px) {
+  .sequence-frequency {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .sequence-group-header {
+    display: grid;
+  }
+
+  .sequence-group-header label {
+    min-width: 0;
+  }
+
+  .sequence-trajectory-plots {
+    grid-template-columns: 1fr;
+  }
+
+  .sequence-trajectory svg {
+    font-size: 20px;
+  }
+
+  .sequence-frequency button {
+    grid-template-columns: minmax(7.5rem, 1fr) minmax(1rem, 1fr) 4rem;
+  }
+}

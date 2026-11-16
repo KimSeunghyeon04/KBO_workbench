@@ -1,3 +1,4 @@
+import { NaverBrowserTransport } from "./browser-transport.js";
 import {
   CollectionCancelledError,
   NaverEndpointMissingError,
@@ -20,17 +21,42 @@ export interface NaverHttpOptions extends RetryingHttpTransportOptions {
 export class NaverHttpClient {
   private readonly transport: RetryingHttpTransport;
   private readonly maxResponseBytes: number;
+  private readonly browserTransport: NaverBrowserTransport | undefined;
 
   public constructor(options: NaverHttpOptions = {}) {
-    this.transport = new RetryingHttpTransport({
-      ...options,
-      requestsPerSecond: options.requestsPerSecond ?? 4,
-      baseBackoffMs: options.baseBackoffMs ?? 300,
-    });
     this.maxResponseBytes = positiveInteger(
       options.maxResponseBytes ?? 10 * 1024 * 1024,
       "maxResponseBytes",
     );
+    const browserTransport =
+      options.fetch === undefined
+        ? new NaverBrowserTransport(options.timeoutMs ?? 15_000, this.maxResponseBytes)
+        : undefined;
+    this.browserTransport = browserTransport;
+    this.transport = new RetryingHttpTransport({
+      ...options,
+      ...(browserTransport === undefined
+        ? {}
+        : {
+            fetch: async (input, init) => {
+              if (typeof input !== "string") throw new Error("Naver URL 문자열이 필요합니다.");
+              const response = await browserTransport.get(
+                input,
+                init?.signal ?? new AbortController().signal,
+              );
+              return new Response(
+                [204, 205, 304].includes(response.status) ? null : response.text,
+                { status: response.status },
+              );
+            },
+          }),
+      requestsPerSecond: options.requestsPerSecond ?? 4,
+      baseBackoffMs: options.baseBackoffMs ?? 300,
+    });
+  }
+
+  public async close(): Promise<void> {
+    await this.browserTransport?.close();
   }
 
   public async fetchJson(url: string, signal: AbortSignal): Promise<unknown> {

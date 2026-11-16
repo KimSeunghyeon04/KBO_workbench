@@ -1,0 +1,37 @@
+:root {
+  --ui-surface: #ffffff;
+  --ui-surface-subtle: #f5f7f6;
+  --ui-ink: #182b25;
+  --ui-muted: #52655d;
+  --ui-line: #dce4df;
+  --ui-accent: #14694f;
+  --ui-selected: #eaf3ef;
+  --ui-danger: #a33b32;
+  --ui-warning: #8c591f;
+  --ui-radius: 4px;
+}
+
+::selection {
+  color: var(--ui-ink);
+  background: #cce7da;
+}
+
+input,
+textarea {
+  caret-color: var(--ui-accent);
+}
+
+html {
+  scroll-padding-top: 76px;
+  scrollbar-color: #b7c5bd var(--ui-surface-subtle);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,7 +1,8 @@
 import { useMemo, useState, type ReactNode } from "react";
 import type { PitchRateGroup, PitchLocationResponse, BatterProfileResponse } from "@kbo/contracts";
-import { outcomeGroupLabel, outcomePercent as percent } from "./pitch-outcome-presentation";
+import { outcomeGroupLabel } from "./pitch-outcome-presentation";
 import "../styles/analysis-stat-table.css";
+import { SampleRate } from "./sample-rate";
 
 const columns: readonly {
   label: string;
@@ -31,39 +32,66 @@ const columns: readonly {
   },
   {
     label: "Swing%",
-    value: (r) => percent(r.swingRate),
+    value: (r) => (
+      <SampleRate value={r.swingRate} numerator={r.swings} denominator={r.pitches} unit="구" />
+    ),
     sortValue: (r) => r.swingRate,
     description: "스윙 수 / 실제 투구 수.",
     compact: true,
   },
   {
     label: "Whiff%",
-    value: (r) => percent(r.whiffRate),
+    value: (r) => (
+      <SampleRate value={r.whiffRate} numerator={r.whiffs} denominator={r.swings} unit="스윙" />
+    ),
     sortValue: (r) => r.whiffRate,
     description: "헛스윙 수 / 스윙 수.",
     compact: true,
   },
   {
     label: "Contact%",
-    value: (r) => percent(r.whiffRate === null ? null : 1 - r.whiffRate),
+    value: (r) => (
+      <SampleRate
+        value={r.whiffRate === null ? null : 1 - r.whiffRate}
+        numerator={r.swings - r.whiffs}
+        denominator={r.swings}
+        unit="스윙"
+      />
+    ),
     sortValue: (r) => (r.whiffRate === null ? null : 1 - r.whiffRate),
     description: "(스윙 수 − 헛스윙 수) / 스윙 수. 파울을 포함합니다.",
   },
   {
     label: "SwStr%",
-    value: (r) => percent(r.swingingStrikeRate),
+    value: (r) => (
+      <SampleRate
+        value={r.swingingStrikeRate}
+        numerator={r.whiffs}
+        denominator={r.pitches}
+        unit="구"
+      />
+    ),
     sortValue: (r) => r.swingingStrikeRate,
     description: "헛스윙 수 / 실제 투구 수.",
   },
   {
     label: "루킹%",
-    value: (r) => percent(r.calledStrikeRate),
+    value: (r) => (
+      <SampleRate
+        value={r.calledStrikeRate}
+        numerator={r.calledStrikes}
+        denominator={r.pitches}
+        unit="구"
+      />
+    ),
     sortValue: (r) => r.calledStrikeRate,
     description: "루킹 스트라이크 수 / 실제 투구 수.",
   },
   {
     label: "CSW%",
-    value: (r) => percent(r.cswRate),
+    value: (r) => (
+      <SampleRate value={r.cswRate} numerator={r.csw} denominator={r.pitches} unit="구" />
+    ),
     sortValue: (r) => r.cswRate,
     description: "루킹 스트라이크와 헛스윙 수 / 실제 투구 수.",
     compact: true,
@@ -72,19 +100,36 @@ const columns: readonly {
     label: "존 알려짐",
     value: (r) => r.zoneKnown,
     sortValue: (r) => r.zoneKnown,
-    description: "좌표와 스트라이크존으로 존 안팎을 판정할 수 있는 실제 투구 수입니다.",
+    description:
+      "원천 도착 좌표와 분석용 신장 기준 존으로 안팎을 판정할 수 있는 실제 투구 수입니다.",
   },
   {
     label: "Zone%",
-    value: (r) => percent(r.zoneRate),
+    value: (r) => (
+      <SampleRate
+        value={r.zoneRate}
+        numerator={r.zonePitches}
+        denominator={r.zoneKnown}
+        unit="구"
+      />
+    ),
     sortValue: (r) => r.zoneRate,
-    description: "존 안 투구 수 / 존 판정 가능 투구 수.",
+    description:
+      "분석용 존 안 투구 수 / 존 판정 가능 투구 수. 당시 심판의 스트라이크 판정 비율이 아닙니다.",
   },
   {
     label: "Chase%",
-    value: (r) => percent(r.chaseRate),
+    value: (r) => (
+      <SampleRate
+        value={r.chaseRate}
+        numerator={r.outsideSwings}
+        denominator={r.outsidePitches}
+        unit="존 밖 공"
+      />
+    ),
     sortValue: (r) => r.chaseRate,
-    description: "존 밖 스윙 수 / 존 밖 투구 수. 존 판정 가능 표본만 사용합니다.",
+    description:
+      "분석용 존 밖 스윙 수 / 존 밖 투구 수. 존 판정 가능 표본만 사용하며 적용 연도 규칙은 코스 지도에 표시합니다.",
     compact: true,
   },
   {
@@ -101,7 +146,14 @@ const columns: readonly {
   },
   {
     label: "결정구%",
-    value: (r) => percent(r.putAwayRate),
+    value: (r) => (
+      <SampleRate
+        value={r.putAwayRate}
+        numerator={r.terminalStrikeouts}
+        denominator={r.twoStrikePitches}
+        unit="2S 공"
+      />
+    ),
     sortValue: (r) => r.putAwayRate,
     description: "삼진 종결 실제 투구 수 / 2스트라이크 실제 투구 수.",
     compact: true,
@@ -114,7 +166,14 @@ const columns: readonly {
   },
   {
     label: "안타 비율",
-    value: (r) => percent(r.inPlayHitRate),
+    value: (r) => (
+      <SampleRate
+        value={r.inPlayHitRate}
+        numerator={r.inPlayHits}
+        denominator={r.inPlayResults}
+        unit="인플레이 결과"
+      />
+    ),
     sortValue: (r) => r.inPlayHitRate,
     description: "안타 결과 수 / 연결된 종결 인플레이 결과 수. 공식 타율과 분모가 다릅니다.",
   },
@@ -152,7 +211,6 @@ export function PitchRateTable({
     <section className="panel outcome-rate-panel">
       <div className="analysis-panel-heading">
         <div>
-          <span className="analysis-kicker">BREAKDOWN</span>
           <h2>{title}</h2>
         </div>
         <button
@@ -219,7 +277,8 @@ export function PitchRateTable({
       {rows.length === 0 && <p className="analysis-caption">이 조건에 해당하는 투구가 없습니다.</p>}
       <p className="analysis-caption">
         열 제목을 누르면 내림차순·오름차순으로 정렬합니다. 분모가 없는 비율은 —로 표시하며 정렬 시
-        마지막에 둡니다.
+        마지막에 둡니다. 소표본은 각 비율의 분모가 20 미만이라는 표시이며, 20 이상도 차이의 통계적
+        확실성을 보장하지 않습니다.
       </p>
       <details className="outcome-metric-guide">
         <summary>지표 안내</summary>

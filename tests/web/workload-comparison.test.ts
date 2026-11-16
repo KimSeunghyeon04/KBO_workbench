@@ -37,6 +37,7 @@ it("defers work until opened, switches metrics locally and shows denominators an
   expect(await screen.findByRole("table", { name: "조건을 맞춘 운용 성과" })).toBeTruthy();
   expect(screen.getByText("136.00 → 124.00")).toBeTruthy();
   expect(screen.getByText("130.00 → 130.00")).toBeTruthy();
+  expect(screen.getByText("표본 충족 · 변화 방향 불확실")).toBeTruthy();
   expect(screen.getAllByText("공통 표본 부족")).toHaveLength(2);
   fireEvent.change(screen.getByRole("combobox", { name: "운용 비교 성과" }), {
     target: { value: "whiff" },

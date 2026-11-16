@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAnalysisScope } from "../analysis/use-analysis-scope";
@@ -7,6 +8,7 @@ import { PitcherScopeFields } from "../analysis/pitcher-scope-fields";
 import { pitcherCatalogQueryOptions } from "../api/analysis-catalog-query-options";
 import { getPitcherWorkload } from "../api/pitcher-workload-client";
 import { WorkloadComparisonPanel } from "../analysis/workload-comparison-panel";
+import { WorkloadTimeline } from "../analysis/workload-timeline";
 import "../styles/pitch-analysis.css";
 const inheritedLabels = {
   scored_during_spell: "등판 중 인정 득점",
@@ -16,15 +18,7 @@ const inheritedLabels = {
   unknown: "미확인",
 };
 export function PitcherWorkloadPage() {
-  const {
-    params,
-    selected,
-    season,
-    scope,
-    change: changeScope,
-  } = useAnalysisScope({
-    seasonSelectionKeys: ["pitcher"],
-  });
+  const { params, selected, season, scope, change: changeScope } = useAnalysisScope();
   const [game, setGame] = useState<string | null>(null);
   const query = { season, ...scope.options };
   const catalog = useQuery({
@@ -39,7 +33,7 @@ export function PitcherWorkloadPage() {
   });
   function change(key: string, value: string) {
     setGame(null);
-    changeScope(key, value);
+    changeScope(key, value, { pitcher: id });
   }
   const data = result.data,
     detail = data?.appearances.find((r) => r.gameId === game) ?? data?.appearances.at(-1);
@@ -56,11 +50,11 @@ export function PitcherWorkloadPage() {
         params={selected}
         pitchers={catalog.data?.pitchers ?? []}
         pitcherId={id}
+        catalogLoaded={catalog.isSuccess}
         onChange={change}
       />
-      {(result.error || catalog.error || scope.error) && (
-        <p role="alert">{String(result.error ?? catalog.error ?? scope.error)}</p>
-      )}
+      {scope.error && <p role="alert">{scope.error}</p>}
+      <AnalysisQueryError queries={[result, catalog]} enabled={scope.error === null} />
       {(catalog.isLoading || result.isFetching) && <p role="status">등판 기록을 읽고 있습니다.</p>}
       {scope.error === null &&
         !catalog.isFetching &&
@@ -68,19 +62,23 @@ export function PitcherWorkloadPage() {
         catalog.data?.pitchers.length === 0 && (
           <AnalysisEmptyState season={season} options={scope.options} />
         )}
-      <section className="panel">
+      {data && (
+        <WorkloadTimeline appearances={data.appearances} selected={detail} onSelect={setGame} />
+      )}
+      <details className="panel">
+        <summary>누적 투구와 휴식일을 읽는 기준</summary>
         <p>
           3/7일 투구 수는 대상 날짜를 제외한 이전 달력 날짜의 실제 투구 합입니다. 이전 기록은
           시즌·팀·경기 종류를 넘어 읽습니다. 미수집 경기가 있을 수 있어 실제 휴식이나 전체
           누적량으로 확정하지 않습니다. 같은 날 경기 순서는 미확인으로 유지합니다.
         </p>
-      </section>
+      </details>
       {scope.error === null && id !== "" && (
         <WorkloadComparisonPanel query={query} pitcherId={id} />
       )}
       {data && (
-        <section className="panel">
-          <h2>등판 기록</h2>
+        <details className="panel">
+          <summary>전체 등판 상세 기록 · {data.appearances.length}경기</summary>
           <div className="table-scroll" tabIndex={0}>
             <table aria-label="투수 등판 기록">
               <thead>
@@ -134,7 +132,7 @@ export function PitcherWorkloadPage() {
               </tbody>
             </table>
           </div>
-        </section>
+        </details>
       )}
       {detail && (
         <>

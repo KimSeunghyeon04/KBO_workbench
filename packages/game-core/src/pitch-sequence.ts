@@ -137,18 +137,23 @@ export function analyzePitchSequences(
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([key, values]) => {
         const avg = (f: (r: (typeof pairs)[number]) => number | null) => {
-          const v = values.flatMap((r) => {
-            const n = f(r);
-            return n === null ? [] : [n];
-          });
-          return divide(
-            v.reduce((a, b) => a + b, 0),
-            v.length,
-          );
+          let sum = 0,
+            count = 0;
+          for (const row of values) {
+            const value = f(row);
+            if (value === null) continue;
+            sum += value;
+            count++;
+          }
+          return { mean: divide(sum, count), count };
         };
         const swings = values.filter((p) => p.current.swing).length,
           whiffs = values.filter((p) => p.current.whiff).length,
-          calledStrikes = values.filter((p) => p.current.calledStrike).length;
+          calledStrikes = values.filter((p) => p.current.calledStrike).length,
+          planeDistance = avg((p) => p.planeDistanceCm),
+          planeTimeDifference = avg((p) => p.planeTimeDifferenceMs),
+          speedDifference = avg((p) => p.speedDifferenceKph),
+          arrivalDistance = avg((p) => p.arrivalDistanceCm);
         return {
           key,
           pairs: values.length,
@@ -158,11 +163,15 @@ export function analyzePitchSequences(
           swingRate: divide(swings, values.length),
           whiffRate: divide(whiffs, swings),
           calledStrikeRate: divide(calledStrikes, values.length),
-          geometryPairs: values.filter((p) => p.planeDistanceCm !== null).length,
-          meanPlaneDistanceCm: avg((p) => p.planeDistanceCm),
-          meanPlaneTimeDifferenceMs: avg((p) => p.planeTimeDifferenceMs),
-          meanSpeedDifferenceKph: avg((p) => p.speedDifferenceKph),
-          meanArrivalDistanceCm: avg((p) => p.arrivalDistanceCm),
+          geometryPairs: planeDistance.count,
+          planeDistancePairs: planeDistance.count,
+          planeTimeDifferencePairs: planeTimeDifference.count,
+          speedDifferencePairs: speedDifference.count,
+          arrivalDistancePairs: arrivalDistance.count,
+          meanPlaneDistanceCm: planeDistance.mean,
+          meanPlaneTimeDifferenceMs: planeTimeDifference.mean,
+          meanSpeedDifferenceKph: speedDifference.mean,
+          meanArrivalDistanceCm: arrivalDistance.mean,
         };
       }),
   };

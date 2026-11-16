@@ -25,7 +25,7 @@ export function CorrectionCommitControls({
             checked={allowQuarantine}
             onChange={(event) => onAllowQuarantine(event.target.checked)}
           />
-          차단 finding을 확인했으며 quarantine 저장을 허용합니다.
+          해결되지 않은 문제를 확인했으며 검토 필요 상태로 저장합니다.
         </label>
       ) : null}
       <button
@@ -37,7 +37,7 @@ export function CorrectionCommitControls({
         {blockingCount > 0
           ? "격리 원장 저장"
           : promotionAvailable && !dirty
-            ? "staging으로 승격"
+            ? "DB 적재 가능 상태로 전환"
             : "현재 원장 저장"}
       </button>
     </div>

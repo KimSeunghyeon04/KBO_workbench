@@ -65,15 +65,14 @@ describe("dashboard system status", () => {
     expect(corrections.textContent).toContain("확인 필요");
     expect(corrections.textContent).not.toContain("0건");
     for (const [label, destination] of [
-      ["수집", "/collect"],
-      ["보정", "/correct"],
-      ["저장", "/database"],
-      ["재생", "/replay"],
+      [/^경기 수집/, "/collect"],
+      [/^기록 검토·보정/, "/correct"],
+      [/^검증된 경기 저장/, "/database?scope=ready"],
+      [/^DB 저장/, "/database?scope=stored"],
+      [/^경기 재생/, "/replay"],
+      [/^선수 분석 시작/, "/analysis/players"],
     ] as const) {
-      const link = screen
-        .getAllByRole("link")
-        .find((link) => link.getAttribute("href") === destination);
-      expect(link?.textContent).toContain(label);
+      expect(screen.getByRole("link", { name: label }).getAttribute("href")).toBe(destination);
     }
     expect(screen.queryByText("준비 중")).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith(

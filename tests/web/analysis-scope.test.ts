@@ -11,11 +11,11 @@ import { useAnalysisScope } from "../../apps/web/src/analysis/use-analysis-scope
 
 afterEach(cleanup);
 
-it("restores URL scope through history and resets only season-dependent selections", () => {
+it("restores URL scope through history and resets dates while preserving both players", () => {
   const initial = "/?season=2024&dateFrom=2024-04-01&dateTo=2024-07-31&pitcher=p&batter=b&balls=2";
   const { result } = renderHook(
     () => ({
-      ...useAnalysisScope({ seasonSelectionKeys: ["pitcher"], throughSeasonEnd: true }),
+      ...useAnalysisScope({ throughSeasonEnd: true }),
       location: useLocation(),
       navigate: useNavigate(),
     }),
@@ -31,7 +31,7 @@ it("restores URL scope through history and resets only season-dependent selectio
   });
   expect(result.current.location.search).not.toContain("competition");
   act(() => result.current.change("season", "2025"));
-  expect(result.current.location.search).toBe("?season=2025&batter=b&balls=2");
+  expect(result.current.location.search).toBe("?season=2025&pitcher=p&batter=b&balls=2");
   expect(result.current.scope.options).toEqual({ competition: "regular", dateTo: "2025-12-31" });
   expect(result.current.selected.get("dateTo")).toBe("2025-12-31");
   act(() => result.current.navigate(-1));
@@ -44,15 +44,33 @@ it("preserves explicit scope choices and leaves legacy default resolution separa
   const params = new URLSearchParams(
     "season=2024&competition=all&pitcher=p&batter=b&pitchType=직구",
   );
-  const next = changeAnalysisParams(params, "season", "2025", ["pitcher", "batter"]);
+  const next = changeAnalysisParams(params, "season", "2025");
   expect(Object.fromEntries(next)).toEqual({
     season: "2025",
     competition: "all",
+    pitcher: "p",
+    batter: "b",
     pitchType: "직구",
   });
   expect(params.get("pitcher")).toBe("p");
   expect(scopeFromParams(2024, new URLSearchParams())).toEqual({ options: {}, error: null });
   expect(changeAnalysisParams(params, "pitchType", "").has("pitchType")).toBe(false);
+});
+
+it("pins implicit current players before a season change without replacing explicit IDs", () => {
+  const params = new URLSearchParams("season=2024&batter=chosen&dateFrom=2024-04-01");
+  const next = changeAnalysisParams(params, "season", "2025", {
+    pitcher: "default-pitcher",
+    batter: "catalog-first-batter",
+  });
+  expect(Object.fromEntries(next)).toEqual({
+    season: "2025",
+    batter: "chosen",
+    pitcher: "default-pitcher",
+  });
+  expect(params.has("pitcher")).toBe(false);
+  expect(params.get("dateFrom")).toBe("2024-04-01");
+  expect(changeAnalysisParams(params, "balls", "0", { pitcher: "p" }).has("pitcher")).toBe(false);
 });
 
 it.each([

@@ -1,14 +1,14 @@
 @media (min-width: 1101px) and (min-height: 720px) {
   .main-content:has(.replay-page) {
-    height: calc(100vh - 56px);
+    min-height: calc(100vh - 56px);
     padding-top: 14px;
     padding-bottom: 14px;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .replay-page {
-    height: 100%;
-    grid-template-rows: auto auto auto auto minmax(0, 1fr);
+    height: auto;
+    grid-template-rows: none;
     gap: 10px;
   }
 
@@ -26,19 +26,6 @@
     display: none;
   }
 
-  .replay-scoreboard {
-    display: grid;
-    min-height: 0;
-    grid-template-columns: minmax(350px, 0.78fr) minmax(540px, 1.22fr);
-  }
-
-  .scoreboard-scoreline {
-    padding: 12px 18px;
-    gap: 14px;
-    border-right: 1px solid rgb(255 255 255 / 10%);
-    border-bottom: 0;
-  }
-
   .scoreboard-live-state {
     grid-template-columns: 140px minmax(0, 1fr) auto;
     padding: 8px 14px;
@@ -50,12 +37,13 @@
   }
 
   .replay-dashboard {
-    height: 100%;
+    height: auto;
+    align-items: start;
     gap: 10px;
   }
 
   .replay-dashboard > .panel {
-    height: 100%;
+    height: auto;
     min-height: 0;
     padding: 14px;
     overflow-y: auto;
@@ -129,7 +117,7 @@
   }
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1280px) {
   .replay-dashboard {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -137,7 +125,9 @@
   .replay-dashboard > .replay-tracking-detail {
     grid-column: 1 / -1;
   }
+}
 
+@media (max-width: 1280px) {
   .correction-workbench {
     height: auto;
     grid-template-columns: minmax(220px, 0.75fr) minmax(400px, 1.35fr);
@@ -172,7 +162,7 @@
     border-right: 0;
     border-bottom: 1px solid #dfe3e0;
     background: #ffffff;
-    box-shadow: 0 12px 24px rgb(28 43 34 / 12%);
+    box-shadow: none;
   }
 
   .sidebar.open {
@@ -199,7 +189,8 @@
 
   .mobile-menu-button {
     display: inline-flex;
-    min-height: 40px;
+    min-width: 44px;
+    min-height: 44px;
     align-items: center;
     padding: 0 10px;
     border: 1px solid #cfd6d1;
@@ -259,12 +250,33 @@
     grid-column: auto;
   }
 
+  .correction-workbench > .correction-detail {
+    height: auto;
+    min-height: 0;
+    overflow: visible !important;
+  }
+
   .correction-source-controls {
     grid-template-columns: minmax(140px, 0.5fr) minmax(240px, 1fr) auto auto;
   }
 
   .finding-list {
     max-height: 240px;
+  }
+
+  .correction-workbench > .correction-findings {
+    height: auto;
+    min-height: 0;
+  }
+
+  .correction-panel-navigation button,
+  .record-kind-tabs button,
+  .event-action-button {
+    min-height: 44px;
+  }
+
+  .event-action-button {
+    width: 44px;
   }
 
   .movement-fields {
@@ -357,9 +369,39 @@
     justify-content: space-between;
   }
 
-  .metric-grid,
-  .diagnostic-grid {
+  .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .diagnostic-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 16px;
+  }
+
+  .diagnostic-description {
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+
+  .diagnostic-card > .status-badge {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  .metric-card {
+    padding: 16px;
+  }
+
+  .metric-card:nth-child(odd) {
+    padding-left: 0;
+  }
+
+  .metric-card:nth-child(even) {
+    border-right: 0;
+  }
+
+  .metric-card:nth-child(n + 3) {
+    border-top: 1px solid var(--ui-line);
   }
 
   .network-line {
@@ -432,7 +474,35 @@
   }
 
   .event-row-select {
-    grid-template-columns: 52px 62px minmax(0, 1fr);
+    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-rows: repeat(3, minmax(0, 1fr));
+    padding: 4px 6px;
+    gap: 0 6px;
+  }
+
+  .event-row-select .event-position {
+    grid-row: 1 / 4;
+  }
+
+  .event-row-select .event-kind-label {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .event-row-select .event-copy {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: center;
+  }
+
+  .event-row-select .event-state-line {
+    grid-column: 2;
+    grid-row: 3;
+    align-self: center;
+  }
+
+  .correction-panel-navigation button {
+    flex: 1 1 130px;
   }
 
   .event-copy small {
@@ -522,7 +592,7 @@
     grid-template-columns: 1fr;
   }
 
-  .replay-game-picker-footer {
+  .replay-game-selection-bar {
     align-items: stretch;
     flex-direction: column;
   }
@@ -537,13 +607,13 @@
   }
 
   .scoreboard-scoreline {
-    grid-template-columns: 1fr 56px 1fr;
+    grid-template-columns: minmax(0, 1fr) 72px minmax(0, 1fr);
     padding: 14px;
     gap: 8px;
   }
 
   .scoreboard-live-state {
-    grid-template-columns: 120px minmax(0, 1fr);
+    grid-template-columns: 140px minmax(0, 1fr);
     padding: 10px 14px 14px;
     gap: 12px;
   }
@@ -564,11 +634,6 @@
     font-size: 25px;
   }
 
-  .base-diamond.compact {
-    transform: scale(0.88);
-    transform-origin: left center;
-  }
-
   .playback-controls {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 10px;
@@ -580,8 +645,14 @@
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
-  .playback-controls button {
+  .playback-controls button,
+  .playback-controls select {
+    height: 44px;
     padding: 0 6px;
+  }
+
+  .playback-controls .play-button {
+    min-width: 0;
   }
 
   .playback-speed {
@@ -598,7 +669,9 @@
   }
 
   .playback-controls input[type="range"] {
+    height: 44px;
     min-width: 0;
+    margin: 0;
   }
 
   .state-grid {
@@ -654,7 +727,6 @@
     padding: 3px 4px;
   }
 
-  .metric-grid,
   .diagnostic-grid {
     grid-template-columns: 1fr;
   }
@@ -676,6 +748,12 @@
   }
 }
 @media (max-width: 600px) {
+  .app-shell .main-content :is(.primary-button, .secondary-button, .analysis-button) {
+    min-height: 44px;
+  }
+  .replay-revision-select select {
+    min-height: 44px;
+  }
   .topbar {
     height: 96px;
     padding: 8px 16px 0;

@@ -70,7 +70,6 @@ export function AnalysisPlayersPage() {
     <div className="page-stack analysis-players-page">
       <header className="page-header">
         <div>
-          <span className="analysis-kicker">PLAYER ANALYSIS</span>
           <h1>선수 분석</h1>
           <p>선수를 선택하고 코스, 구질, 변화와 경기 기록을 이어서 살펴보세요.</p>
         </div>
@@ -183,9 +182,14 @@ export function AnalysisPlayersPage() {
                         <strong>{player.pitches.toLocaleString()}구</strong>
                         <small>{role === "pitcher" ? "투구" : "상대 투구"}</small>
                       </span>
-                      <span className="analysis-player-arrow" aria-hidden="true">
-                        ↗
-                      </span>
+                      <svg
+                        className="analysis-player-arrow"
+                        viewBox="0 0 20 20"
+                        fill="none"
+                        aria-hidden="true"
+                      >
+                        <path d="m8 5 5 5-5 5" stroke="currentColor" strokeWidth="1.5" />
+                      </svg>
                     </Link>
                   </li>
                 ))}

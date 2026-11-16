@@ -1,16 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
+import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import { Value } from "@sinclair/typebox/value";
 import { PitchSequenceQuerySchema } from "@kbo/contracts";
 import { useAnalysisScope } from "../analysis/use-analysis-scope";
 import { PitcherScopeFields } from "../analysis/pitcher-scope-fields";
+import { analysisScopeSummary } from "../analysis/analysis-scope-fields";
+import { pitchSituationConditions, pitchSituationKeys } from "../analysis/pitch-situation-params";
 import { PitchSequencePairs } from "../analysis/pitch-sequence-pairs";
 import { pitcherCatalogQueryOptions } from "../api/analysis-catalog-query-options";
 import { getPitchSequences } from "../api/pitch-sequence-client";
 import "../styles/pitch-analysis.css";
+import "../styles/pitch-sequence-filters.css";
 export function PitchSequencesPage() {
-  const { params, selected, season, scope, change } = useAnalysisScope({
-    seasonSelectionKeys: ["pitcher"],
-  });
+  const { params, selected, season, scope, change, setParams } = useAnalysisScope();
   const query = {
     season,
     ...scope.options,
@@ -36,6 +38,15 @@ export function PitchSequencesPage() {
     },
   });
   const data = analysis.data;
+  const conditions = [
+    ...(params.has("previousType")
+      ? [{ key: "previousType", label: `첫 구종: ${params.get("previousType")}` }]
+      : []),
+    ...pitchSituationConditions(params).map(({ key, label }) => ({
+      key,
+      label: ["pitchType", "balls", "strikes"].includes(key) ? `두 번째 ${label}` : label,
+    })),
+  ];
   return (
     <div className="page-stack">
       <header className="page-header">
@@ -49,6 +60,8 @@ export function PitchSequencesPage() {
         params={selected}
         pitchers={catalog.data?.pitchers ?? []}
         pitcherId={id}
+        catalogLoaded={catalog.isSuccess}
+        summary={[analysisScopeSummary(selected), ...conditions.map((c) => c.label)].join(" · ")}
         onChange={change}
       >
         <label>
@@ -91,16 +104,67 @@ export function PitchSequencesPage() {
             ))}
           </select>
         </label>
+        <label>
+          타석 좌우
+          <select
+            value={params.get("stance") ?? ""}
+            onChange={(e) => change("stance", e.target.value)}
+          >
+            <option value="">전체</option>
+            <option value="L">좌타자</option>
+            <option value="R">우타자</option>
+            <option value="S">스위치 타석</option>
+          </select>
+        </label>
+        <label>
+          표본
+          <select
+            value={params.get("cohort") ?? "all"}
+            onChange={(e) => change("cohort", e.target.value)}
+          >
+            <option value="all">실제 투구 전체</option>
+            <option value="discipline">선구안과 동일 상황</option>
+          </select>
+        </label>
       </PitcherScopeFields>
+      <div className="pitch-sequence-conditions" role="group" aria-label="적용된 배합 조건">
+        {conditions.length === 0 ? (
+          <span>모든 배합 상황</span>
+        ) : (
+          conditions.map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              aria-label={`${label} 조건 해제`}
+              onClick={() => change(key, "")}
+            >
+              {label} <span aria-hidden="true">×</span>
+            </button>
+          ))
+        )}
+        <button
+          type="button"
+          disabled={!["previousType", ...pitchSituationKeys].some((key) => params.has(key))}
+          onClick={() => {
+            const next = new URLSearchParams(params);
+            for (const key of ["previousType", ...pitchSituationKeys]) next.delete(key);
+            setParams(next);
+          }}
+        >
+          배합 조건 초기화
+        </button>
+      </div>
       {!valid && <p role="alert">{scope.error ?? "배합 조건을 확인해 주세요."}</p>}
-      {(analysis.error || catalog.error) && (
-        <p role="alert">{String(analysis.error ?? catalog.error)}</p>
-      )}
+      <AnalysisQueryError queries={[analysis, catalog]} enabled={valid} />
       {analysis.isFetching && <p role="status">배합을 계산하고 있습니다.</p>}
       {catalog.data?.pitchers.length === 0 && <p>이 범위에 수집된 투수가 없습니다.</p>}
       {data && (
         <>
-          <section className="panel">
+          <details className="analysis-caption">
+            <summary>
+              표본 구성 · 조건 일치 {data.coverage.filteredPairs}쌍 / 공통 면 계산 가능{" "}
+              {data.coverage.geometryPairs}쌍
+            </summary>
             <p>
               대상 실제 투구 {data.coverage.targetPitches}구 · 직전 공 없음{" "}
               {data.coverage.noPrevious} · 자동/비투구 경계 {data.coverage.nonActualBoundary} · 선수
@@ -108,7 +172,7 @@ export function PitchSequencesPage() {
               일치 {data.coverage.filteredPairs}쌍 → 공통 면 계산 가능 {data.coverage.geometryPairs}
               쌍.
             </p>
-          </section>
+          </details>
           <PitchSequencePairs key={JSON.stringify([data.sourceHash, query, id])} data={data} />
         </>
       )}

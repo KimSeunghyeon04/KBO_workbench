@@ -7,12 +7,12 @@ import {
   type PitchAnalysisCatalog,
 } from "@kbo/contracts";
 import { Link } from "react-router-dom";
-import { AnalysisFilterBar } from "../analysis/analysis-filter-bar";
 import { AnalysisEmptyState } from "../analysis/analysis-empty-state";
 import { analysisScopeSearch } from "../analysis/analysis-scope";
 import { AnalysisScopeFields, analysisScopeSummary } from "../analysis/analysis-scope-fields";
 import { analysisCatalogPlayers } from "../analysis/player-analysis-navigation";
 import { BattingTable, PitchingTable } from "../analysis/player-statistics-tables";
+import { BattingRecordSummary, PitchingRecordSummary } from "../analysis/player-record-summary";
 import { useAnalysisScope } from "../analysis/use-analysis-scope";
 import {
   batterCatalogQueryOptions,
@@ -20,6 +20,7 @@ import {
 } from "../api/analysis-catalog-query-options";
 import { getBattingStatistics, getPitchingStatistics } from "../api/player-statistics-client";
 import "../styles/analysis-workspace.css";
+import "../styles/player-basic-statistics.css";
 
 export function PlayerBasicStatisticsPage() {
   const { params, selected, season, scope, change } = useAnalysisScope();
@@ -66,52 +67,56 @@ export function PlayerBasicStatisticsPage() {
     playerId !== "" && !catalog.data?.some((player) => player.id === playerId);
 
   return (
-    <div className="page-stack">
+    <div className="page-stack player-basic-statistics-page">
       <header className="page-header">
         <div>
-          <span className="analysis-kicker">PLAYER STATISTICS</span>
           <h1>기본 기록</h1>
-          <p>선택한 선수의 수집 경기 기록입니다. 이적 전후 기록은 경기 당시 팀별로 표시합니다.</p>
+          <p>선택한 선수의 수집 경기 기록입니다. 이적 전후 기록은 팀별로 구분합니다.</p>
         </div>
       </header>
-      <AnalysisFilterBar
-        label="기본 기록 조건"
-        summary={analysisScopeSummary(selected)}
-        advanced={<AnalysisScopeFields params={selected} onChange={change} />}
-      >
-        <label>
-          시즌
-          <select
-            aria-label="성적 시즌"
-            value={season}
-            onChange={(event) => change("season", event.target.value)}
-          >
-            {[2020, 2021, 2022, 2023, 2024, 2025].map((year) => (
-              <option key={year}>{year}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {roleLabel}
-          <select
-            aria-label={roleLabel}
-            value={playerId}
-            onChange={(event) => change(role, event.target.value)}
-          >
-            {!playerId && <option value="">선수를 선택하세요</option>}
-            {missingCatalogPlayer && <option value={playerId}>선수 {playerId}</option>}
-            {catalog.data?.map((player) => (
-              <option key={player.id} value={player.id}>
-                {player.name} · {player.id}
-              </option>
-            ))}
-          </select>
-        </label>
-      </AnalysisFilterBar>
-      <p className="analysis-caption">
-        시즌·경기 종류·기간에 해당하는 전체 기록이며, 구종·카운트·코스 조건은 적용하지 않습니다.
-        선수 목록은 이 범위에서 실제 투구가 기록된 선수입니다.
-      </p>
+      <details className="panel player-report-filters" aria-label="기본 기록 조건">
+        <summary>
+          <strong>조회 조건 변경</strong>
+          <span>
+            {season} · {analysisScopeSummary(selected)}
+          </span>
+        </summary>
+        <div className="player-report-filter-fields">
+          <label>
+            시즌
+            <select
+              aria-label="성적 시즌"
+              value={season}
+              onChange={(event) => change("season", event.target.value, { [role]: playerId })}
+            >
+              {[2020, 2021, 2022, 2023, 2024, 2025].map((year) => (
+                <option key={year}>{year}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {roleLabel}
+            <select
+              aria-label={roleLabel}
+              value={playerId}
+              onChange={(event) => change(role, event.target.value)}
+            >
+              {!playerId && <option value="">선수를 선택하세요</option>}
+              {missingCatalogPlayer && <option value={playerId}>선수 {playerId}</option>}
+              {catalog.data?.map((player) => (
+                <option key={player.id} value={player.id}>
+                  {player.name} · {player.id}
+                </option>
+              ))}
+            </select>
+          </label>
+          <AnalysisScopeFields params={selected} onChange={change} />
+        </div>
+        <p className="analysis-caption">
+          시즌·경기 종류·기간에 해당하는 전체 기록이며, 구종·카운트·코스 조건은 적용하지 않습니다.
+          선수 목록은 이 범위에서 실제 투구가 기록된 선수입니다.
+        </p>
+      </details>
       {error && <p role="alert">{error}</p>}
       {error === null && catalog.error && (
         <div role="alert">
@@ -147,7 +152,7 @@ export function PlayerBasicStatisticsPage() {
         </div>
       )}
       {error === null && active.isSuccess && active.data && (
-        <section className="panel" aria-label={`${roleLabel} 기본 기록`}>
+        <section className="panel player-basic-records" aria-label={`${roleLabel} 기본 기록`}>
           {active.data.total === 0 ? (
             <p role="status">
               선택한 범위에 이 선수의 기본 기록이 없습니다.{" "}
@@ -157,18 +162,32 @@ export function PlayerBasicStatisticsPage() {
             </p>
           ) : (
             <>
-              {role === "batter" && bat.data && <BattingTable rows={bat.data.rows} basic />}
-              {role === "pitcher" && pitch.data && <PitchingTable rows={pitch.data.rows} basic />}
+              {role === "batter" && bat.data && <BattingRecordSummary rows={bat.data.rows} />}
+              {role === "pitcher" && pitch.data && <PitchingRecordSummary rows={pitch.data.rows} />}
+              <details className="player-report-details">
+                <summary>
+                  <strong>상세 기록</strong>
+                  <span>타석·투구 집계와 기록 해석</span>
+                </summary>
+                <div className="player-report-detail-content">
+                  {role === "batter" && bat.data && (
+                    <BattingTable rows={bat.data.rows} view="basic" />
+                  )}
+                  {role === "pitcher" && pitch.data && (
+                    <PitchingTable rows={pitch.data.rows} view="basic" />
+                  )}
+                  <p className="analysis-caption">
+                    비율의 분모가 0이면 —입니다. 볼넷은 고의4구를 포함하며 괄호 안에 고의4구를
+                    표시합니다. 미제공 자책점은 0으로 채우지 않습니다.
+                  </p>
+                </div>
+              </details>
               {active.data.total > active.data.rows.length && (
                 <p>
                   전체 {active.data.total}개 팀별 기록 중 처음 {active.data.rows.length}개를
                   표시합니다. 기간을 좁혀 나머지 기록을 확인하세요.
                 </p>
               )}
-              <p className="analysis-caption">
-                비율의 분모가 0이면 —입니다. 볼넷은 고의4구를 포함하며 괄호 안에 고의4구를
-                표시합니다. 미제공 자책점은 0으로 채우지 않습니다.
-              </p>
             </>
           )}
         </section>

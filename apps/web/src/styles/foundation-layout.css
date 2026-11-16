@@ -1,8 +1,7 @@
 :root {
-  color: #1d241f;
-  background: #f4f5f4;
+  color: var(--ui-ink);
+  background: var(--ui-surface);
   font-family:
-    Inter,
     Pretendard,
     "Noto Sans KR",
     system-ui,
@@ -11,6 +10,8 @@
     sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 * {
@@ -21,7 +22,7 @@ body {
   min-width: 0;
   min-height: 100vh;
   margin: 0;
-  background: #f4f5f4;
+  background: var(--ui-surface);
 }
 
 button,
@@ -41,8 +42,8 @@ a {
 }
 
 :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
-  outline: 2px solid #18794e;
-  outline-offset: 2px;
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 3px;
 }
 
 .skip-link {
@@ -86,14 +87,23 @@ dd {
 }
 
 .brand-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-size: 14px;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 
+.brand-mark {
+  width: 26px;
+  height: 26px;
+  color: var(--ui-accent);
+}
+
 .environment-label,
 .muted-text {
-  color: #69736d;
+  color: var(--ui-muted);
   font-size: 12px;
 }
 
@@ -115,7 +125,7 @@ dd {
 .body-grid {
   display: grid;
   min-height: calc(100vh - 56px);
-  grid-template-columns: 184px minmax(0, 1fr);
+  grid-template-columns: 208px minmax(0, 1fr);
 }
 
 .sidebar {
@@ -124,10 +134,10 @@ dd {
   display: flex;
   flex-direction: column;
   height: calc(100vh - 56px);
-  padding: 20px 12px;
+  padding: 28px 16px;
   gap: 3px;
   border-right: 1px solid #dfe3e0;
-  background: #fafbfa;
+  background: var(--ui-surface-subtle);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -138,14 +148,15 @@ dd {
   gap: 3px;
 }
 .navigation-group + .navigation-group {
-  margin-top: 16px;
+  margin-top: 32px;
 }
 
 .nav-link {
   padding: 10px 12px;
-  border-left: 2px solid transparent;
-  color: #606a64;
-  font-size: 13px;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius);
+  color: var(--ui-muted);
+  font-size: 14px;
 }
 
 .nav-link:hover {
@@ -154,23 +165,23 @@ dd {
 }
 
 .nav-link.active {
-  border-left-color: #18794e;
-  color: #145c3e;
-  background: #eaf3ed;
+  border-color: #cddfd4;
+  color: var(--ui-accent);
+  background: var(--ui-selected);
   font-weight: 650;
 }
 
 .main-content {
   min-width: 0;
-  padding: 36px clamp(24px, 5vw, 64px) 64px;
+  padding: 36px clamp(24px, 4vw, 56px) 64px;
 }
 
 .page-stack {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  max-width: 1120px;
+  max-width: 1240px;
   margin: 0 auto;
-  gap: 20px;
+  gap: 28px;
 }
 
 .narrow-page {
@@ -189,21 +200,21 @@ dd {
 
 .page-header {
   min-height: 72px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #dfe3e0;
+  padding-bottom: 8px;
 }
 
 .page-header h1 {
   margin-bottom: 5px;
-  font-size: 26px;
-  line-height: 1.2;
-  letter-spacing: -0.035em;
+  font-size: 28px;
+  line-height: 1.35;
+  letter-spacing: -0.03em;
 }
 
 .page-header p {
   margin-bottom: 0;
-  color: #69736d;
-  font-size: 13px;
+  color: var(--ui-muted);
+  font-size: 14px;
+  max-width: 75ch;
 }
 
 .header-status {
@@ -247,23 +258,36 @@ dd {
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 0;
+  padding: 20px 0;
+  border-block: 1px solid var(--ui-line);
 }
 
 .metric-card,
 .panel,
 .diagnostic-card {
-  border: 1px solid #dfe3e0;
-  border-radius: 6px;
-  background: #ffffff;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius);
+  background: var(--ui-surface);
 }
 
 .metric-card {
   display: flex;
-  min-height: 112px;
+  min-height: 88px;
   flex-direction: column;
   justify-content: space-between;
-  padding: 18px;
+  padding: 8px 24px;
+  border: 0;
+  border-right: 1px solid var(--ui-line);
+  border-radius: 0;
+}
+
+.metric-card:first-child {
+  padding-left: 0;
+}
+
+.metric-card:last-child {
+  border-right: 0;
 }
 
 .metric-card > span {
@@ -291,11 +315,11 @@ dd {
 .content-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.7fr) minmax(240px, 0.8fr);
-  gap: 12px;
+  gap: 32px;
 }
 
 .panel {
-  padding: 22px;
+  padding: 24px;
 }
 
 .table-scroll {
@@ -345,7 +369,7 @@ dd {
 
 .section-heading h2 {
   margin-bottom: 0;
-  font-size: 15px;
+  font-size: 18px;
   letter-spacing: -0.015em;
 }
 
@@ -456,13 +480,20 @@ dd {
 
 .diagnostic-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: 1fr;
+  gap: 0;
+  border-top: 1px solid var(--ui-line);
 }
 
 .diagnostic-card {
-  min-height: 150px;
-  padding: 20px;
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 24px;
+  padding: 24px 0;
+  border: 0;
+  border-bottom: 1px solid var(--ui-line);
+  border-radius: 0;
 }
 
 .diagnostic-topline > span {
@@ -472,10 +503,34 @@ dd {
 }
 
 .diagnostic-card h2 {
-  margin: 24px 0 5px;
+  margin: 0;
   overflow-wrap: anywhere;
-  font-size: 18px;
+  font-size: 14px;
   letter-spacing: -0.025em;
+}
+
+.diagnostic-description {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.diagnostic-description strong {
+  font-weight: 550;
+}
+.diagnostic-description p {
+  margin: 4px 0 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+.settings-connection {
+  border-top: 1px solid var(--ui-line);
+  padding-top: 20px;
+}
+.settings-connection > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.settings-connection > p {
+  margin: 12px 0 0;
 }
 
 .contract-panel {

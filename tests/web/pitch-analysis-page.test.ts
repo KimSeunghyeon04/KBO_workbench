@@ -4,7 +4,7 @@ import { resolveAnalysisScope } from "@kbo/contracts";
 import { act, cleanup, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PITCH_CLUSTER_PARAMETERS, type PitchAnalysisResponse } from "@kbo/contracts";
@@ -88,6 +88,52 @@ function response(season: number, pitcherId: string, k = 2): PitchAnalysisRespon
 }
 
 describe("투구 움직임 화면", () => {
+  it.each([
+    ["type=슬라이더", "구종: 슬라이더"],
+    ["color=cluster&cluster=클러스터+2&clusterCount=2", "표시: 클러스터 2"],
+  ])(
+    "접힌 조건에서 %s 선택을 표시하고 펼치기만으로 다시 조회하지 않는다",
+    async (query, expected) => {
+      vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+      const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input), "http://localhost");
+        return Response.json(
+          url.pathname.endsWith("/hp1")
+            ? response(2024, "hp1")
+            : {
+                season: 2024,
+                scope: resolveAnalysisScope({ season: 2024 }),
+                pitchers: [{ pitcherId: "hp1", name: "가상 투수", pitches: 4 }],
+              },
+        );
+      });
+      vi.stubGlobal("fetch", fetcher);
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        createElement(
+          MemoryRouter,
+          { initialEntries: [`/analysis/pitch-shape?season=2024&pitcher=hp1&${query}`] },
+          createElement(QueryClientProvider, { client }, createElement(PitchAnalysisPage)),
+        ),
+      );
+      await screen.findByRole("img");
+      const trigger = screen.getByText("조회 조건 변경");
+      const details = trigger.closest("details");
+      if (!(details instanceof HTMLDetailsElement)) throw new Error("Missing condition disclosure");
+      expect(details.open).toBe(false);
+      expect(details.querySelector("summary")?.textContent).toContain(expected);
+      const requests = fetcher.mock.calls.length;
+      fireEvent.click(trigger);
+      expect(details.open).toBe(true);
+      fireEvent.click(trigger);
+      expect(details.open).toBe(false);
+      await act(async () => Promise.resolve());
+      expect(fetcher).toHaveBeenCalledTimes(requests);
+      expect(details.querySelector("summary")?.textContent).toContain(expected);
+      client.clear();
+    },
+  );
+
   it("보정된 구수와 선택한 투구의 구장·차감량을 표시한다", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     const data = response(2025, "hp1");
@@ -95,6 +141,9 @@ describe("투구 움직임 화면", () => {
     const point = data.points[0];
     if (point === undefined) throw new Error("Missing fixture point");
     Object.assign(point, {
+      gameId: "selected-game",
+      revision: 7,
+      pitchId: "typed-pitch-7",
       stadium: "잠실",
       calibrationStatus: "applied",
       calibrationXcm: 1.2,
@@ -132,6 +181,13 @@ describe("투구 움직임 화면", () => {
       within(screen.getByRole("region", { name: "선택한 투구" })).getByText(/잠실 · 구장 보정 적용/)
         .textContent,
     ).toContain("좌우 +1.2 cm, 높이 -0.4 cm 차감");
+    expect(screen.getByRole("link", { name: "선택한 투구 재생" }).getAttribute("href")).toBe(
+      "/replay?gameId=selected-game&revision=7&eventId=typed-pitch-7",
+    );
+    fireEvent.keyDown(chart, { key: "ArrowRight" });
+    expect(screen.getByRole("link", { name: "선택한 투구 재생" }).getAttribute("href")).toBe(
+      "/replay?gameId=game-2025&revision=1&eventId=p1",
+    );
     client.clear();
   });
   it("보정 집계와 개별 투구의 보정 상태가 다르면 거부한다", async () => {
@@ -238,14 +294,21 @@ describe("투구 움직임 화면", () => {
     const table = within(panel).getByRole("table");
     expect(within(table).getByText("100.0%", { selector: "strong" })).toBeTruthy();
     expect(within(table).getByText("0 / 0 스윙")).toBeTruthy();
+    expect(screen.getByText(/시즌 포심 분포 · 실선: 중앙 50%/).closest("details")).toBeNull();
+    await user.click(screen.getByText("보기 설정"));
     const toggle = screen.getByRole("checkbox", { name: "시즌 포심 분포 표시" });
     expect(toggle).toHaveProperty("checked", true);
     fireEvent.change(screen.getByLabelText("좌우 회전"), { target: { value: "70" } });
     await user.click(toggle);
     expect(toggle).toHaveProperty("checked", false);
+    expect(screen.getByText("시즌 포심 분포 숨김")).toBeTruthy();
     expect(screen.getByLabelText("좌우 회전")).toHaveProperty("value", "70");
     const calls = fetcher.mock.calls.length;
     await user.selectOptions(screen.getByLabelText("분석 구종"), "직구");
+    expect(screen.getByText(/구종·클러스터 선택은 산점도와 기대 차이 표에만 적용/)).toBeTruthy();
+    expect(
+      screen.getByText(/아래 프로필·진입각·기대 효과는 같은 선수·시즌·경기 범위의 전체 구종/),
+    ).toBeTruthy();
     expect(within(table).queryByText("슬라이더")).toBeNull();
     expect(panel.querySelectorAll(".pitch-expectation-bands > div")).toHaveLength(3);
     await user.click(screen.getByRole("button", { name: "클러스터링 기준" }));
@@ -337,6 +400,7 @@ describe("투구 움직임 화면", () => {
       "disabled",
       true,
     );
+    await user.click(screen.getByText("보기 설정"));
     fireEvent.change(screen.getByLabelText("좌우 회전"), { target: { value: "70" } });
     fireEvent.keyDown(screen.getByRole("img"), { key: "Home" });
     await user.selectOptions(screen.getByLabelText("분석 클러스터"), "클러스터 1");
@@ -471,6 +535,7 @@ describe("투구 움직임 화면", () => {
     expect(screen.getByRole("img").getAttribute("aria-label")).toContain("1개");
     await user.click(screen.getByRole("button", { name: "중계 표기 기준" }));
     expect(screen.getByRole("img").getAttribute("aria-label")).toContain("2개");
+    await user.click(screen.getByText("보기 설정"));
     fireEvent.change(screen.getByLabelText("좌우 회전"), { target: { value: "70" } });
     expect(screen.getByLabelText("좌우 회전")).toHaveProperty("value", "70");
     await user.click(screen.getByRole("button", { name: "정면" }));
@@ -552,6 +617,69 @@ describe("투구 움직임 화면", () => {
     client.clear();
   });
 });
+
+function CurrentSearch() {
+  return createElement("output", { "aria-label": "현재 주소" }, useLocation().search);
+}
+
+it.each([true, false])(
+  "preserves a %s explicit player across seasons even when the new catalog lacks them",
+  async (explicit) => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input), "http://localhost");
+      const season = Number(url.searchParams.get("season"));
+      const scope = resolveAnalysisScope({ season });
+      if (url.pathname.endsWith("/pitch-shape"))
+        return Response.json({
+          season,
+          scope,
+          pitchers: [{ pitcherId: season === 2024 ? "hp1" : "hp2", name: "투수", pitches: 4 }],
+        });
+      const data = response(season, url.pathname.split("/").at(-1) ?? "");
+      if (season === 2025) {
+        data.actualPitchCount = 0;
+        data.missingTrackingCount = 0;
+        data.invalidTrackingCount = 0;
+        data.points = [];
+        data.calibration = calibrationSummary(0);
+        data.expectation = summarizePitchExpectation([], null);
+        data.clustering = {
+          ...data.clustering,
+          status: "empty",
+          clusterCount: 0,
+          componentCount: 0,
+          defaultClusterCount: 0,
+          maxClusterCount: 0,
+          iterations: 0,
+        };
+      }
+      return Response.json(data);
+    });
+    vi.stubGlobal("fetch", fetch);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      createElement(
+        MemoryRouter,
+        {
+          initialEntries: [`/analysis/pitch-shape?season=2024${explicit ? "&pitcher=hp1" : ""}`],
+        },
+        createElement(QueryClientProvider, { client }, createElement(PitchAnalysisPage)),
+        createElement(CurrentSearch),
+      ),
+    );
+    await screen.findByRole("img");
+    await userEvent.setup().selectOptions(screen.getByLabelText("분석 시즌"), "2025");
+    await waitFor(() =>
+      expect(screen.getByLabelText("현재 주소").textContent).toContain("pitcher=hp1"),
+    );
+    await waitFor(() => expect(screen.getByLabelText("분석 투수")).toHaveProperty("value", "hp1"));
+    expect(await screen.findByText(/대상 실제 투구 0구/)).toBeTruthy();
+    expect(screen.getByRole("option", { name: "ID hp1 · 해당 범위 기록 없음" })).toBeTruthy();
+    expect(fetch.mock.calls.some(([url]) => String(url).includes("/hp2?"))).toBe(false);
+    client.clear();
+  },
+);
 
 it("keeps the parent all-games scope when opening the quality panel", async () => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);

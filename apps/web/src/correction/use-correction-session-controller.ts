@@ -41,7 +41,7 @@ export function useCorrectionSessionController(selectedGame: CorrectionGameCatal
       const target = requestedGame ?? selectedGame;
       if (target === null) throw new Error("보정할 경기를 선택하세요.");
       if (target.authority !== "staging" && target.authority !== "quarantine") {
-        throw new Error("현재 파일 원장만 보정 session으로 열 수 있습니다.");
+        throw new Error("현재 파일 원장만 보정 작업 사본으로 열 수 있습니다.");
       }
       return createCorrectionSession(target.authority, target.gameId);
     },
@@ -139,10 +139,10 @@ export function useCorrectionSessionController(selectedGame: CorrectionGameCatal
       setLastPreview(null);
       setNotice(
         outcome === "promoted"
-          ? `${result.session.gameId}을 staging으로 승격했습니다. 작업 사본을 닫고 경기 목록을 갱신했습니다.`
+          ? `${result.session.gameId}을 DB 적재 가능 상태로 전환했습니다. 작업 사본을 닫고 경기 목록을 갱신했습니다.`
           : outcome === "staging_saved"
             ? `${result.session.gameId}을 적재 가능한 현재 원장으로 저장했습니다. 작업 사본을 닫고 경기 목록을 갱신했습니다.`
-            : `${result.session.gameId}을 차단 finding과 함께 quarantine 현재 원장으로 저장했습니다. 작업 사본을 닫고 경기 목록을 갱신했습니다.`,
+            : `${result.session.gameId}을 해결되지 않은 문제와 함께 검토 필요 상태로 저장했습니다. 작업 사본을 닫고 경기 목록을 갱신했습니다.`,
       );
       void queryClient.invalidateQueries({ queryKey: queryKeys.catalog });
       void queryClient.invalidateQueries({ queryKey: queryKeys.correction.games });

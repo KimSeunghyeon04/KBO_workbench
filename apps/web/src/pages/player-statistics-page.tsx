@@ -1,19 +1,23 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import "../styles/pitch-analysis.css";
 import { Link, useSearchParams } from "react-router-dom";
 import { Value } from "@sinclair/typebox/value";
 import { BattingStatisticsQuerySchema, PitchingStatisticsQuerySchema } from "@kbo/contracts";
 import { BattingTable, PitchingTable } from "../analysis/player-statistics-tables";
-import { AnalysisScopeFields } from "../analysis/analysis-scope-fields";
+import { competitionLabels } from "../analysis/analysis-scope-fields";
+import { AnalysisFilterBar } from "../analysis/analysis-filter-bar";
 import {
   analysisScopeSearch,
   changeAnalysisParams,
   scopeFromParams,
 } from "../analysis/analysis-scope";
 import { getBattingStatistics, getPitchingStatistics } from "../api/player-statistics-client";
+import { AnalysisQueryError } from "../analysis/analysis-query-error";
 
 export function PlayerStatisticsPage() {
   const [params, setParams] = useSearchParams();
+  const [expanded, setExpanded] = useState(false);
   const selected = new URLSearchParams(params);
   if (!selected.has("competition")) selected.set("competition", "regular");
   const season = Number(params.get("season") ?? 2025),
@@ -57,6 +61,30 @@ export function PlayerStatisticsPage() {
   });
   const active = kind === "batting" ? bat : pitch;
   const valid = scope.error === null && (kind === "batting" ? validBatting : validPitching);
+  const sortOptions =
+    kind === "batting"
+      ? ([
+          ["ops", "OPS"],
+          ["avg", "타율"],
+          ["plateAppearances", "타석"],
+          ["homeRuns", "홈런"],
+        ] as const)
+      : ([
+          ["kMinusBbRate", "K−BB%"],
+          ["era", "ERA"],
+          ["battersFaced", "상대 타자"],
+          ["outsRecorded", "이닝"],
+        ] as const);
+  const sort = kind === "batting" ? batting.sort : pitching.sort;
+  const sortLabel = sortOptions.find(([key]) => key === sort)?.[1];
+  const period =
+    params.has("dateFrom") || params.has("dateTo")
+      ? `${params.get("dateFrom") ?? "시즌 시작"} ~ ${params.get("dateTo") ?? "시즌 끝"}`
+      : "시즌 전체";
+  const groupLabel =
+    common.group === "player" ? "선수·당시 팀" : common.group === "team" ? "팀" : "집계 확인 필요";
+  const minimum = kind === "batting" ? batting.minPA : pitching.minBF;
+  const filterSummary = `${period} · ${groupLabel} · 최소 ${Number.isFinite(minimum) ? minimum : "확인 필요"}${kind === "batting" ? "타석" : "상대 타자"} · ${sortLabel === undefined ? "정렬 확인 필요" : `${sortLabel}순`}`;
   function change(key: string, value: string) {
     const next = changeAnalysisParams(params, key, value);
     if (key !== "page") next.delete("page");
@@ -77,7 +105,7 @@ export function PlayerStatisticsPage() {
     return `/analysis/${kind === "batting" ? "batter-discipline" : "pitch-shape"}?${query}`;
   };
   return (
-    <div className="page-stack">
+    <div className="page-stack league-statistics-page">
       <header className="page-header">
         <div>
           <h1>선수·팀 성적</h1>
@@ -86,7 +114,67 @@ export function PlayerStatisticsPage() {
           </p>
         </div>
       </header>
-      <section className="panel pitch-analysis-toolbar" aria-label="성적 조건">
+      <AnalysisFilterBar
+        label="성적 조건"
+        summary={filterSummary}
+        advanced={
+          <>
+            <label>
+              시작일
+              <input
+                aria-label="분석 시작일"
+                type="date"
+                value={params.get("dateFrom") ?? ""}
+                onChange={(event) => change("dateFrom", event.target.value)}
+              />
+            </label>
+            <label>
+              종료일
+              <input
+                aria-label="분석 종료일"
+                type="date"
+                value={params.get("dateTo") ?? ""}
+                onChange={(event) => change("dateTo", event.target.value)}
+              />
+            </label>
+            <label>
+              집계
+              <select
+                aria-label="성적 집계"
+                value={common.group}
+                onChange={(event) => change("group", event.target.value)}
+              >
+                <option value="player">선수·당시 팀</option>
+                <option value="team">팀</option>
+              </select>
+            </label>
+            <label>
+              최소 {kind === "batting" ? "타석" : "상대 타자"}
+              <input
+                aria-label="최소 표본"
+                type="number"
+                min="0"
+                value={params.get("minimum") ?? "0"}
+                onChange={(event) => change("minimum", event.target.value)}
+              />
+            </label>
+            <label>
+              정렬
+              <select
+                aria-label="성적 정렬"
+                value={sort}
+                onChange={(event) => change("sort", event.target.value)}
+              >
+                {sortOptions.map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        }
+      >
         <label>
           시즌
           <select
@@ -99,7 +187,6 @@ export function PlayerStatisticsPage() {
             ))}
           </select>
         </label>
-        <AnalysisScopeFields params={selected} onChange={change} />
         <label>
           성적 종류
           <select
@@ -112,73 +199,66 @@ export function PlayerStatisticsPage() {
           </select>
         </label>
         <label>
-          집계
+          경기 종류
           <select
-            aria-label="성적 집계"
-            value={common.group}
-            onChange={(e) => change("group", e.target.value)}
+            aria-label="경기 종류"
+            value={selected.get("competition") ?? "regular"}
+            onChange={(event) => change("competition", event.target.value)}
           >
-            <option value="player">선수·당시 팀</option>
-            <option value="team">팀</option>
-          </select>
-        </label>
-        <label>
-          최소 {kind === "batting" ? "타석" : "상대 타자"}
-          <input
-            aria-label="최소 표본"
-            type="number"
-            min="0"
-            value={params.get("minimum") ?? "0"}
-            onChange={(e) => change("minimum", e.target.value)}
-          />
-        </label>
-        <label>
-          정렬
-          <select
-            aria-label="성적 정렬"
-            value={params.get("sort") ?? (kind === "batting" ? "ops" : "kMinusBbRate")}
-            onChange={(e) => change("sort", e.target.value)}
-          >
-            {(kind === "batting"
-              ? [
-                  ["ops", "OPS"],
-                  ["avg", "타율"],
-                  ["plateAppearances", "타석"],
-                  ["homeRuns", "홈런"],
-                ]
-              : [
-                  ["kMinusBbRate", "K−BB%"],
-                  ["era", "ERA"],
-                  ["battersFaced", "상대 타자"],
-                  ["outsRecorded", "이닝"],
-                ]
-            ).map(([key, label]) => (
+            {Object.entries(competitionLabels).map(([key, label]) => (
               <option key={key} value={key}>
                 {label}
               </option>
             ))}
           </select>
         </label>
-      </section>
+      </AnalysisFilterBar>
       {!valid && <p role="alert">{scope.error ?? "조회 조건이 올바르지 않습니다."}</p>}
       {valid && active.isPending && <p role="status">성적을 합산하고 있습니다.</p>}
-      {active.error && <p role="alert">{active.error.message}</p>}
+      <AnalysisQueryError queries={[active]} enabled={valid} />
       {valid && active.data && (
         <section className="panel">
           <p>
             {active.data.total}개 행 · 최소 표본은 탐색 조건이며 공식 규정 충족을 뜻하지 않습니다.
           </p>
-          {kind === "batting" && bat.data && <BattingTable rows={bat.data.rows} detail={detail} />}
+          <label className="statistics-detail-toggle">
+            <input
+              type="checkbox"
+              checked={expanded}
+              onChange={(event) => setExpanded(event.target.checked)}
+            />
+            전체 세부 기록
+          </label>
+          {kind === "batting" && bat.data && (
+            <BattingTable
+              rows={bat.data.rows}
+              detail={detail}
+              view={expanded ? "full" : "summary"}
+            />
+          )}
           {kind === "pitching" && pitch.data && (
-            <PitchingTable rows={pitch.data.rows} detail={detail} />
+            <PitchingTable
+              rows={pitch.data.rows}
+              detail={detail}
+              view={expanded ? "full" : "summary"}
+            />
           )}
           {active.data.total === 0 && (
-            <p>
-              선택 범위의 자료가 없습니다.{" "}
+            <div className="statistics-empty-state">
+              <p>현재 조건에 맞는 기록이 없습니다. 세부 조건을 조정해 확인하세요.</p>
+              {minimum > 0 && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => change("minimum", "")}
+                >
+                  최소 표본 해제
+                </button>
+              )}
               <Link to={`/analysis/coverage?${analysisScopeSearch(season, scope.options)}`}>
                 경기 분류와 수집 범위 확인
               </Link>
-            </p>
+            </div>
           )}
           <nav aria-label="성적 페이지">
             <button

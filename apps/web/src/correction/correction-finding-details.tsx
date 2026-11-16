@@ -15,10 +15,16 @@ export function FindingDetails({
     <ul className="finding-details">
       {details.map((detail, index) => (
         <li key={`${detail.field}:${String(index)}`}>
-          {code === "domain.tracking.plate_appearance_mismatch" &&
-          detail.field === "plateAppearanceEventId" ? (
+          {code === "source.pitch_id.reused_within_game" &&
+          /^sourceLocation\.\d+$/.test(detail.field) ? (
             <>
-              compiler PA: {findingDetailValue(detail.expected, detail.field)} · tracking PA:{" "}
+              원문 위치 {detail.field.slice("sourceLocation.".length)}:{" "}
+              {findingDetailValue(detail.actual, detail.field)}
+            </>
+          ) : code === "domain.tracking.plate_appearance_mismatch" &&
+            detail.field === "plateAppearanceEventId" ? (
+            <>
+              원장 타석: {findingDetailValue(detail.expected, detail.field)} · 관측 타석:{" "}
               {findingDetailValue(detail.actual, detail.field)}
             </>
           ) : (

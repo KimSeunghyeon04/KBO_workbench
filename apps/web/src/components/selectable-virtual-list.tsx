@@ -1,4 +1,4 @@
-import { useId, useMemo } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import * as React from "react";
 
 import { useFixedVirtualList } from "./use-fixed-virtual-list";
@@ -23,14 +23,19 @@ export function SelectableVirtualList<Item>({
   readonly selectedKey: string | null;
 }): React.JSX.Element {
   const idPrefix = useId();
-  const selectedIndex = useMemo(
-    () => items.findIndex((item) => getKey(item) === selectedKey),
-    [getKey, items, selectedKey],
+  const [lastActiveKey, setLastActiveKey] = useState(selectedKey);
+  useEffect(() => {
+    if (selectedKey !== null) setLastActiveKey(selectedKey);
+  }, [selectedKey]);
+  const activeKey = selectedKey ?? lastActiveKey;
+  const activeIndex = useMemo(
+    () => items.findIndex((item) => getKey(item) === activeKey),
+    [getKey, items, activeKey],
   );
   const virtual = useFixedVirtualList({
     itemCount: items.length,
     rowHeight,
-    selectedIndex: selectedIndex < 0 ? null : selectedIndex,
+    selectedIndex: activeIndex < 0 ? null : activeIndex,
     initialViewportHeight: 520,
   });
   const visible = items.slice(virtual.window.start, virtual.window.end);
@@ -49,16 +54,16 @@ export function SelectableVirtualList<Item>({
       role="listbox"
       aria-label={ariaLabel}
       aria-activedescendant={
-        selectedIndex >= virtual.window.start && selectedIndex < virtual.window.end
-          ? `${idPrefix}-${selectedKey}`
+        activeIndex >= virtual.window.start && activeIndex < virtual.window.end
+          ? `${idPrefix}-${activeKey}`
           : undefined
       }
       tabIndex={0}
       onKeyDown={(event) => {
-        const fallback = selectedIndex < 0 ? 0 : selectedIndex;
+        const fallback = activeIndex < 0 ? 0 : activeIndex;
         if (event.key === "ArrowDown") {
           event.preventDefault();
-          selectIndex(Math.min(selectedIndex + 1, items.length - 1));
+          selectIndex(Math.min(activeIndex + 1, items.length - 1));
         } else if (event.key === "ArrowUp") {
           event.preventDefault();
           selectIndex(Math.max(fallback - 1, 0));
@@ -68,6 +73,9 @@ export function SelectableVirtualList<Item>({
         } else if (event.key === "End") {
           event.preventDefault();
           selectIndex(items.length - 1);
+        } else if ((event.key === "Enter" || event.key === " ") && activeIndex >= 0) {
+          event.preventDefault();
+          selectIndex(activeIndex);
         }
       }}
       onScroll={virtual.onScroll}

@@ -116,7 +116,7 @@ it("keeps pitch and PA denominators distinct while disclosing detailed metrics a
   expect(evidence.details.open).toBe(false);
   fireEvent.click(evidence.trigger);
   expect(
-    within(evidence.details).getByRole("link", { name: "경기 재생 r1" }).getAttribute("href"),
+    within(evidence.details).getByRole("link", { name: "투구 장면 r1" }).getAttribute("href"),
   ).toContain("revision=1");
   const buttons = within(screen.getByLabelText("실제 코스 지도")).getAllByRole("button");
   expect(buttons).toHaveLength(25);
@@ -126,7 +126,7 @@ it("keeps pitch and PA denominators distinct while disclosing detailed metrics a
   expect(screen.getByText(/선택 근거 0구/u)).toBeTruthy();
   expect(within(evidence.details).queryAllByRole("link")).toHaveLength(0);
   fireEvent.click(screen.getByRole("button", { name: "모든 코스", exact: true }));
-  expect(within(evidence.details).getByRole("link", { name: "경기 재생 r1" })).toBeTruthy();
+  expect(within(evidence.details).getByRole("link", { name: "투구 장면 r1" })).toBeTruthy();
 });
 
 it.each(["pitcher", "batter"] as const)(
@@ -196,7 +196,7 @@ it("restores advanced filters, preserves URL scope through disclosure and compar
   });
   show("pitcher", initial.toString());
   await screen.findByRole("table", { name: "구종별 반응" });
-  const filters = detailsFor("세부 조건");
+  const filters = detailsFor("조회 조건 변경");
   expect(filters.details.open).toBe(false);
   fireEvent.click(filters.trigger);
   expect(filters.details.open).toBe(true);
@@ -233,8 +233,44 @@ it("restores advanced filters, preserves URL scope through disclosure and compar
   expect(next.get("season")).toBe("2025");
   expect(next.get("competition")).toBe("regular");
   expect(next.get("pitchType")).toBe("슬라이더");
-  for (const key of ["dateFrom", "dateTo", "pitcher"]) expect(next.has(key)).toBe(false);
+  expect(next.get("pitcher")).toBe("hp1");
+  for (const key of ["dateFrom", "dateTo"]) expect(next.has(key)).toBe(false);
 });
+
+it("carries only supported situation conditions into the discipline comparison link", async () => {
+  mockOutcomes();
+  show(
+    "batter",
+    "season=2024&competition=regular&batter=b1&dateFrom=2024-06-01&dateTo=2024-06-30&balls=0&strikes=2&pitchType=직구&stance=R&cohort=discipline&map=difference",
+  );
+  const link = await screen.findByRole("link", { name: /조건 일치 선구안 비교/ });
+  const target = new URL(link.getAttribute("href") ?? "", "http://localhost");
+  expect(target.pathname).toBe("/analysis/batter-discipline");
+  expect(Object.fromEntries(target.searchParams)).toEqual({
+    season: "2024",
+    competition: "regular",
+    dateFrom: "2024-06-01",
+    dateTo: "2024-06-30",
+    batter: "b1",
+    balls: "0",
+    strikes: "2",
+    pitchType: "직구",
+    stance: "R",
+  });
+  expect(screen.getByText(/선구안은 자체 상황 제외 기준/)).toBeTruthy();
+});
+
+it.each(["pitcher", "batter"] as const)(
+  "pins the implicitly selected %s when the season changes",
+  async (role) => {
+    mockOutcomes();
+    show(role);
+    await screen.findByRole("table", { name: "구종별 반응" });
+    fireEvent.change(screen.getByLabelText("투구 결과 시즌"), { target: { value: "2025" } });
+    const params = new URLSearchParams(screen.getByLabelText("현재 주소").textContent ?? "");
+    expect(params.get(role)).toBe(role === "pitcher" ? "hp1" : "b1");
+  },
+);
 
 it("paginates disclosed evidence and resets the page when a map selection changes", async () => {
   mockOutcomes(
@@ -253,18 +289,18 @@ it("paginates disclosed evidence and resets the page when a map selection change
   expect(evidence.details.open).toBe(false);
   fireEvent.click(evidence.trigger);
   const records = within(evidence.details);
-  expect(records.getAllByRole("link", { name: "경기 재생 r3" })).toHaveLength(20);
+  expect(records.getAllByRole("link", { name: "투구 장면 r3" })).toHaveLength(20);
   expect(
     records.getAllByRole("link").every((link) => link.getAttribute("href")?.includes("revision=3")),
   ).toBe(true);
   fireEvent.click(records.getByRole("button", { name: "다음", exact: true }));
-  expect(records.getAllByRole("link", { name: "경기 재생 r3" })).toHaveLength(1);
+  expect(records.getAllByRole("link", { name: "투구 장면 r3" })).toHaveLength(1);
   const emptyCell = within(screen.getByLabelText("실제 코스 지도")).getAllByRole("button")[0];
   if (emptyCell === undefined) throw new Error("Missing map cell");
   fireEvent.click(emptyCell);
   expect(records.queryAllByRole("link")).toHaveLength(0);
   fireEvent.click(screen.getByRole("button", { name: "모든 코스", exact: true }));
-  expect(records.getAllByRole("link", { name: "경기 재생 r3" })).toHaveLength(20);
+  expect(records.getAllByRole("link", { name: "투구 장면 r3" })).toHaveLength(20);
   expect(records.getByRole("button", { name: "이전", exact: true })).toHaveProperty(
     "disabled",
     true,

@@ -323,6 +323,15 @@ pnpm build
 
 - Correction의 구현 오류가 발생되어 수정할 시 해당 데이터를 선수 정보, 팀 정보를 비식별 처리한 fixture로 만들고 이후에 같은 오류가 발생하지 않도록 회귀 테스트로 만든다.
 
+## 분석 UI 설계 도구
+
+분석 화면의 설계·개선·검토에는 사용 가능한 `kbo-analysis-ui` 스킬과
+[UI 설계 도구·작업 기준](docs/analysis/ui-design-workflow.md)을 적용한다. Impeccable,
+frontend-design, web-design-guidelines는 해당 작업에 필요한 역할만 선택하고 같은 화면을
+중복 재설계하지 않는다. 코드 경계는 Graft로, 라이브러리 사용법은 Context7으로 확인하며,
+UI 변경 결과는 실제 브라우저에서 검증한다. 외부 스킬의 미적 선호는 사용자의 요구와
+이 저장소의 권위·데이터 계약에 우선하지 않는다.
+
 <!-- graft:start -->
 
 ## Graft — repo context graph

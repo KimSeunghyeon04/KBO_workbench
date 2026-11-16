@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import { useState } from "react";
 import type { AnalysisModelKind } from "@kbo/contracts";
 import {
@@ -60,9 +61,9 @@ export function AnalysisModelsPage() {
     job = data?.latestJob,
     running = job?.state === "running",
     trainable = data?.models.some((model) => model.support === "eligible") ?? false;
-  const error = query.error ?? refresh.error ?? cancel.error ?? policy.error;
+  const mutationError = refresh.error ?? cancel.error ?? policy.error;
   return (
-    <div className="page-stack">
+    <div className="page-stack analysis-models-page">
       <header className="page-header">
         <div>
           <h1>분석 모델 관리</h1>
@@ -71,68 +72,24 @@ export function AnalysisModelsPage() {
             사용합니다.
           </p>
         </div>
-      </header>
-      <label>
-        적용 시즌{" "}
-        <select value={season} onChange={(e) => setSeason(Number(e.target.value))}>
-          {[2025, 2024, 2023, 2022, 2021, 2020].map((year) => (
-            <option key={year} value={year}>
-              {year}
-            </option>
-          ))}
-        </select>
-      </label>
-      {error && <p role="alert">{String(error)}</p>}
-      <section className="panel">
-        <h2>갱신 설정</h2>
-        <p>
-          선택한 시즌의 자동 갱신을 켜면 6시간마다 원천 변경을 확인합니다. 모든 시즌의 학습은 한
-          번에 하나씩 실행하며 수분과 수 GB 메모리가 필요할 수 있습니다.
-        </p>
-        <label>
-          <input
-            type="checkbox"
-            checked={data?.policy.enabledSeasons.includes(season) ?? false}
-            disabled={!data || !trainable || policy.isPending}
-            onChange={(e) => policy.mutate({ enabled: e.target.checked, season })}
-          />{" "}
-          {season} 시즌 자료 자동 갱신
+        <label className="model-season-field">
+          적용 시즌{" "}
+          <select value={season} onChange={(e) => setSeason(Number(e.target.value))}>
+            {[2025, 2024, 2023, 2022, 2021, 2020].map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
         </label>
-        <div className="model-refresh-actions">
-          <button
-            className="primary-button"
-            disabled={!trainable || running || refresh.isPending}
-            onClick={() => refresh.mutate({ id: crypto.randomUUID(), force: false, season })}
-          >
-            필요한 모델 갱신
-          </button>
-          <button
-            className="secondary-button"
-            disabled={!trainable || running || refresh.isPending}
-            onClick={() => refresh.mutate({ id: crypto.randomUUID(), force: true, season })}
-          >
-            전체 다시 학습
-          </button>
-          <button
-            className="secondary-button"
-            disabled={query.isFetching}
-            onClick={() => void query.refetch()}
-          >
-            상태 새로고침
-          </button>
-        </div>
-        {data && !trainable && (
-          <p>
-            수집 자료는 2020년부터입니다. 선행 학습 자료와 두 검증 시즌이 부족해 이 시즌은 관측
-            통계만 제공합니다.
-          </p>
-        )}
-        {data && <p>자동 갱신 시즌: {data.policy.enabledSeasons.join(", ") || "꺼짐"}</p>}
-      </section>
+      </header>
+      <AnalysisQueryError queries={[query]} />
+      {mutationError && <p role="alert">{mutationError.message}</p>}
+      {query.isLoading && <p role="status">시즌별 모델 상태를 확인하고 있습니다.</p>}
       {data && (
         <section className="panel">
           <h2>모델 상태</h2>
-          <div className="table-scroll">
+          <div className="table-scroll" tabIndex={0} role="region" aria-label="모델 상태 목록">
             <table className="model-status-table" aria-label="모델 상태">
               <thead>
                 <tr>
@@ -180,6 +137,52 @@ export function AnalysisModelsPage() {
           </p>
         </section>
       )}
+      <section className="panel">
+        <h2>갱신 설정</h2>
+        <p>
+          선택한 시즌의 자동 갱신을 켜면 6시간마다 원천 변경을 확인합니다. 모든 시즌의 학습은 한
+          번에 하나씩 실행하며 수분과 수 GB 메모리가 필요할 수 있습니다.
+        </p>
+        <label>
+          <input
+            type="checkbox"
+            checked={data?.policy.enabledSeasons.includes(season) ?? false}
+            disabled={!data || !trainable || policy.isPending}
+            onChange={(e) => policy.mutate({ enabled: e.target.checked, season })}
+          />{" "}
+          {season} 시즌 자료 자동 갱신
+        </label>
+        <div className="model-refresh-actions">
+          <button
+            className="primary-button"
+            disabled={!trainable || running || refresh.isPending}
+            onClick={() => refresh.mutate({ id: crypto.randomUUID(), force: false, season })}
+          >
+            필요한 모델 갱신
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!trainable || running || refresh.isPending}
+            onClick={() => refresh.mutate({ id: crypto.randomUUID(), force: true, season })}
+          >
+            전체 다시 학습
+          </button>
+          <button
+            className="secondary-button"
+            disabled={query.isFetching}
+            onClick={() => void query.refetch()}
+          >
+            상태 새로고침
+          </button>
+        </div>
+        {data && !trainable && (
+          <p>
+            수집 자료는 2020년부터입니다. 선행 학습 자료와 두 검증 시즌이 부족해 이 시즌은 관측
+            통계만 제공합니다.
+          </p>
+        )}
+        {data && <p>자동 갱신 시즌: {data.policy.enabledSeasons.join(", ") || "꺼짐"}</p>}
+      </section>
       {job && (
         <section className="panel">
           <h2>

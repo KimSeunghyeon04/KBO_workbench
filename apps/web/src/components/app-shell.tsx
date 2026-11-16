@@ -83,7 +83,14 @@ export function AppShell({ children }: PropsWithChildren): React.JSX.Element {
   const menuButton = useRef<HTMLButtonElement>(null);
   const navigation = useRef<HTMLElement>(null);
   const main = useRef<HTMLElement>(null);
-  useEffect(() => setMenuOpen(false), [location.pathname]);
+  const previousPath = useRef(location.pathname);
+  useEffect(() => {
+    setMenuOpen(false);
+    if (previousPath.current !== location.pathname) {
+      previousPath.current = location.pathname;
+      document.documentElement.scrollTop = 0;
+    }
+  }, [location.pathname]);
   useEffect(() => {
     if (!menuOpen) return;
     function closeOutside(event: PointerEvent) {
@@ -125,13 +132,20 @@ export function AppShell({ children }: PropsWithChildren): React.JSX.Element {
         onClick={(event) => {
           event.preventDefault();
           setMenuOpen(false);
-          main.current?.focus();
+          main.current?.focus({ preventScroll: true });
+          document.documentElement.scrollTop = 0;
         }}
       >
         본문으로 건너뛰기
       </a>
       <header className="topbar">
-        <strong className="brand-name">KBO Workbench</strong>
+        <Link className="brand-name" to="/" aria-label="KBO Workbench 홈">
+          <svg className="brand-mark" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+            <path d="M4 4h20v13L14 25 4 17Z" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M9 10h10M9 15h6" stroke="currentColor" strokeWidth="1.5" />
+          </svg>
+          <strong>KBO Workbench</strong>
+        </Link>
         <nav className="workspace-switch" aria-label="작업 영역">
           <Link
             to={workspace === "management" ? location : lastLocation("management")}
@@ -199,7 +213,7 @@ export function AppShell({ children }: PropsWithChildren): React.JSX.Element {
                         event.button === 0
                       ) {
                         setMenuOpen(false);
-                        main.current?.focus();
+                        main.current?.focus({ preventScroll: true });
                       }
                     }}
                   >

@@ -16,9 +16,8 @@ export function DrawerHeader({
   return (
     <header className="correction-drawer-header">
       <div>
-        <span>평면 중계 원장</span>
         <h2 id={titleId}>{title}</h2>
-        <p id={descriptionId}>구조화 입력은 서버 전체 compile 후 작업 사본에 반영됩니다.</p>
+        <p id={descriptionId}>입력한 내용으로 경기 전체를 다시 검증한 뒤 작업 사본에 반영합니다.</p>
       </div>
       <button
         type="button"

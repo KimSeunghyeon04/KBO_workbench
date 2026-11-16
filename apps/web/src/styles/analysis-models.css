@@ -1,3 +1,26 @@
+.analysis-models-page > .page-header {
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.model-season-field {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ui-muted);
+}
+
+.model-season-field select {
+  min-width: 120px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius);
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+}
+
 .model-refresh-actions {
   display: flex;
   align-items: center;

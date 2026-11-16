@@ -1,24 +1,41 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ErrorCategory } from "@kbo/contracts";
+import { Link } from "react-router-dom";
 
 import { systemStatusQueryOptions } from "../api/query-options";
 import { StatusBadge } from "../components/status-badge";
 
 export function SettingsPage(): React.JSX.Element {
-  const { data, error, isLoading } = useQuery(systemStatusQueryOptions());
+  const { data, error, isLoading, isFetching, refetch } = useQuery(systemStatusQueryOptions());
 
   return (
-    <div className="page-stack narrow-page">
+    <div className="page-stack narrow-page settings-page">
       <header className="page-header">
         <div>
           <h1>설정 및 진단</h1>
-          <p>서비스와 저장소 상태</p>
+          <p>수집·저장·분석에 필요한 서비스의 연결 상태를 확인합니다.</p>
         </div>
         {!isLoading && data !== undefined && <StatusBadge healthy={data.status === "ready"} />}
       </header>
 
-      {isLoading && <div className="panel loading-panel">시스템 상태를 확인하고 있습니다.</div>}
-      {error !== null && <div className="error-panel">{error.message}</div>}
+      {isLoading && (
+        <div className="panel loading-panel" role="status">
+          시스템 상태를 확인하고 있습니다.
+        </div>
+      )}
+      {error !== null && (
+        <div className="error-panel" role="alert">
+          <p>시스템 상태를 확인하지 못했습니다. {error.message}</p>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={isFetching}
+            onClick={() => void refetch()}
+          >
+            {isFetching ? "확인 중" : "진단 다시 시도"}
+          </button>
+        </div>
+      )}
 
       {data !== undefined ? (
         <>
@@ -26,7 +43,7 @@ export function SettingsPage(): React.JSX.Element {
             <DiagnosticCard
               label="API"
               title={`버전 ${data.apiVersion}`}
-              healthy={data.status === "ready"}
+              healthy={true}
               details="상태 API 응답"
             />
             <DiagnosticCard
@@ -72,6 +89,17 @@ export function SettingsPage(): React.JSX.Element {
                   <div>
                     <strong>{failure.kind === "collection" ? "수집" : "DB 적재"}</strong>
                     <p>{failure.message}</p>
+                    <Link
+                      to={
+                        failure.kind === "collection"
+                          ? `/collect?tab=history&job=${encodeURIComponent(failure.jobId)}`
+                          : `/database?scope=jobs&job=${encodeURIComponent(failure.jobId)}`
+                      }
+                    >
+                      {failure.kind === "collection"
+                        ? "수집 작업 결과 보기"
+                        : "DB 적재 작업 결과 보기"}
+                    </Link>
                   </div>
                   <time dateTime={failure.occurredAt}>{formatDateTime(failure.occurredAt)}</time>
                 </article>
@@ -84,11 +112,11 @@ export function SettingsPage(): React.JSX.Element {
         </>
       ) : null}
 
-      <section className="panel contract-panel">
-        <div className="section-heading">
-          <h2>연결 구조</h2>
-          <span className="muted-text">웹 포트만 공개</span>
-        </div>
+      <details className="contract-panel settings-connection">
+        <summary>연결 구조와 접근 범위</summary>
+        <p className="muted-text">
+          웹 포트만 공개하며, API와 데이터베이스는 내부 연결을 사용합니다.
+        </p>
         <div className="network-line" aria-label="네트워크 연결 구조">
           <span>브라우저</span>
           <i aria-hidden="true" />
@@ -98,7 +126,7 @@ export function SettingsPage(): React.JSX.Element {
           <i aria-hidden="true" />
           <span>PostgreSQL</span>
         </div>
-      </section>
+      </details>
     </div>
   );
 }
@@ -128,12 +156,12 @@ function DiagnosticCard({
 }: DiagnosticCardProps): React.JSX.Element {
   return (
     <article className="diagnostic-card">
-      <div className="diagnostic-topline">
-        <span>{label}</span>
-        <StatusBadge healthy={healthy} />
+      <h2>{label}</h2>
+      <div className="diagnostic-description">
+        <strong>{title}</strong>
+        <p>{details}</p>
       </div>
-      <h2>{title}</h2>
-      <p>{details}</p>
+      <StatusBadge healthy={healthy} />
     </article>
   );
 }

@@ -20,11 +20,46 @@ import {
   RecordDetail,
 } from "../../apps/web/src/correction/correction-workbench-panels.js";
 import type { EventPresentation } from "../../apps/web/src/correction/event-presentation.js";
+import { findingIdentity } from "../../apps/web/src/correction/finding-presentation.js";
 import type { OriginalComparison } from "../../apps/web/src/correction/original-comparison.js";
 
 afterEach(() => cleanup());
 
 describe("Correction 작업대 표시", () => {
+  it("주 문제 문구는 한국어 작업 용어로 표시하고 원래 문구와 분류는 진단 정보에 보존한다", async () => {
+    const original = {
+      ...finding("source_observation_mismatch", "e1", 0, "source", "warning"),
+      message: "원천 관측값과 compiler 계산값이 다릅니다.",
+    };
+    const view = render(
+      createElement(FindingPanel, {
+        session: {
+          findings: [original],
+          storedFindings: [],
+          draftDocument: fixture(),
+          eventContexts: [],
+        },
+        selectedEventId: null,
+        selectedRecordIdentity: null,
+        selectedTrackingId: null,
+        onSelectEvent: vi.fn(),
+        onSelectRecord: vi.fn(),
+        onSelectTracking: vi.fn(),
+      }),
+    );
+    const primary = screen.getByRole("button", { name: /원천 관측값과 원장 계산값이 다릅니다/ });
+    expect(primary.textContent).toContain("원문·수집");
+    expect(primary.textContent).not.toContain("compiler");
+    const diagnostics = view.container.querySelector(".finding-diagnostics");
+    if (!(diagnostics instanceof HTMLDetailsElement)) throw new Error("diagnostics missing");
+    await userEvent.setup().click(diagnostics.querySelector("summary") as HTMLElement);
+    expect(diagnostics.open).toBe(true);
+    expect(JSON.parse(diagnostics.querySelector("pre")?.textContent ?? "null")).toMatchObject(
+      original,
+    );
+    expect(original.message).toBe("원천 관측값과 compiler 계산값이 다릅니다.");
+  });
+
   it("차단 finding은 quarantine 저장을 명시적으로 확인한 뒤에만 제출한다", async () => {
     const onCommit = vi.fn();
     const view = render(
@@ -54,7 +89,7 @@ describe("Correction 작업대 표시", () => {
     expect(save.disabled).toBe(true);
     await userEvent
       .setup()
-      .click(screen.getByLabelText("차단 finding을 확인했으며 quarantine 저장을 허용합니다."));
+      .click(screen.getByLabelText("해결되지 않은 문제를 확인했으며 검토 필요 상태로 저장합니다."));
     expect(save.disabled).toBe(false);
     await userEvent.setup().click(save);
     expect(onCommit).toHaveBeenCalledWith(true);
@@ -88,7 +123,7 @@ describe("Correction 작업대 표시", () => {
       }),
     );
 
-    const promote = screen.getByRole("button", { name: "staging으로 승격" });
+    const promote = screen.getByRole("button", { name: "DB 적재 가능 상태로 전환" });
     expect((promote as HTMLButtonElement).disabled).toBe(false);
     await userEvent.setup().click(promote);
     expect(onCommit).toHaveBeenCalledWith(false);
@@ -134,16 +169,16 @@ describe("Correction 작업대 표시", () => {
 
     expect(screen.getByText("2 / 2건")).toBeTruthy();
     expect(screen.getByText("홈 점수: 예상 1 → 계산 2")).toBeTruthy();
-    await userEvent.setup().selectOptions(screen.getByLabelText("finding 범주"), "domain");
+    await userEvent.setup().selectOptions(screen.getByLabelText("검증 문제 범주"), "domain");
     expect(screen.getByText("1 / 2건")).toBeTruthy();
     await userEvent.setup().click(screen.getByRole("button", { name: /runner_destination/ }));
-    expect(onSelect).toHaveBeenCalledWith("e1");
+    expect(onSelect).toHaveBeenCalledWith("e1", findingIdentity(current));
 
-    await userEvent.setup().selectOptions(screen.getByLabelText("finding 범주"), "all");
-    await userEvent.setup().type(screen.getByLabelText("finding 검색"), "observation");
+    await userEvent.setup().selectOptions(screen.getByLabelText("검증 문제 범주"), "all");
+    await userEvent.setup().type(screen.getByLabelText("검증 문제 검색"), "observation");
     expect(screen.getByRole("button", { name: /source_observation/ })).toBeTruthy();
-    await userEvent.setup().clear(screen.getByLabelText("finding 검색"));
-    await userEvent.setup().selectOptions(screen.getByLabelText("finding 시점"), "stored");
+    await userEvent.setup().clear(screen.getByLabelText("검증 문제 검색"));
+    await userEvent.setup().selectOptions(screen.getByLabelText("검증 문제 시점"), "stored");
     expect(screen.getByText("2 / 3건")).toBeTruthy();
     expect(screen.getByText("resolved_source_row")).toBeTruthy();
   });
@@ -189,7 +224,7 @@ describe("Correction 작업대 표시", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: /공식 타자 기록/ }));
     expect(onSelectRecord).toHaveBeenCalledWith("batter:anon-batter");
 
-    await userEvent.setup().type(screen.getByLabelText("finding 검색"), "비식별 투수");
+    await userEvent.setup().type(screen.getByLabelText("검증 문제 검색"), "비식별 투수");
     expect(screen.getByText("1 / 2건")).toBeTruthy();
     expect(screen.getByRole("button", { name: /공식 투수 기록/ })).toBeTruthy();
   });
@@ -225,7 +260,7 @@ describe("Correction 작업대 표시", () => {
       },
     ];
 
-    render(
+    const view = render(
       createElement(FindingPanel, {
         session: {
           findings: [trackingFinding],
@@ -243,12 +278,26 @@ describe("Correction 작업대 표시", () => {
     );
 
     expect(screen.getByText("3행")).toBeTruthy();
-    expect(screen.getByText(/relay_005:6:1/)).toBeTruthy();
-    expect(screen.getByText(/relay_005:7:1/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /같은 sourcePitchId/ }).textContent).toContain(
+      "relay_005:6:1",
+    );
+    expect(screen.getByRole("button", { name: /같은 sourcePitchId/ }).textContent).toContain(
+      "relay_005:7:1",
+    );
+    const primary = screen.getByRole("button", { name: /같은 sourcePitchId/ });
+    expect(primary.textContent).toContain("원문 위치 1: relay_005:6:1");
+    expect(primary.textContent).toContain("원문 위치 2: relay_005:7:1");
+    expect(primary.textContent).not.toContain("예상");
+    expect(primary.textContent).not.toContain("계산");
+    const diagnostics = view.container.querySelector(".finding-diagnostics pre");
+    expect(JSON.parse(diagnostics?.textContent ?? "null")).toMatchObject({
+      code: trackingFinding.code,
+      details: trackingFinding.details,
+    });
     expect(screen.queryByText(/대표 후보/)).toBeNull();
 
     await userEvent.setup().click(screen.getByRole("button", { name: /같은 sourcePitchId/ }));
-    expect(onSelectEvent).toHaveBeenCalledWith("anon-pitch");
+    expect(onSelectEvent).toHaveBeenCalledWith("anon-pitch", findingIdentity(trackingFinding));
   });
 
   it("타자·투수의 공식 기록과 compiler 계산 기록을 선수별로 비교한다", async () => {
@@ -317,25 +366,39 @@ describe("Correction 작업대 표시", () => {
       before: state(0, [null, null, null]),
       after: state(1, ["away-1", null, null]),
     };
-    render(
+    const warning = finding("source_warning", event.identity.eventId, 0, "source", "warning");
+    const otherBlocking = finding(
+      "other_blocking",
+      event.identity.eventId,
+      0,
+      "domain",
+      "blocking",
+    );
+    const selected = {
+      ...finding("source_observation_mismatch", event.identity.eventId, 0, "source", "blocking"),
+      details: [{ field: "homeScore", expected: 1, actual: 2 }],
+    };
+    const findings = Object.freeze([warning, otherBlocking, selected]);
+    const detailProps = { presentation, context, findings, document };
+    const view = render(
       createElement(EventDetail, {
-        presentation,
-        context,
-        findings: [
-          {
-            ...finding(
-              "source_observation_mismatch",
-              event.identity.eventId,
-              0,
-              "source",
-              "blocking",
-            ),
-            details: [{ field: "homeScore", expected: 1, actual: 2 }],
-          },
-        ],
-        document,
+        ...detailProps,
+        selectedFindingIdentity: findingIdentity(selected),
       }),
     );
+
+    const diagnosticOrder = (): (string | null)[] =>
+      [
+        ...view.container.querySelectorAll(".event-related-findings .finding-diagnostics > code"),
+      ].map((element) => element.textContent);
+    expect(diagnosticOrder()).toEqual([selected.code, otherBlocking.code, warning.code]);
+    view.rerender(createElement(EventDetail, detailProps));
+    expect(diagnosticOrder()).toEqual([otherBlocking.code, selected.code, warning.code]);
+    expect(findings.map((item) => item.code)).toEqual([
+      warning.code,
+      otherBlocking.code,
+      selected.code,
+    ]);
 
     expect(screen.getByText("원정팀 공격")).toBeTruthy();
     expect(screen.getByText(/B0 S0 O0/)).toBeTruthy();
@@ -406,10 +469,8 @@ describe("Correction 작업대 표시", () => {
       }),
     );
 
-    expect(
-      screen.getByText("compiler PA: anon-pa-current · tracking PA: anon-pa-old"),
-    ).toBeTruthy();
-    await userEvent.setup().click(screen.getByRole("button", { name: "삭제된 PA 문맥 재계산" }));
+    expect(screen.getByText("원장 타석: anon-pa-current · 관측 타석: anon-pa-old")).toBeTruthy();
+    await userEvent.setup().click(screen.getByRole("button", { name: "삭제된 타석 연결 재계산" }));
     expect(onApply).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "reconcile_tracking_plate_appearance_contexts" }),
     );
@@ -447,7 +508,7 @@ describe("Correction 작업대 표시", () => {
         onApply,
       }),
     );
-    expect(screen.queryByRole("button", { name: "삭제된 PA 문맥 재계산" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "삭제된 타석 연결 재계산" })).toBeNull();
   });
 
   it("최초 원장 비교에 이벤트 전후와 비이벤트 변경 수를 함께 표시한다", () => {

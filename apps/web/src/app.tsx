@@ -3,6 +3,7 @@ import { Route, Routes } from "react-router-dom";
 
 import { AppShell } from "./components/app-shell";
 import { PlayerAnalysisFrame } from "./analysis/player-analysis-frame";
+import { NotFoundPage } from "./pages/not-found-page";
 const AnalysisPlayersPage = lazy(() =>
   import("./pages/analysis-players-page").then((m) => ({ default: m.AnalysisPlayersPage })),
 );
@@ -107,6 +108,7 @@ export function App(): React.JSX.Element {
             <Route path="/analysis/statistics" element={<PlayerStatisticsPage />} />
             <Route path="/analysis/player-statistics" element={<PlayerBasicStatisticsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </PlayerAnalysisFrame>
       </Suspense>

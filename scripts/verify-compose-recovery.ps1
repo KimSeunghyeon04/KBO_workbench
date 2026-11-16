@@ -75,7 +75,7 @@ async function assertNoHorizontalOverflow(page, selector) {
 async function assertOperationConsole(page, options) {
   const { path, heading, listName, hasRows } = options;
   await page.setViewportSize({ width: 1280, height: 720 });
-  await page.goto(`http://web${path}`, { waitUntil: "networkidle" });
+  await page.goto(`http://localhost${path}`, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: heading }).waitFor();
   const list = page.getByRole("listbox", { name: listName });
   await list.waitFor();
@@ -91,7 +91,7 @@ async function assertOperationConsole(page, options) {
   }
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`http://web${path}`, { waitUntil: "networkidle" });
+  await page.goto(`http://localhost${path}`, { waitUntil: "networkidle" });
   const mobileList = page.getByRole("listbox", { name: listName });
   await mobileList.waitFor();
   await assertNoHorizontalOverflow(page, ".operation-page");
@@ -128,15 +128,22 @@ async function assertOperationConsole(page, options) {
   }
 }
 
-const browser = await chromium.launch({ headless: true });
+// Use the production localhost secure context, with DNS mapped only inside this test browser.
+const { lookup } = await import("node:dns/promises");
+const webAddress = (await lookup("web")).address;
+const browser = await chromium.launch({ headless: true, args: [`--host-resolver-rules=MAP localhost ${webAddress}`] });
 try {
   const page = await browser.newPage();
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
-  await page.goto("http://web/settings", { waitUntil: "networkidle" });
+  await page.goto("http://localhost/settings", { waitUntil: "networkidle" });
+  if (!await page.evaluate(() => isSecureContext && typeof crypto.subtle?.digest === "function")) {
+    throw new Error("UI smoke must use the same secure localhost context as production.");
+  }
   await page.locator("h1").waitFor();
   const settingsHeading = await page.locator("h1").innerText();
+  await page.locator("details > summary").click();
   const settingsBody = await page.locator("body").innerText();
   if (
     settingsHeading !== "\uC124\uC815 \uBC0F \uC9C4\uB2E8" ||
@@ -147,7 +154,7 @@ try {
     throw new Error("Settings browser assertion failed.");
   }
 
-  await page.goto("http://web/replay", { waitUntil: "networkidle" });
+  await page.goto("http://localhost/replay", { waitUntil: "networkidle" });
   await page.locator("h1").waitFor();
   if ((await page.locator("h1").innerText()) !== "\uACBD\uAE30 \uC7AC\uC0DD") {
     throw new Error("Replay browser assertion failed.");
@@ -190,11 +197,23 @@ try {
   if ((await page.locator(".replay-dashboard > .panel").count()) !== 3) {
     throw new Error("Replay dashboard must expose play, state, and tracking together.");
   }
-  const replayDocumentScrolls = await page.locator("html").evaluate(
-    (element) => element.scrollHeight > element.clientHeight + 1,
-  );
-  if (replayDocumentScrolls) {
-    throw new Error("Replay dashboard requires vertical document scrolling on desktop.");
+  // Evidence notices and expanded analysis panels may grow the document.
+  // Keep the score and evidence readable instead of shrinking fixed grid tracks.
+  for (const selector of [".replay-scoreboard", ".replay-dashboard > .panel"]) {
+    const clipped = await page.locator(selector).evaluateAll((elements) =>
+      elements.flatMap((element) => {
+        const panel = element.getBoundingClientRect();
+        // The scaled base-diamond SVG contributes unscaled scrollHeight; inspect rendered boxes.
+        const outside = Array.from(element.children).filter((child) => {
+          const box = child.getBoundingClientRect();
+          return box.height > 0 && (box.top < panel.top - 1 || box.bottom > panel.bottom + 1);
+        });
+        return panel.height < 90 || outside.length > 0
+          ? [{ className: element.className, height: panel.height, outside: outside.map((child) => child.className) }]
+          : [];
+      }),
+    );
+    if (clipped.length > 0) throw new Error(`Replay evidence is clipped: ${JSON.stringify(clipped)}`);
   }
   await page.getByRole("button", { name: "\uACBD\uAE30 \uBCC0\uACBD" }).click();
   const pickerBox = await page.locator(".replay-game-picker.floating").boundingBox();
@@ -218,7 +237,7 @@ try {
   }
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)) throw new Error("Value panel horizontal overflow.");
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto("http://web/collect?start=2026-01-01&end=2026-12-31&discovery=stage6-discovery", { waitUntil: "networkidle" });
+  await page.goto("http://localhost/collect?start=2026-01-01&end=2026-12-31&discovery=stage6-discovery", { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "\uc6d4\ubcc4 \ud604\ud669" }).waitFor();
   await assertNoHorizontalOverflow(page, ".collection-period-page");
   await page.getByRole("button", { name: "2026-04", exact: true }).focus();
@@ -252,7 +271,7 @@ try {
     hasRows: true,
   });
   await page.setViewportSize({ width: 1280, height: 720 });
-  await page.goto("http://web/database?scope=ready", { waitUntil: "networkidle" });
+  await page.goto("http://localhost/database?scope=ready", { waitUntil: "networkidle" });
   const batchButton = page.getByRole("button", {
     name: "\uD604\uC7AC \uC870\uAC74 \uC804\uCCB4 \uC120\uD0DD",
   });
@@ -260,7 +279,7 @@ try {
     throw new Error("Database batch import browser assertion failed.");
   }
 
-  await page.goto("http://web/correct", { waitUntil: "networkidle" });
+  await page.goto("http://localhost/correct", { waitUntil: "networkidle" });
   await page.locator("h1").waitFor();
   if ((await page.locator("h1").innerText()) !== "\uC911\uACC4 \uC6D0\uC7A5 \uBCF4\uC815") {
     throw new Error("Correction browser heading assertion failed.");
@@ -268,7 +287,7 @@ try {
   const correctionBody = await page.locator("body").innerText();
   if (
     !correctionBody.includes("\uAC80\uD1A0 \uD544\uC694") ||
-    !correctionBody.includes("\uD30C\uC77C \uC6D0\uC7A5\uC744 \uC120\uD0DD\uD574 \uC791\uC5C5 \uC0AC\uBCF8\uC744 \uC5EC\uC138\uC694.")
+    (await page.locator(".correction-empty .workflow-guide li").count()) !== 3
   ) {
     throw new Error("Correction default review scope assertion failed.");
   }
@@ -682,7 +701,10 @@ try {
   Assert-NativeSuccess "analysis fixture query benchmark"
   $analysisSmoke = @'
 import { chromium } from "playwright";
-const browser = await chromium.launch({ headless: true });
+// Use the production localhost secure context, with DNS mapped only inside this test browser.
+const { lookup } = await import("node:dns/promises");
+const webAddress = (await lookup("web")).address;
+const browser = await chromium.launch({ headless: true, args: [`--host-resolver-rules=MAP localhost ${webAddress}`] });
 try {
   const page = await browser.newPage();
   const errors = [];
@@ -690,6 +712,12 @@ try {
   const menu = page.getByRole("navigation", { name: "\uc8fc \uba54\ub274" });
   const playerNavigation = page.getByRole("navigation", { name: "\uc120\uc218 \ubd84\uc11d \ud56d\ubaa9" });
   const playerScope = { season: "2024", competition: "all", dateFrom: "2024-06-01", dateTo: "2024-06-01" };
+  async function openReportFilters() {
+    const filters = page.locator("details.analysis-report-filters");
+    if (await filters.count() > 0 && await filters.getAttribute("open") === null) {
+      await filters.locator(":scope > summary").click();
+    }
+  }
   async function assertPlayerDestination(path, selection) {
     const expected = Object.entries({ ...playerScope, ...selection });
     await page.waitForURL((url) => url.pathname === path && expected.every(([key, value]) => url.searchParams.get(key) === value));
@@ -731,6 +759,10 @@ try {
     await assertPlayerDestination("/analysis/player-statistics", { [role]: id, playerRole: role });
     await page.getByRole("heading", { name: "\uae30\ubcf8 \uae30\ub85d", exact: true }).waitFor();
     await playerNavigation.locator('a[aria-current="page"]').filter({ hasText: "\uae30\ubcf8 \uae30\ub85d" }).waitFor();
+    const recordDetails = page.locator(".player-report-details");
+    await recordDetails.waitFor();
+    if (await recordDetails.getAttribute("open") !== null) throw new Error("Basic record details must start collapsed.");
+    await recordDetails.locator(":scope > summary").press("Enter");
     const table = page.getByRole("table", { name: role === "pitcher" ? "\ud22c\uad6c \uc131\uc801" : "\ud0c0\uaca9 \uc131\uc801", exact: true });
     await table.waitFor();
     await table.locator("tbody tr").first().waitFor();
@@ -742,7 +774,7 @@ try {
     await page.setViewportSize({ width: 1280, height: 900 });
   }
 
-  await page.goto("http://web/", { waitUntil: "networkidle" });
+  await page.goto("http://localhost/", { waitUntil: "networkidle" });
   await page.getByRole("link", { name: "\ubd84\uc11d", exact: true }).click();
   await page.waitForURL((url) => url.pathname === "/analysis/players");
   await page.getByRole("heading", { name: "\uc120\uc218 \ubd84\uc11d", exact: true }).waitFor();
@@ -835,9 +867,26 @@ try {
   await page.getByRole("list", { name: "\ud0c0\uc790 \ubaa9\ub85d" }).waitFor();
   if (await playerRoles.getByRole("button", { name: "\ud0c0\uc790", exact: true }).getAttribute("aria-pressed") !== "true") throw new Error("Player change lost the selected player role.");
 
-  await page.goto("http://web/analysis/pitch-shape?season=2024", { waitUntil: "networkidle" });
+  await page.goto("http://localhost/analysis/pitch-shape?season=2024", { waitUntil: "networkidle" });
   const chart = page.getByRole("img", { name: /\ud3c9\uade0 \ud3ec\uc2ec/ });
   await chart.waitFor();
+  const shapeSettings = page.locator(".pitch-view-settings");
+  const shapeSettingsSummary = shapeSettings.locator("summary");
+  if (await shapeSettings.getAttribute("open") !== null) throw new Error("Pitch view settings must start collapsed.");
+  const chartBeforeSettings = await shapeSettings.evaluate((node) => {
+    const canvas = node.parentElement?.querySelector("canvas");
+    return canvas !== null && canvas !== undefined && Boolean(canvas.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  if (!chartBeforeSettings) throw new Error("Pitch chart must precede optional view settings.");
+  if (!(await page.locator(".pitch-axis-key").isVisible()) || !(await page.locator(".pitch-chart-explanation").innerText()).includes("Y=0")) throw new Error("Pitch axis and reference-plane meaning must remain visible.");
+  await chart.focus();
+  await page.keyboard.press("Home");
+  if (await page.locator(".pitch-selected dd").count() !== 4) throw new Error("Collapsed view settings blocked keyboard pitch selection.");
+  await shapeSettingsSummary.press("Enter");
+  if (await shapeSettings.getAttribute("open") === null) throw new Error("Enter did not open pitch view settings.");
+  await shapeSettingsSummary.press("Space");
+  if (await shapeSettings.getAttribute("open") !== null) throw new Error("Space did not close pitch view settings.");
+  await shapeSettingsSummary.press("Enter");
   const calibrationNote = page.locator(".pitch-cluster-note[aria-label]");
   if (!(await calibrationNote.innerText()).includes("84")) throw new Error("Daily park calibration status missing.");
   await page.getByRole("button", {name:"\uad6c\uc885 \uae30\ub300 \ud6a8\uacfc \ubcf4\uae30"}).click();
@@ -855,6 +904,7 @@ try {
 
   if (await menu.getByRole("link", { name: "\uc218\uc9d1", exact: true }).count() !== 0) throw new Error("Analysis exposes management menu.");
   await page.getByRole("button", { name: "\ud074\ub7ec\uc2a4\ud130\ub9c1 \uae30\uc900" }).click();
+  await openReportFilters();
   const clusterCount = page.getByLabel("\uad70\uc9d1 \uc218", { exact: true });
   const defaultCount = await clusterCount.inputValue();
   await page.getByLabel("\uc88c\uc6b0 \ud68c\uc804", { exact: true }).fill("70");
@@ -872,6 +922,8 @@ try {
   await page.getByRole("link", { name: "\ubd84\uc11d", exact: true }).click();
   await chart.waitFor();
   if (await page.getByLabel("\ubd84\uc11d \ud074\ub7ec\uc2a4\ud130").inputValue() !== "\ud074\ub7ec\uc2a4\ud130 1") throw new Error("Workspace did not restore filter.");
+  if (await shapeSettings.getAttribute("open") !== null) throw new Error("Reopened pitch view settings must start collapsed.");
+  await shapeSettingsSummary.press("Enter");
   const yaw = page.getByRole("slider", { name: "\uc88c\uc6b0 \ud68c\uc804" });
   const beforeRotation = await chart.evaluate((node) => node.toDataURL());
   await yaw.fill("75");
@@ -885,6 +937,7 @@ try {
   await page.getByRole("button", { name: "\uc911\uacc4 \ud45c\uae30 \uae30\uc900" }).click();
   await chart.focus(); await page.keyboard.press("Home");
   if (await page.locator(".pitch-selected dd").count() !== 4) throw new Error("Analysis keyboard selection failed.");
+  await openReportFilters();
   await page.getByLabel("\ubd84\uc11d \uc2dc\uc98c").selectOption("2025");
   await page.waitForFunction((before) => {
     const node = document.querySelector(".pitch-reference-time strong");
@@ -900,6 +953,10 @@ try {
       return pixels.some((value, index) => index % 4 === 3 && value !== 0);
     });
     if (!nonempty) throw new Error("Analysis canvas is blank.");
+    if (await shapeSettings.getAttribute("open") !== null) throw new Error("Responsive pitch result must retain collapsed view settings.");
+    await shapeSettingsSummary.press("Enter");
+    if (!(await yaw.isVisible())) throw new Error("Responsive pitch view settings hid the rotation control.");
+    await shapeSettingsSummary.press("Space");
   }
   if (errors.length > 0) throw new Error(errors.join(" | "));
   await page.getByRole("button", { name: "\uba54\ub274", exact: true }).click();
@@ -907,27 +964,27 @@ try {
   const menuTop = await menu.evaluate((node) => node.getBoundingClientRect().top);
   if (menuTop < headerBottom - 1) throw new Error("Mobile navigation overlaps workspace selector.");
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("http://web/analysis/batter-discipline?season=2024", { waitUntil: "networkidle" });
+  await page.goto("http://localhost/analysis/batter-discipline?season=2024", { waitUntil: "networkidle" });
   await page.locator(".discipline-map").waitFor();
   if (await page.locator(".discipline-map button").count() !== 25) throw new Error("Swing map cells missing.");
   if (await page.locator(".discipline-bars .discipline-bar-row").count() !== 6) throw new Error("Deviation bands missing.");
   if (await page.locator(".discipline-course-comparison table").count() !== 3) throw new Error("Course / expectation comparison missing.");
   await page.locator(".discipline-pitch-list button").first().click();
   await page.locator(".discipline-selected").waitFor();
-  await page.locator(".analysis-advanced-filters > summary").click();
+  await openReportFilters();
   await page.locator('select[aria-label="\uc120\uad6c\uc548 \uce74\uc6b4\ud2b8"]').selectOption("0-0");
   await page.locator(".discipline-map").waitFor();
   if (!page.url().includes("balls=0")) throw new Error("Discipline count URL not updated.");
   await page.reload({ waitUntil: "networkidle" });
   await page.locator(".discipline-map").waitFor();
-  await page.locator(".analysis-advanced-filters > summary").click();
+  await openReportFilters();
   if (await page.locator('select[aria-label="\uc120\uad6c\uc548 \uce74\uc6b4\ud2b8"]').inputValue() !== "0-0") throw new Error("Discipline URL restoration failed.");
   await page.getByRole("button", { name: "\uc870\uac74 \ucd08\uae30\ud654" }).click();
   await page.locator(".discipline-map").waitFor();
   await page.locator('select[aria-label="\uc120\uad6c\uc548 \uce74\uc6b4\ud2b8"]').selectOption("*-2");
   if (!page.url().includes("strikes=2") || page.url().includes("balls=")) throw new Error("Strike-only filter incorrect.");
   await page.reload({ waitUntil: "networkidle" });
-  await page.locator(".analysis-advanced-filters > summary").click();
+  await openReportFilters();
   if (await page.locator('select[aria-label="\uc120\uad6c\uc548 \uce74\uc6b4\ud2b8"]').inputValue() !== "*-2") throw new Error("Strike-only restoration failed.");
   await page.getByRole("button", { name: "\uc870\uac74 \ucd08\uae30\ud654" }).click();
   await page.locator(".discipline-map").waitFor();
@@ -939,21 +996,47 @@ try {
   }
   if (errors.length > 0) throw new Error(errors.join(" | "));
   for (const [url, selector] of [
-    ["http://web/analysis/coverage?season=2024", ".summary-grid"],
-    ["http://web/analysis/models", "table"],
-    ["http://web/analysis/park-environment?season=2024&competition=all", "table"],
-    ["http://web/analysis/statistics?season=2024&competition=all", "table"],
-    ["http://web/analysis/statistics?season=2024&competition=all&kind=pitching", "table"],
-    ["http://web/analysis/pitch-location?season=2024&competition=all", "table:visible"],
-    ["http://web/analysis/batter-profile?season=2024&competition=all", "table:visible"],
-    ["http://web/analysis/pitcher-changes?season=2024&competition=all", "table"],
-    ["http://web/analysis/pitch-sequences?season=2024&competition=all", "table"],
-    ["http://web/analysis/pitcher-workload?season=2024&competition=all", "table"],
-    ["http://web/analysis/baserunning?season=2024&competition=all", "table"],
-    ["http://web/analysis/matchups?season=2024&competition=all", "table"],
+    ["http://localhost/analysis/coverage?season=2024", ".coverage-overview"],
+    ["http://localhost/analysis/models", "table"],
+    ["http://localhost/analysis/park-environment?season=2024&competition=all", ".park-rate-chart"],
+    ["http://localhost/analysis/statistics?season=2024&competition=all", "table"],
+    ["http://localhost/analysis/statistics?season=2024&competition=all&kind=pitching", "table"],
+    ["http://localhost/analysis/pitch-location?season=2024&competition=all", "table:visible"],
+    ["http://localhost/analysis/batter-profile?season=2024&competition=all", "table:visible"],
+    ["http://localhost/analysis/pitcher-changes?season=2024&competition=all", ".pitch-change-summary"],
+    ["http://localhost/analysis/pitch-sequences?season=2024&competition=all", ".sequence-groups"],
+    ["http://localhost/analysis/pitcher-workload?season=2024&competition=all", ".workload-timeline"],
+    ["http://localhost/analysis/baserunning?season=2024&competition=all", "table"],
+    ["http://localhost/analysis/matchups?season=2024&competition=all", ".matchup-observed-summary"],
   ]) {
     await page.goto(url, {waitUntil:"networkidle"});
     await page.locator(selector).first().waitFor();
+    if (url.includes("/analysis/statistics")) {
+      if (await page.locator("table thead th").count() !== 10) throw new Error("Statistics summary columns are missing.");
+      await page.locator(".statistics-detail-toggle input").check();
+      if (await page.locator("table thead th").count() <= 10) throw new Error("Detailed statistics are missing.");
+      await page.locator(".statistics-detail-toggle input").uncheck();
+    }
+    if (url.includes("pitch-sequences")) {
+      await page.locator(".sequence-group-header select").selectOption({ index: 1 });
+      await page.locator(".sequence-comparison h3").waitFor();
+      await page.locator(".sequence-group-details > summary").click();
+      await page.locator(".sequence-group-details table").waitFor();
+      await page.getByRole("button", { name: "\uADA4\uC801 \uBE44\uAD50", exact: true }).first().press("Enter");
+      await page.waitForFunction(() => document.activeElement?.classList.contains("analysis-comparison-target"));
+    }
+    if (url.includes("park-environment")) {
+      await page.locator(".park-rate-heading select").selectOption("completeRunRate");
+      await page.locator(".park-observed-details > summary").click();
+      await page.locator(".park-observed-details table").waitFor();
+    }
+    if (url.includes("baserunning")) {
+      const runnerButton = page.getByRole("table", { name: "\uC120\uC218\uBCC4 \uC8FC\uB8E8", exact: true }).getByRole("button").first();
+      await runnerButton.press("Enter");
+      await page.locator(".baserunning-summary").waitFor();
+      await page.waitForFunction(() => document.activeElement?.id === "baserunning-selection-heading");
+      if (await page.locator(".baserunning-summary li").count() !== 4) throw new Error("Runner opportunity outcomes are missing.");
+    }
     if (url.endsWith("/analysis/models")) {
       await page.locator("select").selectOption("2023");
       await page.getByText(/2021, 2022/).first().waitFor();
@@ -962,10 +1045,17 @@ try {
       if (!await page.locator(".primary-button").isDisabled()) throw new Error("Unsupported historical training was enabled.");
     }
     if (url.includes("pitcher-changes")) {
+      await page.getByText("\uC804\uCCB4 \uAD6C\uC885\u00B7\uC9C0\uD45C\uBCC4 \uBCC0\uD654", { exact: true }).click();
+      await page.getByRole("table", { name: "\uAD6C\uC885\uBCC4 \uBCC0\uD654", exact: true }).waitFor();
       await page.getByRole("button", {name: "\uC9C4\uC785\uAC01 VAA/HAA \uBCF4\uAE30",exact:true}).click();
       await page.getByRole("table", {name: "\uAD6C\uC885 \uC9C4\uC785\uAC01",exact:true}).waitFor();
     }
     if (url.includes("pitcher-workload")) {
+      const appearancePicker = page.locator(".workload-appearance-picker select");
+      await appearancePicker.selectOption({ index: 0 });
+      const selectedDate = (await appearancePicker.locator("option:checked").innerText()).slice(0, 10);
+      await page.getByRole("heading", { name: new RegExp(selectedDate) }).waitFor();
+      if (await page.locator(".workload-selected-summary dd").count() !== 4) throw new Error("Workload selected appearance summary is missing.");
       await page.getByRole("button", {name: "\uc870\uac74\uc744 \ub9de\ucd98 \uc6b4\uc6a9 \ube44\uad50 \ubcf4\uae30",exact:true}).click();
       await page.getByRole("table", {name: "\uc870\uac74\uc744 \ub9de\ucd98 \uc6b4\uc6a9 \uc131\uacfc",exact:true}).waitFor();
       await page.getByRole("combobox", {name: "\uc6b4\uc6a9 \ube44\uad50 \uc131\uacfc",exact:true}).selectOption("whiff");

@@ -1,5 +1,8 @@
-const conditionKeys = ["pitchType", "stance", "balls", "strikes", "cohort"] as const;
-type ConditionKey = (typeof conditionKeys)[number];
+import {
+  pitchSituationConditions,
+  pitchSituationKeys as conditionKeys,
+  type PitchSituationKey as ConditionKey,
+} from "./pitch-situation-params";
 
 export function PitchOutcomeQuickFilters({
   params,
@@ -11,24 +14,7 @@ export function PitchOutcomeQuickFilters({
   const stance = params.get("stance");
   const balls = params.get("balls");
   const strikes = params.get("strikes");
-  const pitchType = params.get("pitchType");
-  const active: { key: ConditionKey; label: string }[] = [];
-  if (pitchType !== null) active.push({ key: "pitchType", label: `구종: ${pitchType}` });
-  if (stance !== null)
-    active.push({
-      key: "stance",
-      label:
-        stance === "L"
-          ? "좌타자"
-          : stance === "R"
-            ? "우타자"
-            : stance === "S"
-              ? "스위치 타석"
-              : `타석: ${stance}`,
-    });
-  if (balls !== null) active.push({ key: "balls", label: `${balls}볼` });
-  if (strikes !== null) active.push({ key: "strikes", label: `${strikes}스트라이크` });
-  if (params.get("cohort") === "discipline") active.push({ key: "cohort", label: "선구안 표본" });
+  const active = pitchSituationConditions(params);
 
   const change = (updates: readonly (readonly [ConditionKey, string | null])[]) => {
     const next = new URLSearchParams(params);

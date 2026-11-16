@@ -2,7 +2,7 @@
 import { createElement, useState } from "react";
 import { cleanup, render, screen, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { Link, MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import { AppShell } from "../../apps/web/src/components/app-shell.js";
 import { WorkspaceTabs } from "../../apps/web/src/components/workspace-tabs.js";
@@ -12,6 +12,7 @@ import { OperationConsole } from "../../apps/web/src/components/operation-consol
 afterEach(() => {
   cleanup();
   sessionStorage.clear();
+  document.documentElement.scrollTop = 0;
   vi.unstubAllGlobals();
 });
 
@@ -63,6 +64,22 @@ it("lets keyboard users skip the navigation to the main content", async () => {
   expect(document.activeElement).toBe(screen.getByRole("link", { name: "본문으로 건너뛰기" }));
   await user.keyboard("{Enter}");
   expect(document.activeElement).toBe(screen.getByRole("main"));
+});
+
+it("starts a different page at the top while keeping same-page filter scroll position", async () => {
+  const user = userEvent.setup();
+  render(
+    createElement(
+      MemoryRouter,
+      { initialEntries: ["/analysis/pitch-shape?season=2025"] },
+      createElement(AppShell, null, createElement(Link, { to: "?season=2024" }, "시즌 변경")),
+    ),
+  );
+  document.documentElement.scrollTop = 600;
+  await user.click(screen.getByRole("link", { name: "시즌 변경" }));
+  expect(document.documentElement.scrollTop).toBe(600);
+  await user.click(screen.getByRole("link", { name: "분석 자료 품질" }));
+  expect(document.documentElement.scrollTop).toBe(0);
 });
 
 function Tabs() {

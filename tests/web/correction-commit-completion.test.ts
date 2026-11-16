@@ -101,7 +101,15 @@ describe("보정 저장 완료 UI", () => {
     await screen.findByRole("option", { name: /2026-08-20 원정–홈.*검토 필요.*test-game/ });
     await user.selectOptions(screen.getByLabelText("경기"), "quarantine:test-game");
     await user.click(screen.getByRole("button", { name: "작업 사본 열기" }));
-    await user.click(await screen.findByRole("button", { name: "staging으로 승격" }));
+    const currentGame = await screen.findByRole("region", { name: "현재 보정 경기" });
+    await waitFor(() => expect(currentGame).toBe(globalThis.document.activeElement));
+    const gameSelection = screen
+      .getByRole("heading", { name: "다른 경기 선택" })
+      .closest("details");
+    expect(gameSelection?.open).toBe(false);
+    await user.click(screen.getByText("다른 경기 선택"));
+    expect(gameSelection?.open).toBe(true);
+    await user.click(await screen.findByRole("button", { name: "DB 적재 가능 상태로 전환" }));
 
     expect(await screen.findByText(/2026-08-20 원정–홈 · 보정 저장 완료/)).toBeTruthy();
     await waitFor(() =>
@@ -113,7 +121,7 @@ describe("보정 저장 완료 UI", () => {
     expect(screen.getByRole("button", { name: "이 경기 DB 적재" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "작업 사본 저장" })).toBeNull();
     expect(screen.getByRole("status").textContent).toContain(
-      "test-game을 staging으로 승격했습니다",
+      "test-game을 DB 적재 가능 상태로 전환했습니다",
     );
     await user.click(screen.getByRole("button", { name: "이 경기 DB 적재" }));
     expect(await screen.findByRole("link", { name: "저장 경기 재생" })).toBeTruthy();

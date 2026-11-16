@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type {
   DatabaseGameCatalogItem,
   ImportJob,
@@ -45,6 +45,7 @@ export function DatabasePage(): React.JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
   const [selection, setSelection] = useState<ImportSelection | null>(null);
   const [executionKey, setExecutionKey] = useState(createRequestKey);
+  const searchInput = useRef<HTMLInputElement>(null);
   const overview = useQuery(databaseOverviewQueryOptions());
   const scopeValue = searchParams.get("scope");
   const scope: DatabaseScope =
@@ -257,6 +258,16 @@ export function DatabasePage(): React.JSX.Element {
     recollect.error;
   const total = scope === "jobs" ? (history.data?.total ?? 0) : (catalog.data?.total ?? 0);
   const pending = scope === "jobs" ? history.isFetching : catalog.isFetching;
+  const hasFilters =
+    query.trim() !== "" ||
+    (scope === "jobs"
+      ? batchId !== null || resultFilter === "failed" || resultFilter === "cancelled"
+      : season !== "all");
+  const filteredEmpty =
+    hasFilters &&
+    total === 0 &&
+    !pending &&
+    (scope === "jobs" ? history.isSuccess : catalog.isSuccess);
   const selected = selectedReady !== null || selectedStored !== null || selectedJob !== null;
   const choose = (value: ImportSelectionRequest) => selectMutation.mutate(value);
 
@@ -276,57 +287,61 @@ export function DatabasePage(): React.JSX.Element {
             />
           )}
           <span>
-            적재 대기 <strong>{overview.data?.counts.readyToImport ?? "—"}</strong>
+            적재 대기 <strong>{overview.data?.counts.readyToImport.toLocaleString() ?? "—"}</strong>
           </span>
           <span>
-            저장 경기 <strong>{overview.data?.counts.stored ?? "—"}</strong>
+            저장 경기 <strong>{overview.data?.counts.stored.toLocaleString() ?? "—"}</strong>
           </span>
         </div>
       </header>
-      <div className="operation-command-bar database-command-bar">
-        <div>
-          <strong>실행 대상</strong>
-          <p>
-            {selection === null
-              ? "목록에서 조건을 확인한 뒤 적재 대상을 선택하세요."
-              : `${selection.criteria.gameIds === undefined ? `${selection.criteria.season ?? "전체"} 시즌` : "개별 선택"} · ${selection.criteria.search ? `검색 ‘${selection.criteria.search}’ · ` : ""}${selection.count}경기 확정 · 표시 필터를 바꿔도 유지됩니다.`}
-          </p>
-        </div>
-        {selection === null ? (
-          <button
-            type="button"
-            className="primary-button"
-            disabled={scope !== "ready" || total === 0 || pending || selectMutation.isPending}
-            onClick={() => choose(criteria)}
-          >
-            {selectMutation.isPending ? "대상 확인 중" : "현재 조건 전체 선택"}
-          </button>
-        ) : (
-          <div className="operation-detail-actions">
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={batchMutation.isPending}
-              onClick={() => setSelection(null)}
-            >
-              선택 해제
-            </button>
+      {(scope === "ready" || selection !== null) && (
+        <div className="operation-command-bar database-command-bar">
+          <div>
+            <strong>실행 대상</strong>
+            <p>
+              {selection === null
+                ? "목록에서 조건을 확인한 뒤 적재 대상을 선택하세요."
+                : `${selection.criteria.gameIds === undefined ? `${selection.criteria.season ?? "전체"} 시즌` : "개별 선택"} · ${selection.criteria.search ? `검색 ‘${selection.criteria.search}’ · ` : ""}${selection.count}경기 확정 · 표시 필터를 바꿔도 유지됩니다.`}
+            </p>
+          </div>
+          {selection === null ? (
             <button
               type="button"
               className="primary-button"
-              disabled={
-                selection.count === 0 ||
-                batchMutation.isPending ||
-                overview.data?.database.healthy !== true
-              }
-              onClick={() => batchMutation.mutate()}
+              disabled={scope !== "ready" || total === 0 || pending || selectMutation.isPending}
+              onClick={() => choose(criteria)}
             >
-              {batchMutation.isPending ? "등록 중" : `${selection.count}경기 일괄 적재 시작`}
+              {selectMutation.isPending ? "대상 확인 중" : "현재 조건 전체 선택"}
             </button>
-          </div>
-        )}
-      </div>
-      {summary !== undefined && summary.total > 0 ? (
+          ) : (
+            <div className="operation-detail-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={batchMutation.isPending}
+                onClick={() => setSelection(null)}
+              >
+                선택 해제
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                disabled={
+                  selection.count === 0 ||
+                  batchMutation.isPending ||
+                  overview.data?.database.healthy !== true
+                }
+                onClick={() => batchMutation.mutate()}
+              >
+                {batchMutation.isPending ? "등록 중" : `${selection.count}경기 일괄 적재 시작`}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      {summary !== undefined &&
+      summary.total > 0 &&
+      (scope === "jobs" || batchId !== null || summary.running > 0 || summary.queued > 0) ? (
         <div className="operation-inline-stats" role="status">
           <strong>{batchId === null ? "적재 기록" : "선택한 일괄 작업"}</strong>
           <span>전체 {summary.total}</span>
@@ -399,13 +414,14 @@ export function DatabasePage(): React.JSX.Element {
                       })
                     }
                   >
-                    {label} {count}
+                    {label} {count.toLocaleString()}
                   </button>
                 ))}
               </div>
               <label className="operation-search">
                 <span>검색</span>
                 <input
+                  ref={searchInput}
                   type="search"
                   placeholder={scope === "jobs" ? "경기 ID·작업 ID·오류" : "날짜·팀·경기 ID"}
                   value={query}
@@ -454,11 +470,36 @@ export function DatabasePage(): React.JSX.Element {
                   </select>
                 </label>
               )}
+              {filteredEmpty ? (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    updateSearch({
+                      scope,
+                      q: null,
+                      season: null,
+                      result: null,
+                      batch: null,
+                      page: null,
+                    });
+                    searchInput.current?.focus();
+                  }}
+                >
+                  필터 초기화
+                </button>
+              ) : null}
             </div>
             {scope === "ready" ? (
               <SelectableVirtualList
                 ariaLabel="적재 대기 경기"
-                emptyMessage={pending ? "경기를 불러오는 중입니다." : "적재할 경기가 없습니다."}
+                emptyMessage={
+                  pending
+                    ? "경기를 불러오는 중입니다."
+                    : filteredEmpty
+                      ? "조건에 맞는 적재 대기 경기가 없습니다."
+                      : "적재할 경기가 없습니다."
+                }
                 getKey={(game) => game.gameId}
                 items={ready}
                 rowHeight={84}
@@ -469,20 +510,32 @@ export function DatabasePage(): React.JSX.Element {
             ) : scope === "stored" ? (
               <SelectableVirtualList
                 ariaLabel="저장된 경기"
-                emptyMessage={pending ? "경기를 불러오는 중입니다." : "저장된 경기가 없습니다."}
+                emptyMessage={
+                  pending
+                    ? "경기를 불러오는 중입니다."
+                    : filteredEmpty
+                      ? "조건에 맞는 저장 경기가 없습니다."
+                      : "저장된 경기가 없습니다."
+                }
                 getKey={(game) => game.gameId}
                 items={stored}
                 rowHeight={84}
                 selectedKey={selectedStored?.gameId ?? null}
                 onSelect={(game) => updateSearch({ game: game.gameId, job: null })}
                 renderItem={(game) => (
-                  <DatabaseGameRow game={game} label={`r${game.currentRevision}`} />
+                  <DatabaseGameRow game={game} label={`기록 버전 ${game.currentRevision}`} />
                 )}
               />
             ) : (
               <SelectableVirtualList
                 ariaLabel="적재 작업 기록"
-                emptyMessage="적재 작업이 없습니다."
+                emptyMessage={
+                  pending
+                    ? "작업 기록을 불러오는 중입니다."
+                    : filteredEmpty
+                      ? "조건에 맞는 작업 기록이 없습니다."
+                      : "적재 작업이 없습니다."
+                }
                 getKey={(job) => job.jobId}
                 items={history.data?.jobs ?? []}
                 rowHeight={84}
@@ -491,7 +544,7 @@ export function DatabasePage(): React.JSX.Element {
                 renderItem={(job) => <ImportJobRow job={job} />}
               />
             )}
-            <div className="operation-list-toolbar" aria-label="목록 페이지">
+            <nav className="operation-list-toolbar database-list-pager" aria-label="목록 페이지">
               <button
                 type="button"
                 className="secondary-button"
@@ -511,7 +564,7 @@ export function DatabasePage(): React.JSX.Element {
               >
                 다음
               </button>
-            </div>
+            </nav>
           </>
         }
         detail={
@@ -660,7 +713,7 @@ function ImportJobRow({ job }: { readonly job: ImportJob }): React.JSX.Element {
         </span>
       </span>
       <span className="operation-row-meta">
-        <span>{job.revision === null ? "revision —" : `revision ${String(job.revision)}`}</span>
+        <span>{job.revision === null ? "기록 버전 —" : `기록 버전 ${String(job.revision)}`}</span>
         <time dateTime={job.createdAt}>{formatDateTime(job.createdAt)}</time>
       </span>
       <span className="mono-text operation-row-copy">
@@ -699,22 +752,35 @@ function ReadyGameDetail(props: {
           <dd>{game.season ?? "미상"}</dd>
         </div>
         <div>
-          <dt>finding</dt>
-          <dd>경고 {String(game.warningFindings)}</dd>
+          <dt>검증 결과</dt>
+          <dd>차단 없음 · 경고 {String(game.warningFindings)}건</dd>
         </div>
         <div>
           <dt>갱신</dt>
           <dd>{formatDateTime(game.updatedAt)}</dd>
         </div>
       </dl>
+      {game.warningFindings > 0 ? (
+        <p className="muted-text">
+          경고가 있어도 적재할 수 있습니다. 보정에서 작업 사본을 열어 내용을 검토하세요.
+        </p>
+      ) : null}
       <div className="operation-detail-actions">
+        {game.warningFindings > 0 ? (
+          <Link
+            className="secondary-button"
+            to={`/correct?game=${encodeURIComponent(game.gameId)}&scope=ready`}
+          >
+            보정에서 경고 검토
+          </Link>
+        ) : null}
         <button
           type="button"
           className="primary-button"
           disabled={props.active || props.pending || !props.databaseHealthy}
           onClick={props.onImport}
         >
-          {props.active ? "적재 중" : "새 revision 적재"}
+          {props.active ? "적재 중" : "새 기록 버전 적재"}
         </button>
       </div>
     </div>
@@ -739,7 +805,7 @@ function StoredGameDetail(props: {
           <p className="mono-text">{props.game.gameId}</p>
         </div>
         <span className="authority-mark database">
-          current r{String(props.game.currentRevision)}
+          최신 기록 · 버전 {String(props.game.currentRevision)}
         </span>
       </header>
       <dl className="operation-detail-fields">
@@ -748,9 +814,9 @@ function StoredGameDetail(props: {
           <dd>{props.game.gameDate}</dd>
         </div>
         <div>
-          <dt>revision</dt>
+          <dt>기록 버전</dt>
           <dd>
-            current {String(props.game.currentRevision)} · 전체 {String(props.game.revisionCount)}
+            최신 {String(props.game.currentRevision)} · 전체 {String(props.game.revisionCount)}개
           </dd>
         </div>
         <div>
@@ -758,7 +824,7 @@ function StoredGameDetail(props: {
           <dd>{formatDateTime(props.game.updatedAt)}</dd>
         </div>
       </dl>
-      <h3>Revision 이력</h3>
+      <h3>기록 버전 이력</h3>
       <div className="database-revision-list">
         {revisions.isLoading ? (
           <p className="muted-text">이력을 불러오는 중입니다.</p>
@@ -770,8 +836,8 @@ function StoredGameDetail(props: {
               className={revision.current ? "current" : undefined}
               onClick={() => props.onReplay(revision.revision)}
             >
-              <strong>r{String(revision.revision)}</strong>
-              <span>{revision.current ? "current" : formatDateTime(revision.createdAt)}</span>
+              <strong>버전 {String(revision.revision)}</strong>
+              <span>{revision.current ? "최신 기록" : formatDateTime(revision.createdAt)}</span>
               <small>{revision.documentHash.slice(0, 12)}</small>
             </button>
           ))
@@ -795,7 +861,7 @@ function StoredGameDetail(props: {
           disabled={props.pending}
           onClick={props.onReopen}
         >
-          current 교정 초안 열기
+          최신 기록을 보정 작업 사본으로 열기
         </button>
       </div>
     </div>
@@ -818,7 +884,7 @@ function ImportJobDetail({ job }: { readonly job: ImportJob }): React.JSX.Elemen
       </header>
       <dl className="operation-detail-fields">
         <div>
-          <dt>revision</dt>
+          <dt>기록 버전</dt>
           <dd>{job.revision ?? "—"}</dd>
         </div>
         <div>

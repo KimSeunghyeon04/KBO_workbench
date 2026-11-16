@@ -132,6 +132,43 @@ export function GamePicker({
         </div>
       </div>
 
+      <div className="replay-game-selection-bar">
+        <div className="replay-game-selection">
+          <span>선택한 경기</span>
+          {selectedGame === null ? (
+            <strong>경기를 선택하세요.</strong>
+          ) : (
+            <strong>{catalogGameTitle(selectedGame)}</strong>
+          )}
+        </div>
+        <label className="replay-revision-select">
+          <span>{loadingRevisions ? "Revision 확인 중…" : "Revision"}</span>
+          <select
+            value={revision ?? ""}
+            disabled={selectedGame === null || loadingRevisions}
+            onChange={(event) =>
+              onRevisionChange(event.target.value === "" ? null : Number(event.target.value))
+            }
+          >
+            <option value="">revision 선택</option>
+            {revisions.map((item) => (
+              <option key={item.revision} value={item.revision}>
+                {String(item.revision)}
+                {item.current ? " · current" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          className="primary-button replay-load-button"
+          type="button"
+          disabled={selectedGame === null || revision === null || loadingReplay}
+          onClick={onLoad}
+        >
+          {loadingReplay ? "불러오는 중…" : "선택 경기 재생"}
+        </button>
+      </div>
+
       <div className="replay-game-picker-filters">
         <label className="replay-game-search">
           <span>게임 ID 검색</span>
@@ -249,43 +286,6 @@ export function GamePicker({
             )}
           </div>
         </div>
-      </div>
-
-      <div className="replay-game-picker-footer">
-        <div className="replay-game-selection">
-          <span>선택한 경기</span>
-          {selectedGame === null ? (
-            <strong>경기를 선택하세요.</strong>
-          ) : (
-            <strong>{catalogGameTitle(selectedGame)}</strong>
-          )}
-        </div>
-        <label className="replay-revision-select">
-          <span>{loadingRevisions ? "Revision 확인 중…" : "Revision"}</span>
-          <select
-            value={revision ?? ""}
-            disabled={selectedGame === null || loadingRevisions}
-            onChange={(event) =>
-              onRevisionChange(event.target.value === "" ? null : Number(event.target.value))
-            }
-          >
-            <option value="">revision 선택</option>
-            {revisions.map((item) => (
-              <option key={item.revision} value={item.revision}>
-                {String(item.revision)}
-                {item.current ? " · current" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          className="primary-button replay-load-button"
-          type="button"
-          disabled={selectedGame === null || revision === null || loadingReplay}
-          onClick={onLoad}
-        >
-          {loadingReplay ? "불러오는 중…" : "선택 경기 재생"}
-        </button>
       </div>
     </div>
   );

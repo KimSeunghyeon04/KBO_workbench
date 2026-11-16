@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import { Link } from "react-router-dom";
 import { Value } from "@sinclair/typebox/value";
 import {
@@ -15,6 +16,9 @@ import { PitchLocationMap } from "../analysis/pitch-location-panel";
 import { AnalysisFilterBar } from "../analysis/analysis-filter-bar";
 import { PitchOutcomeQuickFilters } from "../analysis/pitch-outcome-quick-filters";
 import { outcomePercent } from "../analysis/pitch-outcome-presentation";
+import { PitchOutcomeComparison } from "../analysis/pitch-outcome-comparison";
+import { SMALL_RATE_DENOMINATOR } from "../analysis/sample-rate";
+import { sharedPitchSituationParams } from "../analysis/pitch-situation-params";
 import {
   pitcherCatalogQueryOptions,
   batterCatalogQueryOptions,
@@ -30,9 +34,7 @@ function catalogPlayers(catalog: PitchAnalysisCatalog | DisciplineCatalog) {
 }
 
 export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
-  const { params, selected, season, scope, change, setParams } = useAnalysisScope({
-    seasonSelectionKeys: [role],
-  });
+  const { params, selected, season, scope, change, setParams } = useAnalysisScope();
   const candidate = {
     season,
     ...scope.options,
@@ -84,6 +86,7 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
         </div>
       </header>
       <AnalysisFilterBar
+        collapsible={true}
         label="투구 결과 조건"
         summary={conditions}
         advanced={
@@ -151,7 +154,7 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
           <select
             aria-label="투구 결과 시즌"
             value={season}
-            onChange={(e) => change("season", e.target.value)}
+            onChange={(e) => change("season", e.target.value, { [role]: id })}
           >
             {[2020, 2021, 2022, 2023, 2024, 2025].map((y) => (
               <option key={y}>{y}</option>
@@ -161,6 +164,9 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
         <label>
           {role === "pitcher" ? "투수" : "타자"}
           <select aria-label="분석 선수" value={id} onChange={(e) => change(role, e.target.value)}>
+            {id !== "" && !players?.some((p) => p.id === id) && (
+              <option value={id}>선택 선수 {id}</option>
+            )}
             {players?.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -171,14 +177,15 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
       </AnalysisFilterBar>
       <PitchOutcomeQuickFilters params={params} onChange={setParams} />
       {!valid && <p role="alert">{scope.error ?? "투구 조건이 올바르지 않습니다."}</p>}
-      {(analysis.error || catalog.error) && (
-        <p role="alert">{String(analysis.error ?? catalog.error)}</p>
-      )}
+      <AnalysisQueryError queries={[analysis, catalog]} enabled={valid} />
       {catalog.isLoading || analysis.isFetching ? (
         <p role="status">분석 자료를 읽고 있습니다.</p>
       ) : null}
       {scope.error === null && players?.length === 0 && (
         <AnalysisEmptyState season={season} options={scope.options} />
+      )}
+      {catalog.isSuccess && id !== "" && !players?.some((p) => p.id === id) && (
+        <p role="status">선택한 선수(ID {id})의 실제 투구가 이 조회 범위에 없습니다.</p>
       )}
       {data && (
         <>
@@ -200,6 +207,9 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
                 {data.total.swings.toLocaleString()}스윙 중 {data.total.whiffs.toLocaleString()}
                 헛스윙
               </span>
+              {data.total.swings > 0 && data.total.swings < SMALL_RATE_DENOMINATOR && (
+                <span>소표본 · 20스윙 미만</span>
+              )}
             </div>
             <div>
               <dt>
@@ -207,6 +217,9 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
               </dt>
               <dd>{outcomePercent(data.total.cswRate)}</dd>
               <span>실제 투구 중 {data.total.csw.toLocaleString()}구</span>
+              {data.total.pitches > 0 && data.total.pitches < SMALL_RATE_DENOMINATOR && (
+                <span>소표본 · 20구 미만</span>
+              )}
             </div>
             <div>
               <dt>
@@ -217,16 +230,28 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
                 2S {data.total.twoStrikePitches.toLocaleString()}구 중{" "}
                 {data.total.terminalStrikeouts.toLocaleString()}삼진
               </span>
+              {data.total.twoStrikePitches > 0 &&
+                data.total.twoStrikePitches < SMALL_RATE_DENOMINATOR && (
+                  <span>소표본 · 2S 공 20구 미만</span>
+                )}
             </div>
           </dl>
           <div className="outcome-analysis-grid">
-            <PitchOutcomeBreakdown key={role} data={data} />
             <PitchLocationMap
+              season={data.scope.season}
               key={JSON.stringify([id, candidate, data.sourceHash])}
               cells={data.cells}
               points={data.points}
             />
+            <PitchOutcomeBreakdown key={role} data={data} />
           </div>
+          <PitchOutcomeComparison
+            key={`${role}-${id}`}
+            query={data.query}
+            id={id}
+            role={role}
+            current={data.total}
+          />
           {"batterId" in data && (
             <TerminalBattingPanel key={data.sourceHash} data={data.plateAppearances} />
           )}
@@ -273,11 +298,17 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
           </details>
           <Link
             className="outcome-related-link"
-            to={`/analysis/${role === "pitcher" ? "pitch-shape" : "batter-discipline"}?${new URLSearchParams({ season: String(season), ...scope.options, [role]: id })}`}
+            to={`/analysis/${role === "pitcher" ? "pitch-shape" : "batter-discipline"}?${new URLSearchParams({ season: String(season), ...scope.options, [role]: id, ...(role === "batter" ? sharedPitchSituationParams(params) : {}) })}`}
           >
             {role === "pitcher" ? "같은 범위 구질 보기" : "조건 일치 선구안 비교"}{" "}
             <span aria-hidden="true">↗</span>
           </Link>
+          {role === "batter" && (
+            <p className="analysis-caption">
+              구종·카운트·타석 좌우 조건을 유지합니다. 선구안은 자체 상황 제외 기준을 적용하므로
+              실제 투구 전체 표본과 분모가 다를 수 있습니다.
+            </p>
+          )}
         </>
       )}
     </div>

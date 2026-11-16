@@ -1,15 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 
 import { loadReplay } from "../api/client";
+import type { LoadedReplay } from "../api/replay-client";
 import { storedCatalogQueryOptions, revisionCatalogQueryOptions } from "../api/query-options";
 import { catalogGameIdentity, catalogMonths, catalogSeasons, filterStoredGames } from "./catalog";
 import { nextReplayIndex, replayDelay } from "./playback";
+import {
+  readReplayEvidenceTarget,
+  replayEvidenceIndex,
+  replayEvidenceLabels,
+  type ReplayEvidenceTarget,
+} from "./evidence-target";
 
 interface ReplaySelection {
   readonly gameId: string;
   readonly revision: number;
+  readonly target: ReplayEvidenceTarget | null;
 }
 
 interface RevisionSelection {
@@ -18,9 +26,13 @@ interface RevisionSelection {
 }
 
 export function useReplayPageController() {
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const requestedGameId = searchParams.get("gameId");
   const requestedRevision = parseRequestedRevision(searchParams.get("revision"));
+  const evidenceTarget = useMemo(() => readReplayEvidenceTarget(searchParams), [searchParams]);
+  const autoLoaded = useRef<string | null>(null);
+  const [evidenceNotice, setEvidenceNotice] = useState<string | null>(null);
   const games = useQuery(storedCatalogQueryOptions());
   const stored = useMemo(
     () => games.data?.games.filter((item) => item.authority === "database") ?? [],
@@ -43,8 +55,28 @@ export function useReplayPageController() {
       ? revisionSelection.revision
       : (revisions.data?.currentRevision ?? null);
   const replay = useMutation({
-    mutationFn: (selection: ReplaySelection) => loadReplay(selection.gameId, selection.revision),
+    mutationFn: (selection: ReplaySelection) =>
+      queryClient.fetchQuery({
+        queryKey: ["verified-replay", selection.gameId, selection.revision],
+        queryFn: () => loadReplay(selection.gameId, selection.revision),
+        staleTime: Infinity,
+        retry: false,
+      }),
   });
+  const selectLoadedEvidence = useCallback((data: LoadedReplay, selection: ReplaySelection) => {
+    const targetIndex =
+      selection.target === null ? -1 : replayEvidenceIndex(data.frames, selection.target);
+    setIndex(targetIndex >= 0 ? targetIndex : data.frames.length === 0 ? -1 : 0);
+    setEvidenceNotice(
+      selection.target === null
+        ? null
+        : targetIndex >= 0
+          ? `분석에서 선택한 ${replayEvidenceLabels[selection.target.kind]} 장면을 열었습니다.`
+          : "이 경기 버전에서 요청한 근거 장면을 찾지 못했습니다. 경기 처음을 표시합니다.",
+    );
+    setPlaying(false);
+    setSourceOpen(false);
+  }, []);
   const [index, setIndex] = useState(-1);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
@@ -53,6 +85,26 @@ export function useReplayPageController() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [requestedMonth, setRequestedMonth] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const { mutate: load } = replay;
+  useEffect(() => {
+    if (!requestedGameId || requestedRevision === null || evidenceTarget === null) return;
+    const key = JSON.stringify([requestedGameId, requestedRevision, evidenceTarget]);
+    if (autoLoaded.current === key) return;
+    autoLoaded.current = key;
+    setSelectedGameId(requestedGameId);
+    setRevisionSelection({ gameId: requestedGameId, revision: requestedRevision });
+    const selection = {
+      gameId: requestedGameId,
+      revision: requestedRevision,
+      target: evidenceTarget,
+    };
+    load(selection, { onSuccess: (data) => selectLoadedEvidence(data, selection) });
+    // StrictMode reconnects the mutation observer after its first effect cleanup.
+    // Reattach the selection callback; fetchQuery shares the immutable revision request.
+    return () => {
+      autoLoaded.current = null;
+    };
+  }, [requestedGameId, requestedRevision, evidenceTarget, load, selectLoadedEvidence]);
   const seasons = useMemo(() => catalogSeasons(stored), [stored]);
   const calendarMonths = useMemo(() => catalogMonths(stored, seasonFilter), [seasonFilter, stored]);
   const selectedGame = stored.find((item) => item.gameId === gameId) ?? null;
@@ -114,15 +166,12 @@ export function useReplayPageController() {
 
   function loadSelectedReplay(): void {
     if (gameId === "" || revision === null) return;
-    replay.mutate(
-      { gameId, revision },
-      {
-        onSuccess(data) {
-          setIndex(data.frames.length === 0 ? -1 : 0);
-          setSourceOpen(false);
-        },
-      },
-    );
+    const selection = {
+      gameId,
+      revision,
+      target: gameId === requestedGameId && revision === requestedRevision ? evidenceTarget : null,
+    };
+    replay.mutate(selection, { onSuccess: (data) => selectLoadedEvidence(data, selection) });
   }
 
   const frame = loadedReplay?.frames[index] ?? null;
@@ -160,6 +209,7 @@ export function useReplayPageController() {
     selectedGame,
     loadedReplay,
     loadSelectedReplay,
+    evidenceNotice,
     frame,
     state,
   };

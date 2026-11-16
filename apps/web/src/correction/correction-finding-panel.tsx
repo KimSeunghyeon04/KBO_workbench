@@ -7,6 +7,8 @@ import { useMemo, useState } from "react";
 import { FindingDetails } from "./correction-finding-details";
 import {
   buildDisplayFindings,
+  findingCategoryLabel,
+  findingMessageLabel,
   findingIdentity,
   groupDisplayFindings,
   type DisplayFinding,
@@ -27,6 +29,7 @@ export function FindingPanel({
   onSelectEvent,
   onSelectRecord,
   onSelectTracking,
+  onNavigate,
 }: {
   readonly session: Pick<
     CorrectionSession,
@@ -35,9 +38,10 @@ export function FindingPanel({
   readonly selectedEventId: string | null;
   readonly selectedRecordIdentity: string | null;
   readonly selectedTrackingId: string | null;
-  readonly onSelectEvent: (id: string) => void;
+  readonly onSelectEvent: (id: string, findingIdentity?: string) => void;
   readonly onSelectRecord: (recordIdentity: string) => void;
   readonly onSelectTracking: (trackingId: string) => void;
+  readonly onNavigate?: (destination: "events" | "detail", source: HTMLButtonElement) => void;
 }): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [severity, setSeverity] = useState("all");
@@ -70,7 +74,7 @@ export function FindingPanel({
       ),
   );
   return (
-    <section className="panel correction-findings">
+    <section id="correction-problems" className="panel correction-findings" tabIndex={-1}>
       <div className="panel-title-row">
         <h2>현재 보정할 문제</h2>
         <span>
@@ -81,13 +85,13 @@ export function FindingPanel({
         <input
           type="search"
           value={query}
-          aria-label="finding 검색"
+          aria-label="검증 문제 검색"
           placeholder="메시지·코드·행 검색"
           onChange={(event) => setQuery(event.target.value)}
         />
         <select
           value={severity}
-          aria-label="finding 심각도"
+          aria-label="검증 문제 심각도"
           onChange={(event) => setSeverity(event.target.value)}
         >
           <option value="all">모든 심각도</option>
@@ -96,21 +100,21 @@ export function FindingPanel({
         </select>
         <select
           value={category}
-          aria-label="finding 범주"
+          aria-label="검증 문제 범주"
           onChange={(event) => setCategory(event.target.value)}
         >
           <option value="all">모든 범주</option>
-          <option value="source">source</option>
-          <option value="domain">domain</option>
-          <option value="persistence">persistence</option>
+          <option value="source">원문·수집</option>
+          <option value="domain">경기 규칙·기록</option>
+          <option value="persistence">저장·무결성</option>
         </select>
         <select
           value={origin}
-          aria-label="finding 시점"
+          aria-label="검증 문제 시점"
           onChange={(event) => setOrigin(event.target.value as "current" | "stored" | "all")}
         >
-          <option value="current">현재 finding</option>
-          <option value="stored">저장 당시 finding</option>
+          <option value="current">현재 검증 문제</option>
+          <option value="stored">저장 당시 문제</option>
           <option value="all">현재 + 저장 당시</option>
         </select>
       </div>
@@ -119,7 +123,10 @@ export function FindingPanel({
           <button
             type="button"
             className="secondary-button finding-first-cause"
-            onClick={() => onSelectEvent(firstRejected.eventId)}
+            onClick={(event) => {
+              onSelectEvent(firstRejected.eventId);
+              onNavigate?.("events", event.currentTarget);
+            }}
           >
             먼저 확인할 미적용 행으로 이동
           </button>
@@ -130,7 +137,7 @@ export function FindingPanel({
           </p>
         ) : null}
         {visibleFindings.length === 0 ? (
-          <p className="muted-text">조건에 맞는 finding이 없습니다.</p>
+          <p className="muted-text">조건에 맞는 검증 문제가 없습니다.</p>
         ) : (
           groups.map((group, index) => (
             <details
@@ -161,24 +168,36 @@ export function FindingPanel({
                   />
                 );
                 const eventId = finding.eventId;
-                return record === null && tracking === null && eventId === undefined ? (
+                return (
                   <article className={className} key={findingIdentity(finding)}>
-                    {content}
+                    {record === null && tracking === null && eventId === undefined ? (
+                      <div className="finding-select">{content}</div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="finding-select"
+                        aria-pressed={selected}
+                        onClick={(event) => {
+                          if (record !== null && finding.recordIdentity !== undefined)
+                            onSelectRecord(finding.recordIdentity);
+                          else if (tracking !== null) onSelectTracking(tracking.trackingId);
+                          else if (eventId !== undefined)
+                            onSelectEvent(eventId, findingIdentity(finding));
+                          onNavigate?.(
+                            record !== null || tracking !== null ? "detail" : "events",
+                            event.currentTarget,
+                          );
+                        }}
+                      >
+                        {content}
+                      </button>
+                    )}
+                    <details className="finding-diagnostics">
+                      <summary>진단 정보</summary>
+                      <code>{finding.code}</code>
+                      <pre>{JSON.stringify(finding, null, 2)}</pre>
+                    </details>
                   </article>
-                ) : (
-                  <button
-                    key={findingIdentity(finding)}
-                    type="button"
-                    className={className}
-                    onClick={() => {
-                      if (record !== null && finding.recordIdentity !== undefined)
-                        onSelectRecord(finding.recordIdentity);
-                      else if (tracking !== null) onSelectTracking(tracking.trackingId);
-                      else if (eventId !== undefined) onSelectEvent(eventId);
-                    }}
-                  >
-                    {content}
-                  </button>
                 );
               })}
             </details>
@@ -204,10 +223,10 @@ function FindingContents({
     <>
       <span className="finding-meta">
         <b>{finding.severity === "blocking" ? "차단" : "경고"}</b>
-        <i>{finding.category}</i>
+        <i>{findingCategoryLabel(finding.category)}</i>
         <i>{findingOriginLabel(finding.origin)}</i>
       </span>
-      <strong>{finding.message}</strong>
+      <strong>{findingMessageLabel(finding.message)}</strong>
       <span className="finding-location">
         {recordLabel ??
           (tracking === null
@@ -227,10 +246,9 @@ function FindingContents({
       )}
       {tracking === null ? null : (
         <span className="finding-navigation-hint">
-          선택하면 관련 투구 행 또는 우측 tracking 예외를 엽니다.
+          선택하면 관련 투구 상세 또는 연결되지 않은 관측을 엽니다.
         </span>
       )}
-      <code>{finding.code}</code>
     </>
   );
 }
@@ -262,8 +280,10 @@ function findingSearchText(
   const trackingCandidates = trackingCandidatesForFinding(document, finding);
   return [
     finding.message,
+    findingMessageLabel(finding.message),
     finding.code,
     finding.category,
+    findingCategoryLabel(finding.category),
     finding.severity,
     finding.origin,
     finding.eventId ?? "",

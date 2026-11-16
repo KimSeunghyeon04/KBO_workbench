@@ -1,50 +1,8 @@
 import { expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
-import {
-  PitchSequenceResponseSchema,
-  resolveAnalysisScope,
-  type PitchSequenceRow,
-} from "@kbo/contracts";
+import { PitchSequenceResponseSchema, resolveAnalysisScope } from "@kbo/contracts";
 import { analyzePitchSequences, pitchPositionAtPlane } from "@kbo/game-core";
-function row(pitchSequence: number, overrides: Partial<PitchSequenceRow> = {}): PitchSequenceRow {
-  return {
-    gameId: "g",
-    revision: 1,
-    gameDate: "2024-06-01",
-    stadium: "잠실",
-    pitchId: `e${pitchSequence}`,
-    pitchSequence,
-    paId: "pa",
-    pitcherId: "p",
-    batterId: "b",
-    pitchType: "직구",
-    stance: "R",
-    speedKph: 140,
-    balls: 0,
-    strikes: 0,
-    actual: true,
-    pitchCall: "ball",
-    swing: false,
-    whiff: false,
-    calledStrike: false,
-    eligible: true,
-    interveningChange: false,
-    supported: true,
-    trackingId: `t${pitchSequence}`,
-    x0: 0,
-    y0: 50,
-    z0: 6,
-    vx0: 1,
-    vy0: -140,
-    vz0: -4,
-    ax: 0,
-    ay: 20,
-    az: -15,
-    crossPlateX: 0,
-    crossPlateY: 1.4167,
-    ...overrides,
-  };
-}
+import { independentSequenceSamples, pitchSequenceRow as row } from "../helpers/pitch-sequence.js";
 const query = { season: 2024 },
   scope = resolveAnalysisScope(query, "regular");
 it("forms pairs before type filtering and preserves missing tracking as an intervening pitch", () => {
@@ -100,4 +58,73 @@ it("keeps geometric distance symmetric and differences signed, rejecting invalid
     analyzePitchSequences(query, "p", scope, "hash", [a, row(1)]).pairs[0]?.planeDistanceCm,
   ).toBe(0);
   expect(pitchPositionAtPlane({ ...a, vy0: 20, ay: 0 }, 23.8)).toBeNull();
+});
+
+it("reports independent mean denominators without dropping valid zeros or changing outcome denominators", () => {
+  const response = analyzePitchSequences(query, "p", scope, "hash", independentSequenceSamples());
+  expect(Value.Check(PitchSequenceResponseSchema, response)).toBe(true);
+  expect(response.groups).toEqual([
+    {
+      key: JSON.stringify(["직구", "직구"]),
+      pairs: 3,
+      swings: 2,
+      whiffs: 1,
+      calledStrikes: 1,
+      swingRate: 2 / 3,
+      whiffRate: 1 / 2,
+      calledStrikeRate: 1 / 3,
+      geometryPairs: 2,
+      planeDistancePairs: 2,
+      planeTimeDifferencePairs: 2,
+      speedDifferencePairs: 2,
+      arrivalDistancePairs: 1,
+      meanPlaneDistanceCm: 0,
+      meanPlaneTimeDifferenceMs: 0,
+      meanSpeedDifferenceKph: 3,
+      meanArrivalDistanceCm: 0,
+    },
+  ]);
+});
+
+it("preserves null means when no pair can supply that measurement", () => {
+  const response = analyzePitchSequences(query, "p", scope, "hash", [
+    row(0),
+    row(1, { trackingId: null, speedKph: null }),
+  ]);
+  expect(response.groups[0]).toMatchObject({
+    pairs: 1,
+    geometryPairs: 0,
+    planeDistancePairs: 0,
+    planeTimeDifferencePairs: 0,
+    speedDifferencePairs: 0,
+    arrivalDistancePairs: 0,
+    meanPlaneDistanceCm: null,
+    meanPlaneTimeDifferenceMs: null,
+    meanSpeedDifferenceKph: null,
+    meanArrivalDistanceCm: null,
+  });
+  expect(Value.Check(PitchSequenceResponseSchema, response)).toBe(true);
+});
+
+it.each([
+  "planeDistancePairs",
+  "planeTimeDifferencePairs",
+  "speedDifferencePairs",
+  "arrivalDistancePairs",
+])("requires a non-negative count for %s in the strict response", (field) => {
+  const response = analyzePitchSequences(query, "p", scope, "hash", [row(0), row(1)]);
+  const group = response.groups[0];
+  if (group === undefined) throw new Error("Expected a sequence group");
+  expect(
+    Value.Check(PitchSequenceResponseSchema, {
+      ...response,
+      groups: [{ ...group, [field]: -1 }],
+    }),
+  ).toBe(false);
+  expect(
+    Value.Check(PitchSequenceResponseSchema, {
+      ...response,
+      groups: [Object.fromEntries(Object.entries(group).filter(([key]) => key !== field))],
+    }),
+  ).toBe(false);
 });

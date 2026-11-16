@@ -6,7 +6,8 @@
   position: relative;
   z-index: 4;
   display: grid;
-  padding: 18px;
+  padding: 0;
+  border: 0;
   gap: 14px;
 }
 
@@ -28,9 +29,9 @@
 
 .replay-source-toolbar .secondary-button {
   flex: 0 0 auto;
-  min-height: 30px;
+  min-height: 36px;
   padding: 0 10px;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .replay-source-controls {
@@ -86,13 +87,13 @@
   flex-wrap: wrap;
   margin: 0;
   gap: 6px 14px;
-  color: #69736d;
-  font-size: 11px;
+  color: var(--ui-muted);
+  font-size: 12px;
 }
 
 .replay-source-note strong {
-  color: #1d241f;
-  font-size: 12px;
+  color: var(--ui-ink);
+  font-size: 14px;
 }
 
 .replay-source-note span {
@@ -102,10 +103,10 @@
 .replay-game-picker {
   display: grid;
   min-width: 0;
-  padding: 16px;
-  border: 1px solid #d6ddd8;
-  border-radius: 8px;
-  gap: 13px;
+  padding: 24px;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius);
+  gap: 20px;
   grid-template-rows: auto auto minmax(86px, 1fr) auto;
   background: #ffffff;
 }
@@ -122,7 +123,7 @@
 
 .replay-game-picker-heading,
 .replay-game-picker-filters,
-.replay-game-picker-footer {
+.replay-game-selection-bar {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -359,27 +360,31 @@
 }
 
 .replay-calendar-weekdays span {
-  color: #7e8982;
-  font-size: 9px;
+  color: var(--ui-muted);
+  font-size: 12px;
   text-align: center;
 }
 
 .replay-calendar-days > span,
 .replay-calendar-days button {
   min-width: 0;
-  height: 32px;
+  height: 48px;
 }
 
 .replay-calendar-days button {
   position: relative;
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   padding: 3px;
+  gap: 2px;
   border: 1px solid transparent;
   border-radius: 5px;
-  place-items: center;
   color: #314139;
   background: #ffffff;
-  font-size: 10px;
+  font-size: 12px;
+  line-height: 1.2;
   cursor: pointer;
 }
 
@@ -403,19 +408,16 @@
 }
 
 .replay-calendar-days button strong {
-  position: absolute;
-  right: 2px;
-  bottom: 2px;
   display: grid;
-  min-width: 12px;
-  height: 12px;
+  min-width: 18px;
+  min-height: 18px;
   padding: 0 3px;
   border-radius: 999px;
   place-items: center;
   color: #ffffff;
-  background: #d27735;
-  font-size: 7px;
-  line-height: 1;
+  background: var(--ui-warning);
+  font-size: 12px;
+  line-height: 1.2;
 }
 
 .replay-calendar-days button.selected strong {
@@ -605,9 +607,9 @@
   font-size: 10px;
 }
 
-.replay-game-picker-footer {
-  padding-top: 12px;
-  border-top: 1px solid #e2e7e3;
+.replay-game-selection-bar {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ui-line);
 }
 
 .replay-game-selection {
@@ -644,21 +646,8 @@
   position: relative;
   overflow: hidden;
   padding: 0;
-  background:
-    radial-gradient(circle at 50% 120%, rgb(72 122 91 / 32%), transparent 42%),
-    linear-gradient(135deg, #1d2a22 0%, #14231a 100%);
+  background: var(--ui-ink);
   color: #f8faf8;
-}
-
-.replay-scoreboard::before {
-  position: absolute;
-  right: -80px;
-  bottom: -170px;
-  width: 420px;
-  height: 420px;
-  border: 1px solid rgb(255 255 255 / 6%);
-  border-radius: 50%;
-  content: "";
 }
 
 .scoreboard-scoreline {
@@ -666,7 +655,7 @@
   z-index: 1;
   display: grid;
   align-items: center;
-  grid-template-columns: minmax(180px, 1fr) 90px minmax(180px, 1fr);
+  grid-template-columns: minmax(0, 1fr) 90px minmax(0, 1fr);
   padding: 18px 24px 15px;
   gap: 24px;
   border-bottom: 1px solid rgb(255 255 255 / 10%);
@@ -674,6 +663,7 @@
 
 .score-team {
   display: grid;
+  min-width: 0;
   align-items: baseline;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 10px;
@@ -681,14 +671,13 @@
 
 .score-team > span {
   color: #aebbb3;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .score-team > strong {
-  overflow: hidden;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 15px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .score-team > b {
@@ -724,11 +713,12 @@
 
 .inning-cell strong {
   font-size: 17px;
+  white-space: nowrap;
 }
 
 .inning-cell span {
   color: #aebbb3;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .scoreboard-live-state {
@@ -750,6 +740,7 @@
 
 .scoreboard-matchup > div {
   display: grid;
+  min-width: 0;
   gap: 2px;
 }
 
@@ -758,16 +749,13 @@
 }
 
 .scoreboard-matchup > div > span {
-  color: #8fa298;
-  font-size: 9px;
-  letter-spacing: 0.08em;
+  color: #aebbb3;
+  font-size: 12px;
 }
 
 .scoreboard-matchup > div > strong {
-  overflow: hidden;
+  overflow-wrap: anywhere;
   font-size: 16px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .scoreboard-matchup > i {
@@ -777,8 +765,8 @@
   border: 1px solid rgb(255 255 255 / 16%);
   border-radius: 50%;
   place-items: center;
-  color: #8fa298;
-  font-size: 9px;
+  color: #aebbb3;
+  font-size: 12px;
   font-style: normal;
   font-weight: 700;
 }
@@ -797,12 +785,12 @@
   border-radius: 999px;
   color: #b7c5bd;
   background: rgb(255 255 255 / 5%);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .scoreboard-diamond-empty {
-  color: #8fa298;
-  font-size: 11px;
+  color: #aebbb3;
+  font-size: 12px;
   text-align: center;
 }
 
@@ -825,7 +813,7 @@
   width: 12px;
   color: #aebbb3;
   font:
-    10px "SFMono-Regular",
+    12px "SFMono-Regular",
     Consolas,
     monospace;
 }
@@ -878,16 +866,15 @@
   color: #52605a;
   background: #ffffff;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
 }
 
-.playback-controls button > span {
-  font-size: 15px;
-  line-height: 1;
+.playback-controls button > svg {
+  flex: 0 0 16px;
 }
 
 .playback-controls button > small {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .playback-controls button:hover:not(:disabled) {
@@ -915,10 +902,13 @@
   align-items: center;
   gap: 7px;
   color: #59645e;
-  font-size: 11px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .playback-speed select {
+  width: auto;
+  flex: 0 0 auto;
   min-width: 68px;
 }
 
@@ -936,7 +926,7 @@
 .replay-frame-position {
   min-width: 70px;
   text-align: center;
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1031,7 +1021,7 @@
 .replay-relay-rows small,
 .replay-movement-list small {
   color: #69736d;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .selected-event-card strong {
@@ -1046,7 +1036,7 @@
   width: fit-content;
   padding: 3px 6px;
   border-radius: 4px;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .selected-event-card > span.applied {
@@ -1271,8 +1261,12 @@
   display: grid;
   justify-items: center;
   gap: 7px;
-  color: #7a847e;
-  font-size: 10px;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.base-marker small {
+  font-size: inherit;
 }
 
 .base-marker i {
@@ -1314,8 +1308,8 @@
   z-index: 1;
   bottom: 0;
   left: 99px;
-  color: #879189;
-  font-size: 10px;
+  color: var(--ui-muted);
+  font-size: 12px;
 }
 
 .base-diamond.compact {
@@ -1334,9 +1328,10 @@
 }
 
 .base-diamond.compact .base-marker {
+  width: 62px;
   gap: 3px;
-  color: #8fa298;
-  font-size: 8px;
+  color: #aebbb3;
+  font-size: 12px;
 }
 
 .base-diamond.compact .base-marker i {
@@ -1353,7 +1348,7 @@
 }
 
 .base-diamond.compact .base-marker small {
-  max-width: 54px;
+  max-width: 62px;
   overflow: hidden;
   color: #aebbb3;
   text-overflow: ellipsis;
@@ -1366,24 +1361,26 @@
 
 .base-diamond.compact .base-marker.second {
   top: 5px;
-  left: 61px;
+  left: 70px;
+  transform: translateX(-50%);
 }
 
 .base-diamond.compact .base-marker.third {
   top: 46px;
-  left: 10px;
+  left: 0;
 }
 
 .base-diamond.compact .base-marker.first {
   top: 46px;
-  right: 10px;
+  right: 0;
 }
 
 .base-diamond.compact .home-plate {
   bottom: 0;
-  left: 62px;
-  color: #8fa298;
-  font-size: 8px;
+  left: 70px;
+  color: #aebbb3;
+  font-size: 12px;
+  transform: translateX(-50%);
 }
 
 .matchup-list {
@@ -1423,6 +1420,7 @@
 
 .state-transition > div {
   display: grid;
+  min-width: 0;
   justify-items: center;
   padding: 8px;
   gap: 3px;
@@ -1435,25 +1433,26 @@
 }
 
 .state-transition span {
-  color: #879189;
-  font-size: 8px;
+  color: var(--ui-muted);
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  line-height: 1.6;
 }
 
 .state-transition .current span {
-  color: #acd4bd;
+  color: #ffffff;
 }
 
 .state-transition strong {
   font:
-    11px "SFMono-Regular",
+    13px/1.6 "SFMono-Regular",
     Consolas,
     monospace;
+  overflow-wrap: anywhere;
 }
 
 .state-transition > i {
-  color: #879189;
+  color: var(--ui-muted);
   font-size: 16px;
   font-style: normal;
 }
@@ -1543,13 +1542,13 @@
 
 .defense-player b {
   color: #176b45;
-  font-size: 8px;
+  font-size: 12px;
 }
 
 .defense-player small {
   width: 100%;
   overflow: hidden;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 650;
   text-align: center;
   text-overflow: ellipsis;
@@ -1557,7 +1556,26 @@
 }
 
 .defense-player.empty {
-  opacity: 0.38;
+  color: var(--ui-muted);
+  background: #f5f7f6;
+}
+
+.replay-raw-details {
+  margin-top: 12px;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.replay-raw-details summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.replay-raw-details pre {
+  max-height: 240px;
+  overflow: auto;
+  color: var(--ui-ink);
+  font-size: 12px;
 }
 
 .defense-player.left-field {
@@ -1616,7 +1634,7 @@
   border: 1px solid #dfe3e0;
   border-radius: 4px;
   background: #f8f9f8;
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .defense-extras b {
@@ -1636,7 +1654,7 @@
 .strike-zone-wrap figcaption {
   color: #69736d;
   font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 9px;
+  font-size: 12px;
   text-align: center;
 }
 
@@ -1689,7 +1707,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .tracking-list article > header > div {
@@ -1701,7 +1719,7 @@
 .tracking-list article > header span,
 .tracking-matchup {
   color: #69736d;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .tracking-matchup {
@@ -1732,7 +1750,7 @@
   padding: 7px 0;
   gap: 8px;
   border-bottom: 1px solid #e9ecea;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .tracking-metrics dt {
@@ -1746,6 +1764,32 @@
   text-align: right;
 }
 
+.tracking-unit-note,
+.tracking-coefficients {
+  color: var(--ui-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.tracking-unit-note {
+  margin: 12px 0;
+}
+
+.tracking-coefficients {
+  padding-top: 12px;
+  border-top: 1px solid var(--ui-line);
+}
+
+.tracking-coefficients summary {
+  cursor: pointer;
+}
+
+.tracking-coefficients h4 {
+  margin: 14px 0 6px;
+  color: var(--ui-ink);
+  font-size: 13px;
+}
+
 .tracking-plot-empty {
   display: grid;
   min-height: 220px;
@@ -1754,7 +1798,7 @@
   border: 1px dashed #d8ded9;
   color: #69736d;
   background: #f8faf8;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.55;
   text-align: center;
 }
@@ -1774,4 +1818,10 @@
   margin: -1px;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
+}
+.replay-analysis-return {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
 }

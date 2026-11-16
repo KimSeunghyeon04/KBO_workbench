@@ -1,6 +1,8 @@
+import { AnalysisEvidenceLink } from "./analysis-evidence-link";
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import type { BatterProfileResponse } from "@kbo/contracts";
+import { plateResultLabel } from "../events/relay-text";
+import { replayEvidenceUrl } from "../replay/evidence-target";
 
 export function TerminalBattingPanel({
   data,
@@ -14,7 +16,6 @@ export function TerminalBattingPanel({
     <section className="panel outcome-terminal-panel">
       <div className="analysis-panel-heading">
         <div>
-          <span className="analysis-kicker">PLATE APPEARANCES</span>
           <h2>종결 구종 기준 타석 성적</h2>
         </div>
         <span className="analysis-context-tag">투구 조건과 별도 집계</span>
@@ -70,13 +71,13 @@ export function TerminalBattingPanel({
         <ul className="outcome-terminal-records">
           {rows.slice(page * 20, page * 20 + 20).map((r) => (
             <li key={JSON.stringify([r.gameId, r.revision, r.paId])}>
-              <Link
-                to={`/replay?${new URLSearchParams({ gameId: r.gameId, revision: String(r.revision) })}`}
+              <AnalysisEvidenceLink
+                to={replayEvidenceUrl(r.gameId, r.revision, { kind: "pa", id: r.paId })}
               >
                 <time>{r.gameDate}</time>
-                <span>{r.result}</span>
-                <span>경기 재생 r{r.revision} ↗</span>
-              </Link>
+                <span>{plateResultLabel(r.result)}</span>
+                <span>타석 장면 r{r.revision} ↗</span>
+              </AnalysisEvidenceLink>
               <details className="outcome-pitch-id">
                 <summary>타석 ID</summary>
                 <code>{r.paId}</code>

@@ -12,9 +12,15 @@ import type {
 
 import { REPLAY_SPEEDS, strikeZonePlot, type StrikeZonePlot } from "../replay/playback";
 import { GamePicker } from "../replay/replay-game-picker";
+import { PlaybackIcon } from "../replay/playback-icon";
 import { useReplayPageController } from "../replay/use-replay-page-controller";
+import { formatStatNumber } from "../analysis/statistics-format";
+import { Link, useLocation } from "react-router-dom";
+import { readAnalysisReturnTo } from "../analysis/analysis-evidence-link";
 
 export function ReplayPage(): React.JSX.Element {
+  const location = useLocation();
+  const analysisReturnTo = readAnalysisReturnTo(location.state);
   const {
     games,
     stored,
@@ -47,6 +53,7 @@ export function ReplayPage(): React.JSX.Element {
     selectedGame,
     loadedReplay,
     loadSelectedReplay,
+    evidenceNotice,
     frame,
     state,
   } = useReplayPageController();
@@ -55,14 +62,23 @@ export function ReplayPage(): React.JSX.Element {
       <header className="page-header">
         <div>
           <h1>경기 재생</h1>
-          <p>DB에 materialize된 원자적 play를 한 frame씩 재생합니다.</p>
+          <p>저장된 경기의 투구와 플레이를 장면별로 살펴봅니다.</p>
         </div>
         {loadedReplay === undefined ? null : (
           <span className="status-badge healthy">
-            revision {String(loadedReplay.manifest.revision)}
+            기록 버전 {String(loadedReplay.manifest.revision)}
           </span>
         )}
       </header>
+
+      {analysisReturnTo !== null && (
+        <nav className="replay-analysis-return" aria-label="분석 복귀">
+          <Link className="secondary-button" to={analysisReturnTo}>
+            분석으로 돌아가기
+          </Link>
+          <span className="muted-text">선택한 선수·조회 조건 유지</span>
+        </nav>
+      )}
 
       <section
         className={`panel replay-source-bar${loadedReplay === undefined ? "" : " compact"}`}
@@ -116,6 +132,7 @@ export function ReplayPage(): React.JSX.Element {
         <div className="error-panel">{revisions.error.message}</div>
       ) : null}
       {replay.error !== null ? <div className="error-panel">{replay.error.message}</div> : null}
+      {evidenceNotice && <p role="status">{evidenceNotice}</p>}
 
       {loadedReplay === undefined ? (
         <ReplayEmptyState
@@ -171,11 +188,11 @@ function ReplaySummary({ manifest }: { readonly manifest: ReplayManifest }): Rea
       </strong>
       <span>{formatGameDate(manifest.gameDate)}</span>
       <span>{gameStatusLabel(manifest.status)}</span>
-      <span>frame {String(manifest.frameCount)}</span>
-      <span>tracking {String(manifest.trackingCount)}</span>
+      <span>{manifest.frameCount.toLocaleString()}장면</span>
+      <span>트래킹 {manifest.trackingCount.toLocaleString()}개</span>
       {manifest.warningCount > 0 ? <span>경고 {String(manifest.warningCount)}</span> : null}
       {manifest.unlinkedTracking.length > 0 ? (
-        <span>미연결 tracking {String(manifest.unlinkedTracking.length)}</span>
+        <span>미연결 트래킹 {manifest.unlinkedTracking.length.toLocaleString()}개</span>
       ) : null}
     </div>
   );
@@ -192,11 +209,12 @@ function ReplayEmptyState({
   readonly sourceReady: boolean;
   readonly loadingReplay: boolean;
 }): React.JSX.Element {
-  let message = "DB 경기와 revision을 선택하세요.";
-  if (loadingGames) message = "DB 경기 목록을 불러오는 중입니다.";
-  else if (storedCount === 0) message = "재생할 seal된 DB 경기가 없습니다.";
-  else if (loadingReplay) message = "manifest와 모든 replay frame을 검증하는 중입니다.";
-  else if (sourceReady) message = "재생 불러오기를 눌러 frame을 준비하세요.";
+  let message = "경기와 기록 버전을 선택하세요.";
+  if (loadingGames) message = "저장된 경기 목록을 불러오는 중입니다.";
+  else if (storedCount === 0)
+    message = "재생할 경기가 없습니다. 검증된 경기를 DB에 저장한 뒤 다시 확인하세요.";
+  else if (loadingReplay) message = "경기 기록을 불러오고 무결성을 확인하고 있습니다.";
+  else if (sourceReady) message = "선택 경기 재생을 누르면 경기 장면을 살펴볼 수 있습니다.";
   return (
     <section className="panel replay-empty" role="status">
       {message}
@@ -328,7 +346,7 @@ function PlaybackControls({
           disabled={index <= 0}
           onClick={() => onIndexChange(0)}
         >
-          <span aria-hidden="true">↤</span>
+          <PlaybackIcon name="first" />
           <small>처음</small>
         </button>
         <button
@@ -337,7 +355,7 @@ function PlaybackControls({
           disabled={index <= 0}
           onClick={() => onIndexChange(Math.max(0, index - 1))}
         >
-          <span aria-hidden="true">‹</span>
+          <PlaybackIcon name="previous" />
           <small>이전</small>
         </button>
         <button
@@ -355,7 +373,7 @@ function PlaybackControls({
             onPlayingChange(true);
           }}
         >
-          <span aria-hidden="true">{playing ? "Ⅱ" : "▶"}</span>
+          <PlaybackIcon name={playing ? "pause" : "play"} />
           <small>{playing ? "일시정지" : "재생"}</small>
         </button>
         <button
@@ -364,7 +382,7 @@ function PlaybackControls({
           disabled={index < 0 || index >= lastIndex}
           onClick={() => onIndexChange(Math.min(lastIndex, index + 1))}
         >
-          <span aria-hidden="true">›</span>
+          <PlaybackIcon name="next" />
           <small>다음</small>
         </button>
         <button
@@ -373,7 +391,7 @@ function PlaybackControls({
           disabled={index < 0 || index >= lastIndex}
           onClick={() => onIndexChange(lastIndex)}
         >
-          <span aria-hidden="true">↦</span>
+          <PlaybackIcon name="last" />
           <small>끝</small>
         </button>
       </div>
@@ -433,7 +451,7 @@ function FrameView({ frame }: { readonly frame: ReplayFrame | null }): React.JSX
               </strong>
             </div>
             <span className={frame.applied ? "applied" : "blocked"}>
-              {frame.applied ? "상태에 원자적으로 적용됨" : "compile에서 적용 차단됨"}
+              {frame.applied ? "상태에 원자적으로 적용됨" : "원장 계산에서 적용 차단됨"}
             </span>
           </div>
           <ol className="replay-relay-rows">
@@ -450,7 +468,7 @@ function FrameView({ frame }: { readonly frame: ReplayFrame | null }): React.JSX
                       · {item.pitch?.pitchType ?? "구종 미제공"} ·{" "}
                       {item.pitch?.speedKph === undefined
                         ? "구속 미제공"
-                        : String(item.pitch.speedKph) + " km/h"}
+                        : `${formatStatNumber(item.pitch.speedKph, 1)} km/h`}
                     </small>
                   ) : null}
                 </span>
@@ -458,6 +476,20 @@ function FrameView({ frame }: { readonly frame: ReplayFrame | null }): React.JSX
             ))}
           </ol>
           {frame.movements.length > 0 ? <MovementList movements={frame.movements} /> : null}
+          {frame.relayEvents.some((item) => item.pitch !== undefined) ? (
+            <details className="replay-raw-details">
+              <summary>투구 원시 값</summary>
+              <pre>
+                {JSON.stringify(
+                  frame.relayEvents.flatMap((item) =>
+                    item.pitch === undefined ? [] : [{ eventId: item.eventId, ...item.pitch }],
+                  ),
+                  null,
+                  2,
+                )}
+              </pre>
+            </details>
+          ) : null}
         </>
       )}
     </section>
@@ -527,12 +559,12 @@ function StateView({
         <>
           <div className="state-transition" aria-label="플레이 전후 상태">
             <div>
-              <span>BEFORE</span>
+              <span>플레이 전</span>
               <strong>{frame === null ? "-" : stateText(frame.before)}</strong>
             </div>
             <i aria-hidden="true">→</i>
             <div className="current">
-              <span>AFTER</span>
+              <span>플레이 후</span>
               <strong>{frame === null ? stateText(state) : stateText(frame.after)}</strong>
             </div>
           </div>
@@ -643,11 +675,11 @@ function TrackingView({ frame }: { readonly frame: ReplayFrame | null }): React.
   return (
     <section className="panel replay-tracking-detail">
       <div className="panel-title-row">
-        <h2>Tracking</h2>
+        <h2>트래킹 관측</h2>
         <span>{String(frame?.tracking.length ?? 0)}건</span>
       </div>
       {frame === null || frame.tracking.length === 0 ? (
-        <p className="muted-text tracking-empty">현재 frame에 연결된 tracking 관측이 없습니다.</p>
+        <p className="muted-text tracking-empty">현재 장면에 연결된 트래킹 관측이 없습니다.</p>
       ) : (
         <div className="tracking-list">
           {frame.tracking.map((observation, index) => (
@@ -694,6 +726,23 @@ function TrackingCandidateView({
         )}
         <MetricList metrics={metrics} />
       </div>
+      <p className="tracking-unit-note">
+        플레이트 기준 Y는 높이가 아닌 종방향 좌표입니다. 길이 단위 ft는 피트입니다.
+      </p>
+      <details className="tracking-coefficients">
+        <summary>트래킹 궤적 계수와 단위</summary>
+        <p>원천 관측값입니다. 위치는 ft, 속도는 ft/s, 가속도는 ft/s²로 표시합니다.</p>
+        {trackingCoefficientGroups(observation).map((group) => (
+          <section key={group.title} aria-label={group.title}>
+            <h4>{group.title}</h4>
+            <MetricList metrics={group.metrics} />
+          </section>
+        ))}
+      </details>
+      <details className="replay-raw-details">
+        <summary>트래킹 원시 값</summary>
+        <pre>{JSON.stringify(observation, null, 2)}</pre>
+      </details>
     </article>
   );
 }
@@ -778,21 +827,44 @@ interface TrackingMetricEntry {
 
 function trackingMetricEntries(observation: ReplayTrackingCandidate): TrackingMetricEntry[] {
   return [
-    ["stance", observation.stance],
-    ["x0", observation.x0],
-    ["y0", observation.y0],
-    ["z0", observation.z0],
-    ["vx0", observation.vx0],
-    ["vy0", observation.vy0],
-    ["vz0", observation.vz0],
-    ["ax", observation.ax],
-    ["ay", observation.ay],
-    ["az", observation.az],
-    ["crossPlateX", observation.crossPlateX],
-    ["crossPlateY", observation.crossPlateY],
-    ["존 기준 연도", observation.strikeZone?.ruleYear ?? null],
-    ["타자 키 (cm)", observation.strikeZone?.batterHeightCm ?? null],
-  ].map(([key, value]) => ({ key: String(key), value: value as string | number | null }));
+    { key: "타석 방향 (stance)", value: observation.stance },
+    { key: "플레이트 가로 X (ft)", value: observation.crossPlateX },
+    { key: "플레이트 기준 Y (ft)", value: observation.crossPlateY },
+    { key: "존 기준 연도", value: observation.strikeZone?.ruleYear ?? "계산 불가" },
+    { key: "타자 키 (cm)", value: observation.strikeZone?.batterHeightCm ?? "미제공" },
+  ];
+}
+
+function trackingCoefficientGroups(observation: ReplayTrackingCandidate): readonly {
+  readonly title: string;
+  readonly metrics: readonly TrackingMetricEntry[];
+}[] {
+  return [
+    {
+      title: "기준 시점 위치",
+      metrics: [
+        { key: "x0 (ft)", value: observation.x0 },
+        { key: "y0 (ft)", value: observation.y0 },
+        { key: "z0 (ft)", value: observation.z0 },
+      ],
+    },
+    {
+      title: "기준 시점 속도",
+      metrics: [
+        { key: "vx0 (ft/s)", value: observation.vx0 },
+        { key: "vy0 (ft/s)", value: observation.vy0 },
+        { key: "vz0 (ft/s)", value: observation.vz0 },
+      ],
+    },
+    {
+      title: "가속도",
+      metrics: [
+        { key: "ax (ft/s²)", value: observation.ax },
+        { key: "ay (ft/s²)", value: observation.ay },
+        { key: "az (ft/s²)", value: observation.az },
+      ],
+    },
+  ];
 }
 
 const DEFENSE_SLOTS = [
@@ -940,7 +1012,7 @@ function formatObservedAt(value: string | null): string {
 }
 
 function formatMetricValue(value: string | number | boolean | null): string {
-  if (value === null) return "null";
+  if (value === null) return "미제공";
   if (typeof value === "boolean") return value ? "true" : "false";
   return String(value);
 }

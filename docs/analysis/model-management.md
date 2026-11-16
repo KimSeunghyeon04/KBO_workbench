@@ -49,6 +49,30 @@ RE24 → 카운트 → 승리확률 → 구장 → 구질 → 매치업 순서�
 활성 시즌을 순서대로 점검한다. 이전 시즌 작업을 마친 뒤 다음 시즌을 실행해 worker·메모리 사용을
 겹치지 않는다. 실패 재시도도 다음 점검까지 기다린다. 화면의 시즌 선택만으로 설정이 바뀌지 않는다.
 
+## 오프라인 CLI
+
+CLI를 직접 실행할 때는 API writer를 종료하고 실행한다. 먼저 필요한 각 시즌의 공식 경기 종류를
+검증·채택해야 정규시즌 학습 표본이 생긴다. 다음은 2025 적용 모델을 위한 확인 예시다.
+
+```powershell
+pnpm analysis:sync-competition --season 2025 --dry-run
+pnpm analysis:train-run-expectancy --through 2024 --dry-run
+pnpm analysis:train-count-expectancy --through 2024 --dry-run
+pnpm analysis:train-win-probability --through 2024 --dry-run
+pnpm analysis:train-park-environment --through 2024 --dry-run
+pnpm analysis:train-pitch-quality --through 2024 --dry-run
+pnpm analysis:train-matchup --through 2024 --dry-run
+```
+
+`--dry-run`은 분류 채택이나 모델 파일 공개를 하지 않는다. 실제 저장은 해당 인자를 빼고 실행하며,
+원천 manifest와 모델은 workspace `analysis/`에 hash와 함께 보존한다. 선행 학습 시즌도 필요한
+공식 경기 분류를 채택해야 한다. 매치업 학습 전에는 같은 원천의 구종 기대 효과 모델이 준비되어야 한다.
+기준 미달 모델은 새 예측값으로 공개하지 않는다.
+
+격리 DB에서 분류·학습·성능을 재현하는 `pnpm analysis:validate`와 후속
+`pnpm analysis:audit --run analysis/validation/<UUID>`의 인자·재개·정리 절차는
+[실데이터 검증](real-data-validation.md)에 있다. 운영 workspace에 모델을 공개하는 절차와 구분한다.
+
 ## 작업 메타데이터 계약 결정
 
 시즌을 작업 identity에 추가하기 위해 작업·자동 갱신 파일을 **version 2**로 명시적으로 확장했다.

@@ -207,7 +207,6 @@
   display: block;
   height: 100%;
   background: #23835a;
-  transition: width 180ms ease;
 }
 
 .job-summary {
@@ -323,7 +322,6 @@
   padding: 12px 14px;
   gap: 10px;
   border: 1px solid #d5ded8;
-  border-left: 3px solid #18794e;
   border-radius: 4px;
   background: #f5f9f6;
 }

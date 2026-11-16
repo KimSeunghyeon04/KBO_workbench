@@ -47,9 +47,9 @@ export function PitchTrackingDetail({
   const needsReview = candidates.some((candidate) => candidate.resolution.kind === "pending");
 
   return (
-    <section className="pitch-tracking-detail" aria-label="선택한 투구 tracking">
+    <section className="pitch-tracking-detail" aria-label="선택한 투구 트래킹 관측">
       <div className="panel-title-row">
-        <h3>{pitchEventId === null ? "원천 tracking 예외" : "연결된 tracking"}</h3>
+        <h3>{pitchEventId === null ? "연결되지 않은 트래킹 관측" : "연결된 트래킹 관측"}</h3>
         <span>
           {String(candidates.length)}개 관측 · {needsReview ? "교정 필요" : "자동 정리됨"}
         </span>
@@ -218,7 +218,7 @@ function buildPitchChoices(
             ? "실제 순번 미확인"
             : `실제 ${String(pitch.actualPitchNumber)}구`,
           pitchCallLabel(pitch?.call ?? event.payload.call),
-          `source ID ${pitch?.sourcePitchId ?? event.payload.sourcePitchId ?? "없음"}`,
+          `원천 투구 ID ${pitch?.sourcePitchId ?? event.payload.sourcePitchId ?? "없음"}`,
         ].join(" · "),
       },
     ];

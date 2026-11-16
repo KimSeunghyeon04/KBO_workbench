@@ -1,10 +1,12 @@
+import { AnalysisEvidenceLink } from "../analysis/analysis-evidence-link";
 import { PitchQualityPanel } from "../analysis/pitch-quality-panel";
 import { PitchAnglesPanel } from "../analysis/pitch-angles-panel";
 import { PitchProfilePanel } from "../analysis/pitch-profile-panel";
 import { canonicalStringify, resolveAnalysisScope } from "@kbo/contracts";
 import { AnalysisScopeFields, analysisScopeSummary } from "../analysis/analysis-scope-fields";
 import { AnalysisFilterBar } from "../analysis/analysis-filter-bar";
-import { scopeFromParams } from "../analysis/analysis-scope";
+import { AnalysisQueryError } from "../analysis/analysis-query-error";
+import { changeAnalysisParams, scopeFromParams } from "../analysis/analysis-scope";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -15,6 +17,7 @@ import { pitcherCatalogQueryOptions } from "../api/analysis-catalog-query-option
 import { PitchShapeChart, signed } from "../analysis/pitch-shape-chart";
 import { PitchExpectationPanel, referenceBandLabel } from "../analysis/pitch-expectation-panel";
 import { groupLabel, pointColor, type ColorMode } from "../analysis/pitch-presentation";
+import { replayEvidenceUrl } from "../replay/evidence-target";
 import "../styles/pitch-analysis.css";
 
 const pitchKey = (point: PitchAnalysisPoint): string =>
@@ -33,10 +36,10 @@ export function PitchAnalysisPage(): React.JSX.Element {
     enabled: scope.error === null,
   });
   const requestedPitcher = params.get("pitcher") ?? "";
-  const pitcher =
-    catalog.data?.pitchers.find((item) => item.pitcherId === requestedPitcher) ??
-    catalog.data?.pitchers[0];
-  const pitcherId = pitcher?.pitcherId ?? "";
+  const pitcher = requestedPitcher
+    ? catalog.data?.pitchers.find((item) => item.pitcherId === requestedPitcher)
+    : catalog.data?.pitchers[0];
+  const pitcherId = requestedPitcher || pitcher?.pitcherId || "";
   const countParam = params.get("clusterCount");
   const requestedCount = countParam === null ? undefined : Number(countParam);
   const invalidCount =
@@ -103,22 +106,17 @@ export function PitchAnalysisPage(): React.JSX.Element {
     : (points.find((point) => pitchKey(point) === selectedKey) ?? null);
   const data = analysis.data;
   const baseline = data?.baseline;
-  const error = catalog.error ?? analysis.error;
-  const scopeSummary = analysisScopeSummary(params);
+  const scopeSummary = [
+    analysisScopeSummary(params),
+    ...(filter === "" ? [] : [colorMode === "cluster" ? `표시: ${filter}` : `구종: ${filter}`]),
+  ].join(" · ");
   function change(key: string, value: string): void {
-    const next = new URLSearchParams(params);
-    if (value === "") next.delete(key);
-    else next.set(key, value);
+    const next = changeAnalysisParams(params, key, value, { pitcher: pitcherId });
     if (key === "clusterCount") {
       if (value === "") next.delete("clusterCount");
       next.delete("cluster");
     }
     if (key === "season" || key === "pitcher") next.delete("clusterCount");
-    if (key === "season") {
-      next.delete("pitcher");
-      next.delete("dateFrom");
-      next.delete("dateTo");
-    }
     if (["competition", "dateFrom", "dateTo"].includes(key)) {
       next.delete("clusterCount");
       next.delete("cluster");
@@ -139,11 +137,8 @@ export function PitchAnalysisPage(): React.JSX.Element {
         </div>
       </header>
       {scope.error && <p role="alert">{scope.error}</p>}
-      <p>
-        기준 포심과 구장 보정은 같은 시즌·경기 종류 전체를 사용합니다. 기간은 대상 투구에
-        적용합니다.
-      </p>
       <AnalysisFilterBar
+        collapsible={true}
         label="분석 대상"
         summary={scopeSummary}
         advanced={<AnalysisScopeFields params={params} onChange={change} />}
@@ -170,6 +165,9 @@ export function PitchAnalysisPage(): React.JSX.Element {
             onChange={(event) => change("pitcher", event.target.value)}
             disabled={catalog.isPending}
           >
+            {requestedPitcher && !pitcher && (
+              <option value={requestedPitcher}>ID {requestedPitcher} · 해당 범위 기록 없음</option>
+            )}
             {catalog.data?.pitchers.map((item) => (
               <option key={item.pitcherId} value={item.pitcherId}>
                 {item.name} · {item.pitches.toLocaleString()}구
@@ -178,9 +176,10 @@ export function PitchAnalysisPage(): React.JSX.Element {
           </select>
         </label>
         <label>
-          {colorMode === "cluster" ? "클러스터" : "구종"}
+          산점도·기대 차이 표 {colorMode === "cluster" ? "클러스터" : "구종"}
           <select
             aria-label={colorMode === "cluster" ? "분석 클러스터" : "분석 구종"}
+            aria-describedby="pitch-shape-filter-scope"
             value={filter}
             onChange={(event) =>
               change(colorMode === "cluster" ? "cluster" : "type", event.target.value)
@@ -204,6 +203,9 @@ export function PitchAnalysisPage(): React.JSX.Element {
           새로 계산
         </button>
       </AnalysisFilterBar>
+      <p id="pitch-shape-filter-scope" className="analysis-caption">
+        구종·클러스터 선택은 산점도와 기대 차이 표에만 적용합니다.
+      </p>
       {invalidCount && (
         <p role="alert" className="panel">
           군집 수는 양의 정수여야 합니다.{" "}
@@ -212,16 +214,16 @@ export function PitchAnalysisPage(): React.JSX.Element {
           </button>
         </p>
       )}
-      {error !== null && (
-        <p role="alert" className="panel">
-          {error.message}
-          {countParam !== null && (
-            <button type="button" onClick={() => change("clusterCount", "")}>
-              중계 구종 수로 초기화
-            </button>
-          )}
-        </p>
-      )}
+      <AnalysisQueryError
+        queries={[catalog, analysis]}
+        enabled={!invalidCount && scope.error === null}
+      >
+        {countParam !== null && (
+          <button type="button" onClick={() => change("clusterCount", "")}>
+            중계 구종 수로 초기화
+          </button>
+        )}
+      </AnalysisQueryError>
       {catalog.isLoading || analysis.isLoading ? (
         <p role="status" className="panel">
           시즌 평균 포심과 투구 궤적을 계산하는 중입니다.
@@ -233,40 +235,16 @@ export function PitchAnalysisPage(): React.JSX.Element {
       {data !== undefined && baseline === null && (
         <p className="panel">계산 가능한 직구가 없어 시즌 기준 궤적을 만들 수 없습니다.</p>
       )}
-      {data !== undefined && (
-        <section className="panel" aria-label="분석 표본 범위">
-          <p>
-            수집 경기 기준 · 대상 실제 투구 {data.actualPitchCount.toLocaleString()}구 · 표시 가능한
-            구질 {data.points.length.toLocaleString()}구
-          </p>
-          <p>
-            트래킹 누락 {data.missingTrackingCount.toLocaleString()}구 · 궤적 부적합{" "}
-            {data.invalidTrackingCount.toLocaleString()}구 · 기준 미확보{" "}
-            {Math.max(
-              0,
-              data.actualPitchCount -
-                data.missingTrackingCount -
-                data.invalidTrackingCount -
-                data.points.length,
-            ).toLocaleString()}
-            구
-          </p>
-          <p>
-            시즌 포심 기준 {baseline?.sampleCount.toLocaleString() ?? "0"}구 / 후보{" "}
-            {baseline?.candidateCount.toLocaleString() ?? "0"}구
-          </p>
-          <Link to={`/analysis/coverage?season=${season}`}>시즌 전체 자료 품질 확인</Link>
-        </section>
-      )}
       {baseline !== null && baseline !== undefined && data !== undefined && (
         <>
           <section className="panel pitch-analysis-main">
             <header className="pitch-analysis-heading">
               <div>
-                <span className="pitch-analysis-eyebrow">{season} 시즌 기준</span>
-                <h2>
-                  {pitcher?.name} <span>· 포심 대비 위치</span>
-                </h2>
+                <h2>포심 대비 위치</h2>
+                <p className="analysis-caption">
+                  대상 {data.actualPitchCount.toLocaleString()}구 중{" "}
+                  {data.points.length.toLocaleString()}구 표시 가능
+                </p>
               </div>
               <div className="pitch-reference-time">
                 <strong>
@@ -472,6 +450,14 @@ export function PitchAnalysisPage(): React.JSX.Element {
                       ? "구장 보정 미적용 · 비교 자료가 없는 구장"
                       : "구장 보정 미적용 · 이전 경기 표본 부족"}
                 </p>
+                <AnalysisEvidenceLink
+                  to={replayEvidenceUrl(active.gameId, active.revision, {
+                    kind: "event",
+                    id: active.pitchId,
+                  })}
+                >
+                  선택한 투구 재생
+                </AnalysisEvidenceLink>
                 <span className="pitch-source-id">
                   {active.gameId} · revision {active.revision} · {active.pitchId}
                 </span>
@@ -519,7 +505,45 @@ export function PitchAnalysisPage(): React.JSX.Element {
           </details>
         </>
       )}
-      {data && <PitchProfilePanel profile={data.profile} />}
+      {data !== undefined && (
+        <details className="panel analysis-disclosure" aria-label="분석 표본 범위">
+          <summary>표본과 구장 보정 기준</summary>
+          <p>
+            기준 포심과 구장 보정은 같은 시즌·경기 종류 전체를 사용합니다. 기간은 대상 투구에
+            적용합니다.
+          </p>
+          <p>
+            수집 경기 기준 · 대상 실제 투구 {data.actualPitchCount.toLocaleString()}구 · 표시 가능한
+            구질 {data.points.length.toLocaleString()}구
+          </p>
+          <p>
+            트래킹 누락 {data.missingTrackingCount.toLocaleString()}구 · 궤적 부적합{" "}
+            {data.invalidTrackingCount.toLocaleString()}구 · 기준 미확보{" "}
+            {Math.max(
+              0,
+              data.actualPitchCount -
+                data.missingTrackingCount -
+                data.invalidTrackingCount -
+                data.points.length,
+            ).toLocaleString()}
+            구
+          </p>
+          <p>
+            시즌 포심 기준 {baseline?.sampleCount.toLocaleString() ?? "0"}구 / 후보{" "}
+            {baseline?.candidateCount.toLocaleString() ?? "0"}구
+          </p>
+          <Link to={`/analysis/coverage?season=${season}`}>시즌 전체 자료 품질 확인</Link>
+        </details>
+      )}
+      {data && (
+        <>
+          <p className="analysis-caption">
+            아래 프로필·진입각·기대 효과는 같은 선수·시즌·경기 범위의 전체 구종입니다. 상단
+            구종·클러스터 선택은 적용하지 않습니다.
+          </p>
+          <PitchProfilePanel profile={data.profile} />
+        </>
+      )}
       {data && !updating && (
         <PitchAnglesPanel
           pitcherId={pitcherId}

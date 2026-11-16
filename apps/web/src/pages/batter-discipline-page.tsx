@@ -1,8 +1,9 @@
 import { AnalysisScopeFields, analysisScopeSummary } from "../analysis/analysis-scope-fields";
 import { AnalysisFilterBar } from "../analysis/analysis-filter-bar";
-import { scopeFromParams } from "../analysis/analysis-scope";
+import { changeAnalysisParams, scopeFromParams } from "../analysis/analysis-scope";
 import { DisciplinePeriodComparison } from "../analysis/discipline-period-comparison";
 import { useQuery } from "@tanstack/react-query";
+import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { DisciplineQuerySchema, type DisciplinePoint } from "@kbo/contracts";
@@ -50,10 +51,10 @@ export function BatterDisciplinePage() {
     requested === null
       ? catalog.data?.batters[0]
       : catalog.data?.batters.find((b) => b.batterId === requested);
-  const batterId = batter?.batterId ?? "";
+  const batterId = requested ?? batter?.batterId ?? "";
   const analysis = useQuery({
     queryKey: ["batter-discipline", batterId, candidate],
-    enabled: valid && batterId !== "",
+    enabled: valid && batter !== undefined,
     queryFn: ({ signal }) => {
       if (!Value.Check(DisciplineQuerySchema, candidate))
         throw new Error("잘못된 선구안 필터입니다.");
@@ -74,6 +75,7 @@ export function BatterDisciplinePage() {
     analysisScopeSummary(params),
     ...(params.has("balls") ? [`${params.get("balls")}볼`] : []),
     ...(params.has("strikes") ? [`${params.get("strikes")}스트라이크`] : []),
+    ...(params.has("pitchType") ? [`구종: ${params.get("pitchType")}`] : []),
     ...(params.has("stance")
       ? [
           params.get("stance") === "L"
@@ -90,10 +92,12 @@ export function BatterDisciplinePage() {
       : "리그 비교: 시즌 전체",
   ].join(" · ");
   function change(key: string, value: string) {
-    const next = new URLSearchParams(params);
+    const next = changeAnalysisParams(params, key, value, { batter: batterId });
     if (key === "reset") {
+      next.delete("reset");
       for (const k of ["balls", "strikes", "pitchType", "stance"]) next.delete(k);
     } else if (key === "count") {
+      next.delete("count");
       next.delete("balls");
       next.delete("strikes");
       if (value !== "") {
@@ -101,14 +105,8 @@ export function BatterDisciplinePage() {
         if (balls !== undefined && balls !== "*") next.set("balls", balls);
         if (strikes !== undefined && strikes !== "*") next.set("strikes", strikes);
       }
-    } else {
-      if (value === "") next.delete(key);
-      else next.set(key, value);
     }
     if (key === "season") {
-      next.delete("batter");
-      next.delete("dateFrom");
-      next.delete("dateTo");
       next.delete("compareFrom");
       next.delete("compareTo");
     }
@@ -134,6 +132,7 @@ export function BatterDisciplinePage() {
       </p>
       {scope.error && <p role="alert">{scope.error}</p>}
       <AnalysisFilterBar
+        collapsible={true}
         label="선구안 분석 조건"
         summary={scopeSummary}
         advanced={
@@ -226,7 +225,11 @@ export function BatterDisciplinePage() {
             disabled={catalog.isPending}
             onChange={(e) => change("batter", e.target.value)}
           >
-            {!batter && <option value="">타자를 선택하세요</option>}
+            {!batter && (
+              <option value={batterId}>
+                {batterId ? `선택 타자 ${batterId}` : "타자를 선택하세요"}
+              </option>
+            )}
             {catalog.data?.batters.map((b) => (
               <option key={b.batterId} value={b.batterId}>
                 {b.name} · {b.pitches.toLocaleString()}구
@@ -254,21 +257,8 @@ export function BatterDisciplinePage() {
         </label>
       </AnalysisFilterBar>
       {!valid && <p role="alert">분석 조건이 올바르지 않습니다. 조건 초기화로 다시 시작하세요.</p>}
-      {(catalog.error || analysis.error) && (
-        <div className="panel" role="alert">
-          {(catalog.error ?? analysis.error)?.message}
-          <button
-            type="button"
-            onClick={() => {
-              void catalog.refetch();
-              void analysis.refetch();
-            }}
-          >
-            다시 시도
-          </button>
-        </div>
-      )}
-      {catalog.isPending || (valid && batterId !== "" && analysis.isPending) ? (
+      <AnalysisQueryError queries={[catalog, analysis]} enabled={valid} />
+      {catalog.isPending || (valid && batter !== undefined && analysis.isPending) ? (
         <p className="panel" role="status">
           선구안 분석 중입니다. 시즌 첫 조회는 조금 걸릴 수 있습니다.
         </p>
@@ -277,16 +267,10 @@ export function BatterDisciplinePage() {
         <p className="panel">이 시즌에 저장된 타자 투구가 없습니다.</p>
       )}
       {requested !== null && catalog.isSuccess && batter === undefined && (
-        <p role="alert">이 시즌에서 요청한 타자를 찾을 수 없습니다.</p>
+        <p role="status">선택한 타자(ID {batterId})의 실제 투구가 이 조회 범위에 없습니다.</p>
       )}
       {valid && data && (
         <>
-          <DisciplinePeriodComparison
-            data={data}
-            params={params}
-            onChange={change}
-            onRefresh={() => void analysis.refetch()}
-          />
           <div className="discipline-metrics">
             <div>
               <span>기존 코스 · 존 판정 가능</span>
@@ -322,10 +306,8 @@ export function BatterDisciplinePage() {
           {data.coverage.locationPitches === 0 && (
             <p className="panel">선택 조건에서 코스를 계산할 수 있는 투구가 없습니다.</p>
           )}
-          <DisciplineCourseComparison data={data} />
           <div className="discipline-columns">
             <section className="panel discipline-panel">
-              <span className="pitch-analysis-eyebrow">01 · 실제 코스</span>
               <h2>어디에 오는 공에 반응했나</h2>
               <div className="discipline-toggle" aria-label="지도 표시">
                 <button type="button" aria-pressed={!difference} onClick={() => change("map", "")}>
@@ -368,7 +350,6 @@ export function BatterDisciplinePage() {
               />
             </section>
             <section className="panel discipline-panel">
-              <span className="pitch-analysis-eyebrow">02 · 포심 가정 대비</span>
               <h2>예상 궤적에서 달라지면</h2>
               <p className="discipline-caption">
                 같은 출발 위치·방향에서 시즌 평균 포심이었다면 도착했을 위치와 비교합니다.
@@ -412,6 +393,13 @@ export function BatterDisciplinePage() {
               )}
             </section>
           </div>
+          <DisciplineCourseComparison data={data} />
+          <DisciplinePeriodComparison
+            data={data}
+            params={params}
+            onChange={change}
+            onRefresh={() => void analysis.refetch()}
+          />
           <section className="panel discipline-panel">
             <h2>포심 가정 → 실제 존 도착</h2>
             <p className="discipline-caption">

@@ -96,6 +96,26 @@ compiler의 공식 기록·경기 종료 검증을 생략하지 않는다. 비�
 없으면 그 표시들을 원문·identity·소스 위치가 있는 안내 행으로 보존한다. 실제 진행 행이나 미해결 종류가
 뒤따르면 이 예외를 적용하지 않는다. 단순 종료 footer만으로 교체·반이닝 경계를 무효화하지 않는다.
 
+## 브라우저 전송
+
+일정과 경기 원문 GET은 Playwright WebKit의 기본 headless 모드에서 API 주소를 직접 탐색한다.
+화면의 JSON 뷰어를 읽지 않고 실제 HTTP 응답의 status·URL·본문을 사용한다. 일정의 page 원문과
+정규화 결과는 기존 observer·hash 저장 경로로 전달하며, 비 JSON 오류 응답도 원문으로 남긴다.
+Chromium headless와 별도 APIRequestContext에서 응답이 끊기는 환경을 고려한 전송 경로다.
+
+한 일정 탐색 또는 경기 HTTP 클라이언트가 브라우저 한 개를 재사용하고, 요청마다 별도 context를
+열고 닫는다. 일정 탐색 종료 및 서버 수집 작업 종료 뒤 브라우저를 닫는다. 취소·시간 초과는 해당
+context만 닫으며 다른 경기 요청의 브라우저를 종료하지 않는다. 기존 경기별 bounded concurrency,
+요청 속도·재시도·응답 크기 제한과 JSON 검증은 유지한다. 차단 응답을 정상 빈 일정으로 바꾸지 않는다.
+`NaverHttpClient`를 직접 사용하는 호출자도 `finally`에서 `close()`로 브라우저를 정리한다.
+
+설정의 Playwright 진단은 실제 전송에 사용하는 WebKit 실행 파일을 검사한다. Docker 이미지에는
+WebKit이 포함되어 있으며 별도 display 서버를 요구하지 않는다. 호스트에서 서버를 직접 실행할 때는
+`pnpm --filter @kbo/collection exec playwright install webkit`로 같은 버전의 실행 파일을 준비한다.
+
+`packages/collection/tests/browser-transport.test.ts`는 실제 외부 요청 없이 비식별 일정 fixture와
+모의 브라우저로 pagination·원문·오류 분류·응답 크기·재시도·취소·시간 초과·자원 해제를 검증한다.
+
 ## 기간 현황과 영속 작업
 
 `CollectionOperationsService`는 일정 entries, workspace current 표시 요약, DB typed catalog를 결합한다.

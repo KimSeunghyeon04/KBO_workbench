@@ -30,17 +30,25 @@ export function scopeFromParams(
   return { options, error: null };
 }
 
+export type AnalysisPlayerSelection = Partial<Record<"pitcher" | "batter", string>>;
+
 export function changeAnalysisParams(
   params: URLSearchParams,
   key: string,
   value: string,
-  seasonSelectionKeys: readonly ("pitcher" | "batter")[] = [],
+  currentPlayers: AnalysisPlayerSelection = {},
 ): URLSearchParams {
   const next = new URLSearchParams(params);
   if (value === "") next.delete(key);
   else next.set(key, value);
   if (key === "season") {
-    for (const dependent of ["dateFrom", "dateTo", ...seasonSelectionKeys]) next.delete(dependent);
+    for (const dependent of ["dateFrom", "dateTo"]) next.delete(dependent);
+    // A legacy URL may omit the currently displayed default player. Make that
+    // selection explicit before the new season's catalog chooses another default.
+    for (const role of ["pitcher", "batter"] as const) {
+      const id = currentPlayers[role];
+      if (!next.has(role) && id) next.set(role, id);
+    }
   }
   return next;
 }

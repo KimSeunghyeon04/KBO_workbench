@@ -1,24 +1,23 @@
 import { PitcherScopeFields } from "../analysis/pitcher-scope-fields";
 import { PitchAnglesPanel } from "../analysis/pitch-angles-panel";
 import { useQuery } from "@tanstack/react-query";
+import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import { Link } from "react-router-dom";
 import { Value } from "@sinclair/typebox/value";
 import { PitcherChangesQuerySchema } from "@kbo/contracts";
 import { useAnalysisScope } from "../analysis/use-analysis-scope";
 import { pitcherCatalogQueryOptions } from "../api/analysis-catalog-query-options";
 import { getPitcherChanges } from "../api/pitcher-changes-client";
+import { PitcherChangeSummary } from "../analysis/pitcher-change-summary";
+import {
+  formatPitchChange,
+  pitchChangeInterval,
+  pitchChangeMetrics,
+} from "../analysis/pitch-change-metrics";
 import "../styles/pitch-analysis.css";
 const n = (v: number | null) => v?.toFixed(2) ?? "—";
-const labels = {
-  speedKph: "구속 km/h",
-  xCm: "보정 가로 cm",
-  zCm: "보정 세로 cm",
-  arrivalMs: "보정 도착 ms",
-  usage: "사용률",
-};
 export function PitcherChangesPage() {
   const { params, selected, season, scope, change } = useAnalysisScope({
-    seasonSelectionKeys: ["pitcher"],
     throughSeasonEnd: true,
   });
   const query = { season, ...scope.options, dateTo: selected.get("dateTo") ?? "" };
@@ -47,18 +46,18 @@ export function PitcherChangesPage() {
         params={selected}
         pitchers={catalog.data?.pitchers ?? []}
         pitcherId={id}
+        catalogLoaded={catalog.isSuccess}
         onChange={change}
       />
       {!valid && <p role="alert">{scope.error ?? "종료일을 확인해 주세요."}</p>}
-      {(result.error || catalog.error) && (
-        <p role="alert">{String(result.error ?? catalog.error)}</p>
-      )}
+      <AnalysisQueryError queries={[result, catalog]} enabled={valid} />
       {result.isFetching && <p role="status">종료일 기준 자료를 계산하고 있습니다.</p>}
       {catalog.data?.pitchers.length === 0 && <p>이 범위에 수집된 투수가 없습니다.</p>}
-      {valid && id !== "" && <PitchAnglesPanel pitcherId={id} query={query} />}
       {data && (
         <>
-          <section className="panel">
+          <PitcherChangeSummary data={data} />
+          <details className="panel analysis-disclosure">
+            <summary>비교 방법과 표본 구성</summary>
             <p>
               {data.status === "ambiguous_same_day"
                 ? "같은 날 등판 순서를 확인할 수 없어 비교 창을 나누지 않았습니다."
@@ -73,38 +72,44 @@ export function PitcherChangesPage() {
               {data.bootstrapReplicates}회이며, 구장·카운트 구성이 달라진 영향까지 포함한 관측
               차이입니다.
             </p>
-          </section>
-          {[
-            { label: "최근 3등판", value: data.recent },
-            { label: "이전 5등판", value: data.previous },
-          ].map((w) => (
-            <section className="panel" key={w.label}>
-              <h2>{w.label}</h2>
-              <p>
-                {w.value.pitches}구 · 보정 적용 {w.value.calibrated}구
-              </p>
-              <p>구장: {w.value.parks.map((g) => `${g.key} ${g.pitches}구`).join(" / ") || "—"}</p>
-              <p>
-                타석: {w.value.stances.map((g) => `${g.key} ${g.pitches}구`).join(" / ") || "—"}
-              </p>
-              <p>
-                카운트: {w.value.counts.map((g) => `${g.key} ${g.pitches}구`).join(" / ") || "—"}
-              </p>
-              <ul>
-                {w.value.games.map((g) => (
-                  <li key={g.gameId}>
-                    <Link
-                      to={`/replay?${new URLSearchParams({ gameId: g.gameId, revision: String(g.revision) })}`}
-                    >
-                      {g.gameDate} · {g.stadium ?? "구장 미상"} · {g.pitches}구
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-          <section className="panel">
-            <h2>구종별 변화</h2>
+            {[
+              { label: "최근 3등판", value: data.recent },
+              { label: "이전 5등판", value: data.previous },
+            ].map((w) => (
+              <section key={w.label}>
+                <h3>{w.label}</h3>
+                <p>
+                  {w.value.pitches}구 · 보정 적용 {w.value.calibrated}구
+                </p>
+                <p>
+                  구장: {w.value.parks.map((g) => `${g.key} ${g.pitches}구`).join(" / ") || "—"}
+                </p>
+                <p>
+                  타석: {w.value.stances.map((g) => `${g.key} ${g.pitches}구`).join(" / ") || "—"}
+                </p>
+                <p>
+                  카운트: {w.value.counts.map((g) => `${g.key} ${g.pitches}구`).join(" / ") || "—"}
+                </p>
+                <ul>
+                  {w.value.games.map((g) => (
+                    <li key={g.gameId}>
+                      <Link
+                        to={`/replay?${new URLSearchParams({ gameId: g.gameId, revision: String(g.revision) })}`}
+                      >
+                        {g.gameDate} · {g.stadium ?? "구장 미상"} · {g.pitches}구
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </details>
+          <details className="panel analysis-disclosure">
+            <summary>전체 구종·지표별 변화</summary>
+            <p>
+              차이와 95% 구간은 최근−이전입니다. 사용률은 %, 사용률 차이는 %p로 표시합니다. 사용률의
+              분모는 각 기간 전체 투구이며 표본 열은 해당 구종 투구 수입니다.
+            </p>
             <div className="table-scroll" tabIndex={0}>
               <table aria-label="구종별 변화">
                 <thead>
@@ -129,17 +134,11 @@ export function PitcherChangesPage() {
                     g.metrics.map((m) => (
                       <tr key={`${g.pitchType}-${m.metric}`}>
                         <th>{g.pitchType ?? "미상"}</th>
-                        <td>{labels[m.metric]}</td>
-                        <td>{n(m.recent)}</td>
-                        <td>{n(m.previous)}</td>
-                        <td>{n(m.difference)}</td>
-                        <td>
-                          {m.status === "sufficient"
-                            ? `${n(m.lower)} ~ ${n(m.upper)}`
-                            : m.status === "small_sample"
-                              ? "소표본"
-                              : "미확인"}
-                        </td>
+                        <td>{pitchChangeMetrics[m.metric].label}</td>
+                        <td>{formatPitchChange(m.metric, m.recent)}</td>
+                        <td>{formatPitchChange(m.metric, m.previous)}</td>
+                        <td>{formatPitchChange(m.metric, m.difference, true)}</td>
+                        <td>{pitchChangeInterval(m)}</td>
                         <td>
                           {m.recentCount}/{m.previousCount}
                         </td>
@@ -147,7 +146,8 @@ export function PitcherChangesPage() {
                           {m.recentGames}/{m.previousGames}
                         </td>
                         <td>
-                          {n(m.recentGameMean)}/{n(m.previousGameMean)}
+                          {formatPitchChange(m.metric, m.recentGameMean)}/
+                          {formatPitchChange(m.metric, m.previousGameMean)}
                         </td>
                       </tr>
                     )),
@@ -155,9 +155,13 @@ export function PitcherChangesPage() {
                 </tbody>
               </table>
             </div>
-          </section>
-          <section className="panel">
-            <h2>전체 등판별 구종</h2>
+          </details>
+          <details className="panel analysis-disclosure">
+            <summary>전체 등판별 구종 · {data.games.length}경기</summary>
+            <p>
+              사용률의 분모는 해당 등판의 전체 투구 수입니다. 구속은 km/h, 위치와 표준편차는
+              cm입니다.
+            </p>
             <div className="table-scroll" tabIndex={0}>
               <table aria-label="등판별 구종">
                 <thead>
@@ -167,10 +171,10 @@ export function PitcherChangesPage() {
                       "구종",
                       "공",
                       "사용률",
-                      "구속",
+                      "구속 km/h",
                       "보정 수",
-                      "보정 x / z",
-                      "분산 SD x / z",
+                      "보정 가로 / 세로 cm",
+                      "표준편차 가로 / 세로 cm",
                     ].map((v) => (
                       <th key={v}>{v}</th>
                     ))}
@@ -189,7 +193,7 @@ export function PitcherChangesPage() {
                         </td>
                         <td>{p.pitchType ?? "미상"}</td>
                         <td>{p.actualPitches}</td>
-                        <td>{n(p.usageRate)}</td>
+                        <td>{formatPitchChange("usage", p.usageRate)}</td>
                         <td>{n(p.meanSpeedKph)}</td>
                         <td>{p.calibratedCount}</td>
                         <td>
@@ -204,7 +208,8 @@ export function PitcherChangesPage() {
                 </tbody>
               </table>
             </div>
-          </section>
+          </details>
+          <PitchAnglesPanel pitcherId={id} query={query} />
         </>
       )}
     </div>

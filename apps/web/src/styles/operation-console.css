@@ -1,7 +1,8 @@
 .main-content:has(.operation-page) {
   height: calc(100dvh - 56px);
-  padding-top: 14px;
-  padding-bottom: 14px;
+  padding-top: 28px;
+  padding-bottom: 24px;
+  padding-inline: 24px;
   overflow: hidden;
 }
 
@@ -21,7 +22,7 @@
   min-height: 0;
   flex-direction: column;
   max-width: 1240px;
-  gap: 12px;
+  gap: 20px;
 }
 
 .operation-page-header {
@@ -30,7 +31,7 @@
 }
 
 .operation-page-header h1 {
-  font-size: 22px;
+  font-size: 28px;
 }
 
 .success-panel {
@@ -47,8 +48,8 @@
   padding: 12px 14px;
   gap: 10px;
   border: 1px solid #dfe3e0;
-  border-radius: 6px;
-  background: #fff;
+  border-radius: var(--ui-radius);
+  background: var(--ui-surface-subtle);
 }
 
 .operation-command-bar form {
@@ -64,8 +65,8 @@
   display: grid;
   min-width: 0;
   gap: 4px;
-  color: #69736d;
-  font-size: 10px;
+  color: var(--ui-muted);
+  font-size: 12px;
 }
 
 .operation-command-bar input,
@@ -73,14 +74,14 @@
 .operation-list-toolbar input,
 .operation-list-toolbar select,
 .operation-detail-actions input {
-  height: 34px;
+  height: 38px;
   min-width: 0;
   padding: 0 9px;
   border: 1px solid #cfd6d1;
   border-radius: 4px;
   color: #1d241f;
   background: #fff;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .operation-status-line {
@@ -101,8 +102,8 @@
   height: auto;
   min-height: 0;
   flex: 1 1 0;
-  grid-template-columns: minmax(300px, 0.82fr) minmax(420px, 1.45fr);
-  gap: 12px;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.3fr);
+  gap: 24px;
 }
 
 .operation-console-master,
@@ -119,7 +120,7 @@
 
 .operation-console-detail {
   position: relative;
-  padding: 18px;
+  padding: 24px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -127,7 +128,7 @@
 .operation-list-toolbar {
   min-width: 0;
   align-items: end;
-  padding: 12px;
+  padding: 16px;
   flex-wrap: wrap;
   gap: 8px;
   border-bottom: 1px solid #e2e6e3;
@@ -144,27 +145,25 @@
 
 .operation-segments {
   min-width: 0;
-  padding: 3px;
-  gap: 2px;
-  border-radius: 5px;
-  background: #edf1ee;
+  padding: 0;
+  gap: 16px;
+  border-bottom: 1px solid var(--ui-line);
 }
 
 .operation-segments button {
-  height: 28px;
-  padding: 0 8px;
-  border-radius: 3px;
-  color: #5c6861;
+  height: 40px;
+  padding: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--ui-muted);
   background: transparent;
   cursor: pointer;
-  font-size: 10px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
 .operation-segments button.selected {
-  color: #145c3e;
-  background: #fff;
-  box-shadow: 0 1px 3px rgb(32 53 41 / 12%);
+  color: var(--ui-accent);
+  border-color: var(--ui-accent);
   font-weight: 700;
 }
 
@@ -204,8 +203,8 @@
 }
 
 .operation-list-row.selected {
-  box-shadow: inset 3px 0 #18794e;
-  background: #edf6f0;
+  box-shadow: inset 1px 0 var(--ui-accent);
+  background: var(--ui-selected);
 }
 
 .operation-row-heading,
@@ -226,8 +225,9 @@
 
 .operation-row-meta,
 .operation-row-copy {
-  color: #68736c;
-  font-size: 10px;
+  color: var(--ui-muted);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .operation-list-empty {
@@ -267,8 +267,8 @@
 }
 
 .operation-detail-fields dt {
-  color: #69736d;
-  font-size: 10px;
+  color: var(--ui-muted);
+  font-size: 12px;
 }
 
 .operation-detail-fields dd {
@@ -278,14 +278,13 @@
 .operation-detail-actions {
   position: sticky;
   z-index: 2;
-  bottom: -18px;
+  bottom: -24px;
   justify-content: flex-end;
   padding: 12px 0 2px;
   flex-wrap: wrap;
   gap: 8px;
   border-top: 1px solid #dfe4e0;
-  background: linear-gradient(rgb(255 255 255 / 82%), #fff 35%);
-  backdrop-filter: blur(6px);
+  background: var(--ui-surface);
 }
 
 .operation-detail-actions .secondary-button {
@@ -354,21 +353,15 @@
   text-align: center;
 }
 
-.operation-empty-detail > span {
-  margin-bottom: 12px;
-  color: #8dae99;
-  font-size: 28px;
-}
-
 .operation-empty-detail strong {
-  color: #314039;
-  font-size: 14px;
+  color: var(--ui-ink);
+  font-size: 18px;
 }
 
 .operation-empty-detail p {
   max-width: 360px;
   margin: 7px 0 0;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.6;
 }
 
@@ -474,7 +467,29 @@
   border-bottom: 1px solid #e3e7e4;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1000px) {
+  .main-content:has(.database-page) {
+    height: auto;
+    overflow: visible;
+  }
+
+  .database-page {
+    height: auto;
+  }
+
+  .database-page .operation-console {
+    flex: 0 0 auto;
+  }
+
+  .database-page .operation-console-master {
+    height: clamp(440px, calc(100dvh - 250px), 620px);
+  }
+
+  .database-page .operation-console-detail {
+    overflow: visible;
+    overscroll-behavior: auto;
+  }
+
   .operation-command-bar,
   .operation-command-bar form,
   .operation-status-line {
@@ -532,6 +547,22 @@
   .operation-list-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .operation-list-toolbar.database-list-pager {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .database-list-pager > span {
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .database-list-pager > button {
+    min-height: 44px;
+    margin: 0;
   }
 
   .operation-segments {

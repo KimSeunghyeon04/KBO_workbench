@@ -1,4 +1,4 @@
-import type { PropsWithChildren } from "react";
+import { useEffect, useRef, type PropsWithChildren } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import type { DisciplineCatalog, PitchAnalysisCatalog } from "@kbo/contracts";
@@ -28,6 +28,24 @@ function PlayerNavigation({
   path: string;
   params: URLSearchParams;
 }) {
+  const navigation = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const nav = navigation.current;
+    if (!nav) return;
+    const revealCurrent = () => {
+      const current = nav.querySelector('[aria-current="page"]');
+      if (!current || nav.scrollWidth <= nav.clientWidth) return;
+      const bounds = nav.getBoundingClientRect();
+      const selected = current.getBoundingClientRect();
+      if (selected.left < bounds.left) nav.scrollLeft += selected.left - bounds.left;
+      else if (selected.right > bounds.right) nav.scrollLeft += selected.right - bounds.right;
+    };
+    revealCurrent();
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(revealCurrent);
+    observer?.observe(nav);
+    return () => observer?.disconnect();
+  }, [path, role]);
   const scope = playerNavigationScope(path, params);
   // Observe the page's catalog cache. The analysis page remains the request owner,
   // so this navigation never adds a catalog request or starts another analysis.
@@ -44,9 +62,7 @@ function PlayerNavigation({
   });
   const requestedId = params.get(role);
   const requestedPlayer = catalog.data?.find((player) => player.id === requestedId);
-  const player =
-    requestedPlayer ??
-    (requestedId === null || path === "/analysis/pitch-shape" ? catalog.data?.[0] : undefined);
+  const player = requestedPlayer ?? (requestedId === null ? catalog.data?.[0] : undefined);
   const id = player?.id ?? requestedId;
   const directory =
     scope.error === null
@@ -56,7 +72,6 @@ function PlayerNavigation({
     <section className="player-analysis-context" aria-label="현재 선수 분석">
       <div className="player-analysis-context-heading">
         <div className="player-analysis-identity">
-          <span className="player-report-label">선수 리포트</span>
           <div className="player-analysis-name">
             <strong>
               {player?.name ??
@@ -85,12 +100,12 @@ function PlayerNavigation({
             </div>
           )}
           <Link className="player-directory-link" to={directory}>
-            선수 변경 <span aria-hidden="true">↗</span>
+            선수 변경
           </Link>
         </div>
       </div>
       {scope.error === null && id && (
-        <nav className="player-analysis-links" aria-label="선수 분석 항목">
+        <nav ref={navigation} className="player-analysis-links" aria-label="선수 분석 항목">
           {playerAnalysisSections[role].map((section) => (
             <NavLink
               key={section.path}

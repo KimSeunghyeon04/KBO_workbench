@@ -13,6 +13,7 @@ import {
   type EventFieldProps,
 } from "./event-field-context";
 import { PlayerPicker, playerSideForRole } from "./player-picker";
+import { pitchCallLabel } from "../events/relay-text";
 export function BatterStartFields({
   form,
   assignments,
@@ -61,7 +62,7 @@ export function PitchFields({
         <select value={form.call} onChange={(event) => update({ call: event.target.value })}>
           {PITCH_CALLS.map((item) => (
             <option key={item} value={item}>
-              {item.replaceAll("_", " ")}
+              {pitchCallLabel(item)}
             </option>
           ))}
         </select>

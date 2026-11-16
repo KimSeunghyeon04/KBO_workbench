@@ -11,6 +11,19 @@ export interface DisplayFinding extends CorrectionFinding {
   readonly origin: FindingOrigin;
 }
 
+export function findingCategoryLabel(category: CorrectionFinding["category"]): string {
+  if (category === "source") return "원문·수집";
+  if (category === "domain") return "경기 규칙·기록";
+  return "저장·무결성";
+}
+
+export function findingMessageLabel(message: string): string {
+  return message
+    .replaceAll("compiler 계산", "원장 계산")
+    .replaceAll("compiler", "원장 계산기")
+    .replaceAll(/\btracking\b/g, "트래킹 관측");
+}
+
 type FindingSession = Pick<CorrectionSession, "storedFindings" | "findings">;
 
 export function buildDisplayFindings(
@@ -73,7 +86,7 @@ export function groupDisplayFindings(
     const key = `${finding.origin}:${finding.severity}:${finding.category}:${location}:${finding.code}`;
     const group = groups.get(key) ?? {
       key,
-      label: `${location} · ${finding.message}`,
+      label: `${location} · ${findingMessageLabel(finding.message)}`,
       findings: [],
     };
     group.findings.push(finding);

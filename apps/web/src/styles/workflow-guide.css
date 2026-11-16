@@ -1,0 +1,39 @@
+.workflow-guide {
+  padding-block: 16px;
+  text-align: left;
+}
+.workflow-guide h2 {
+  margin-bottom: 8px;
+  font-size: 18px;
+}
+.workflow-guide > p {
+  color: var(--ui-muted);
+  font-size: 13px;
+}
+.workflow-guide ol {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  margin: 28px 0 0;
+  padding-left: 24px;
+}
+.workflow-guide li {
+  padding: 12px 16px 12px 8px;
+  border-top: 1px solid var(--ui-line);
+}
+.workflow-guide li::marker {
+  color: var(--ui-accent);
+  font-weight: 650;
+}
+.workflow-guide li span {
+  display: block;
+  margin-top: 8px;
+  color: var(--ui-muted);
+  font-size: 13px;
+}
+@media (max-width: 640px) {
+  .workflow-guide ol {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}

@@ -20,9 +20,10 @@ import {
   readRange,
   restoredParams,
 } from "../collection/navigation";
-import { ActiveJob, CollectionHistory, Counts } from "../collection/collection-panels";
+import { ActiveJob, CollectionHistory } from "../collection/collection-panels";
 import { CollectionStatus, initialCollectionExecution } from "../collection/collection-status";
 import { decodeCollectionJobEvent } from "../collection/job-event-refresh";
+import { WorkflowGuide } from "../components/workflow-guide";
 import "../styles/collection-periods.css";
 
 export function CollectPage(): React.JSX.Element {
@@ -240,6 +241,7 @@ export function CollectPage(): React.JSX.Element {
       ) : (
         <>
           <section className="panel collection-range-panel">
+            <h2 className="collection-range-heading">수집할 기간</h2>
             <form
               className="collection-range-form"
               onSubmit={(event) => {
@@ -347,12 +349,18 @@ export function CollectPage(): React.JSX.Element {
             ) : null}
           </section>
           {currentDiscovery === undefined ? (
-            <section className="panel collection-periods">
-              <Counts counts={undefined} />
-              <div className="collection-empty">
-                하루는 경기 목록, 한 달은 날짜별 현황, 여러 달은 월별 현황으로 확인합니다.
-              </div>
-            </section>
+            <WorkflowGuide
+              title="일정을 확인한 뒤 수집을 시작하세요"
+              description="하루는 경기 목록, 한 달은 날짜별 현황, 여러 달은 월별 현황으로 확인합니다."
+              steps={[
+                { title: "기간 선택", description: "날짜 범위 또는 시즌을 지정합니다." },
+                { title: "경기 확인", description: "일정과 기존 수집 상태를 확인합니다." },
+                {
+                  title: "대상 수집",
+                  description: "필요한 경기를 골라 수집하고 결과를 검토합니다.",
+                },
+              ]}
+            />
           ) : (
             <CollectionStatus
               key={currentDiscovery.discoveryId}

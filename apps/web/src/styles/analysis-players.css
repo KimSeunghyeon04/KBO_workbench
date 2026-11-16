@@ -7,8 +7,8 @@
   min-width: 0;
 }
 .analysis-player-role > span {
-  color: #708389;
-  font-size: 11px;
+  color: var(--ui-muted);
+  font-size: 12px;
   font-weight: 500;
 }
 .analysis-player-role > div {
@@ -17,7 +17,7 @@
 }
 .analysis-player-role button {
   flex: 1;
-  min-height: 38px;
+  min-height: 40px;
 }
 .analysis-player-results-heading {
   display: flex;
@@ -41,8 +41,8 @@
 }
 .analysis-player-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 32px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -55,16 +55,15 @@
   align-items: center;
   gap: 15px;
   height: 100%;
-  padding: 12px 15px;
-  border: 1px solid var(--analysis-line, #e1e8e9);
-  border-radius: 3px;
-  color: var(--analysis-ink, #1c3039);
+  padding: 18px 4px;
+  border-bottom: 1px solid var(--ui-line);
+  color: var(--ui-ink);
   background: #fff;
   text-decoration: none;
 }
 .analysis-player-list a:hover {
   background: #f5faf8;
-  border-color: #9dc8bd;
+  color: var(--ui-accent);
 }
 .analysis-player-list a:focus-visible {
   outline: 2px solid #137e69;
@@ -81,12 +80,12 @@
   overflow-wrap: anywhere;
 }
 .analysis-player-identity strong {
-  font-size: 14px;
+  font-size: 16px;
   letter-spacing: -0.025em;
 }
 .analysis-player-list small {
-  color: #61767d;
-  font-size: 11px;
+  color: var(--ui-muted);
+  font-size: 12px;
 }
 .analysis-player-pitches {
   text-align: right;
@@ -98,8 +97,10 @@
   font-weight: 600;
 }
 .analysis-player-arrow {
-  color: #137e69;
-  font-size: 18px;
+  color: var(--ui-accent);
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
 }
 .analysis-players-page .analysis-pagination,
 .analysis-player-catalog-note {
@@ -109,7 +110,16 @@
 .analysis-player-empty p {
   margin: 0 0 16px;
 }
+@media (max-width: 1150px) {
+  .analysis-player-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 24px;
+  }
+}
 @media (max-width: 640px) {
+  .analysis-player-list {
+    grid-template-columns: 1fr;
+  }
   .analysis-players-page .analysis-primary-filters {
     grid-template-columns: minmax(80px, 1fr) minmax(130px, 1fr);
   }

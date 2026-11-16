@@ -3,11 +3,23 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReplayFrame, ReplayManifest, ReplayState } from "@kbo/contracts";
-import { createElement } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { createElement, StrictMode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash, webcrypto } from "node:crypto";
+import { canonicalStringify } from "@kbo/contracts";
+import { loadReplay } from "../../apps/web/src/api/replay-client.js";
+import {
+  replayEvidenceIndex,
+  replayEvidenceUrl,
+  readReplayEvidenceTarget,
+} from "../../apps/web/src/replay/evidence-target.js";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import {
+  AnalysisEvidenceLink,
+  readAnalysisReturnTo,
+} from "../../apps/web/src/analysis/analysis-evidence-link.js";
 import { ReplayPage } from "../../apps/web/src/pages/replay-page.js";
 import {
   evaluateRunValues,
@@ -22,8 +34,159 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
+beforeEach(() => vi.stubGlobal("crypto", webcrypto));
 
 describe("경기 재생 UI", () => {
+  it.each(["event-3", "missing-event"])(
+    "opens or explains an evidence target: %s",
+    async (eventId) => {
+      vi.stubGlobal("fetch", replayFetchMock());
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      });
+      render(
+        createElement(
+          StrictMode,
+          null,
+          createElement(
+            MemoryRouter,
+            {
+              initialEntries: [
+                replayEvidenceUrl("anon-game-2026", 1, { kind: "event", id: eventId }),
+              ],
+            },
+            createElement(QueryClientProvider, { client }, createElement(ReplayPage)),
+          ),
+        ),
+      );
+      await screen.findByText(
+        eventId === "event-3"
+          ? "분석에서 선택한 투구 장면을 열었습니다."
+          : /요청한 근거 장면을 찾지 못했습니다/,
+      );
+      expect(screen.getByRole("slider")).toHaveProperty("value", eventId === "event-3" ? "1" : "0");
+      expect(screen.queryByRole("link", { name: "분석으로 돌아가기" })).toBeNull();
+      client.clear();
+    },
+  );
+
+  it.each(["event", "pa", "play"] as const)(
+    "returns from %s evidence to the exact player, scope and detail filters",
+    async (kind) => {
+      vi.stubGlobal("fetch", replayFetchMock());
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const origin =
+        "/analysis/pitch-shape?season=2025&pitcher=anon-p1&competition=all&dateFrom=2025-06-01&team=home&pitchType=slider#comparison";
+      function Origin() {
+        const location = useLocation();
+        return createElement(
+          AnalysisEvidenceLink,
+          { to: replayEvidenceUrl("anon-game-2026", 1, { kind, id: "event-3" }) },
+          `${location.pathname}${location.search}${location.hash}`,
+        );
+      }
+      render(
+        createElement(
+          MemoryRouter,
+          { initialEntries: [origin] },
+          createElement(
+            QueryClientProvider,
+            { client },
+            createElement(
+              Routes,
+              null,
+              createElement(Route, {
+                path: "/analysis/pitch-shape",
+                element: createElement(Origin),
+              }),
+              createElement(Route, { path: "/replay", element: createElement(ReplayPage) }),
+            ),
+          ),
+        ),
+      );
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("link", { name: origin }));
+      const back = screen.getByRole("link", { name: "분석으로 돌아가기" });
+      expect(back.getAttribute("href")).toBe(origin);
+      await screen.findByRole("slider");
+      await user.click(back);
+      expect(screen.getByRole("link", { name: origin })).toBeTruthy();
+      client.clear();
+    },
+  );
+
+  it.each([
+    null,
+    { analysisReturnTo: 5 },
+    { analysisReturnTo: "https://example.com/analysis/pitch-shape" },
+    { analysisReturnTo: "//example.com/analysis/pitch-shape" },
+    { analysisReturnTo: "/analysis/unknown?pitcher=p1" },
+    { analysisReturnTo: "/analysis/pitch-shape/../unknown" },
+    { analysisReturnTo: "/analysis/pitch-shape?pitcher=one\\two" },
+    { analysisReturnTo: "/analysis/pitch-shape\n" },
+  ])("ignores missing or unsupported return context: %j", (state) => {
+    expect(readAnalysisReturnTo(state)).toBeNull();
+  });
+
+  it("uses the terminal play for a PA and resolves a pitch within its atomic frame", () => {
+    const sample = frames();
+    const last = sample[1];
+    if (!last) throw new Error("Missing fixture frame");
+    const terminal = {
+      ...last,
+      kind: "plate_result" as const,
+      before: pitchState(),
+      after: emptyState(),
+    };
+    expect(replayEvidenceIndex([...sample, terminal], { kind: "pa", id: "event-pa-2" })).toBe(2);
+    expect(replayEvidenceIndex(sample, { kind: "event", id: "event-2" })).toBe(0);
+    expect(replayEvidenceIndex(sample, { kind: "event", id: "event-unknown" })).toBe(-1);
+    expect(replayEvidenceIndex(sample, { kind: "play", id: last.playId })).toBe(1);
+    const target = { kind: "play" as const, id: last.playId };
+    const url = new URL(replayEvidenceUrl("anon-game-2026", 1, target), "http://localhost");
+    expect(readReplayEvidenceTarget(url.searchParams)).toEqual(target);
+    url.searchParams.set("eventId", "event-3");
+    expect(readReplayEvidenceTarget(url.searchParams)).toBeNull();
+  });
+
+  it.each(["identity", "content", "order"])(
+    "rejects invalid replay %s before selecting evidence",
+    async (fault) => {
+      const data = frames();
+      const first = data[0];
+      if (!first) throw new Error("Missing fixture frame");
+      if (fault === "content")
+        first.relayEvents[0] = {
+          ...first.relayEvents[0],
+          eventId: "tampered",
+          sequence: 0,
+          kind: "plate_result",
+          relayText: "changed",
+        };
+      if (fault === "order") data.reverse();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string) =>
+          Response.json(
+            input.endsWith("replay-manifest")
+              ? { ...manifest(), ...(fault === "identity" ? { gameId: "another-game" } : {}) }
+              : {
+                  gameId: "anon-game-2026",
+                  revision: 1,
+                  documentHash: "a".repeat(64),
+                  frameHash: manifest().frameHash,
+                  startIndex: 0,
+                  frames: data,
+                  nextCursor: null,
+                },
+          ),
+        ),
+      );
+      await expect(loadReplay("anon-game-2026", 1)).rejects.toThrow(
+        fault === "identity" ? /요청한 경기/ : fault === "content" ? /해시/ : /플레이 순서/,
+      );
+    },
+  );
   it("loads the 2025 win curve on demand and explains reconstruction under the eleven-inning limit", async () => {
     const source = { ...manifest(), gameDate: "2025-06-01" },
       model = trainWinProbability(
@@ -184,6 +347,22 @@ describe("경기 재생 UI", () => {
     expect(Number(pitchPoint?.getAttribute("cx"))).toBeGreaterThan(
       Number(centerLine?.getAttribute("x1")),
     );
+    expect(screen.getByText("플레이트 가로 X (ft)").parentElement?.textContent).toContain("0.8");
+    expect(screen.getByText("플레이트 기준 Y (ft)").parentElement?.textContent).toContain("0.7083");
+    const coefficients = screen.getByText("트래킹 궤적 계수와 단위").closest("details");
+    if (coefficients === null) throw new Error("Missing trajectory disclosure");
+    expect(coefficients.open).toBe(false);
+    await user.click(within(coefficients).getByText("트래킹 궤적 계수와 단위"));
+    expect(coefficients.open).toBe(true);
+    expect(within(coefficients).getByText("vy0 (ft/s)").parentElement?.textContent).toContain(
+      "-129.265",
+    );
+    expect(within(coefficients).getByText("az (ft/s²)").parentElement?.textContent).toContain(
+      "-16.4274",
+    );
+    expect(within(coefficients).getByText("x0 (ft)").parentElement?.textContent).toContain(
+      "미제공",
+    );
     expect(screen.getByRole("img", { name: "볼 0, 스트라이크 0, 아웃 0" })).toBeTruthy();
     expect(screen.getByRole("slider", { name: "재생 위치" }).getAttribute("aria-valuetext")).toBe(
       "1 / 2",
@@ -191,6 +370,22 @@ describe("경기 재생 UI", () => {
 
     await user.click(screen.getByRole("button", { name: "다음" }));
     expect(screen.getAllByText("1구 스트라이크")).toHaveLength(2);
+    expect(screen.getByText(/142\.8 km\/h/)).toBeTruthy();
+    const pitchRaw = screen.getByText("투구 원시 값").closest("details");
+    if (pitchRaw === null) throw new Error("Missing pitch diagnostics");
+    expect(pitchRaw.hasAttribute("open")).toBe(false);
+    await user.click(within(pitchRaw).getByText("투구 원시 값"));
+    expect(pitchRaw.textContent).toContain('"speedKph": 142.83333333333334');
+    const heightMetric = screen.getByText("타자 키 (cm)").parentElement;
+    const yearMetric = screen.getByText("존 기준 연도").parentElement;
+    if (heightMetric === null || yearMetric === null) throw new Error("Missing zone metrics");
+    expect(within(heightMetric).getByText("미제공")).toBeTruthy();
+    expect(within(yearMetric).getByText("계산 불가")).toBeTruthy();
+    const trackingRaw = screen.getByText("트래킹 원시 값").closest("details");
+    if (trackingRaw === null) throw new Error("Missing tracking diagnostics");
+    expect(trackingRaw.hasAttribute("open")).toBe(false);
+    await user.click(within(trackingRaw).getByText("트래킹 원시 값"));
+    expect(trackingRaw.textContent).toContain('"strikeZone": null');
     expect(
       screen.getByText("타자 키 또는 투구 좌표가 없어 스트라이크존을 계산할 수 없습니다."),
     ).toBeTruthy();
@@ -348,7 +543,7 @@ function replayFetchMock(): ReturnType<typeof vi.fn> {
         gameId: "anon-game-2026",
         revision: 1,
         documentHash: "a".repeat(64),
-        frameHash: "c".repeat(64),
+        frameHash: manifest().frameHash,
         startIndex: 0,
         frames: frames(),
         nextCursor: null,
@@ -383,7 +578,7 @@ function manifest(): ReplayManifest {
     revision: 1,
     documentHash: "a".repeat(64),
     projectionHash: "b".repeat(64),
-    frameHash: "c".repeat(64),
+    frameHash: createHash("sha256").update(canonicalStringify(frames())).digest("hex"),
     frameCount: 2,
     trackingCount: 2,
     gameDate: "2026-08-30",
@@ -472,6 +667,7 @@ function frames(): ReplayFrame[] {
           sequence: 2,
           kind: "pitch",
           relayText: "1구 스트라이크",
+          pitch: { speedKph: 142.83333333333334, pitchType: "직구" },
         },
       ],
       before: after,
@@ -485,6 +681,7 @@ function frames(): ReplayFrame[] {
           trackingId: "tracking-2",
           vx0: -145,
           crossPlateY: null,
+          strikeZone: null,
         },
       ],
     },

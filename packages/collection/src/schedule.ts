@@ -1,5 +1,4 @@
-import { chromium, type Browser, type BrowserContext } from "playwright";
-
+import { NaverBrowserTransport } from "./browser-transport.js";
 import {
   CollectionCancelledError,
   NaverHttpError,
@@ -45,43 +44,32 @@ export class PlaywrightScheduleExplorer {
       return discoverPages(startDate, endDate, signal, this.fetchPage, observePage);
     }
 
-    let browser: Browser | undefined;
-    let context: BrowserContext | undefined;
-    const closeOnAbort = (): void => {
-      void context?.close().catch(() => undefined);
-      void browser?.close().catch(() => undefined);
-    };
-    signal.addEventListener("abort", closeOnAbort, { once: true });
+    const transport = new NaverBrowserTransport();
     try {
       throwIfCancelled(signal);
-      browser = await chromium.launch({ headless: true });
-      context = await browser.newContext({ locale: "ko-KR" });
-      context.setDefaultTimeout(15_000);
-      const page = await context.newPage();
-      await page.goto(
-        `https://m.sports.naver.com/kbaseball/schedule/index?date=${encodeURIComponent(startDate)}`,
-        { waitUntil: "domcontentloaded", timeout: 20_000 },
-      );
-      const request = context.request;
       return await discoverPages(
         startDate,
         endDate,
         signal,
         async (from, to, pageNumber) => {
           throwIfCancelled(signal);
-          const response = await request.get(this.endpoints.schedule(), {
-            params: {
-              fields: "basic,schedule,baseball,manualRelayUrl",
-              upperCategoryId: "kbaseball",
-              categoryIds: "kbo",
-              fromDate: from,
-              toDate: to,
-              size: pageSize,
-              page: pageNumber,
-            },
-            timeout: 20_000,
-          });
-          return { status: response.status(), url: response.url(), payload: await response.json() };
+          const url = new URL(this.endpoints.schedule());
+          url.search = new URLSearchParams({
+            fields: "basic,schedule,baseball,manualRelayUrl",
+            upperCategoryId: "kbaseball",
+            categoryIds: "kbo",
+            fromDate: from,
+            toDate: to,
+            size: String(pageSize),
+            page: String(pageNumber),
+          }).toString();
+          const response = await transport.get(url.href, signal);
+          throwIfCancelled(signal);
+          return {
+            status: response.status,
+            url: response.url,
+            payload: scheduleResponsePayload(response.text),
+          };
         },
         observePage,
       );
@@ -92,10 +80,16 @@ export class PlaywrightScheduleExplorer {
       if (error instanceof NaverHttpError || error instanceof NaverSourceFormatError) throw error;
       throw new NaverTransportError("Playwright 일정 탐색에 실패했습니다.", error);
     } finally {
-      signal.removeEventListener("abort", closeOnAbort);
-      await context?.close().catch(() => undefined);
-      await browser?.close().catch(() => undefined);
+      await transport.close();
     }
+  }
+}
+
+function scheduleResponsePayload(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
   }
 }
 

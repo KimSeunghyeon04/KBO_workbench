@@ -34,6 +34,14 @@ const resultLabels: Readonly<Record<string, string>> = {
   other: "기타 결과",
 };
 
+export function pitchCallLabel(call: string): string {
+  return pitchLabels[call] ?? call;
+}
+
+export function plateResultLabel(result: string | null): string {
+  return result === null ? "결과 미상" : (resultLabels[result] ?? result);
+}
+
 const fieldOutLabels: Readonly<Record<string, string>> = {
   ground_ball: "땅볼 아웃",
   fly_ball: "플라이 아웃",

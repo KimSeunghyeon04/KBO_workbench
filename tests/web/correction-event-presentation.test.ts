@@ -70,6 +70,30 @@ describe("보정 원장 행 표시", () => {
     expect(row?.summary).toContain("ID");
   });
 
+  it.each([
+    [142.83333333333334, "142.8"],
+    [142, "142.0"],
+  ])("구속 %s의 표시만 한 자리로 정리하고 원장 값을 보존한다", async (speedKph, display) => {
+    const document = await golden();
+    const pitch = document.events.find((event) => event.kind === "pitch");
+    if (pitch?.kind !== "pitch") throw new Error("fixture pitch missing");
+    const changed = parseStagingGameDocumentV2({
+      ...document,
+      events: document.events.map((event) =>
+        event.identity.eventId === pitch.identity.eventId
+          ? { ...event, payload: { ...pitch.payload, speedKph } }
+          : event,
+      ),
+    });
+    const before = JSON.stringify(changed);
+    const row = buildEventPresentations(changed, []).find(
+      (item) => item.event.identity.eventId === pitch.identity.eventId,
+    );
+    expect(row?.summary).toContain(`${display} km/h`);
+    expect(row?.event).toMatchObject({ payload: { speedKph } });
+    expect(JSON.stringify(changed)).toBe(before);
+  });
+
   it("타구 유형과 번트 여부를 구조 요약과 검색 문자열에 포함한다", async () => {
     const document = await golden();
     const changed = parseStagingGameDocumentV2({

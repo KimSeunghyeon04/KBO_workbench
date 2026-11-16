@@ -7,7 +7,7 @@ import {
   type StagingRelayEvent,
 } from "@kbo/contracts";
 
-import { relayTextByEvent } from "../events/relay-text";
+import { pitchCallLabel as relayPitchCallLabel, relayTextByEvent } from "../events/relay-text";
 import { sourcePitchIdLabel } from "./pitch-source-id";
 
 export type CorrectionGameScope = "review" | "ready" | "all";
@@ -130,7 +130,7 @@ export function eventKindLabel(kind: StagingRelayEvent["kind"]): string {
   return labels[kind];
 }
 export function pitchCallLabel(value: string): string {
-  return value.replaceAll("_", " ");
+  return relayPitchCallLabel(value);
 }
 export function plateResultLabel(value: string): string {
   return results[value] ?? value;
@@ -216,7 +216,7 @@ function eventSummary(
   if (event.kind === "batter_start")
     return `${player(event.payload.batterId)} · 투수 ${player(event.payload.pitcherId)}`;
   if (event.kind === "pitch")
-    return `${event.payload.call.replaceAll("_", " ")} · ${event.payload.pitchType ?? "구종 미제공"} · ${event.payload.speedKph === undefined ? "구속 미제공" : `${String(event.payload.speedKph)} km/h`} · ${sourcePitchIdLabel(event.payload.sourcePitchId)}`;
+    return `${pitchCallLabel(event.payload.call)} · ${event.payload.pitchType ?? "구종 미제공"} · ${event.payload.speedKph === undefined ? "구속 미제공" : `${event.payload.speedKph.toFixed(1)} km/h`} · ${sourcePitchIdLabel(event.payload.sourcePitchId)}`;
   if (event.kind === "plate_result")
     return [
       results[event.payload.result] ?? event.payload.result,

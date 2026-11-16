@@ -1,14 +1,17 @@
+import { AnalysisEvidenceLink } from "./analysis-evidence-link";
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import type { PitchRateGroup, PitchLocationPoint } from "@kbo/contracts";
+import { replayEvidenceUrl } from "../replay/evidence-target";
 import { outcomePercent as percent } from "./pitch-outcome-presentation";
 
 const cellOrder = Array.from({ length: 25 }, (_, i) => Math.floor((24 - i) / 5) * 5 + (i % 5));
 
 export function PitchLocationMap({
+  season,
   cells,
   points,
 }: {
+  season: number;
   cells: PitchRateGroup[];
   points: PitchLocationPoint[];
 }) {
@@ -23,7 +26,6 @@ export function PitchLocationMap({
     <section className="panel outcome-location-panel">
       <div className="analysis-panel-heading">
         <div>
-          <span className="analysis-kicker">PITCH LOCATION</span>
           <h2>코스별 헛스윙</h2>
         </div>
         <span className="analysis-context-tag">포수 시점 · 5 × 5</span>
@@ -79,7 +81,6 @@ export function PitchLocationMap({
           <p className="analysis-caption">회색 칸은 20스윙 미만 · 바깥 칸은 존 밖 전체</p>
         </div>
         <aside className="outcome-zone-readout" aria-label="선택 코스 요약">
-          <span className="analysis-kicker">{group ? "SELECTED ZONE" : "EXPLORE THE ZONE"}</span>
           <h3>{group ? `코스 ${cell}` : "코스를 선택해 비교하세요"}</h3>
           <p>
             {group
@@ -131,8 +132,12 @@ export function PitchLocationMap({
             모든 코스
           </button>
           <p className="analysis-caption">
-            선택 근거 {selected.length}구 · 원천 도착면, 신장 기준 존. 중간면 구질 보정은 적용하지
-            않습니다.
+            선택 근거 {selected.length}구 · 원천 도착면, 분석용 신장 기준 존 ·{" "}
+            {season <= 2024 ? "2024" : "2025"} 규칙 적용. 중간면 구질 보정은 적용하지 않습니다.
+          </p>
+          <p className="analysis-caption">
+            당시 심판 판정이나 ABS 장비의 판정 존을 재현한 값이 아닙니다. 2024년까지는 2024 규칙,
+            2025·2026년에는 2025 규칙을 사용하므로 시즌 간 비교에는 존 정의 변화가 포함됩니다.
           </p>
         </aside>
       </div>
@@ -165,11 +170,11 @@ export function PitchLocationMap({
                   </td>
                   <td>{p.whiff ? "헛스윙" : p.swing ? "컨택" : "지켜봄"}</td>
                   <td>
-                    <Link
-                      to={`/replay?${new URLSearchParams({ gameId: p.gameId, revision: String(p.revision) })}`}
+                    <AnalysisEvidenceLink
+                      to={replayEvidenceUrl(p.gameId, p.revision, { kind: "event", id: p.pitchId })}
                     >
-                      경기 재생 r{p.revision}
-                    </Link>
+                      투구 장면 r{p.revision}
+                    </AnalysisEvidenceLink>
                   </td>
                   <td>
                     <details className="outcome-pitch-id">

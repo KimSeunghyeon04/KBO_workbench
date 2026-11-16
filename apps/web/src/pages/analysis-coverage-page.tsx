@@ -1,4 +1,5 @@
 import { AnalysisScopeFields, competitionLabels } from "../analysis/analysis-scope-fields";
+import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import {
   analysisScopeSearch,
   changeAnalysisParams,
@@ -6,6 +7,7 @@ import {
 } from "../analysis/analysis-scope";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import "../styles/pitch-analysis.css";
+import "../styles/analysis-coverage.css";
 import { Link, useSearchParams } from "react-router-dom";
 import type { AnalysisCoverageCounts, AnalysisCoverageResult } from "@kbo/contracts";
 import { getAnalysisCoverage } from "../api/analysis-coverage-client";
@@ -13,38 +15,46 @@ import { getAnalysisCoverage } from "../api/analysis-coverage-client";
 const rate = (n: number, d: number) => (d === 0 ? "—" : `${((100 * n) / d).toFixed(1)}%`);
 function Counts({ counts: c }: { counts: AnalysisCoverageCounts }) {
   return (
-    <dl className="summary-grid">
-      <div>
-        <dt>수집 경기</dt>
-        <dd>{c.games.toLocaleString()}</dd>
-      </div>
-      <div>
-        <dt>실제 투구</dt>
-        <dd>{c.actualPitches.toLocaleString()}</dd>
-      </div>
-      <div>
-        <dt>완료 타석</dt>
-        <dd>{c.completedPlateAppearances.toLocaleString()}</dd>
-      </div>
-      <div>
-        <dt>구종 보유</dt>
-        <dd>
-          {c.withPitchType.toLocaleString()} · {rate(c.withPitchType, c.actualPitches)}
-        </dd>
-      </div>
-      <div>
-        <dt>구속 보유</dt>
-        <dd>
-          {c.withSpeed.toLocaleString()} · {rate(c.withSpeed, c.actualPitches)}
-        </dd>
-      </div>
-      <div>
-        <dt>존 판정 가능</dt>
-        <dd>
-          {c.zoneKnown.toLocaleString()} · {rate(c.zoneKnown, c.actualPitches)}
-        </dd>
-      </div>
-    </dl>
+    <div className="coverage-overview">
+      <dl className="coverage-totals">
+        <div>
+          <dt>수집 경기</dt>
+          <dd>{c.games.toLocaleString()}</dd>
+        </div>
+        <div>
+          <dt>실제 투구</dt>
+          <dd>{c.actualPitches.toLocaleString()}</dd>
+        </div>
+        <div>
+          <dt>완료 타석</dt>
+          <dd>{c.completedPlateAppearances.toLocaleString()}</dd>
+        </div>
+      </dl>
+      <dl className="coverage-field-rates">
+        {[
+          { label: "구종 보유", value: c.withPitchType },
+          { label: "구속 보유", value: c.withSpeed },
+          { label: "존 판정 가능", value: c.zoneKnown },
+        ].map(({ label, value }) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>
+              <strong>{rate(value, c.actualPitches)}</strong>
+              <span>
+                {value.toLocaleString()} / {c.actualPitches.toLocaleString()}구
+              </span>
+              <meter
+                min={0}
+                max={Math.max(1, c.actualPitches)}
+                value={value}
+                aria-label={`${label}`}
+                aria-valuetext={`${value} / ${c.actualPitches}구`}
+              />
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 export function AnalysisCoveragePage() {
@@ -115,11 +125,7 @@ export function AnalysisCoveragePage() {
           분석 가능 표본을 확인하고 있습니다.
         </p>
       )}
-      {query.error && (
-        <p className="panel" role="alert">
-          {query.error.message}
-        </p>
-      )}
+      <AnalysisQueryError queries={[query]} enabled={scope.error === null} />
       {preparation?.state === "preparing" && (
         <p className="panel" role="status">
           품질 요약을 준비하고 있습니다. 완료되면 자동으로 표시합니다.
@@ -162,42 +168,73 @@ export function AnalysisCoveragePage() {
             <p>
               유효 궤적은 중간면 구질 계산 기준입니다. 존 판정은 실제 도착 코스의 별도 기준입니다.
             </p>
-            <div className="table-scroll" tabIndex={0}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>구장</th>
-                    <th>경기</th>
-                    <th>실제 투구</th>
-                    <th>트래킹 누락</th>
-                    <th>궤적 부적합</th>
-                    <th>유효 궤적</th>
-                    <th>보정 적용</th>
-                    <th>보정 자료 부족</th>
-                    <th>구장 미지원</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.stadiums.map(({ stadium, counts: c }) => (
-                    <tr key={stadium ?? "unknown"}>
-                      <th>{stadium ?? "구장 미상"}</th>
-                      {[
-                        c.games,
-                        c.actualPitches,
-                        c.missingTracking,
-                        c.invalidTrajectory,
-                        c.validTrajectory,
-                        c.calibratedTrajectory,
-                        c.insufficientCalibration,
-                        c.unsupportedPark,
-                      ].map((value, index) => (
-                        <td key={index}>{value.toLocaleString()}</td>
-                      ))}
+            <ul className="coverage-park-list" aria-label="구장별 유효 궤적 비율">
+              {data.stadiums.map(({ stadium, counts: c }) => (
+                <li key={stadium ?? "unknown"}>
+                  <div className="coverage-park-heading">
+                    <strong>{stadium ?? "구장 미상"}</strong>
+                    <span>
+                      유효 궤적 <b>{rate(c.validTrajectory, c.actualPitches)}</b>
+                    </span>
+                  </div>
+                  <div className="coverage-park-bar" aria-hidden="true">
+                    <span style={{ flexGrow: c.validTrajectory }} />
+                    <span style={{ flexGrow: c.missingTracking }} />
+                    <span style={{ flexGrow: c.invalidTrajectory }} />
+                  </div>
+                  <p>
+                    실제 {c.actualPitches.toLocaleString()}구 중 유효{" "}
+                    {c.validTrajectory.toLocaleString()}구 · 누락{" "}
+                    {c.missingTracking.toLocaleString()}구 · 부적합{" "}
+                    {c.invalidTrajectory.toLocaleString()}구
+                  </p>
+                </li>
+              ))}
+            </ul>
+            <details className="coverage-park-details">
+              <summary>구장별 상세 수치와 보정 표본</summary>
+              <div
+                className="table-scroll"
+                tabIndex={0}
+                role="region"
+                aria-label="구장별 상세 수치"
+              >
+                <table>
+                  <thead>
+                    <tr>
+                      <th>구장</th>
+                      <th>경기</th>
+                      <th>실제 투구</th>
+                      <th>트래킹 누락</th>
+                      <th>궤적 부적합</th>
+                      <th>유효 궤적</th>
+                      <th>보정 적용</th>
+                      <th>보정 자료 부족</th>
+                      <th>구장 미지원</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {data.stadiums.map(({ stadium, counts: c }) => (
+                      <tr key={stadium ?? "unknown"}>
+                        <th>{stadium ?? "구장 미상"}</th>
+                        {[
+                          c.games,
+                          c.actualPitches,
+                          c.missingTracking,
+                          c.invalidTrajectory,
+                          c.validTrajectory,
+                          c.calibratedTrajectory,
+                          c.insufficientCalibration,
+                          c.unsupportedPark,
+                        ].map((value, index) => (
+                          <td key={index}>{value.toLocaleString()}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
             {data.total.games === 0 && <p>선택한 기간과 경기 종류에 저장된 경기가 없습니다.</p>}
             <p>
               실제 투구 = 트래킹 누락 + 궤적 부적합 + 유효 궤적. 유효 궤적 = 보정 적용 + 자료 부족 +

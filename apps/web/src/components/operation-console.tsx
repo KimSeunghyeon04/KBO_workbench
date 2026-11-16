@@ -17,7 +17,7 @@ export function OperationConsole({
   const returnFocus = React.useRef<HTMLElement | null>(null);
   React.useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
-    const compact = window.matchMedia("(max-width: 900px)");
+    const compact = window.matchMedia("(max-width: 1000px)");
     function restoreVisibleFocus() {
       if (!compact.matches) return;
       const focused = document.activeElement;
@@ -27,7 +27,10 @@ export function OperationConsole({
       } else if (!selected && detailRef.current?.contains(focused)) {
         const previous = returnFocus.current;
         if (previous?.isConnected && masterRef.current?.contains(previous)) previous.focus();
-        else masterRef.current?.focus();
+        else {
+          const list = masterRef.current?.querySelector<HTMLElement>('[role="listbox"]');
+          (list ?? masterRef.current)?.focus();
+        }
       }
     }
     restoreVisibleFocus();
@@ -58,7 +61,6 @@ export function OperationEmptyDetail({
 }): React.JSX.Element {
   return (
     <div className="operation-empty-detail">
-      <span aria-hidden="true">◇</span>
       <strong>{title}</strong>
       <p>{description}</p>
     </div>

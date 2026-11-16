@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { PitchAnalysisPoint, PitchReferenceDistribution } from "@kbo/contracts";
 import { createReferenceContours } from "./pitch-reference-geometry";
 import { createPitchPlotGeometry, type PlotView } from "./pitch-plot-geometry";
@@ -25,6 +25,7 @@ export function PitchShapeChart({
   onSelect,
   referenceDistribution,
 }: Props): React.JSX.Element {
+  const descriptionId = useId();
   const wrapper = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const backgroundCanvas = useRef<HTMLCanvasElement | null>(null);
@@ -133,84 +134,11 @@ export function PitchShapeChart({
   }
   return (
     <div className="pitch-shape-chart" ref={wrapper}>
-      <div className="pitch-view-controls">
-        <div className="pitch-view-presets">
-          <button type="button" onClick={() => setView(initialView)}>
-            3D 초기 시점
-          </button>
-          <button type="button" onClick={() => setView({ ...view, yaw: 0, elevation: 0, zoom: 1 })}>
-            정면
-          </button>
-          <label>
-            축 비율{" "}
-            <select
-              aria-label="축 비율"
-              value={view.equalScale ? "equal" : "expanded"}
-              onChange={(e) => setView({ ...view, equalScale: e.target.value === "equal" })}
-            >
-              <option value="expanded">축별 확대</option>
-              <option value="equal">실제 길이 비율</option>
-            </select>
-          </label>
-        </div>
-        <div className="pitch-view-sliders">
-          <label>
-            좌우 회전 <span>{Math.round(view.yaw)}°</span>
-            <input
-              aria-label="좌우 회전"
-              type="range"
-              min="-180"
-              max="180"
-              value={view.yaw}
-              onChange={(e) => setView({ ...view, yaw: Number(e.target.value) })}
-            />
-          </label>
-          <label>
-            상하 회전 <span>{Math.round(view.elevation)}°</span>
-            <input
-              aria-label="상하 회전"
-              type="range"
-              min="-75"
-              max="75"
-              value={view.elevation}
-              onChange={(e) => setView({ ...view, elevation: Number(e.target.value) })}
-            />
-          </label>
-          <label>
-            확대 <span>{view.zoom.toFixed(1)}×</span>
-            <input
-              aria-label="확대"
-              type="range"
-              min="0.6"
-              max="2"
-              step="0.1"
-              value={view.zoom}
-              onChange={(e) => setView({ ...view, zoom: Number(e.target.value) })}
-            />
-          </label>
-        </div>
-      </div>
       <div className="pitch-chart-caption">
         <span>
           3D · 평균 포심 = 십자선 · {view.equalScale ? "동일한 cm 비율" : "축별 확대 비율"}
         </span>
         <span>{points.length.toLocaleString()}구</span>
-      </div>
-      <div className="pitch-reference-toggle">
-        <label>
-          <input
-            type="checkbox"
-            checked={showReference && referenceDistribution !== null}
-            disabled={referenceDistribution === null}
-            onChange={(event) => setShowReference(event.target.checked)}
-          />
-          시즌 포심 분포 표시
-        </label>
-        <span>
-          {referenceDistribution === null
-            ? "유효 포심 4구 이상부터 분포를 표시합니다."
-            : "실선: 중앙 50% · 점선: 중앙 90% · 타원체 내부 기준"}
-        </span>
       </div>
       <canvas
         ref={canvas}
@@ -218,6 +146,7 @@ export function PitchShapeChart({
         tabIndex={0}
         role="img"
         aria-label={`평균 포심 도착 순간의 3D 투구 ${points.length}개. X 좌우, Y 플레이트까지 거리, Z 높이. 드래그로 회전, 방향키로 공 선택.`}
+        aria-describedby={descriptionId}
         onPointerDown={(event) => {
           if (event.button !== 0) return;
           event.currentTarget.setPointerCapture(event.pointerId);
@@ -285,11 +214,95 @@ export function PitchShapeChart({
         <span>Y · 플레이트까지 거리 (cm)</span>
         <span>Z · 높이 차이 (cm)</span>
       </div>
+      <div className="pitch-chart-explanation" id={descriptionId}>
+        <span>Y=0: 플레이트 중간면 · +Y: 플레이트 이전</span>
+        <span>
+          {referenceDistribution === null
+            ? "유효 포심 4구 이상부터 분포를 표시합니다."
+            : showReference
+              ? "시즌 포심 분포 · 실선: 중앙 50% · 점선: 중앙 90% · 타원체 내부 기준"
+              : "시즌 포심 분포 숨김"}
+        </span>
+      </div>
       <p className="pitch-hover-readout">
         {activeHover === null
           ? "드래그로 회전 · 점을 눌러 선택 · 방향키로 투구 이동"
           : `${groupLabel(activeHover, colorMode)} · 중계 ${activeHover.pitchType ?? "구종 미상"} · X ${signed(activeHover.xCm)} / Y ${signed(activeHover.distanceToPlateCm)} / Z ${signed(activeHover.zCm)} cm · ${signed(activeHover.timingDifferenceMs)} ms`}
       </p>
+      <details className="pitch-view-settings">
+        <summary>보기 설정</summary>
+        <div className="pitch-view-controls">
+          <div className="pitch-view-presets">
+            <button type="button" onClick={() => setView(initialView)}>
+              3D 초기 시점
+            </button>
+            <button
+              type="button"
+              onClick={() => setView({ ...view, yaw: 0, elevation: 0, zoom: 1 })}
+            >
+              정면
+            </button>
+            <label>
+              축 비율{" "}
+              <select
+                aria-label="축 비율"
+                value={view.equalScale ? "equal" : "expanded"}
+                onChange={(e) => setView({ ...view, equalScale: e.target.value === "equal" })}
+              >
+                <option value="expanded">축별 확대</option>
+                <option value="equal">실제 길이 비율</option>
+              </select>
+            </label>
+          </div>
+          <div className="pitch-view-sliders">
+            <label>
+              좌우 회전 <span>{Math.round(view.yaw)}°</span>
+              <input
+                aria-label="좌우 회전"
+                type="range"
+                min="-180"
+                max="180"
+                value={view.yaw}
+                onChange={(e) => setView({ ...view, yaw: Number(e.target.value) })}
+              />
+            </label>
+            <label>
+              상하 회전 <span>{Math.round(view.elevation)}°</span>
+              <input
+                aria-label="상하 회전"
+                type="range"
+                min="-75"
+                max="75"
+                value={view.elevation}
+                onChange={(e) => setView({ ...view, elevation: Number(e.target.value) })}
+              />
+            </label>
+            <label>
+              확대 <span>{view.zoom.toFixed(1)}×</span>
+              <input
+                aria-label="확대"
+                type="range"
+                min="0.6"
+                max="2"
+                step="0.1"
+                value={view.zoom}
+                onChange={(e) => setView({ ...view, zoom: Number(e.target.value) })}
+              />
+            </label>
+          </div>
+          <div className="pitch-reference-toggle">
+            <label>
+              <input
+                type="checkbox"
+                checked={showReference && referenceDistribution !== null}
+                disabled={referenceDistribution === null}
+                onChange={(event) => setShowReference(event.target.checked)}
+              />
+              시즌 포심 분포 표시
+            </label>
+          </div>
+        </div>
+      </details>
     </div>
   );
 }

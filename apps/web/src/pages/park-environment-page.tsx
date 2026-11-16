@@ -1,14 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
+import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { AnalysisScopeFields } from "../analysis/analysis-scope-fields";
 import { useAnalysisScope } from "../analysis/use-analysis-scope";
+import { ParkRateChart } from "../analysis/park-rate-chart";
 import { getParkEnvironment } from "../api/park-environment-client";
 import "../styles/pitch-analysis.css";
 const n = (v: number | null) => v?.toFixed(3) ?? "—";
 export function ParkEnvironmentPage() {
   const { selected, season, scope, change: changeScope } = useAnalysisScope();
   const [page, setPage] = useState(0);
+  const [showSides, setShowSides] = useState(false);
   const query = { season, ...scope.options },
     result = useQuery({
       queryKey: ["park-environment", query],
@@ -42,66 +45,96 @@ export function ParkEnvironmentPage() {
         </label>
         <AnalysisScopeFields params={selected} onChange={change} />
       </section>
-      {(scope.error || result.error) && <p role="alert">{String(scope.error ?? result.error)}</p>}
+      {scope.error && <p role="alert">{scope.error}</p>}
+      <AnalysisQueryError queries={[result]} enabled={scope.error === null} />
       {result.isFetching && <p role="status">구장별 성적을 집계합니다.</p>}
       {data && (
         <>
           <section className="panel">
-            <h2>관측 성적 · {data.games}경기</h2>
-            <p>
-              확인하지 못한 구장 {data.unknownParkGames}경기. 대전의 2025년 새 시설은 이전 시설과
-              분리합니다. 득점/타석은 경기 전체, 완결 반이닝당 득점은 정상 9이닝 경기의 1–8회 3아웃
-              완료 반이닝만 사용합니다. 단순 평균에는 선수 구성 차이가 포함됩니다.
+            <p role="status">
+              {data.modelStatus === "ready"
+                ? "검증된 조정 지수 제공 · 아래 관측 성적과 구분해 보세요."
+                : "조정 지수 미제공 · 현재 관측 성적만 제공합니다."}
+              {data.modelStatus === "scope_mismatch"
+                ? " 조정값은 확인된 정규시즌 전체 범위에서만 표시합니다."
+                : data.modelStatus === "not_adopted"
+                  ? " 시간 검증에서 개선한 모델이 없어 채택하지 않았습니다."
+                  : data.modelStatus !== "ready"
+                    ? " 현재 원천에 맞는 학습 모델이 없습니다."
+                    : ""}
             </p>
-            <div className="table-scroll" tabIndex={0}>
-              <table aria-label="구장별 홈 원정 성적">
-                <thead>
-                  <tr>
-                    {[
-                      "구장·시설",
-                      "공격",
-                      "경기",
-                      "PA",
-                      "득점",
-                      "HR",
-                      "득점/PA",
-                      "HR/PA",
-                      "완결 반이닝",
-                      "득점/완결 반이닝",
-                      "제외 반이닝",
-                    ].map((s) => (
-                      <th key={s}>{s}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.parks.flatMap((p) =>
-                    [
-                      { label: "전체", value: p.total },
-                      { label: "홈", value: p.home },
-                      { label: "원정", value: p.away },
-                    ].map((g) => (
-                      <tr key={`${p.key}-${g.label}`}>
-                        <th>
-                          {p.stadiums.join(" / ") || "구장 미상"}
-                          <small> {p.parkId ?? "시설 미확인"}</small>
-                        </th>
-                        <td>{g.label}</td>
-                        <td>{g.value.games}</td>
-                        <td>{g.value.pa}</td>
-                        <td>{g.value.runs}</td>
-                        <td>{g.value.homeRuns}</td>
-                        <td>{n(g.value.runRate)}</td>
-                        <td>{n(g.value.homeRunRate)}</td>
-                        <td>{g.value.completeHalves}</td>
-                        <td>{n(g.value.completeRunRate)}</td>
-                        <td>{g.value.excludedHalves}</td>
-                      </tr>
-                    )),
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <h2>관측 성적 · {data.games}경기</h2>
+            <ParkRateChart parks={data.parks} />
+            <details>
+              <summary>집계 기준과 시설 구분</summary>
+              <p>
+                시설 식별 미확인 {data.unknownParkGames}경기. 구장명은 있어도 시설 분류가 미확인일
+                수 있습니다. 대전의 2025년 새 시설은 이전 시설과 분리합니다. 득점/타석은 경기 전체,
+                완결 반이닝당 득점은 정상 9이닝 경기의 1–8회 3아웃 완료 반이닝만 사용합니다. 단순
+                평균에는 선수 구성 차이가 포함됩니다.
+              </p>
+            </details>
+            <details className="park-observed-details">
+              <summary>구장별 상세 기록</summary>
+              <button
+                type="button"
+                aria-pressed={showSides}
+                onClick={() => setShowSides(!showSides)}
+              >
+                홈·원정 세부 성적 {showSides ? "접기" : "보기"}
+              </button>
+              <div className="table-scroll" tabIndex={0}>
+                <table aria-label="구장별 홈 원정 성적">
+                  <thead>
+                    <tr>
+                      {[
+                        "구장·시설",
+                        "공격",
+                        "경기",
+                        "PA",
+                        "득점",
+                        "HR",
+                        "득점/PA",
+                        "HR/PA",
+                        "완결 반이닝",
+                        "득점/완결 반이닝",
+                        "제외 반이닝",
+                      ].map((s) => (
+                        <th key={s}>{s}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.parks.flatMap((p) =>
+                      [
+                        { label: "전체", value: p.total },
+                        { label: "홈", value: p.home },
+                        { label: "원정", value: p.away },
+                      ]
+                        .filter((g) => showSides || g.label === "전체")
+                        .map((g) => (
+                          <tr key={`${p.key}-${g.label}`}>
+                            <th>
+                              {p.stadiums.join(" / ") || "구장 미상"}
+                              <small> {p.parkId ?? "시설 미확인"}</small>
+                            </th>
+                            <td>{g.label}</td>
+                            <td>{g.value.games}</td>
+                            <td>{g.value.pa}</td>
+                            <td>{g.value.runs}</td>
+                            <td>{g.value.homeRuns}</td>
+                            <td>{n(g.value.runRate)}</td>
+                            <td>{n(g.value.homeRunRate)}</td>
+                            <td>{g.value.completeHalves}</td>
+                            <td>{n(g.value.completeRunRate)}</td>
+                            <td>{g.value.excludedHalves}</td>
+                          </tr>
+                        )),
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </details>
           </section>
           <section className="panel">
             <h2>팀 구성 조정</h2>

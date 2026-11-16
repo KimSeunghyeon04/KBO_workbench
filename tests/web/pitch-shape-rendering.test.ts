@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { createElement } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { PitchAnalysisPoint } from "@kbo/contracts";
 import { PitchShapeChart } from "../../apps/web/src/analysis/pitch-shape-chart.js";
@@ -74,6 +75,79 @@ function canvasSpies() {
   });
   return contexts;
 }
+
+it("shows the chart and coordinate meaning before collapsed keyboard-accessible view settings", async () => {
+  canvasSpies();
+  const points = [point(0), point(1), point(2)];
+  const onSelect = vi.fn();
+  const user = userEvent.setup();
+  render(
+    createElement(PitchShapeChart, {
+      points,
+      allPoints: points,
+      selected: null,
+      colorMode: "provider",
+      onSelect,
+      referenceDistribution: null,
+    }),
+  );
+  const chart = screen.getByRole("img");
+  const summary = screen.getByText("보기 설정");
+  const settings = summary.closest("details");
+  if (!(settings instanceof HTMLDetailsElement)) throw new Error("Missing view disclosure");
+  expect(chart.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  expect(settings.open).toBe(false);
+  expect(summary.tagName).toBe("SUMMARY");
+  expect(screen.getByText(/평균 포심 = 십자선 · 축별 확대 비율/)).toBeTruthy();
+  expect(screen.getByText("X · 좌우 차이 (cm)")).toBeTruthy();
+  expect(screen.getByText("Y · 플레이트까지 거리 (cm)")).toBeTruthy();
+  expect(screen.getByText("Z · 높이 차이 (cm)")).toBeTruthy();
+  const description = document.getElementById(chart.getAttribute("aria-describedby") ?? "");
+  expect(description?.textContent).toContain("Y=0: 플레이트 중간면 · +Y: 플레이트 이전");
+  expect(description?.textContent).toContain("유효 포심 4구 이상");
+
+  await user.tab();
+  expect(document.activeElement).toBe(chart);
+  fireEvent.keyDown(chart, { key: "End" });
+  expect(onSelect).toHaveBeenLastCalledWith(points[2]);
+  fireEvent.keyDown(chart, { key: "Home" });
+  expect(onSelect).toHaveBeenLastCalledWith(points[0]);
+  await user.tab();
+  expect(document.activeElement).toBe(summary);
+  await user.click(summary);
+  expect(settings.open).toBe(true);
+  const yaw = screen.getByRole("slider", { name: "좌우 회전" });
+  const elevation = screen.getByRole("slider", { name: "상하 회전" });
+  const zoom = screen.getByRole("slider", { name: "확대" });
+  expect(yaw).toHaveProperty("min", "-180");
+  expect(yaw).toHaveProperty("max", "180");
+  expect(elevation).toHaveProperty("min", "-75");
+  expect(elevation).toHaveProperty("max", "75");
+  expect(zoom).toHaveProperty("min", "0.6");
+  expect(zoom).toHaveProperty("max", "2");
+  expect(zoom).toHaveProperty("step", "0.1");
+  expect(screen.getByRole("checkbox", { name: "시즌 포심 분포 표시" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  await user.selectOptions(screen.getByRole("combobox", { name: "축 비율" }), "equal");
+  expect(screen.getByText(/평균 포심 = 십자선 · 동일한 cm 비율/)).toBeTruthy();
+  fireEvent.change(yaw, { target: { value: "180" } });
+  fireEvent.change(elevation, { target: { value: "-75" } });
+  fireEvent.change(zoom, { target: { value: "2" } });
+  expect(screen.getByText("180°")).toBeTruthy();
+  expect(screen.getByText("-75°")).toBeTruthy();
+  expect(screen.getByText("2.0×")).toBeTruthy();
+  await user.click(summary);
+  expect(settings.open).toBe(false);
+  expect(screen.getByText(/동일한 cm 비율/)).toBeTruthy();
+  await user.click(summary);
+  expect(yaw).toHaveProperty("value", "180");
+  await user.click(screen.getByRole("button", { name: "3D 초기 시점" }));
+  expect(yaw).toHaveProperty("value", "35");
+  expect(elevation).toHaveProperty("value", "18");
+  expect(zoom).toHaveProperty("value", "1");
+});
 
 it("reuses the 10,000-pitch background for selection and hover while retaining one accessible canvas", () => {
   const contexts = canvasSpies();
@@ -177,6 +251,7 @@ it("rebuilds the background on transforms/data/resize and releases detached bitm
   expect(canvas.width).toBe(1440);
   expect(canvas.height).toBe(1040);
   const position = main.arc.mock.lastCall?.slice(0, 2);
+  fireEvent.click(screen.getByText("보기 설정"));
   fireEvent.change(screen.getByLabelText("좌우 회전"), { target: { value: "75" } });
   expect(backgrounds()).toHaveLength(2);
   expect(backgrounds()[0]?.width).toBe(0);

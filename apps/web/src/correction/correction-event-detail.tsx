@@ -12,11 +12,13 @@ import { eventKindLabel, type EventPresentation } from "./event-presentation";
 import { PitchTrackingDetail } from "./pitch-tracking-detail";
 import { focusedSourceEvidence } from "./source-evidence-presentation";
 import { isRepairableTrackingPlateAppearanceFinding } from "./tracking-review";
+import { findingCategoryLabel, findingIdentity, findingMessageLabel } from "./finding-presentation";
 
 export function EventDetail({
   presentation,
   context,
   findings,
+  selectedFindingIdentity = null,
   document,
   eventContexts,
   exceptionTrackingId,
@@ -25,10 +27,12 @@ export function EventDetail({
   sourceEvidenceError,
   pending,
   onApply,
+  navigation,
 }: {
   readonly presentation: EventPresentation | undefined;
   readonly context: CorrectionEventContext | undefined;
   readonly findings: readonly CorrectionFinding[];
+  readonly selectedFindingIdentity?: string | null;
   readonly document: StagingGameDocumentV2;
   readonly eventContexts: readonly CorrectionEventContext[];
   readonly exceptionTrackingId: string | null;
@@ -37,21 +41,27 @@ export function EventDetail({
   readonly sourceEvidenceError: Error | null;
   readonly pending: boolean;
   readonly onApply: (command: CorrectionCommand) => void;
+  readonly navigation?: React.ReactNode;
 }): React.JSX.Element {
   const event = presentation?.event;
   const exceptionOnly = event === undefined && exceptionTrackingId !== null;
+  const orderedFindings = [...findings].sort(
+    (left, right) =>
+      Number(findingIdentity(right) === selectedFindingIdentity) -
+        Number(findingIdentity(left) === selectedFindingIdentity) ||
+      Number(left.severity === "warning") - Number(right.severity === "warning"),
+  );
   return (
-    <section className="panel correction-detail">
+    <section id="correction-selection-detail" className="panel correction-detail" tabIndex={-1}>
       <div className="panel-title-row">
         <h2>선택한 원장 행</h2>
         <span>{event === undefined ? "-" : eventKindLabel(event.kind)}</span>
       </div>
+      {navigation}
       {event === undefined || presentation === undefined ? (
         exceptionOnly ? (
           <div className="event-detail-body">
-            <p className="muted-text">
-              대응하는 원장 투구 행을 찾지 못한 원천 tracking 관측입니다.
-            </p>
+            <p className="muted-text">대응하는 원장 투구 행을 찾지 못한 원천 트래킹 관측입니다.</p>
             <PitchTrackingDetail
               document={document}
               eventContexts={eventContexts}
@@ -79,7 +89,7 @@ export function EventDetail({
             ) : null}
           </article>
           {context === undefined ? (
-            <p className="muted-text">이 행의 compiler 상태를 계산하지 못했습니다.</p>
+            <p className="muted-text">이 행의 경기 상태를 계산하지 못했습니다.</p>
           ) : (
             <div className="event-state-comparison">
               <div>
@@ -92,33 +102,31 @@ export function EventDetail({
                 <p>{formatState(context.after, document)}</p>
               </div>
               {!context.applied ? (
-                <em>blocking finding으로 이 행의 상태 적용이 보류됐습니다.</em>
+                <em>해결해야 할 검증 문제가 있어 이 행의 상태 적용을 보류했습니다.</em>
               ) : null}
             </div>
           )}
           <div className="event-related-findings">
             <div className="panel-title-row">
-              <h3>관련 finding</h3>
+              <h3>관련 검증 문제</h3>
               <span>{String(findings.length)}건</span>
             </div>
             {findings.length === 0 ? (
-              <p className="muted-text">이 행에 직접 연결된 finding이 없습니다.</p>
+              <p className="muted-text">이 행에 직접 연결된 검증 문제가 없습니다.</p>
             ) : (
-              findings.map((finding) => {
+              orderedFindings.map((finding) => {
                 const repairable = isRepairableTrackingPlateAppearanceFinding(
                   document,
                   eventContexts,
                   finding,
                 );
                 return (
-                  <article
-                    className={finding.severity}
-                    key={`${finding.code}:${finding.message}:${finding.eventSequence ?? "game"}`}
-                  >
+                  <article className={finding.severity} key={findingIdentity(finding)}>
                     <span>
-                      {finding.severity === "blocking" ? "차단" : "경고"} · {finding.category}
+                      {finding.severity === "blocking" ? "차단" : "경고"} ·{" "}
+                      {findingCategoryLabel(finding.category)}
                     </span>
-                    <strong>{finding.message}</strong>
+                    <strong>{findingMessageLabel(finding.message)}</strong>
                     <FindingDetails
                       code={finding.code}
                       details={finding.details}
@@ -136,10 +144,14 @@ export function EventDetail({
                           })
                         }
                       >
-                        삭제된 PA 문맥 재계산
+                        삭제된 타석 연결 재계산
                       </button>
                     ) : null}
-                    <small>{finding.code}</small>
+                    <details className="finding-diagnostics">
+                      <summary>진단 정보</summary>
+                      <code>{finding.code}</code>
+                      <pre>{JSON.stringify(finding, null, 2)}</pre>
+                    </details>
                   </article>
                 );
               })

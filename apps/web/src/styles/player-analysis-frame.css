@@ -1,7 +1,7 @@
 .player-analysis-frame {
   display: grid;
-  gap: 16px;
-  max-width: 1280px;
+  gap: 20px;
+  max-width: 1240px;
   margin-inline: auto;
   min-width: 0;
 }
@@ -10,25 +10,18 @@
 }
 .player-analysis-context {
   min-width: 0;
-  border: 1px solid #d6dfe4;
-  border-top: 3px solid #243d50;
-  background: #fff;
+  border-bottom: 1px solid var(--ui-line);
+  background: var(--ui-surface);
 }
 .player-analysis-context-heading {
   display: flex;
   align-items: center;
   gap: 20px;
   justify-content: space-between;
-  padding: 18px 22px;
+  padding: 0 0 16px;
 }
 .player-analysis-identity {
   min-width: 0;
-}
-.player-report-label {
-  display: block;
-  color: #64747f;
-  font-size: 11px;
-  margin-bottom: 5px;
 }
 .player-analysis-name {
   display: flex;
@@ -39,27 +32,27 @@
 .player-analysis-name > strong {
   font-size: 30px;
   line-height: 1.3;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.03em;
   overflow-wrap: anywhere;
-  color: #203649;
+  color: var(--ui-ink);
 }
 .player-role-label {
   padding: 3px 7px;
-  border: 1px solid #cedadf;
-  border-radius: 2px;
-  color: #465e6b;
-  background: #f5f8fa;
-  font-size: 11px;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius);
+  color: var(--ui-muted);
+  background: var(--ui-surface-subtle);
+  font-size: 12px;
 }
 .player-analysis-id {
-  color: #637581;
-  font-size: 11px;
+  color: var(--ui-muted);
+  font-size: 12px;
 }
 .player-analysis-period {
   display: block;
   margin-top: 6px;
-  color: #596f7b;
-  font-size: 12px;
+  color: var(--ui-muted);
+  font-size: 13px;
   line-height: 1.7;
 }
 .player-analysis-actions {
@@ -74,13 +67,13 @@
   white-space: nowrap;
 }
 .player-catalog-sample > span {
-  color: #617480;
-  font-size: 11px;
+  color: var(--ui-muted);
+  font-size: 12px;
 }
 .player-catalog-sample strong {
   font-size: 24px;
   font-variant-numeric: tabular-nums;
-  color: #243d50;
+  color: var(--ui-ink);
 }
 .player-catalog-sample small {
   margin-left: 5px;
@@ -91,60 +84,83 @@
   display: flex;
   gap: 12px;
   white-space: nowrap;
-  color: #365767;
-  font-size: 12px;
-  border: 1px solid #cfdbe0;
+  color: var(--ui-accent);
+  font-size: 13px;
+  border: 1px solid var(--ui-line);
   padding: 9px 12px;
-  border-radius: 3px;
+  border-radius: var(--ui-radius);
 }
 .player-directory-link:hover {
-  background: #edf3f6;
+  background: var(--ui-selected);
 }
 .player-analysis-links {
   display: flex;
   flex-wrap: wrap;
-  border-top: 1px solid #dce4e8;
-  background: #f7f9fa;
+  gap: 0 24px;
 }
 .player-analysis-links a {
-  padding: 11px 18px;
-  border-right: 1px solid #e0e6e9;
-  color: #4c636f;
+  padding: 12px 0;
+  border-bottom: 2px solid transparent;
+  color: var(--ui-muted);
   font-size: 13px;
   font-weight: 550;
 }
 .player-analysis-links a.selected {
-  color: #fff;
-  background: #243d50;
+  color: var(--ui-accent);
+  border-color: var(--ui-accent);
   font-weight: 650;
 }
 .player-analysis-links a:hover:not(.selected) {
-  background: #e7eff3;
+  color: var(--ui-accent);
+  border-color: var(--ui-line);
+}
+.player-analysis-frame .page-header {
+  min-height: 0;
+  padding: 0;
+}
+.player-analysis-frame .page-header h1 {
+  font-size: 22px;
+}
+.player-analysis-frame .page-header p {
+  font-size: 13px;
 }
 @media (max-width: 640px) {
   .player-analysis-context-heading {
     align-items: start;
-    padding: 14px;
+    padding: 0 0 16px;
+    flex-wrap: wrap;
     gap: 12px;
   }
   .player-analysis-name > strong {
     font-size: 25px;
   }
-  .player-analysis-id,
+  .player-analysis-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
   .player-catalog-sample {
-    display: none;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .player-catalog-sample strong {
+    font-size: 18px;
   }
   .player-directory-link {
     padding: 7px 9px;
     gap: 5px;
-    font-size: 11px;
+    font-size: 12px;
   }
   .player-analysis-links {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    flex-wrap: nowrap;
+    gap: 0 20px;
+    overflow-x: auto;
+    scrollbar-width: thin;
   }
   .player-analysis-links a {
-    padding: 10px 5px;
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 12px 2px;
     font-size: 12px;
     text-align: center;
   }

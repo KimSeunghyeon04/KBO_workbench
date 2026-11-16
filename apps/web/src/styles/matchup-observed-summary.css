@@ -1,0 +1,88 @@
+.matchup-observed-summary h2 {
+  margin-bottom: 12px;
+}
+.matchup-cohorts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px 48px;
+  margin-block: 24px;
+}
+.matchup-cohorts dt {
+  color: var(--ui-muted);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.matchup-cohorts dd {
+  margin: 0;
+}
+.matchup-cohorts strong {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.matchup-rate-groups {
+  display: grid;
+  gap: 24px;
+  margin-block: 24px;
+}
+.matchup-rate-groups section {
+  border-top: 1px solid var(--ui-line);
+  padding-top: 16px;
+}
+.matchup-rate-groups h3 {
+  font-size: 14px;
+  margin: 0 0 12px;
+}
+.matchup-rate-row {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr) 160px;
+  align-items: center;
+  gap: 16px;
+  min-height: 56px;
+}
+.matchup-rate-track {
+  display: block;
+  height: 12px;
+  background: var(--ui-surface-subtle);
+}
+.matchup-rate-track i {
+  display: block;
+  height: 100%;
+  background: var(--ui-accent);
+}
+.matchup-rate-track.similar i {
+  border: 1px solid var(--ui-accent);
+  background: var(--ui-selected);
+}
+.matchup-rate-row > .sample-rate {
+  text-align: right;
+}
+.matchup-detail {
+  margin-top: 16px;
+}
+.matchup-detail > summary {
+  margin-bottom: 12px;
+}
+@media (max-width: 640px) {
+  .matchup-cohorts {
+    gap: 16px;
+  }
+  .matchup-cohorts div {
+    flex: 1 1 120px;
+  }
+  .matchup-cohorts dd {
+    font-size: 12px;
+  }
+  .matchup-rate-row {
+    grid-template-columns: 80px minmax(0, 1fr);
+    gap: 8px 12px;
+    margin-block: 12px;
+  }
+  .matchup-rate-row > .sample-rate {
+    grid-row: 1;
+    grid-column: 2;
+  }
+  .matchup-rate-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}

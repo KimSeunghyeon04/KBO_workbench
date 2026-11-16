@@ -17,6 +17,7 @@ export function VirtualEventList({
   collapsedInningEventIds = new Set(),
   collapsedPlateEventIds = new Set(),
   collapseDisabled = false,
+  focusRequest = 0,
   onSelect,
   onAction,
   onToggleCollapse = () => undefined,
@@ -29,6 +30,7 @@ export function VirtualEventList({
   readonly collapsedInningEventIds?: ReadonlySet<string>;
   readonly collapsedPlateEventIds?: ReadonlySet<string>;
   readonly collapseDisabled?: boolean;
+  readonly focusRequest?: number;
   readonly onSelect: (id: string) => void;
   readonly onAction: (id: string, action: RowAction) => void;
   readonly onToggleCollapse?: (kind: EventCollapseKind, eventId: string) => void;
@@ -37,6 +39,8 @@ export function VirtualEventList({
   const menuRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<string | null>(null);
   const [menuOpensUpward, setMenuOpensUpward] = useState(false);
+  const [menuMaxHeight, setMenuMaxHeight] = useState(280);
+  const handledFocusRequest = useRef(0);
   const selectedIndex = rows.findIndex(
     (row) => row.presentation.event.identity.eventId === selectedEventId,
   );
@@ -47,6 +51,16 @@ export function VirtualEventList({
   });
   const { containerRef: listRef, window } = virtualList;
   const visibleRows = rows.slice(window.start, window.end);
+
+  useEffect(() => {
+    if (focusRequest === 0 || handledFocusRequest.current === focusRequest) return;
+    const selected = listRef.current?.querySelector<HTMLButtonElement>(
+      '.event-row-select[aria-pressed="true"]',
+    );
+    if (selected === null || selected === undefined) return;
+    handledFocusRequest.current = focusRequest;
+    queueMicrotask(() => selected.focus({ preventScroll: true }));
+  }, [focusRequest, listRef, selectedEventId, window.start, window.end]);
 
   useEffect(() => {
     if (menu === null) return;
@@ -81,12 +95,20 @@ export function VirtualEventList({
     if (list !== null && trigger !== null) {
       const listRect = list.getBoundingClientRect();
       const triggerRect = trigger.getBoundingClientRect();
-      setMenuOpensUpward(triggerRect.bottom + 132 > listRect.bottom);
+      const below = listRect.bottom - triggerRect.bottom;
+      const above = triggerRect.top - listRect.top;
+      const upward = below < 280 && above > below;
+      setMenuOpensUpward(upward);
+      setMenuMaxHeight(Math.max(88, (upward ? above : below) - 8));
     } else setMenuOpensUpward(false);
     setMenu(eventId);
   };
   const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
-    const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("[role='menuitem']")];
+    const items = [
+      ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
+        "[role='menuitem']:not(:disabled)",
+      ),
+    ];
     const index = items.indexOf(document.activeElement as HTMLButtonElement);
     if (event.key === "Escape") {
       event.preventDefault();
@@ -133,7 +155,12 @@ export function VirtualEventList({
               className={`event-row ${item.startsHalf ? "starts-half" : ""} ${collapsedGroups.length > 0 ? "collapsed-group" : ""} ${selectedEventId === id ? "selected" : ""}`}
               style={{ top: rowIndex * rowHeight, height: rowHeight }}
             >
-              <button type="button" className="event-row-select" onClick={() => onSelect(id)}>
+              <button
+                type="button"
+                className="event-row-select"
+                aria-pressed={selectedEventId === id}
+                onClick={() => onSelect(id)}
+              >
                 <span className="event-position">
                   <b>{item.location}</b>
                   <small>#{String(item.event.sequence + 1)}</small>
@@ -175,25 +202,6 @@ export function VirtualEventList({
                   disabled={disabled}
                   onClick={() => onAction(id, "edit")}
                 />
-                <IconButton
-                  name="위로 이동"
-                  icon="up"
-                  disabled={disabled || !capabilities.canMoveUp}
-                  onClick={() => onAction(id, "move_up")}
-                />
-                <IconButton
-                  name="아래로 이동"
-                  icon="down"
-                  disabled={disabled || !capabilities.canMoveDown}
-                  onClick={() => onAction(id, "move_down")}
-                />
-                <IconButton
-                  name="삭제"
-                  icon="delete"
-                  danger
-                  disabled={disabled}
-                  onClick={() => onAction(id, "delete")}
-                />
                 <div className="event-more-control">
                   <IconButton
                     id={menuTriggerId(id)}
@@ -211,19 +219,29 @@ export function VirtualEventList({
                       id={menuPanelId(id)}
                       role="menu"
                       className={`event-more-menu ${menuOpensUpward ? "opens-upward" : ""}`}
+                      style={{ maxHeight: menuMaxHeight }}
                       onKeyDown={handleMenuKeyDown}
                     >
                       {[
                         ["앞에 행 추가", "insert_before"],
                         ["뒤에 행 추가", "insert_after"],
                         ["위치 지정 이동", "move_to"],
+                        ["위로 이동", "move_up"],
+                        ["아래로 이동", "move_down"],
+                        ["행 삭제", "delete"],
                       ].map(([label, action]) => (
                         <button
                           key={action}
                           role="menuitem"
                           type="button"
+                          disabled={
+                            disabled ||
+                            (action === "move_up" && !capabilities.canMoveUp) ||
+                            (action === "move_down" && !capabilities.canMoveDown)
+                          }
+                          className={action === "delete" ? "danger" : undefined}
                           onClick={() => {
-                            setMenu(null);
+                            closeMenuAndRestoreFocus();
                             onAction(id, action as RowAction);
                           }}
                         >

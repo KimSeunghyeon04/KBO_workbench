@@ -234,6 +234,7 @@ export async function createRuntime(config: AppConfig, pool: Pool): Promise<AppR
       await importJobs.close();
       await collectionJobs.close();
       await collectionOperations.close();
+      await client.close();
       recordCorrectionService.close();
       await computation.close();
       await workspace.close();

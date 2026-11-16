@@ -15,6 +15,7 @@ export function RecordDetail({
   onKindChange,
   onSelectRecord,
   onClose,
+  navigation,
 }: {
   readonly document: StagingGameDocumentV2;
   readonly calculatedRecords: CorrectionSession["calculatedRecords"];
@@ -23,6 +24,7 @@ export function RecordDetail({
   readonly onKindChange: (kind: RecordKind) => void;
   readonly onSelectRecord: (recordIdentity: string) => void;
   readonly onClose: () => void;
+  readonly navigation?: React.ReactNode;
 }): React.JSX.Element {
   const [query, setQuery] = useState("");
   const comparisons = useMemo(
@@ -45,13 +47,18 @@ export function RecordDetail({
   const pitcherCount = comparisons.filter((record) => record.kind === "pitcher").length;
 
   return (
-    <section className="panel correction-detail correction-record-detail">
+    <section
+      id="correction-selection-detail"
+      className="panel correction-detail correction-record-detail"
+      tabIndex={-1}
+    >
       <div className="panel-title-row">
         <h2>공식 기록 비교</h2>
         <button type="button" className="text-button" onClick={onClose}>
           원장 행 상세
         </button>
       </div>
+      {navigation}
       <div className="record-kind-tabs" role="group" aria-label="기록 종류">
         <button
           type="button"
@@ -126,7 +133,7 @@ export function RecordDetail({
                 <div className="record-stat-header" role="row">
                   <span role="columnheader">항목</span>
                   <span role="columnheader">공식</span>
-                  <span role="columnheader">compiler</span>
+                  <span role="columnheader">원장 계산</span>
                   <span role="columnheader">판정</span>
                 </div>
                 {selected.fields.map((field) => (
@@ -139,7 +146,8 @@ export function RecordDetail({
                 ))}
               </div>
               <p className="record-comparison-note">
-                공식 제공 필드만 검증합니다. compiler가 계산하지 않는 자책점은 비교에서 제외합니다.
+                공식 기록이 제공된 항목만 검증합니다. 원장에서 계산하지 않는 자책점은 비교에서
+                제외합니다.
               </p>
             </>
           )}

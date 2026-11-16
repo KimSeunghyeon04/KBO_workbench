@@ -1,0 +1,92 @@
+.pitch-change-summary {
+  border-top: 3px solid var(--analysis-accent, #137e69);
+}
+.pitch-change-summary label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+.pitch-change-summary select {
+  min-width: 130px;
+}
+.pitch-change-windows {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.pitch-change-windows p {
+  display: grid;
+  gap: 5px;
+  padding: 12px 16px;
+  background: #f4f8f8;
+  border-radius: 4px;
+}
+.pitch-change-windows strong {
+  color: var(--analysis-ink, #233b4b);
+}
+.pitch-change-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.pitch-change-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #dce6e8;
+  border-radius: 5px;
+}
+.pitch-change-card h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+.pitch-change-value {
+  display: block;
+  font-size: clamp(20px, 2vw, 28px);
+  font-variant-numeric: tabular-nums;
+}
+.pitch-change-status {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 3px 7px;
+  color: #405a65;
+  background: #eef3f4;
+  font-size: 12px;
+}
+.pitch-change-card p,
+.pitch-change-card small {
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.pitch-change-card svg {
+  display: block;
+  width: 100%;
+  max-height: 48px;
+}
+.pitch-change-axis {
+  stroke: #a7b7bd;
+  fill: none;
+  stroke-dasharray: 3 3;
+}
+.pitch-change-interval {
+  stroke: #386874;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+.pitch-change-point {
+  fill: #233b4b;
+}
+.pitch-change-reading-note {
+  border-left: 3px solid #a8b9bf;
+  padding-left: 12px;
+}
+@media (max-width: 900px) {
+  .pitch-change-cards {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 600px) {
+  .pitch-change-windows {
+    grid-template-columns: 1fr;
+  }
+}

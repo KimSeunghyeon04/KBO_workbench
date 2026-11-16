@@ -130,6 +130,39 @@ function show(search = "season=2025&playerRole=pitcher&pitcher=hp1") {
   );
 }
 
+function openConditions() {
+  const toggle = screen.getByText("조회 조건 변경", { exact: true });
+  if (!toggle.closest("details")?.open) fireEvent.click(toggle);
+}
+
+async function findRecordTable(options: { name: string }) {
+  const toggle = await screen.findByText("상세 기록", { exact: true });
+  if (!toggle.closest("details")?.open) fireEvent.click(toggle);
+  return screen.findByRole("table", options);
+}
+
+it("leads with team records and ERA coverage while conditions and detailed records stay discoverable", async () => {
+  const fetch = mockRecords();
+  show();
+  const summary = await screen.findByRole("region", { name: "홈 핵심 투구 기록" });
+  expect(within(summary).getByText("20.0%")).toBeTruthy();
+  const era = within(summary).getByText("평균자책점 ERA").parentElement;
+  expect(era?.textContent).toContain("자책점 확인 1/2경기");
+  expect(screen.getByText("상세 기록", { exact: true }).closest("details")?.open).toBe(false);
+  expect(screen.getByText("조회 조건 변경").closest("details")?.open).toBe(false);
+  expect(screen.getByText("조회 조건 변경")).toBeTruthy();
+  const table = await findRecordTable({ name: "투구 성적" });
+  expect(within(table).getByText("3.00")).toBeTruthy();
+  fireEvent.click(screen.getByText("상세 기록", { exact: true }));
+  expect(screen.getByText("상세 기록", { exact: true }).closest("details")?.open).toBe(false);
+  expect(within(summary).getByText("20.0%")).toBeTruthy();
+  openConditions();
+  expect(screen.getByRole("combobox", { name: "성적 시즌" })).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: "경기 종류" })).toBeTruthy();
+  expect(screen.getByLabelText("분석 시작일")).toBeTruthy();
+  expect(fetch).toHaveBeenCalledTimes(2);
+});
+
 it("requests one bounded player page with only common scope and preserves team rows and incomplete ERA", async () => {
   const fetch = mockRecords({
     pitching: [
@@ -148,7 +181,7 @@ it("requests one bounded player page with only common scope and preserves team r
   show(
     "season=2024&playerRole=pitcher&pitcher=hp1&competition=all&dateFrom=2024-04-01&dateTo=2024-04-30&pitchType=slider&balls=2&minimum=999&page=4",
   );
-  const table = await screen.findByRole("table", { name: "투구 성적" });
+  const table = await findRecordTable({ name: "투구 성적" });
   const rows = within(table).getAllByRole("row");
   expect(rows).toHaveLength(3);
   expect(within(table).getByRole("columnheader", { name: "IP", exact: true })).toBeTruthy();
@@ -158,6 +191,10 @@ it("requests one bounded player page with only common scope and preserves team r
   expect(rows[2]?.textContent).toContain("0/2");
   expect(within(rows[2] ?? table).getAllByText("—")).toHaveLength(3);
   expect(within(table).getByText("이적 후 팀")).toBeTruthy();
+  const transferredSummary = screen.getByRole("region", { name: "이적 후 팀 핵심 투구 기록" });
+  expect(within(transferredSummary).getByText("9", { exact: true })).toBeTruthy();
+  expect(within(transferredSummary).getByText("—")).toBeTruthy();
+  expect(within(transferredSummary).getByText(/자책점 확인 0\/2경기/)).toBeTruthy();
   expect(fetch).toHaveBeenCalledTimes(2);
   const request = fetch.mock.calls
     .map(([input]) => new URL(String(input), "http://localhost"))
@@ -175,6 +212,26 @@ it("requests one bounded player page with only common scope and preserves team r
   expect(screen.getByRole("link", { name: "기본 기록" }).getAttribute("aria-current")).toBe("page");
 });
 
+it.each(["pitcher", "batter"] as const)(
+  "preserves an implicitly selected %s when changing the basic-record season",
+  async (role) => {
+    mockRecords();
+    show(`season=2024&playerRole=${role}&dateFrom=2024-04-01&dateTo=2024-04-30`);
+    await findRecordTable({ name: role === "pitcher" ? "투구 성적" : "타격 성적" });
+    openConditions();
+    fireEvent.change(screen.getByLabelText("성적 시즌"), { target: { value: "2025" } });
+    const location = new URL(
+      screen.getByLabelText("현재 주소").textContent ?? "",
+      "http://localhost",
+    );
+    expect(Object.fromEntries(location.searchParams)).toEqual({
+      season: "2025",
+      playerRole: role,
+      [role]: role === "pitcher" ? "hp1" : "a1",
+    });
+  },
+);
+
 it("shows basic batting columns and each team's returned rates without combining them", async () => {
   const fetch = mockRecords({
     batting: [
@@ -190,7 +247,7 @@ it("shows basic batting columns and each team's returned rates without combining
     ],
   });
   show("season=2025&playerRole=batter&batter=a1");
-  const table = await screen.findByRole("table", { name: "타격 성적" });
+  const table = await findRecordTable({ name: "타격 성적" });
   expect(within(table).getAllByRole("row")).toHaveLength(3);
   for (const metric of [
     "G",
@@ -212,6 +269,9 @@ it("shows basic batting columns and each team's returned rates without combining
   expect(within(table).queryByRole("columnheader", { name: "SF", exact: true })).toBeNull();
   expect(within(table).getByText("1.700")).toBeTruthy();
   expect(within(table).getByText("0.575")).toBeTruthy();
+  const transferredSummary = screen.getByRole("region", { name: "다른 팀 핵심 타격 기록" });
+  expect(within(transferredSummary).getByText("0.575")).toBeTruthy();
+  expect(within(transferredSummary).queryByText("1.700")).toBeNull();
   expect(fetch).toHaveBeenCalledTimes(2);
   expect(fetch.mock.calls.every(([input]) => !String(input).includes("/pitch-shape"))).toBe(true);
 });
@@ -222,6 +282,7 @@ it("keeps a requested ID absent from the pitch catalog and reports a loaded empt
   expect(await screen.findByText(/선택한 범위에 이 선수의 기본 기록이 없습니다/)).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
   expect(screen.queryByRole("table")).toBeNull();
+  openConditions();
   expect(screen.getByRole("option", { name: "선수 outside" })).toHaveProperty("selected", true);
   expect(fetch.mock.calls.some(([input]) => String(input).includes("playerId=outside"))).toBe(true);
   expect(fetch).toHaveBeenCalledTimes(2);
@@ -243,7 +304,7 @@ it("changes only the selected player and requests that player's statistics in th
   show(
     "season=2024&playerRole=pitcher&pitcher=hp1&competition=all&dateFrom=2024-04-01&dateTo=2024-04-30",
   );
-  await screen.findByRole("table", { name: "투구 성적" });
+  await findRecordTable({ name: "투구 성적" });
   const query = {
     season: 2024,
     competition: "all",
@@ -279,8 +340,9 @@ it("changes only the selected player and requests that player's statistics in th
       ],
     }),
   );
+  openConditions();
   fireEvent.change(screen.getByRole("combobox", { name: "투수" }), { target: { value: "hp2" } });
-  const table = await screen.findByRole("table", { name: "투구 성적" });
+  const table = await findRecordTable({ name: "투구 성적" });
   expect(within(table).getByRole("rowheader", { name: "투수 B" })).toBeTruthy();
   expect(screen.getByLabelText("현재 주소").textContent).toBe(
     "/analysis/player-statistics?season=2024&playerRole=pitcher&pitcher=hp2&competition=all&dateFrom=2024-04-01&dateTo=2024-04-30",
@@ -298,7 +360,7 @@ it("distinguishes a failed record request from no records and retries the select
   );
   expect(screen.queryByText(/선택한 범위에 이 선수의 기본 기록이 없습니다/)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "기록 다시 시도" }));
-  expect(await screen.findByRole("table", { name: "투구 성적" })).toBeTruthy();
+  expect(await findRecordTable({ name: "투구 성적" })).toBeTruthy();
   expect(fetch).toHaveBeenCalledTimes(3);
 });
 
@@ -307,11 +369,12 @@ it("preserves the player and role when changing season and removes dates from th
   show(
     "season=2024&playerRole=pitcher&pitcher=hp1&competition=all&dateFrom=2024-04-01&dateTo=2024-04-30",
   );
-  await screen.findByRole("table", { name: "투구 성적" });
+  await findRecordTable({ name: "투구 성적" });
+  openConditions();
   fireEvent.change(screen.getByRole("combobox", { name: "성적 시즌" }), {
     target: { value: "2025" },
   });
-  await screen.findByRole("table", { name: "투구 성적" });
+  await findRecordTable({ name: "투구 성적" });
   expect(screen.getByLabelText("현재 주소").textContent).toBe(
     "/analysis/player-statistics?season=2025&playerRole=pitcher&pitcher=hp1&competition=all",
   );

@@ -23,7 +23,7 @@ COPY apps/server apps/server
 COPY packages packages
 COPY database database
 
-RUN pnpm build:server && chown -R pwuser:pwuser /app
+RUN pnpm build:server
 
 ENV NODE_ENV=production
 

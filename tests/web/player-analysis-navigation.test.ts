@@ -170,16 +170,23 @@ it.each([
   },
 );
 
-it.each([undefined, "missing"])(
-  "matches the shape page's effective first-player fallback for %s",
-  (id) => {
-    show(`/analysis/pitch-shape?season=2025${id ? `&pitcher=${id}` : ""}`);
-    expect(screen.getByText("첫 투수")).toBeTruthy();
-    const link = screen.getByRole("link", { name: "코스·결정구" }).getAttribute("href");
-    expect(link).toContain("pitcher=p1");
-    expect(link).toContain("competition=all");
-  },
-);
+it("uses the first shape player only when no player is requested", () => {
+  show("/analysis/pitch-shape?season=2025");
+  expect(screen.getByText("첫 투수")).toBeTruthy();
+  const link = screen.getByRole("link", { name: "코스·결정구" }).getAttribute("href");
+  expect(link).toContain("pitcher=p1");
+  expect(link).toContain("competition=all");
+});
+
+it("keeps a requested player missing from the catalog in the frame and outgoing links", () => {
+  const fetch = show("/analysis/pitch-shape?season=2025&pitcher=missing");
+  expect(screen.getByText("선수 missing")).toBeTruthy();
+  expect(screen.queryByText("첫 투수")).toBeNull();
+  expect(screen.getByRole("link", { name: "코스·결정구" }).getAttribute("href")).toContain(
+    "pitcher=missing",
+  );
+  expect(fetch).not.toHaveBeenCalled();
+});
 
 it.each([
   ["/analysis/pitch-shape", "all"],

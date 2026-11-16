@@ -1,18 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { AnalysisQueryError } from "../analysis/analysis-query-error";
+import { useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { AnalysisScopeFields } from "../analysis/analysis-scope-fields";
 import { changeAnalysisParams, scopeFromParams } from "../analysis/analysis-scope";
 import { getBaserunning } from "../api/baserunning-client";
+import { BaserunningOpportunities } from "../analysis/baserunning-opportunities";
 import "../styles/pitch-analysis.css";
+import "../styles/analysis-evidence.css";
 const percent = (v: number | null) => (v === null ? "—" : `${(v * 100).toFixed(1)}%`);
-const labels = {
-  extra_base: "추가 진루",
-  no_extra_base: "추가 진루 없음",
-  out: "아웃",
-  unknown: "해석 불가",
-  excluded_complex: "복합 이동 제외",
-};
 export function BaserunningPage() {
   const [params, setParams] = useSearchParams(),
     selected = new URLSearchParams(params),
@@ -22,8 +18,9 @@ export function BaserunningPage() {
     query = { season, ...scope.options },
     playerId = params.get("player"),
     requestedPage = Number(params.get("playerPage") ?? 0),
-    playerPage = Number.isSafeInteger(requestedPage) && requestedPage >= 0 ? requestedPage : 0,
-    [page, setPage] = useState(0);
+    playerPage = Number.isSafeInteger(requestedPage) && requestedPage >= 0 ? requestedPage : 0;
+  const selectionHeading = useRef<HTMLHeadingElement>(null);
+  const pendingSelection = useRef<string | null>(null);
   const result = useQuery({
     queryKey: ["baserunning", query, playerId],
     enabled: scope.error === null,
@@ -32,10 +29,29 @@ export function BaserunningPage() {
   function change(key: string, value: string) {
     const next = changeAnalysisParams(params, key, value);
     if (key !== "playerPage" && key !== "player") next.delete("playerPage");
-    setPage(0);
     setParams(next);
   }
   const data = result.data;
+  useEffect(() => {
+    if (pendingSelection.current === null || data?.playerId !== pendingSelection.current) return;
+    pendingSelection.current = null;
+    selectionHeading.current?.focus({ preventScroll: true });
+    selectionHeading.current?.scrollIntoView({ block: "start" });
+  }, [data]);
+  const runners = [
+    ...new Map(
+      data?.players.flatMap((row) => (row.playerId === null ? [] : [[row.playerId, row] as const])),
+    ).values(),
+  ];
+  function selectRunner(id: string) {
+    pendingSelection.current = id;
+    change("player", id);
+    if (id === playerId) {
+      pendingSelection.current = null;
+      selectionHeading.current?.focus({ preventScroll: true });
+      selectionHeading.current?.scrollIntoView({ block: "start" });
+    }
+  }
   return (
     <div className="page-stack">
       <header className="page-header">
@@ -55,8 +71,40 @@ export function BaserunningPage() {
         </label>
         <AnalysisScopeFields params={selected} onChange={change} />
       </section>
-      {(result.error || scope.error) && <p role="alert">{String(result.error ?? scope.error)}</p>}
+      {scope.error && <p role="alert">{scope.error}</p>}
+      <AnalysisQueryError queries={[result]} enabled={scope.error === null} />
       {result.isFetching && <p role="status">주루 기록을 읽고 있습니다.</p>}
+      <section
+        className="panel baserunning-selection"
+        aria-labelledby="baserunning-selection-heading"
+      >
+        <h2 id="baserunning-selection-heading" ref={selectionHeading} tabIndex={-1}>
+          선수의 추가 진루
+        </h2>
+        <label>
+          주자
+          <select
+            value={playerId ?? ""}
+            onChange={(event) => change("player", event.target.value)}
+            disabled={result.isFetching}
+          >
+            <option value="">선수를 선택하세요</option>
+            {playerId !== null && !runners.some((row) => row.playerId === playerId) && (
+              <option value={playerId}>선수 ID {playerId}</option>
+            )}
+            {runners.map((row) => (
+              <option key={row.playerId} value={row.playerId ?? ""}>
+                {row.name} · {row.playerId}
+              </option>
+            ))}
+          </select>
+        </label>
+        {playerId === null ? (
+          <p>주자를 선택하면 단타 때의 추가 진루 결과와 경기 장면을 확인합니다.</p>
+        ) : (
+          data && <BaserunningOpportunities key={JSON.stringify([query, playerId])} data={data} />
+        )}
+      </section>
       {data && (
         <>
           {[
@@ -73,6 +121,11 @@ export function BaserunningPage() {
                 SB/(SB+CS). 견제사는 CS와 별도로 유지합니다. 경기 수는 해당 선수·팀의 주루 기록이
                 있는 경기 수입니다.
               </p>
+              <p className="analysis-caption">
+                기존 주자가 베이스에서 출발한 이동만 집계합니다. 진루 횟수는 성공한 이동 행 수, 초과
+                이동 베이스는 성공한 이동마다 한 베이스를 넘게 간 수의 합입니다. 타자 자신의 홈런
+                득점은 제외하므로 기존 주자 득점은 기본 기록의 총득점과 다릅니다.
+              </p>
               <div className="table-scroll" tabIndex={0}>
                 <table aria-label={group.title}>
                   <thead>
@@ -81,9 +134,9 @@ export function BaserunningPage() {
                         "선수/팀",
                         "당시 팀",
                         "경기",
-                        "진루",
-                        "추가 베이스",
-                        "득점",
+                        "기존 주자 진루 횟수",
+                        "초과 이동 베이스",
+                        "기존 주자 득점",
                         "SB",
                         "CS",
                         "견제사",
@@ -100,7 +153,10 @@ export function BaserunningPage() {
                           {r.playerId === null ? (
                             r.name
                           ) : (
-                            <button onClick={() => change("player", r.playerId ?? "")}>
+                            <button
+                              aria-pressed={r.playerId === playerId}
+                              onClick={() => selectRunner(r.playerId ?? "")}
+                            >
                               {r.name}
                             </button>
                           )}
@@ -141,64 +197,6 @@ export function BaserunningPage() {
               )}
             </section>
           ))}
-          <section className="panel">
-            <h2>선택 선수의 단타 추가 진루 기회</h2>
-            {playerId === null ? (
-              <p>선수 이름을 선택하면 단타 시작 시 1·2루 주자의 기회를 확인합니다.</p>
-            ) : (
-              <>
-                <p>
-                  선수 ID {playerId} · 후보 {data.opportunitySummary.candidates} · 적격{" "}
-                  {data.opportunitySummary.eligible} · 성공 {data.opportunitySummary.extraBase} ·
-                  추가 진루 없음 {data.opportunitySummary.noExtraBase} · 아웃{" "}
-                  {data.opportunitySummary.out} · 해석 불가 {data.opportunitySummary.unknown} · 복합
-                  제외 {data.opportunitySummary.excludedComplex} · 성공률{" "}
-                  {percent(data.opportunitySummary.extraBaseRate)}
-                </p>
-                <p>
-                  1루→3루 이상, 2루→홈을 성공으로 셉니다. 잔류도 분모에 포함하며 같은 플레이의
-                  다단계 이동은 한 기회입니다. 인정 득점이 불명확하면 비율을 확정하지 않습니다.
-                </p>
-                <div className="table-scroll" tabIndex={0}>
-                  <table aria-label="추가 진루 근거">
-                    <thead>
-                      <tr>
-                        {["경기", "시작", "결과", "최종 베이스", "제외/미상 사유"].map((v) => (
-                          <th key={v}>{v}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.opportunities.slice(page * 30, page * 30 + 30).map((r) => (
-                        <tr key={JSON.stringify([r.gameId, r.revision, r.playId, r.runnerId])}>
-                          <td>
-                            <Link
-                              to={`/replay?${new URLSearchParams({ gameId: r.gameId, revision: String(r.revision) })}`}
-                            >
-                              {r.gameDate} · {r.playId} · r{r.revision}
-                            </Link>
-                          </td>
-                          <td>{r.fromBase}루</td>
-                          <td>{labels[r.outcome]}</td>
-                          <td>{r.finalBase ?? "—"}</td>
-                          <td>{r.reason ?? "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <button disabled={page === 0} onClick={() => setPage(page - 1)}>
-                  이전
-                </button>
-                <button
-                  disabled={(page + 1) * 30 >= data.opportunities.length}
-                  onClick={() => setPage(page + 1)}
-                >
-                  다음
-                </button>
-              </>
-            )}
-          </section>
         </>
       )}
     </div>

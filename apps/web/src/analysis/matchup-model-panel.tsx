@@ -1,8 +1,9 @@
+import { AnalysisEvidenceLink } from "./analysis-evidence-link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
 import type { MatchupQuery, MatchupModelResponse } from "@kbo/contracts";
 import { getMatchupModel } from "../api/matchup-model-client";
+import { replayEvidenceUrl } from "../replay/evidence-target";
 const percent = (v: number | null) => (v === null ? "—" : `${(v * 100).toFixed(1)}%`);
 const labels = { swing: "스윙", whiff: "헛스윙 / 스윙", called_strike: "루킹 / 비스윙" };
 const locationLabels: Record<string, string> = {
@@ -48,7 +49,7 @@ function MatchupModelResult({ data }: { data: MatchupModelResponse }) {
       <p>
         {data.status === "scope_mismatch"
           ? "이 분석은 확인된 정규시즌에서 제공합니다."
-          : "현재 원천에 맞는 매치업 모델이 없습니다. 위의 직접 상대·조건 비교를 이용할 수 있습니다."}
+          : "현재 원천에 맞는 매치업 모델이 없습니다. 직접 상대·조건 비교를 이용할 수 있습니다."}
       </p>
     );
   return (
@@ -101,15 +102,22 @@ function MatchupModelResult({ data }: { data: MatchupModelResponse }) {
                   {similar.rows.slice(page * 25, page * 25 + 25).map((r) => (
                     <tr key={JSON.stringify([r.gameId, r.revision, r.pitchId])}>
                       <td>
-                        <Link
-                          to={`/replay?${new URLSearchParams({ gameId: r.gameId, revision: String(r.revision) })}`}
+                        <AnalysisEvidenceLink
+                          to={replayEvidenceUrl(r.gameId, r.revision, {
+                            kind: "event",
+                            id: r.pitchId,
+                          })}
                         >
-                          {r.gameDate} · {r.pitchId}
-                        </Link>
+                          {r.gameDate} · 투구 장면
+                        </AnalysisEvidenceLink>
+                        <details className="analysis-evidence-id">
+                          <summary>투구 ID</summary>
+                          <code>{r.pitchId}</code>
+                        </details>
                       </td>
-                      <td>{r.pitcherId}</td>
+                      <td>선수 ID {r.pitcherId ?? "미상"}</td>
                       <td>{r.pitchType}</td>
-                      <td>{r.speedKph}</td>
+                      <td>{r.speedKph === null ? "—" : `${r.speedKph.toFixed(1)} km/h`}</td>
                       <td>{r.distance.toFixed(3)}</td>
                     </tr>
                   ))}
