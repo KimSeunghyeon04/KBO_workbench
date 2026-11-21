@@ -14,7 +14,8 @@ import {
   referenceEventLabel,
   type EventFieldProps,
 } from "./event-field-context";
-import { PlayerPicker, playerSideForRole } from "./player-picker";
+import { PlayerPicker } from "./player-picker";
+import { playerSideForRole } from "./editor-context";
 import { runnerResponsibilityLabel } from "./runner-responsibility";
 export function RunnerFields({
   form,

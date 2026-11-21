@@ -15,6 +15,18 @@ import { outcomeRow, terminalPa } from "../helpers/pitch-outcomes.js";
 const query = { season: 2024 },
   scope = resolveAnalysisScope(query, "regular"),
   hash = "a".repeat(64);
+it("counts all four hit outcomes and preserves the in-play denominator", () => {
+  const results = ["single", "double", "triple", "home_run", "reached_on_error"] as const;
+  const rows = results.map((_, i) =>
+    outcomeRow({ pitchId: `p${String(i)}`, inPlay: true, pitchCall: "in_play" }),
+  );
+  const pas = results.map((result, i) =>
+    terminalPa({ pitchId: `p${String(i)}`, result, inPlay: true, pitchCall: "in_play" }),
+  );
+  const analysis = analyzePitchLocation(query, "hp1", scope, hash, rows, pas);
+  expect(analysis.total).toMatchObject({ inPlayResults: 5, inPlayHits: 4, inPlayHitRate: 0.8 });
+});
+
 it("separates physical pitch, swing, known zone and terminal strikeout denominators", () => {
   const rows = [
     outcomeRow({

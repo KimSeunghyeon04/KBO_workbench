@@ -1,18 +1,13 @@
-import type { CollectionDateRange, CollectionGameState } from "@kbo/contracts";
+import { isCalendarDate, type CollectionDateRange, type CollectionGameState } from "@kbo/contracts";
 
 export const collectionNavigationKey = "kbo.collection.navigation.v1";
 export function koreaToday(now = new Date()): string {
   return new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
-export function validDate(value: string | null): value is string {
-  if (value === null || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const date = new Date(`${value}T00:00:00Z`);
-  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
-}
 export function readRange(params: URLSearchParams, today = koreaToday()): CollectionDateRange {
   const startDate = params.get("start"),
     endDate = params.get("end");
-  return validDate(startDate) && validDate(endDate) && startDate <= endDate
+  return isCalendarDate(startDate) && isCalendarDate(endDate) && startDate <= endDate
     ? { startDate, endDate }
     : { startDate: today, endDate: today };
 }
@@ -22,8 +17,8 @@ export function readLocation(
 ): CollectionDateRange {
   const startDate = params.get("from"),
     endDate = params.get("to");
-  return validDate(startDate) &&
-    validDate(endDate) &&
+  return isCalendarDate(startDate) &&
+    isCalendarDate(endDate) &&
     startDate <= endDate &&
     startDate >= range.startDate &&
     endDate <= range.endDate

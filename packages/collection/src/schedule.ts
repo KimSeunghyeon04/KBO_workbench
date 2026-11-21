@@ -1,3 +1,4 @@
+import { isCalendarDate } from "@kbo/contracts";
 import { NaverBrowserTransport } from "./browser-transport.js";
 import {
   CollectionCancelledError,
@@ -188,12 +189,7 @@ function assertDateRange(startDate: string, endDate: string): void {
     throw new NaverSourceFormatError("일정 범위는 ISO 날짜여야 합니다.");
   }
   if (endDate < startDate) throw new NaverSourceFormatError("종료일이 시작일보다 빠릅니다.");
-  const start = new Date(`${startDate}T00:00:00Z`);
-  const end = new Date(`${endDate}T00:00:00Z`);
-  if (
-    start.toISOString().slice(0, 10) !== startDate ||
-    end.toISOString().slice(0, 10) !== endDate
-  ) {
+  if (!isCalendarDate(startDate) || !isCalendarDate(endDate)) {
     throw new NaverSourceFormatError("실재하는 일정 날짜가 아닙니다.");
   }
 }

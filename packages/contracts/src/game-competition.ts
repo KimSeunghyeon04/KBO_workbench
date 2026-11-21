@@ -1,5 +1,6 @@
 import { type Static, Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
+import { isCalendarDate } from "./calendar-date.js";
 
 const strict = { additionalProperties: false } as const;
 const hash = Type.String({ pattern: "^[0-9a-f]{64}$" });
@@ -57,10 +58,8 @@ export function parseGameCompetitionDataset(input: unknown): GameCompetitionData
     throw new Error("경기 분류는 12개월·세 경기 종류의 응답이 모두 필요합니다.");
   const ids = new Set<string>();
   for (const row of value.entries) {
-    const date = new Date(`${row.gameDate}T00:00:00Z`);
     if (
-      !Number.isFinite(date.getTime()) ||
-      date.toISOString().slice(0, 10) !== row.gameDate ||
+      !isCalendarDate(row.gameDate) ||
       !row.gameDate.startsWith(`${value.season}-`) ||
       ids.has(row.sourceGameId) ||
       !value.pages.some(

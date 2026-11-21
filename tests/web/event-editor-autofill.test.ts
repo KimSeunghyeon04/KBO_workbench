@@ -6,6 +6,7 @@ import {
   type StagingRelayEvent,
 } from "@kbo/contracts";
 import { describe, expect, it } from "vitest";
+import { playerSideForRole } from "../../apps/web/src/correction/editor-context.js";
 
 import {
   buildEditorAutofillContext,
@@ -26,6 +27,32 @@ import {
 } from "../../apps/web/src/correction/event-editor-registry.js";
 
 describe("Correction 편집기 자동 지정", () => {
+  it("원장에 없는 삽입 기준은 끝으로 해석하고 공수 역할은 반이닝에 맞춘다", () => {
+    const document = fixture();
+    const currentSession = session(document, []);
+    const end = document.events.length;
+    expect(
+      buildEditorAutofillContext(currentSession, { mode: "add_event", beforeEventId: "missing" })
+        .insertionIndex,
+    ).toBe(end);
+    expect(
+      buildEditorAutofillContext(currentSession, { mode: "add_event", beforeEventId: null })
+        .insertionIndex,
+    ).toBe(end);
+    expect(
+      buildEditorAutofillContext(currentSession, { mode: "replace_event", eventId: "missing" })
+        .insertionIndex,
+    ).toBe(end);
+    expect(
+      ["batter", "runner", "pitcher", "fielder"].map((role) => playerSideForRole("top", role)),
+    ).toEqual(["away", "away", "home", "home"]);
+    expect(
+      ["batter", "runner", "pitcher", "responsible_pitcher"].map((role) =>
+        playerSideForRole("bottom", role),
+      ),
+    ).toEqual(["home", "home", "away", "away"]);
+  });
+
   it("타석 결과 바로 뒤에 추가할 때만 결과와 1루 우선 주자를 자동 지정한다", () => {
     const document = fixture();
     const result = eventOfKind(document, "plate_result");

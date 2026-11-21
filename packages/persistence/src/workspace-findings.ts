@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 import {
+  canonicalStringify,
   parseStoredFindingEnvelopeV2,
   type StoredFinding,
   type StoredFindingEnvelopeV2,
@@ -8,6 +9,16 @@ import {
 import type { Finding } from "@kbo/game-core";
 
 import { isMissing } from "./workspace-files.js";
+
+export function deduplicateStoredFindings(findings: readonly StoredFinding[]): StoredFinding[] {
+  const seen = new Set<string>();
+  return findings.filter((finding) => {
+    const key = canonicalStringify(finding);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 export function storedCompilerFindings(findings: readonly Finding[]): StoredFinding[] {
   return findings.map((finding) => ({

@@ -85,7 +85,7 @@ export function isAtBat(result: PlateResult): boolean {
 }
 
 export function isHit(result: PlateResult): boolean {
-  return ["single", "double", "triple", "home_run"].includes(result);
+  return result === "single" || result === "double" || result === "triple" || result === "home_run";
 }
 
 export function requiredBatterDestination(result: PlateResult): number | null {

@@ -10,6 +10,7 @@ import { useEffect, useId, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { pitchOrdinalAt, suggestedRelayText } from "../events/relay-text";
 import { AddEventQueue, DrawerHeader } from "./correction-drawer-parts";
+import { canonicalIndexForRequest } from "./editor-context";
 import {
   addEventComposerReducer,
   buildAddEventCommand,
@@ -542,18 +543,6 @@ export function CorrectionDrawer({
     </dialog>,
     document.body,
   );
-}
-
-function canonicalIndexForRequest(document: StagingGameDocumentV2, request: DrawerRequest): number {
-  if (request.mode === "add_event") {
-    if (request.beforeEventId === null) return document.events.length;
-    const index = document.events.findIndex(
-      (event) => event.identity.eventId === request.beforeEventId,
-    );
-    return index < 0 ? document.events.length : index;
-  }
-  const index = document.events.findIndex((event) => event.identity.eventId === request.eventId);
-  return index < 0 ? document.events.length : index;
 }
 
 function relayTextSuggestion(

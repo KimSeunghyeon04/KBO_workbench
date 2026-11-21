@@ -15,6 +15,7 @@ import {
 import {
   canonicalStringify,
   CollectionJobCreateRequestSchema,
+  isCalendarDate,
   type CollectionDateRange,
   type CollectionSelectionEntry,
   type CollectionItemResult,
@@ -647,29 +648,12 @@ function cloneJob(job: CollectionJob): CollectionJob {
 
 function validateScope(scope: CollectionJobCreateRequest["scope"]): void {
   if (scope.kind !== "date_range") return;
-  const start = parseCalendarDate(scope.startDate);
-  const end = parseCalendarDate(scope.endDate);
-  if (start === null || end === null) {
+  if (!isCalendarDate(scope.startDate, 100) || !isCalendarDate(scope.endDate, 100)) {
     throw new InvalidCollectionRequestError("유효한 날짜 범위를 입력해야 합니다.");
   }
-  if (start > end) {
+  if (scope.startDate > scope.endDate) {
     throw new InvalidCollectionRequestError("시작일은 종료일보다 늦을 수 없습니다.");
   }
-}
-
-function parseCalendarDate(value: string): number | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (match === null) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const timestamp = Date.UTC(year, month - 1, day);
-  const parsed = new Date(timestamp);
-  return parsed.getUTCFullYear() === year &&
-    parsed.getUTCMonth() === month - 1 &&
-    parsed.getUTCDate() === day
-    ? timestamp
-    : null;
 }
 
 function compareText(left: string, right: string): number {

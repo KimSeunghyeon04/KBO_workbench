@@ -3,11 +3,11 @@ import { Value } from "@sinclair/typebox/value";
 import {
   PitchOutcomeQuerySchema,
   BatterProfileResponseSchema,
+  pitchOutcomeScope,
   type PitchOutcomeQuery,
 } from "@kbo/contracts";
 import { analyzeBatterProfile } from "@kbo/game-core";
 import {
-  pitchOutcomeScope,
   readPitchOutcomePair,
   readPitchOutcomes,
   type PitchOutcomeCache,

@@ -1,5 +1,5 @@
-import type { Dirent } from "node:fs";
-import { mkdir, open, readFile, readdir, rename, rmdir, unlink } from "node:fs/promises";
+import { constants, type Dirent } from "node:fs";
+import { access, mkdir, open, readFile, readdir, rename, rmdir, unlink } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import path from "node:path";
@@ -80,6 +80,25 @@ export async function atomicWrite(
   await rename(temporary, target);
   await syncDirectory(directory);
   await syncDirectory(temporaryDirectory);
+}
+
+export async function moveArtifactForRecovery(
+  source: string,
+  destination: string,
+  optional = false,
+): Promise<void> {
+  try {
+    await rename(source, destination);
+  } catch (error: unknown) {
+    if (!isMissing(error)) throw error;
+    // A previous recovery attempt may already have moved the artifact.
+    try {
+      await access(destination, constants.R_OK);
+    } catch (destinationError: unknown) {
+      if (optional && isMissing(destinationError)) return;
+      throw destinationError;
+    }
+  }
 }
 
 export async function removeEmptyDirectory(directory: string): Promise<void> {

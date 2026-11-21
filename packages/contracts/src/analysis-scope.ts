@@ -1,5 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
+import { isCalendarDate } from "./calendar-date.js";
 import { GameCompetitionSchema } from "./game-competition.js";
 
 const strict = { additionalProperties: false } as const;
@@ -40,12 +41,7 @@ export function resolveAnalysisScope(
     throw new InvalidAnalysisScopeError("분석 범위 형식이 올바르지 않습니다.");
   for (const value of [query.dateFrom, query.dateTo]) {
     if (value === undefined) continue;
-    const timestamp = new Date(`${value}T00:00:00Z`);
-    if (
-      !Number.isFinite(timestamp.getTime()) ||
-      timestamp.toISOString().slice(0, 10) !== value ||
-      !value.startsWith(`${query.season}-`)
-    )
+    if (!isCalendarDate(value) || !value.startsWith(`${query.season}-`))
       throw new InvalidAnalysisScopeError("기간은 선택 시즌의 유효한 날짜여야 합니다.");
   }
   if (query.dateFrom !== undefined && query.dateTo !== undefined && query.dateFrom > query.dateTo)

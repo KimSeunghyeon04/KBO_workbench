@@ -3,7 +3,7 @@ import {
   canonicalStringify,
   PitchLocationComparisonResponseSchema,
   pitchLocationComparisonQueries,
-  resolveAnalysisScope,
+  pitchOutcomeScope,
   type PitchLocationComparisonQuery,
 } from "@kbo/contracts";
 import { requestJson } from "./transport";
@@ -24,23 +24,15 @@ export async function getPitchLocationComparison(
     ),
   );
   const expected = pitchLocationComparisonQueries(query);
-  const scopeOf = ({ season, competition, dateFrom, dateTo }: typeof expected.first) =>
-    resolveAnalysisScope(
-      {
-        season,
-        ...(competition === undefined ? {} : { competition }),
-        ...(dateFrom === undefined ? {} : { dateFrom }),
-        ...(dateTo === undefined ? {} : { dateTo }),
-      },
-      "regular",
-    );
   if (
     result.pitcherId !== id ||
     canonicalStringify(result.query) !== canonicalStringify(query) ||
     canonicalStringify(result.first.query) !== canonicalStringify(expected.first) ||
     canonicalStringify(result.second.query) !== canonicalStringify(expected.second) ||
-    canonicalStringify(result.first.scope) !== canonicalStringify(scopeOf(expected.first)) ||
-    canonicalStringify(result.second.scope) !== canonicalStringify(scopeOf(expected.second)) ||
+    canonicalStringify(result.first.scope) !==
+      canonicalStringify(pitchOutcomeScope(expected.first)) ||
+    canonicalStringify(result.second.scope) !==
+      canonicalStringify(pitchOutcomeScope(expected.second)) ||
     [result.first, result.second].some(
       (period) =>
         period.cells.reduce((sum, cell) => sum + cell.pitches, 0) !==

@@ -9,6 +9,7 @@ import type {
 } from "@kbo/contracts";
 import { observedPitchLocation } from "./pitch-location.js";
 import { summarizePitchArsenal } from "./pitch-arsenal.js";
+import { isHit } from "./rules.js";
 const key = (r: { gameId: string; revision: number; pitchId: string }) =>
   JSON.stringify([r.gameId, r.revision, r.pitchId]);
 const divide = (n: number, d: number) => (d === 0 ? null : n / d);
@@ -25,7 +26,6 @@ const inPlayResults = new Set([
   "double_play",
   "triple_play",
 ]);
-const hits = new Set(["single", "double", "triple", "home_run"]);
 /** Associate only an observed terminal event compatible with the compiler's completed PA and count. */
 export function hasTerminalPitch(
   pa: Pick<
@@ -94,7 +94,7 @@ export function pitchOutcomeSummarizer(pas: readonly TerminalPaRow[]) {
       if (pa?.result === "strikeout" && row.strikes === 2) terminalStrikeouts++;
       if (pa?.result !== undefined && pa.result !== null && inPlayResults.has(pa.result)) {
         results++;
-        inPlayHits += Number(hits.has(pa.result));
+        inPlayHits += Number(isHit(pa.result));
       }
     }
     const pitches = selected.length;

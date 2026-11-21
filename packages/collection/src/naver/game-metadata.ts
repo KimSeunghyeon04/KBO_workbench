@@ -1,4 +1,4 @@
-import type { StagingGameDocumentV2 } from "@kbo/contracts";
+import { isCalendarDate, type StagingGameDocumentV2 } from "@kbo/contracts";
 
 import { NaverSourceFormatError } from "../errors.js";
 import type { RawGameBundle } from "../types.js";
@@ -142,15 +142,7 @@ function gameDateFrom(raw: unknown, gameId: string): string {
     throw new NaverSourceFormatError("경기 날짜 형식이 올바르지 않습니다.");
   }
   const date = `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
-  const year = Number(value.slice(0, 4));
-  const month = Number(value.slice(4, 6));
-  const day = Number(value.slice(6, 8));
-  const parsed = new Date(Date.UTC(year, month - 1, day));
-  if (
-    parsed.getUTCFullYear() !== year ||
-    parsed.getUTCMonth() !== month - 1 ||
-    parsed.getUTCDate() !== day
-  ) {
+  if (!isCalendarDate(date, 100)) {
     throw new NaverSourceFormatError("실재 달력에 있는 경기 날짜가 아닙니다.");
   }
   return date;

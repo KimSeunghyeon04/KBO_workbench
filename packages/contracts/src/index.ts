@@ -1,3 +1,4 @@
+export { isCalendarDate } from "./calendar-date.js";
 export {
   CollectionDateRangeSchema,
   CollectionScheduleEntrySchema,
@@ -582,6 +583,7 @@ export {
   PitchRateGroupSchema,
   PitchLocationPointSchema,
   PitchLocationResponseSchema,
+  pitchOutcomeScope,
   type PitchOutcomeQuery,
   type PitchOutcomeRow,
   type TerminalPaRow,

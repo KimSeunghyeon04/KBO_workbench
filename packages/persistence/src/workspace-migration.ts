@@ -1,5 +1,5 @@
 import { constants as fsConstants, createReadStream } from "node:fs";
-import { access, mkdir, readFile, rename, unlink } from "node:fs/promises";
+import { access, mkdir, readFile, unlink } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import path from "node:path";
@@ -24,11 +24,13 @@ import {
   type WriterLockOwner,
 } from "@kbo/contracts";
 import { compileStagingGameDocumentV2, stagingDocumentHash, type Finding } from "@kbo/game-core";
+import { workspaceDisplaySummary } from "./workspace-display-summary.js";
 
 import {
   acquireWriterLock,
   atomicWrite,
   isMissing,
+  moveArtifactForRecovery,
   readDirectoryIfPresent,
   readWriterLock,
 } from "./workspace-files.js";
@@ -287,7 +289,7 @@ async function prepareManifestUpgrade(
       season: previous.season,
       authority: previous.authority,
       documentHash: previous.documentHash,
-      displaySummary: displaySummary(document),
+      displaySummary: workspaceDisplaySummary(document),
     },
   };
 }
@@ -457,7 +459,7 @@ async function migrateCandidate(
           artifactPath,
           contentHash: prepared.contentHash,
           documentHash: prepared.documentHash,
-          displaySummary: displaySummary(prepared.document),
+          displaySummary: workspaceDisplaySummary(prepared.document),
         };
   if (existing !== null && !sameMigrationTarget(existing, target)) {
     throw new Error(`기존 current manifest와 legacy artifact가 충돌합니다: ${prepared.gameId}`);
@@ -553,12 +555,12 @@ async function archiveLegacyCandidate(root: string, candidate: PreparedCandidate
   const directory = path.join(root, "migration-archive", candidate.gameId);
   await mkdir(directory, { recursive: true });
   const prefix = candidate.contentHash.slice(0, 16);
-  await moveLegacyFile(
+  await moveArtifactForRecovery(
     candidate.absolutePath,
     path.join(directory, `${prefix}-${path.basename(candidate.absolutePath)}`),
   );
   if (candidate.findingsPath !== null) {
-    await moveLegacyFile(
+    await moveArtifactForRecovery(
       candidate.findingsPath,
       path.join(directory, `${prefix}-${path.basename(candidate.findingsPath)}`),
       true,
@@ -573,34 +575,16 @@ async function archiveDiscardedLegacyCandidate(
   const directory = path.join(root, "migration-archive", candidate.gameId);
   await mkdir(directory, { recursive: true });
   const prefix = (await hashFile(candidate.absolutePath)).slice(0, 16);
-  await moveLegacyFile(
+  await moveArtifactForRecovery(
     candidate.absolutePath,
     path.join(directory, `discarded-${prefix}-${path.basename(candidate.absolutePath)}`),
   );
   if (candidate.findingsPath !== null) {
-    await moveLegacyFile(
+    await moveArtifactForRecovery(
       candidate.findingsPath,
       path.join(directory, `discarded-${prefix}-${path.basename(candidate.findingsPath)}`),
       true,
     );
-  }
-}
-
-async function moveLegacyFile(
-  source: string,
-  destination: string,
-  optional = false,
-): Promise<void> {
-  try {
-    await rename(source, destination);
-  } catch (error: unknown) {
-    if (!isMissing(error)) throw error;
-    try {
-      await access(destination, fsConstants.R_OK);
-    } catch (destinationError: unknown) {
-      if (optional && isMissing(destinationError)) return;
-      throw destinationError;
-    }
   }
 }
 
@@ -777,16 +761,6 @@ function findingFingerprint(finding: StoredFinding | Finding): string {
 
 function findingEnvelope(findings: readonly StoredFinding[]): StoredFindingEnvelopeV2 {
   return parseStoredFindingEnvelopeV2({ schemaVersion: 2, findings });
-}
-
-function displaySummary(document: StagingGameDocumentV2) {
-  return {
-    gameDate: document.metadata.gameDate,
-    teams: {
-      away: { teamId: document.teams.away.teamId, name: document.teams.away.name },
-      home: { teamId: document.teams.home.teamId, name: document.teams.home.name },
-    },
-  };
 }
 
 function toWorkspaceRelativePath(root: string, target: string): string {

@@ -1,7 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Side, StagingGameDocumentV2 } from "@kbo/contracts";
 
-export type PlayerRole = "batter" | "pitcher" | "runner" | "responsible_pitcher";
 export interface PlayerCandidate {
   readonly playerId: string;
   readonly name: string;
@@ -211,10 +210,6 @@ export function playerCandidates(
     }));
 }
 
-export function playerSideForRole(half: "top" | "bottom", role: PlayerRole): Side {
-  const attack: Side = half === "top" ? "away" : "home";
-  return role === "batter" || role === "runner" ? attack : attack === "away" ? "home" : "away";
-}
 export function isRosterPlayerId(
   document: StagingGameDocumentV2,
   side: Side,

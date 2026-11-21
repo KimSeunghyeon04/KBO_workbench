@@ -1,5 +1,9 @@
 import { Type, type Static } from "@sinclair/typebox";
-import { AnalysisScopeQuerySchema, AnalysisScopeSchema } from "./analysis-scope.js";
+import {
+  AnalysisScopeQuerySchema,
+  AnalysisScopeSchema,
+  resolveAnalysisScope,
+} from "./analysis-scope.js";
 import { DisciplineRowSchema } from "./batter-discipline.js";
 import { PitchCallSchema, PlateResultSchema } from "./game-document/events.js";
 import { PitchArsenalGroupSchema } from "./pitch-arsenal.js";
@@ -147,6 +151,18 @@ export const PitchLocationResponseSchema = Type.Object(
   strict,
 );
 export type PitchOutcomeQuery = Static<typeof PitchOutcomeQuerySchema>;
+
+export function pitchOutcomeScope({ season, competition, dateFrom, dateTo }: PitchOutcomeQuery) {
+  return resolveAnalysisScope(
+    {
+      season,
+      ...(competition === undefined ? {} : { competition }),
+      ...(dateFrom === undefined ? {} : { dateFrom }),
+      ...(dateTo === undefined ? {} : { dateTo }),
+    },
+    "regular",
+  );
+}
 export type PitchOutcomeRow = Static<typeof PitchOutcomeRowSchema>;
 export type TerminalPaRow = Static<typeof TerminalPaRowSchema>;
 export type PitchRateGroup = Static<typeof PitchRateGroupSchema>;

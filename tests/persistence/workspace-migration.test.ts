@@ -60,6 +60,18 @@ describe("workspace layout migration", () => {
       now: () => new Date("2026-09-03T00:00:00.000Z"),
     });
     expect(applied.migratedCount).toBe(1);
+    const current = parseCurrentWorkspaceEntry(
+      JSON.parse(
+        await readFile(
+          path.join(temporary.path, "current", `${document.metadata.gameId}.json`),
+          "utf8",
+        ),
+      ) as unknown,
+    );
+    expect(current.displaySummary).toEqual({
+      gameDate: document.metadata.gameDate,
+      teams: document.teams,
+    });
     const workspace = await StagingWorkspace.open(temporary.path);
     expect((await workspace.catalog()).games).toEqual([
       expect.objectContaining({

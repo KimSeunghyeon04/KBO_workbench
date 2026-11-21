@@ -15,6 +15,7 @@ import { stagingDocumentHash } from "@kbo/game-core";
 import { StagingWorkspace } from "@kbo/persistence";
 
 import { sanitizedNaverBundle } from "../helpers/naver.js";
+import { moveArtifactForRecovery } from "../../packages/persistence/src/workspace-files.js";
 
 const originalFinding = {
   producer: "collection" as const,
@@ -45,6 +46,21 @@ function collectionJob(jobId: string, createdAt: string): CollectionJob {
 }
 
 describe("workspace original and journal boundaries", () => {
+  it("retries a completed artifact move and permits a missing optional sidecar only", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-artifact-recovery-"));
+    const source = path.join(temporary.path, "source.json");
+    const destination = path.join(temporary.path, "destination.json");
+    const missing = path.join(temporary.path, "missing.json");
+    await writeFile(source, "artifact");
+    await moveArtifactForRecovery(source, destination);
+    await moveArtifactForRecovery(source, destination);
+    expect(await readFile(destination, "utf8")).toBe("artifact");
+    await expect(moveArtifactForRecovery(source, missing, true)).resolves.toBeUndefined();
+    await expect(moveArtifactForRecovery(source, missing)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it.each(["invalid", "different_game"] as const)(
     "%s 원본이 있으면 재수집으로 덮어쓰거나 current를 바꾸지 않는다",
     async (kind) => {

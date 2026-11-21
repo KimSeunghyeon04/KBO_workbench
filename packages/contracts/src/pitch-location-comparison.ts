@@ -1,6 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { PitchLocationResponseSchema, PitchOutcomeQuerySchema } from "./pitch-outcomes.js";
-import { PeriodMetricSchema } from "./analysis-period-comparison.js";
+import { PeriodMetricSchema, splitAnalysisPeriodQueries } from "./analysis-period-comparison.js";
 
 const strict = { additionalProperties: false } as const;
 const nullableDifference = Type.Union([Type.Number({ minimum: -1, maximum: 1 }), Type.Null()]);
@@ -57,18 +57,5 @@ export type PitchLocationComparisonQuery = Static<typeof PitchLocationComparison
 export type PitchLocationComparisonResponse = Static<typeof PitchLocationComparisonResponseSchema>;
 
 export function pitchLocationComparisonQueries(query: PitchLocationComparisonQuery) {
-  const { compareSeason, compareDateFrom, compareDateTo, ...first } = query;
-  const { season, dateFrom, dateTo, ...conditions } = first;
-  void season;
-  void dateFrom;
-  void dateTo;
-  return {
-    first,
-    second: {
-      ...conditions,
-      season: compareSeason,
-      ...(compareDateFrom === undefined ? {} : { dateFrom: compareDateFrom }),
-      ...(compareDateTo === undefined ? {} : { dateTo: compareDateTo }),
-    },
-  };
+  return splitAnalysisPeriodQueries(query);
 }

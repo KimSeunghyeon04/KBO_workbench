@@ -9,6 +9,7 @@ import { AnalysisPreparationWorkspace } from "./analysis-preparation-workspace.j
 import { readImmutableSourceBundle } from "./source-bundle-reader.js";
 import { saveImmutableSourceBundle, type ImmutableSourceBundle } from "./source-bundle-store.js";
 import { WorkspaceCurrentStore, snapshotContentHash } from "./workspace-current-store.js";
+import { workspaceDisplaySummary } from "./workspace-display-summary.js";
 import { StaleStagingDocumentError, WorkspacePersistenceBlockedError } from "./workspace-errors.js";
 import {
   findingEnvelope,
@@ -905,16 +906,6 @@ export class StagingWorkspace {
   private assertOpen(): void {
     if (this.closed) throw new Error("닫힌 workspace는 사용할 수 없습니다.");
   }
-}
-
-function workspaceDisplaySummary(document: StagingGameDocumentV2) {
-  return {
-    gameDate: document.metadata.gameDate,
-    teams: {
-      away: { teamId: document.teams.away.teamId, name: document.teams.away.name },
-      home: { teamId: document.teams.home.teamId, name: document.teams.home.name },
-    },
-  };
 }
 
 function currentDocumentAuthority(authority: "staging" | "quarantine"): "ready" | "quarantine" {

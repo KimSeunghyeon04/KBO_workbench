@@ -182,6 +182,13 @@ describe("평면 원장 보정 명령", () => {
       kind: "delete_event",
       eventId: "e2",
     });
+    const batchDeletion = applyCorrectionCommand(document, {
+      commandId: "delete-pitch-batch",
+      kind: "delete_events",
+      eventIds: ["e2"],
+    });
+    expect(batchDeletion.document).toEqual(corrected.document);
+    expect(batchDeletion.replay).toEqual(corrected.replay);
     expect(corrected.document.trackingCandidates).toHaveLength(document.trackingCandidates.length);
     expect(corrected.document.trackingCandidates[0]?.resolution).toEqual({
       kind: "excluded",

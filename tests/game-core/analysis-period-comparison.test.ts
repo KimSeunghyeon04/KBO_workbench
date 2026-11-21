@@ -5,6 +5,8 @@ import { DisciplinePeriodQuerySchema, PitchProfilePeriodQuerySchema } from "@kbo
 import {
   resolveAnalysisScope,
   analysisPeriodQueries,
+  pitchLocationComparisonQueries,
+  pitchOutcomeScope,
   type PitchAnalysisSample,
 } from "@kbo/contracts";
 import {
@@ -38,6 +40,39 @@ it("validates both scopes and never inherits A dates into a whole-season B", () 
   ])
     expect(() => analysisPeriodQueries({ season: 2024, compareSeason: 2025, ...bad })).toThrow();
 });
+it("splits location comparison dates and preserves the shared filters and regular-season default", () => {
+  const query = {
+    season: 2024,
+    dateFrom: "2024-02-29",
+    dateTo: "2024-04-01",
+    compareSeason: 2025,
+    compareDateTo: "2025-05-02",
+    strikes: 2,
+    pitchType: "직구",
+  };
+  const periods = pitchLocationComparisonQueries(query);
+  expect(periods).toEqual({
+    first: {
+      season: 2024,
+      dateFrom: "2024-02-29",
+      dateTo: "2024-04-01",
+      strikes: 2,
+      pitchType: "직구",
+    },
+    second: { season: 2025, dateTo: "2025-05-02", strikes: 2, pitchType: "직구" },
+  });
+  expect(analysisPeriodQueries(query)).toEqual(periods);
+  expect(pitchOutcomeScope(periods.second)).toEqual({
+    season: 2025,
+    competition: "regular",
+    dateFrom: null,
+    dateTo: "2025-05-02",
+  });
+  expect(pitchOutcomeScope({ ...periods.first, competition: "postseason" }).competition).toBe(
+    "postseason",
+  );
+});
+
 it("aggregates team numerators and denominators before comparing batting rates", () => {
   const rows = [
     battingStatistics(battingTotals),

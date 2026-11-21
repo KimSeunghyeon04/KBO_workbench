@@ -7,7 +7,7 @@ import {
   type StoredFinding,
 } from "@kbo/contracts";
 import { stagingDocumentHash, type GameState, type ReplayResult } from "@kbo/game-core";
-import { storedCompilerFindings } from "@kbo/persistence";
+import { deduplicateStoredFindings, storedCompilerFindings } from "@kbo/persistence";
 
 export type PreparedCorrectionSnapshot = Pick<
   CorrectionSession,
@@ -109,17 +109,10 @@ export function mergePersistentSourceFindings(
   current: ReplayResult["findings"],
   document: StagingGameDocumentV2,
 ): StoredFinding[] {
-  const findings: StoredFinding[] = [
+  return deduplicateStoredFindings([
     ...stored.filter((finding) => shouldRetainStoredFinding(finding, document)),
     ...storedCompilerFindings(current),
-  ];
-  const seen = new Set<string>();
-  return findings.filter((finding) => {
-    const key = canonicalStringify(finding);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  ]);
 }
 function shouldRetainStoredFinding(
   finding: StoredFinding,

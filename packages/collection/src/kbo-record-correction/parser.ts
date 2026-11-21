@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import {
   canonicalStringify,
+  isCalendarDate,
   recordCorrectionSupportKind,
   type RecordCorrectionDecision,
   type RecordCorrectionNotice,
@@ -447,9 +448,7 @@ function parseMonthDay(season: number, raw: string): string {
 
 function validatedDate(year: number, month: number, day: number, raw: string): string {
   const date = `${String(year)}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-  const parsed = new Date(`${date}T00:00:00Z`);
-  if (Number.isNaN(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== date)
-    throw new Error(`KBO 기록정정 경기일이 올바르지 않습니다: ${raw}`);
+  if (!isCalendarDate(date)) throw new Error(`KBO 기록정정 경기일이 올바르지 않습니다: ${raw}`);
   return date;
 }
 

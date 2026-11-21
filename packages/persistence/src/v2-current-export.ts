@@ -12,7 +12,7 @@ import {
 } from "@kbo/game-core";
 import type { Pool, PoolClient, QueryResultRow } from "pg";
 
-import { projectionTableDescriptors } from "./projection-descriptor.js";
+import { emptyProjectionTables, projectionTableDescriptors } from "./projection-descriptor.js";
 import type { ProjectionRow, ProjectionTableName, ProjectionTables } from "./projection.js";
 import {
   DatabaseContractError,
@@ -208,7 +208,7 @@ async function readLegacyProjection(
   gameId: string,
   revision: number,
 ): Promise<LegacyProjectionRead> {
-  const tables = emptyProjectionTables();
+  const tables = emptyProjectionTables<ProjectionRow>();
   const legacyEntries: [string, readonly ProjectionRow[]][] = [];
   for (const descriptor of projectionTableDescriptors(3)) {
     const sourceName = sourceTableName(descriptor.name);
@@ -238,41 +238,6 @@ async function readLegacyProjection(
   return {
     tables,
     projectionHash: canonicalHash(Object.fromEntries(legacyEntries)),
-  };
-}
-
-function emptyProjectionTables(): Record<ProjectionTableName, readonly ProjectionRow[]> {
-  return {
-    game_team_snapshots: [],
-    game_roster_snapshots: [],
-    game_roster_positions: [],
-    relay_event_facts: [],
-    relay_half_inning_starts: [],
-    relay_batter_starts: [],
-    relay_pitches: [],
-    relay_plate_results: [],
-    relay_runner_advances: [],
-    relay_substitutions: [],
-    relay_reviews: [],
-    relay_administrative: [],
-    relay_unresolved: [],
-    tracking_observations: [],
-    pitch_facts: [],
-    pitch_tracking_links: [],
-    official_batter_lines: [],
-    official_pitcher_lines: [],
-    play_facts: [],
-    play_events: [],
-    runner_movement_facts: [],
-    game_final_states: [],
-    plate_appearance_facts: [],
-    plate_appearance_events: [],
-    batter_game_facts: [],
-    pitcher_game_facts: [],
-    baserunner_game_facts: [],
-    validation_runs: [],
-    validation_issues: [],
-    validation_issue_details: [],
   };
 }
 

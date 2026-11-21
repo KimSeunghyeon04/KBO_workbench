@@ -6,12 +6,12 @@ import {
   PitchLocationComparisonQuerySchema,
   PitchLocationComparisonResponseSchema,
   pitchLocationComparisonQueries,
+  pitchOutcomeScope,
   type PitchOutcomeQuery,
   type PitchLocationComparisonQuery,
 } from "@kbo/contracts";
 import { analyzePitchLocation, comparePitchLocations } from "@kbo/game-core";
 import {
-  pitchOutcomeScope,
   readPitchOutcomePair,
   readPitchOutcomes,
   type PitchOutcomeCache,

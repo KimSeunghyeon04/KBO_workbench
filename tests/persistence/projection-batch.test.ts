@@ -1,12 +1,42 @@
 import { readFile } from "node:fs/promises";
-import type { PoolClient } from "pg";
+import { Client, type PoolClient } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import { parseStagingGameDocumentV2 } from "@kbo/contracts";
 import { compileStagingGameDocumentV2 } from "@kbo/game-core";
 import { buildRelationalProjection, PROJECTION_TABLE_DESCRIPTORS } from "@kbo/persistence";
-import { writeProjection } from "../../packages/persistence/src/projection-repository.js";
+import {
+  readProjection,
+  writeProjection,
+} from "../../packages/persistence/src/projection-repository.js";
 
 describe("projection INSERT batching", () => {
+  it.each([3, 4] as const)(
+    "reads empty version %s tables with independent row arrays",
+    async (version) => {
+      const client = Object.assign(new Client(), { release: vi.fn() });
+      const query = vi.spyOn(client, "query").mockResolvedValue({
+        rows: [],
+        rowCount: 0,
+        command: "SELECT",
+        oid: 0,
+        fields: [],
+      });
+      const tables = await readProjection(client, "fixture", 1, version);
+      expect(Object.keys(tables)).toHaveLength(30);
+      expect(tables).toMatchObject({
+        relay_event_facts: [],
+        pitch_facts: [],
+        pitch_tracking_links: [],
+      });
+      expect(tables.pitch_facts).not.toBe(tables.relay_event_facts);
+      const relayPitchQuery = query.mock.calls.find(([sql]) =>
+        String(sql).includes("FROM workbench.relay_pitches"),
+      );
+      expect(relayPitchQuery).toBeDefined();
+      expect(String(relayPitchQuery?.[0]).includes("speed_kph")).toBe(version === 4);
+    },
+  );
+
   it("preserves every descriptor column and normalized row while bounding parameters", async () => {
     const document = parseStagingGameDocumentV2(
       JSON.parse(await readFile("tests/fixtures/game-document-v2.golden.json", "utf8")) as unknown,

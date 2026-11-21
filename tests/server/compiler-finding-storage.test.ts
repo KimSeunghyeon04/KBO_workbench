@@ -63,6 +63,41 @@ const expectedStored: readonly StoredFinding[] = [
 ];
 
 describe("컴파일러 검증 결과 저장", () => {
+  it("수집과 교정 모두 완전히 같은 결과만 제거하고 다른 출처 행은 보존한다", async () => {
+    const bundle = await sanitizedNaverBundle();
+    const note = {
+      lifecycle: "persistent",
+      code: "source.fixture.observation",
+      severity: "warning",
+      message: "Fixture observation",
+      endpoint: "relay_001",
+      rowIndex: 1,
+    } as const;
+    const projected = projectNaverSourceBundle(bundle, null, [
+      note,
+      { ...note },
+      { ...note, rowIndex: 2 },
+    ]);
+    const expected = [1, 2].map((rowIndex) => ({
+      producer: "collection",
+      lifecycle: "persistent",
+      code: "source.fixture.observation",
+      category: "source",
+      severity: "warning",
+      message: "Fixture observation",
+      endpoint: "relay_001",
+      details: [{ field: "source_row_index", actual: rowIndex }],
+    }));
+    expect(projected.findings).toStrictEqual(expected);
+    expect(
+      mergePersistentSourceFindings(
+        [...projected.findings, ...projected.findings],
+        [],
+        projected.document,
+      ),
+    ).toStrictEqual(expected);
+  });
+
   it("최초 수집은 순번이 다른 첫 투구의 검증 결과와 출처를 저장용으로 변환한다", async () => {
     const bundle = await sanitizedNaverBundle();
     const relay = bundle.payloads.relay_001 as {

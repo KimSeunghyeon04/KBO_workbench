@@ -128,6 +128,7 @@ describe("staging workspace", () => {
       gameId: document.metadata.gameId,
       authority: "ready",
       generation: 1,
+      displaySummary: { gameDate: document.metadata.gameDate, teams: document.teams },
     });
     const artifact = path.join(temporary.path, ...current.artifactPath.split("/"));
     expect(JSON.parse(await readFile(artifact, "utf8"))).not.toHaveProperty("findings");

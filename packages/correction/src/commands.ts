@@ -91,7 +91,7 @@ function applyAtomic(
         insertEvent(document.events, command.event, command.beforeEventId),
       );
     case "delete_event":
-      return deleteEvent(document, command.eventId);
+      return deleteEvents(document, [command.eventId]);
     case "delete_events":
       return deleteEvents(document, command.eventIds);
     case "replace_event":
@@ -168,17 +168,6 @@ function insertEvent(
     result.splice(index, 0, event);
   }
   return result;
-}
-
-function deleteEvent(document: StagingGameDocumentV2, eventId: string): StagingGameDocumentV2 {
-  const index = requiredIndex(document.events, eventId);
-  const removed = document.events[index];
-  const events = [...document.events];
-  events.splice(index, 1);
-  const withoutEvent = withEvents(document, events);
-  return removed?.kind === "pitch"
-    ? excludeTrackingForPitch(withoutEvent, eventId, "연결된 원장 투구 행이 삭제되었습니다.")
-    : withoutEvent;
 }
 
 function replaceEvent(

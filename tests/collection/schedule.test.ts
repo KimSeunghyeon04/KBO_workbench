@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { isCalendarDate } from "@kbo/contracts";
 
 import {
   CollectionCancelledError,
@@ -10,6 +11,25 @@ import {
 import { scheduleGame, schedulePayload } from "../helpers/naver.js";
 
 describe("Naver 일정 탐색", () => {
+  it("달력에 없는 날짜를 일정 조회 전에 출처 형식 오류로 거부한다", async () => {
+    const fetchPage = vi.fn();
+    const signal = new AbortController().signal;
+    for (const invalid of ["2026-13-01", "2025-02-29", "2026-04-31"]) {
+      expect(isCalendarDate(invalid)).toBe(false);
+      await expect(discoverPages(invalid, invalid, signal, fetchPage)).rejects.toBeInstanceOf(
+        NaverSourceFormatError,
+      );
+    }
+    await expect(
+      discoverPages("2026-12-31", "2026-13-01", signal, fetchPage),
+    ).rejects.toBeInstanceOf(NaverSourceFormatError);
+    expect(fetchPage).not.toHaveBeenCalled();
+    expect(isCalendarDate("2000-02-29")).toBe(true);
+    expect(isCalendarDate("1900-02-29")).toBe(false);
+    expect(isCalendarDate("0099-01-01")).toBe(true);
+    expect(isCalendarDate("0099-01-01", 100)).toBe(false);
+  });
+
   it("완료된 KBO 경기만 날짜·시각·ID 순으로 정렬하고 중복 제거한다", async () => {
     const pages = [
       schedulePayload([scheduleGame("G2", "2026-07-02"), scheduleGame("G1", "2026-07-01")], 3),

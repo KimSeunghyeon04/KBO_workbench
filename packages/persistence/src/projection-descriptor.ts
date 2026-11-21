@@ -442,6 +442,12 @@ export const PROJECTION_TABLE_COLUMNS = {
 } as const;
 export type ProjectionVersion = 3 | 4;
 export type ProjectionTableName = keyof typeof PROJECTION_TABLE_COLUMNS;
+
+export function emptyProjectionTables<Row>(): Record<ProjectionTableName, Row[]> {
+  return Object.fromEntries<Row[]>(
+    PROJECTION_TABLE_DESCRIPTORS.map(({ name }) => [name, []]),
+  ) as Record<ProjectionTableName, Row[]>;
+}
 export function projectionTableColumns(
   table: ProjectionTableName,
   version: ProjectionVersion,

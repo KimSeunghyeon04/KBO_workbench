@@ -1,5 +1,6 @@
 import {
   compareCanonicalStrings,
+  isCalendarDate,
   type CollectionCounts,
   type CollectionDateRange,
   type CollectionGameSummary,
@@ -14,8 +15,7 @@ export function assertCollectionRange(
   parent?: CollectionDateRange,
 ): void {
   for (const value of [range.startDate, range.endDate]) {
-    const date = new Date(`${value}T00:00:00Z`);
-    if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+    if (!isCalendarDate(value)) {
       throw new InvalidCollectionRequestError("실재하는 날짜를 입력해야 합니다.");
     }
   }

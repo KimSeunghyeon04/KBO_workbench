@@ -83,7 +83,7 @@ export {
   type WorkspaceMigrationReport,
 } from "./workspace-migration.js";
 export { type StagingCorrectionCommit, type StoredFinding } from "@kbo/contracts";
-export { storedCompilerFindings } from "./workspace-findings.js";
+export { deduplicateStoredFindings, storedCompilerFindings } from "./workspace-findings.js";
 export {
   PitchAnalysisRepository,
   prepareReference as preparePitchAnalysisReference,

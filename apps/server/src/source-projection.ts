@@ -1,7 +1,8 @@
 import { mapNaverGame, type RawGameBundle, type SourceFinding } from "@kbo/collection";
-import { canonicalStringify, type StagingGameDocumentV2 } from "@kbo/contracts";
+import type { StagingGameDocumentV2 } from "@kbo/contracts";
 import { compileStagingGameDocumentV2 } from "@kbo/game-core";
 import {
+  deduplicateStoredFindings,
   storedCompilerFindings,
   type CurrentRevisionBase,
   type StoredFinding,
@@ -66,14 +67,4 @@ export function storedSourceFinding(finding: SourceFinding): StoredFinding {
     ...(finding.endpoint === null ? {} : { endpoint: finding.endpoint }),
     ...(details.length === 0 ? {} : { details }),
   };
-}
-
-function deduplicateStoredFindings(findings: readonly StoredFinding[]): StoredFinding[] {
-  const seen = new Set<string>();
-  return findings.filter((finding) => {
-    const key = canonicalStringify(finding);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }

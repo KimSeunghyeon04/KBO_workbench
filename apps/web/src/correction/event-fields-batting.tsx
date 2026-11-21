@@ -8,7 +8,8 @@ import {
   inheritedPlayerLabel,
   type EventFieldProps,
 } from "./event-field-context";
-import { PlayerPicker, playerSideForRole } from "./player-picker";
+import { PlayerPicker } from "./player-picker";
+import { playerSideForRole } from "./editor-context";
 import { pitchCallLabel } from "../events/relay-text";
 export function BatterStartFields({
   form,

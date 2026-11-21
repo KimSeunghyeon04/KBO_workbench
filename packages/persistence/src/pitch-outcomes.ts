@@ -5,11 +5,9 @@ import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import {
   canonicalStringify,
-  resolveAnalysisScope,
   PitchOutcomeRowSchema,
   TerminalPaRowSchema,
   type AnalysisScope,
-  type PitchOutcomeQuery,
   type PitchOutcomeRow,
   type TerminalPaRow,
 } from "@kbo/contracts";
@@ -73,18 +71,6 @@ export async function readPitchOutcomePair(
     first: await finishPitchOutcomeInput(first, role, actorId, cache),
     second: await finishPitchOutcomeInput(second, role, actorId, cache),
   };
-}
-
-export function pitchOutcomeScope({ season, competition, dateFrom, dateTo }: PitchOutcomeQuery) {
-  return resolveAnalysisScope(
-    {
-      season,
-      ...(competition === undefined ? {} : { competition }),
-      ...(dateFrom === undefined ? {} : { dateFrom }),
-      ...(dateTo === undefined ? {} : { dateTo }),
-    },
-    "regular",
-  );
 }
 
 async function readPitchOutcomeInput(

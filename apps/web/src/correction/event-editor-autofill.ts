@@ -9,6 +9,7 @@ import type {
 } from "@kbo/contracts";
 
 import { formForKind, formFrom, type DrawerRequest, type FormState } from "./event-editor-registry";
+import { canonicalIndexForRequest, playerSideForRole } from "./editor-context";
 
 export type AutofillField =
   | "batterId"
@@ -407,7 +408,7 @@ function substitutionModel(
   context: EditorAutofillContext,
   useState = true,
 ): EditorFormModel {
-  const derivedSide = sideForRole(current.half, role);
+  const derivedSide = playerSideForRole(current.half, role);
   const side = selectedSide ?? derivedSide;
   const state = useState ? matchingContextState(current, context, context.state) : undefined;
   const occupied = firstOccupiedBase(state);
@@ -769,23 +770,6 @@ function battingOrderAt(
       result = { value: event.payload.battingOrder, reason: "앞선 교체 타순" };
   }
   return result;
-}
-
-function sideForRole(half: Half, role: FormState["role"]): Side {
-  const offense: Side = half === "top" ? "away" : "home";
-  return role === "batter" || role === "runner" ? offense : offense === "away" ? "home" : "away";
-}
-
-function canonicalIndexForRequest(document: StagingGameDocumentV2, request: DrawerRequest): number {
-  if (request.mode === "add_event") {
-    if (request.beforeEventId === null) return document.events.length;
-    const index = document.events.findIndex(
-      (event) => event.identity.eventId === request.beforeEventId,
-    );
-    return index < 0 ? document.events.length : index;
-  }
-  const index = document.events.findIndex((event) => event.identity.eventId === request.eventId);
-  return index < 0 ? document.events.length : index;
 }
 
 function stateForRequest(

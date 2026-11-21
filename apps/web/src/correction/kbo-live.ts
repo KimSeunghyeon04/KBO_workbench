@@ -1,3 +1,5 @@
+import { isCalendarDate } from "@kbo/contracts";
+
 const KBO_LIVE_TEXT_ENDPOINT = "https://www.koreabaseball.com/Game/LiveText.aspx";
 const KBO_GAME_ID = /^(?<officialId>(?<date>\d{8})[A-Z0-9]{4}\d)(?<sourceYear>\d{4})?$/;
 
@@ -50,11 +52,5 @@ export function kboLiveTextLink(gameId: string | null | undefined): KboLiveTextL
 }
 
 function isValidDate(value: string): boolean {
-  const year = Number(value.slice(0, 4));
-  const month = Number(value.slice(4, 6));
-  const day = Number(value.slice(6, 8));
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return (
-    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
-  );
+  return isCalendarDate(`${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`, 100);
 }

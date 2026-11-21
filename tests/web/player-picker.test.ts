@@ -6,11 +6,11 @@ import userEvent from "@testing-library/user-event";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { playerSideForRole } from "../../apps/web/src/correction/editor-context.js";
 import {
   isRosterPlayerId,
   PlayerPicker,
   playerCandidates,
-  playerSideForRole,
 } from "../../apps/web/src/correction/player-picker.js";
 
 afterEach(() => cleanup());

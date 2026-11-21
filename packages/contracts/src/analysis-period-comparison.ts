@@ -106,7 +106,7 @@ export type PitchProfilePeriodResponse = Static<typeof PitchProfilePeriodRespons
 export type BatterPeriodResponse = Static<typeof BatterPeriodResponseSchema>;
 export type DisciplinePeriodResponse = Static<typeof DisciplinePeriodResponseSchema>;
 
-export function analysisPeriodQueries<T extends AnalysisPeriodQuery>(query: T) {
+export function splitAnalysisPeriodQueries<T extends AnalysisPeriodQuery>(query: T) {
   const { compareSeason, compareDateFrom, compareDateTo, ...first } = query;
   const { dateFrom, dateTo, ...shared } = first;
   void dateFrom;
@@ -117,6 +117,11 @@ export function analysisPeriodQueries<T extends AnalysisPeriodQuery>(query: T) {
     ...(compareDateFrom === undefined ? {} : { dateFrom: compareDateFrom }),
     ...(compareDateTo === undefined ? {} : { dateTo: compareDateTo }),
   };
+  return { first, second };
+}
+
+export function analysisPeriodQueries<T extends AnalysisPeriodQuery>(query: T) {
+  const { first, second } = splitAnalysisPeriodQueries(query);
   // Validate both boundaries before any repository reads; blank dates mean the whole season.
   for (const { season, competition, dateFrom, dateTo } of [first, second]) {
     resolveAnalysisScope({

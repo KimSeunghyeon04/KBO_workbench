@@ -10,8 +10,7 @@ import {
   type WorkspaceTransitionJournal,
 } from "@kbo/contracts";
 import { randomUUID } from "node:crypto";
-import { constants as fsConstants } from "node:fs";
-import { access, mkdir, open, readFile, readdir, rename, unlink } from "node:fs/promises";
+import { mkdir, readFile, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import {
   StaleStagingDocumentError,
@@ -21,11 +20,13 @@ import {
 import {
   atomicWrite,
   isMissing,
+  moveArtifactForRecovery,
   readDirectoryIfPresent,
   removeEmptyDirectory,
   removeIfPresent,
 } from "./workspace-files.js";
 import { assertGameId } from "./workspace-path-policy.js";
+import { syncDirectory } from "./workspace-temporary-files.js";
 
 // The workspace owns the writer lock and serialization; this store owns the durable current transition.
 export class WorkspaceCurrentStore {
@@ -211,7 +212,7 @@ export class WorkspaceCurrentStore {
     if (current.authority !== "source_failure") {
       const findingsSource = this.findingsArtifactPath(current.artifactPath);
       const findingsDestination = path.join(destinationDirectory, path.basename(findingsSource));
-      await moveOptionalArtifactForRecovery(findingsSource, findingsDestination);
+      await moveArtifactForRecovery(findingsSource, findingsDestination, true);
     }
     await syncDirectory(path.dirname(source));
     await syncDirectory(destinationDirectory);
@@ -316,39 +317,4 @@ export function snapshotContentHash(snapshotId: string): string {
     throw new Error(`허용되지 않은 superseded snapshot ID입니다: ${snapshotId}`);
   }
   return match[2];
-}
-
-async function moveArtifactForRecovery(source: string, destination: string): Promise<void> {
-  try {
-    await rename(source, destination);
-  } catch (error: unknown) {
-    if (!isMissing(error)) throw error;
-    await access(destination, fsConstants.R_OK);
-  }
-}
-
-async function moveOptionalArtifactForRecovery(source: string, destination: string): Promise<void> {
-  try {
-    await rename(source, destination);
-  } catch (error: unknown) {
-    if (!isMissing(error)) throw error;
-    try {
-      await access(destination, fsConstants.R_OK);
-    } catch (destinationError: unknown) {
-      if (!isMissing(destinationError)) throw destinationError;
-    }
-  }
-}
-
-async function syncDirectory(directory: string): Promise<void> {
-  try {
-    const handle = await open(directory, "r");
-    try {
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-  } catch {
-    // Windows와 일부 파일시스템은 디렉터리 fsync를 지원하지 않는다.
-  }
 }

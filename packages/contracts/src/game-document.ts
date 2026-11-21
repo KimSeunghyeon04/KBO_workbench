@@ -1,4 +1,5 @@
 import { Value } from "@sinclair/typebox/value";
+import { isCalendarDate } from "./calendar-date.js";
 
 import { StagingGameDocumentV2Schema } from "./game-document/document.js";
 import type { StagingGameDocumentV2 } from "./game-document/document.js";
@@ -127,11 +128,7 @@ export function validateStagingGameDocumentV2Semantics(
   document: StagingGameDocumentV2,
 ): readonly ContractIssue[] {
   const issues: ContractIssue[] = [];
-  const gameDate = new Date(`${document.metadata.gameDate}T00:00:00.000Z`);
-  if (
-    !Number.isFinite(gameDate.valueOf()) ||
-    gameDate.toISOString().slice(0, 10) !== document.metadata.gameDate
-  ) {
+  if (!isCalendarDate(document.metadata.gameDate)) {
     issues.push(issue("invalid_game_date", "/metadata/gameDate", "실재하는 경기 날짜가 아닙니다."));
   }
   if (document.teams.away.teamId === document.teams.home.teamId)
