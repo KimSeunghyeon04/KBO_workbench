@@ -49,6 +49,13 @@ workspace 시작 시 journal 복구 뒤 모든 current 원장·finding·hash를 
 시작 중 HTTP liveness는 응답하고 readiness와 업무 API는 503으로 차단한다. 웹 조회는
 `server_initializing`에만 2초 간격으로 최대 5분 재시도하며 mutation은 자동 재시도하지 않는다.
 
+임시 파일은 workspace의 `.temporary`에 모아 다음 시작 시 이 폴더만 회수한다. 기존 위치를 쓰던
+버전에서 업데이트하면 첫 실행에만 기존 저장 디렉터리를 최대 16개씩 검사한다. 심볼릭 링크와
+Windows 정션은 건너뛴다. 정리가 끝나면 완료 표식을 내구성 있게 저장하므로 중단·실패 시 다음
+시작에 다시 시도한다. 원문과 과거 artifact는
+재시작마다 재귀 순회하지 않는다. current 검증과 journal 없는 orphan active 탐지는 매번 유지하며,
+비어 있는 active 경기 폴더만 비재귀 삭제한다. 적재·교체 뒤에도 같은 정리를 수행한다.
+
 적재 대상 확정은 검증된 revision/hash 메타데이터를 현재 manifest 전체와 대조하고, manifest가
 바뀌었으면 원장과 finding을 다시 검증한다. 이 메모리 정보는 적재할 문서를 대체하지 않으며 실제
 import 직전에는 원장 읽기·전체 컴파일·hash와 expected target 일치를 다시 확인한다.

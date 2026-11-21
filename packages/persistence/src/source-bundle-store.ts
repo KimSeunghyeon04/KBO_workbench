@@ -66,7 +66,11 @@ export async function saveImmutableSourceBundle(
         throw new Error(`immutable source가 다릅니다: ${target}`);
     } catch (error: unknown) {
       if (!isMissing(error)) throw error;
-      await atomicWrite(target, await gzipAsync(Buffer.from(canonical, "utf8"), { level: 9 }));
+      await atomicWrite(
+        root,
+        target,
+        await gzipAsync(Buffer.from(canonical, "utf8"), { level: 9 }),
+      );
     }
   }
   const manifest: SourceBundleManifest = {
@@ -86,7 +90,7 @@ export async function saveImmutableSourceBundle(
     }
   } catch (error: unknown) {
     if (!isMissing(error)) throw error;
-    await atomicWrite(manifestPath, `${canonicalStringify(manifest)}\n`);
+    await atomicWrite(root, manifestPath, `${canonicalStringify(manifest)}\n`);
   }
 }
 

@@ -27,10 +27,11 @@ export async function writeAnalysisModelFile<S extends TSchema>(
     contentHash = createHash("sha256").update(contents).digest("hex");
   signal?.throwIfAborted();
   await assertWriter();
-  await atomicWrite(path.join(root, "analysis", kind, `${contentHash}.json`), contents);
+  await atomicWrite(root, path.join(root, "analysis", kind, `${contentHash}.json`), contents);
   signal?.throwIfAborted();
   await assertWriter();
   await atomicWrite(
+    root,
     path.join(root, "analysis", kind, `through-${through}.json`),
     canonicalStringify({ hash: contentHash }),
   );

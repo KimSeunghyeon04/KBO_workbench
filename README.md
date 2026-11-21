@@ -45,7 +45,8 @@ docker compose ps --all
 `migrate`가 `Exited (0)`, `db`·`api`·`web`이 `healthy`이면
 [http://127.0.0.1:8080](http://127.0.0.1:8080)을 연다. 포트를 바꿨다면 해당 포트로 접속한다.
 **설정 및 진단**(`/settings`)에서 API·DB·워크스페이스 상태를 확인할 수 있다.
-저장된 자료가 많으면 시작 시 무결성 검증에 시간이 걸릴 수 있다.
+시작 시 현재 작업본의 무결성을 검사한다. 임시 파일은 전용 `.temporary` 폴더에서 회수하며,
+업데이트 후 첫 실행에만 기존 위치의 임시 파일을 정리한다.
 
 GNU Make가 있으면 설정 준비에 `make init`, 빌드·migration·준비 상태 확인에 `make deploy`를
 사용할 수 있다. 자세한 환경 준비는 [Windows 설치](docs/windows-installation.md),
@@ -171,6 +172,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/backup.ps1
 `docker compose down -v`는 DB volume을 삭제하므로 사용하지 않는다.
 백업은 writer를 멈춘 같은 시점의 DB와 파일을 함께 저장한다. 복원은 두 데이터를 교체하므로
 [백업·복원 절차](docs/backup-and-restore.md)의 대상·hash 확인을 따른다.
+컨테이너 재생성 뒤 이전 hostname의 잠금이 남으면 [중단된 writer 잠금 복구](docs/backup-and-restore.md#중단된-writer-잠금-복구)를 따른다.
 업데이트와 실패 진단의 전체 순서는 [운영 배포](docs/deployment.md)에 있다.
 
 외부 분석 도구는 기본 `127.0.0.1:5433`의 analyst 계정으로 접속한다.

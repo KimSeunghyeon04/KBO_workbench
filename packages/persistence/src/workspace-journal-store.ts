@@ -22,7 +22,7 @@ export class WorkspaceJournalStore {
   ) {}
 
   public async saveCollectionJob(job: CollectionJob): Promise<void> {
-    await atomicWrite(this.collectionJobPath(job.jobId), `${canonicalStringify(job)}\n`);
+    await atomicWrite(this.root, this.collectionJobPath(job.jobId), `${canonicalStringify(job)}\n`);
   }
 
   public async removeCollectionJob(jobId: string): Promise<void> {
@@ -60,7 +60,7 @@ export class WorkspaceJournalStore {
     const journalId = `${createdAt.replaceAll(":", "-")}-${input.baseDocumentHash.slice(0, 12)}`;
     const journal: CorrectionJournal = { ...input, journalId, beforeDocument, createdAt };
     const journalPath = this.correctionPath(input.document.metadata.gameId, journalId);
-    await atomicWrite(journalPath, `${canonicalStringify(journal)}\n`);
+    await atomicWrite(this.root, journalPath, `${canonicalStringify(journal)}\n`);
     if (failurePoint === "after_journal")
       throw new Error("injected correction failure: after_journal");
     await apply(journal);

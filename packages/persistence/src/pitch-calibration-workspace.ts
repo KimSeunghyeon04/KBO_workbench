@@ -63,10 +63,10 @@ export class PitchCalibrationWorkspace {
       throw new Error("Invalid calculated calibration profile");
     const serialized = `${canonicalStringify({ hash: pitchCalibrationHash(payload), payload })}\n`;
     await this.assertWriter();
-    await atomicWrite(target, serialized);
+    await atomicWrite(this.root, target, serialized);
     // Only a reuse hint. Every reused day is checked against its own past-input
     // hash, so concurrent snapshots cannot make an older hint authoritative.
-    await atomicWrite(latest, serialized);
+    await atomicWrite(this.root, latest, serialized);
     return payload;
   }
 

@@ -5,7 +5,7 @@ import {
   WorkspaceMigrationRequiredError,
   WorkspacePersistenceBlockedError,
 } from "./workspace-errors.js";
-import { readDirectoryIfPresent } from "./workspace-files.js";
+import { readDirectoryIfPresent, removeEmptyDirectory } from "./workspace-files.js";
 import { isGameId } from "./workspace-path-policy.js";
 import { WorkspaceValidationPool } from "./workspace-validation-pool.js";
 import type { WorkspaceValidation } from "./workspace-validation.js";
@@ -79,11 +79,14 @@ export async function assertWorkspaceIntegrity(
   } finally {
     await validation.close();
   }
-  for (const gameDirectory of await readDirectoryIfPresent(path.join(root, "active"))) {
-    if (!gameDirectory.isDirectory() || !isGameId(gameDirectory.name)) continue;
-    for (const artifact of await readDirectoryIfPresent(
-      path.join(root, "active", gameDirectory.name),
-    )) {
+  const directories = (await readDirectoryIfPresent(path.join(root, "active")))
+    .filter((entry) => entry.isDirectory() && isGameId(entry.name))
+    .sort((a, b) => compareCanonicalStrings(a.name, b.name));
+  const validateActive = async (gameDirectory: (typeof directories)[number]) => {
+    const directory = path.join(root, "active", gameDirectory.name);
+    const artifacts = await readDirectoryIfPresent(directory);
+    if (artifacts.length === 0) await removeEmptyDirectory(directory);
+    for (const artifact of artifacts) {
       if (
         !artifact.isFile() ||
         (!artifact.name.endsWith(".document.json") && !artifact.name.endsWith(".failure.json"))
@@ -96,6 +99,12 @@ export async function assertWorkspaceIntegrity(
         );
       }
     }
+  };
+  for (let offset = 0; offset < directories.length; offset += 16) {
+    const results = await Promise.allSettled(
+      directories.slice(offset, offset + 16).map(validateActive),
+    );
+    for (const result of results) if (result.status === "rejected") throw result.reason;
   }
 }
 

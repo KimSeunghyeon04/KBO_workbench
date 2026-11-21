@@ -64,7 +64,7 @@ export class AnalysisModelJobWorkspace {
   public async save(job: AnalysisModelJob) {
     const decoded = Value.Decode(AnalysisModelJobSchema, job);
     await this.assertWriter();
-    await atomicWrite(this.target(`${decoded.id}.json`), canonicalStringify(decoded));
+    await atomicWrite(this.root, this.target(`${decoded.id}.json`), canonicalStringify(decoded));
   }
   public async policy() {
     const policy = await this.read(
@@ -89,7 +89,7 @@ export class AnalysisModelJobWorkspace {
       enabledSeasons: [...seasons].sort((a, b) => a - b),
     });
     await this.assertWriter();
-    await atomicWrite(this.target("policy.json"), canonicalStringify(policy));
+    await atomicWrite(this.root, this.target("policy.json"), canonicalStringify(policy));
     return policy;
   }
 }

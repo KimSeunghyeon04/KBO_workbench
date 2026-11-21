@@ -46,7 +46,11 @@ export class ImmutableTextArtifactStore<K extends string> {
       return { artifactKey: existing.artifactKey, contentHash: existing.contentHash };
     }
     const absolute = this.absoluteArtifactPath(artifactKey);
-    await atomicWrite(absolute, await gzipAsync(Buffer.from(input.body, "utf8")));
+    await atomicWrite(
+      this.options.root,
+      absolute,
+      await gzipAsync(Buffer.from(input.body, "utf8")),
+    );
     const metadata = parseImmutableArtifactMetadata({
       schemaVersion: 1,
       pageKind: input.pageKind,
@@ -55,7 +59,11 @@ export class ImmutableTextArtifactStore<K extends string> {
       contentHash,
       collectedAt: input.collectedAt,
     });
-    await atomicWrite(`${absolute}.meta.json`, `${canonicalStringify(metadata)}\n`);
+    await atomicWrite(
+      this.options.root,
+      `${absolute}.meta.json`,
+      `${canonicalStringify(metadata)}\n`,
+    );
     return { artifactKey, contentHash };
   }
 

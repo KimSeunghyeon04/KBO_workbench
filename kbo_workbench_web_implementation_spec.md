@@ -241,6 +241,7 @@ collection은 이닝별 기록지 약호를 모두 해석하고 명시적인 안
   journals/
   exports/
   logs/
+  .temporary/                         # 원자 쓰기의 임시 파일과 기존 위치 정리 완료 표식
 ```
 
 source와 original은 불변이다. versioned current manifest가 ready, quarantine, source_failure 중 하나의
@@ -253,6 +254,20 @@ active나 hash 불일치는 persistence-blocked로 중단한다. finding은 prod
 `StoredFindingEnvelopeV2`로 저장하며 비면 sidecar를 두지 않는다. legacy 배치는 검증된 DB/workspace 쌍
 backup과 명시적 migration 없이는 current로 해석하지 않는다. V1 current manifest도 자동 보완하지
 않으며 기존 `workspace:migrate` dry-run/apply와 manifest upgrade journal로만 V2가 된다.
+
+같은 hostname의 오래된 writer 잠금은 해당 잠금 세대의 복구 표식을 독점한 뒤 다시 확인하고 원자
+교체한다. 다른 hostname의 잠금은 startup과 migration apply를 차단한다. 운영 절차는
+[중단된 writer 잠금 복구](docs/backup-and-restore.md#중단된-writer-잠금-복구)를 따른다.
+
+원자 쓰기는 같은 파일시스템에 있는 workspace의 `.temporary`에 임시 파일을 쓰고 file fsync,
+target으로의 atomic rename, target·임시 디렉터리 sync 순서를 사용한다. workspace 하위 저장 경로를
+별도 파일시스템에 mount하지 않으며 EXDEV에서 복사로 우회하지 않는다. writer lock을 확보한 startup은
+이 폴더만 정리한다. 기존 writer가 남긴 임시 파일은 첫 실행에 최대 16개 디렉터리씩 검사하며
+심볼릭 링크와 Windows 정션은 건너뛴다. 정리가 끝난 뒤에만 빈 `legacy-cleanup-complete` 파일을
+fsync하여 반복 순회를 생략한다.
+이 표식은 임시 파일 배치 전환만 나타내며 current·원장·finding·hash와 orphan 검증을 생략하지 않는다.
+active artifact를 superseded로 옮긴 뒤 빈 경기 디렉터리는 비재귀 rmdir로 제거한다. 시작 검증에서도
+기존 빈 active 경기 디렉터리를 정리하며 파일이 남아 있는 디렉터리는 보존한다.
 
 correction은 structured command만 허용한다. 매 command/batch 뒤 resequence하고 전체 compile한다.
 세션별 async mutex 안에서 session version과 base document hash를 검사해 stale이면 거부하며, browser는

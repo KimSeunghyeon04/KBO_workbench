@@ -47,9 +47,13 @@ export class WorkspaceOriginalStore {
     if (findings.length === 0) {
       await removeIfPresent(findingsTarget);
     } else {
-      await atomicWrite(findingsTarget, `${canonicalStringify(findingEnvelope(findings))}\n`);
+      await atomicWrite(
+        this.root,
+        findingsTarget,
+        `${canonicalStringify(findingEnvelope(findings))}\n`,
+      );
     }
-    await atomicWrite(target, `${canonicalStringify(document)}\n`);
+    await atomicWrite(this.root, target, `${canonicalStringify(document)}\n`);
     const stored = parseStagingGameDocumentV2(
       JSON.parse(await readFile(target, "utf8")) as unknown,
     );

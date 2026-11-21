@@ -57,7 +57,7 @@ export class AnalysisCoverageWorkspace {
     signal?.throwIfAborted();
     await this.assertWriter();
     signal?.throwIfAborted();
-    await atomicWrite(this.target(payload.sourceKey), content);
+    await atomicWrite(this.root, this.target(payload.sourceKey), content);
   }
 
   private target(sourceKey: string): string {

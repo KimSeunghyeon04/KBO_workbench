@@ -88,7 +88,7 @@ export class CollectionWorkspace {
     const filename = this.file("discoveries", id, `page-${String(page)}.json.gz`);
     if ((await this.readBytes(filename)) !== null)
       throw new Error("일정 원문 page는 덮어쓸 수 없습니다.");
-    await atomicWrite(filename, await gzipAsync(encoded));
+    await atomicWrite(this.root, filename, await gzipAsync(encoded));
   }
   public async page(id: string, page: number): Promise<Static<typeof rawPageSchema> | null> {
     const bytes = await this.readBytes(
@@ -344,7 +344,7 @@ export class CollectionWorkspace {
         throw new Error("확정된 수집 대상 또는 경기 결과는 덮어쓸 수 없습니다.");
       }
     }
-    await atomicWrite(filename, encoded);
+    await atomicWrite(this.root, filename, encoded);
   }
 }
 function hash(value: unknown): string {

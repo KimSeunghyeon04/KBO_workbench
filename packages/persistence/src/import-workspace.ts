@@ -98,6 +98,7 @@ export class ImportWorkspace {
       }
     }
     await atomicWrite(
+      this.root,
       this.file(kind, id),
       `${canonicalStringify({ hash: hash(payload), payload })}\n`,
     );

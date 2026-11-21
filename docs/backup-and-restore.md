@@ -39,8 +39,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/backup.ps1 `
 4. 각 파일의 SHA-256, app/migration version과 생성 시각을 `manifest.json`에 기록한다.
 5. backup 전 실행 중이던 서비스만 다시 시작한다.
 
-Windows bind mount에 원문과 과거 artifact가 많이 쌓이면 재시작 시 디렉터리 점검에 시간이
-걸린다. API healthcheck의 시작 유예는 180초이며, 실제 무결성 검사가 끝나기 전의 readiness는
+임시 파일 배치 변경 후 첫 시작에는 기존 폴더를 한 번 검사하므로 Windows bind mount에서 시간이
+걸릴 수 있다. 이후 시작은 `.temporary`만 회수하고 현재 작업본과 active artifact를 검증한다.
+workspace와 `.temporary`는 같은 파일시스템에 두며 백업·복원에도 완료 표식을 함께 보존한다.
+API healthcheck의 시작 유예는 180초이며, 실제 무결성 검사가 끝나기 전의 readiness는
 503을 유지한다. 백업 후 서비스 재시작만 실패한 경우에도 백업 manifest와 두 파일의 hash를
 먼저 확인하고, 백업 생성 실패와 재시작 실패를 구분해 진단한다.
 
@@ -88,6 +90,18 @@ current game revision과 replay hash도 확인한다.
 만든다. migration은 transaction으로 적용하며 실패하면 rollback하고 API를 시작하지 않는다. DB만
 이전 시점으로 되돌리거나 `.data/record-corrections/source`만 교체하면 provenance 쌍이 깨지므로 항상
 동일 backup 단위로 복원한다.
+
+## 중단된 writer 잠금 복구
+
+워크스페이스를 여는 API와 migration apply는 같은 `.writer.lock`을 사용한다. 현재 hostname에서
+종료가 확인된 프로세스의 잠금은 자동으로 복구한다. 컨테이너를 재시작해 같은 hostname과 PID가
+다시 쓰인 경우에는 저장된 시작 시각이 현재 프로세스보다 오래됐는지도 확인한다.
+
+다른 hostname의 잠금이나 현재 잠금에 해당하는 복구 표식이 남아 있으면 startup과 migration
+apply가 중단된다. 모든 호스트와 컨테이너에서 해당
+경로를 사용하는 API와 maintenance writer가 종료됐는지 확인한 다음, 기존 `.writer.lock`과 남아 있는
+`.writer.lock.recovery-*` 표식을 workspace 밖에 보존하고 다시 시작한다. 잠금 복구 뒤 일반 startup이
+journal과 artifact의 무결성을 검사한다.
 
 ## Workspace current manifest migration
 

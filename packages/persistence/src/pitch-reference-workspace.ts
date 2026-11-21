@@ -61,7 +61,7 @@ export class PitchReferenceWorkspace {
     if (!Value.Check(PitchReferenceSchema, payload)) throw new Error("Invalid pitch reference");
     const envelope = { hash: contentHash(payload), payload };
     await this.assertWriter();
-    await atomicWrite(target, `${canonicalStringify(envelope)}\n`);
+    await atomicWrite(this.root, target, `${canonicalStringify(envelope)}\n`);
     return payload.reference;
   }
 

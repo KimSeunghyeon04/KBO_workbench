@@ -78,7 +78,7 @@ export class V3TransferWorkspace {
       replaySemanticHash: game.replaySemanticHash,
     };
     const compressed = gzipSync(`${canonicalStringify(artifact)}\n`, { level: 9 });
-    await atomicWrite(target, compressed);
+    await atomicWrite(this.root, target, compressed);
     return {
       gameId,
       artifactKey,
@@ -110,7 +110,11 @@ export class V3TransferWorkspace {
       gameCount: sorted.length,
       games: sorted,
     };
-    await atomicWrite(path.join(this.root, "manifest.json"), `${canonicalStringify(manifest)}\n`);
+    await atomicWrite(
+      this.root,
+      path.join(this.root, "manifest.json"),
+      `${canonicalStringify(manifest)}\n`,
+    );
     return manifest;
   }
 

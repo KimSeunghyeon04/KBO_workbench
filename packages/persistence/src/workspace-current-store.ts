@@ -22,6 +22,7 @@ import {
   atomicWrite,
   isMissing,
   readDirectoryIfPresent,
+  removeEmptyDirectory,
   removeIfPresent,
 } from "./workspace-files.js";
 import { assertGameId } from "./workspace-path-policy.js";
@@ -164,7 +165,7 @@ export class WorkspaceCurrentStore {
       createdAt: this.now().toISOString(),
     };
     const journalPath = this.transitionJournalPath(gameId, transitionId);
-    await atomicWrite(journalPath, `${canonicalStringify(journal)}\n`);
+    await atomicWrite(this.root, journalPath, `${canonicalStringify(journal)}\n`);
     await this.rollForwardWorkspaceTransition(journal);
     await unlink(journalPath);
   }
@@ -199,7 +200,7 @@ export class WorkspaceCurrentStore {
       await syncDirectory(path.join(this.root, "current"));
       return;
     }
-    await atomicWrite(this.currentEntryPath(gameId), `${canonicalStringify(target)}\n`);
+    await atomicWrite(this.root, this.currentEntryPath(gameId), `${canonicalStringify(target)}\n`);
   }
 
   private async archiveCurrentArtifact(current: CurrentWorkspaceEntry): Promise<void> {
@@ -214,6 +215,7 @@ export class WorkspaceCurrentStore {
     }
     await syncDirectory(path.dirname(source));
     await syncDirectory(destinationDirectory);
+    await removeEmptyDirectory(path.dirname(source));
   }
 
   public async recoverWorkspaceTransitions(): Promise<void> {

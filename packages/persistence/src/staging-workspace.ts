@@ -61,8 +61,8 @@ import {
   readDirectoryIfPresent,
   readWriterLock,
   removeIfPresent,
-  removeTemporaryFiles,
 } from "./workspace-files.js";
+import { recoverWorkspaceTemporaryFiles } from "./workspace-temporary-files.js";
 import { assertGameId, assertSeason } from "./workspace-path-policy.js";
 import {
   readVerifiedDocument,
@@ -313,7 +313,11 @@ export class StagingWorkspace {
       gameId,
       `${String(generation)}-${contentHash}.failure.json`,
     );
-    await atomicWrite(this.currentStorage.absoluteArtifactPath(artifactPath), `${canonical}\n`);
+    await atomicWrite(
+      this.root,
+      this.currentStorage.absoluteArtifactPath(artifactPath),
+      `${canonical}\n`,
+    );
     await this.transitionCurrent(previous, {
       schemaVersion: 2,
       gameId,
@@ -645,6 +649,7 @@ export class StagingWorkspace {
       );
     if (reusable === null) {
       await atomicWrite(
+        this.root,
         this.currentStorage.absoluteArtifactPath(artifactPath),
         `${canonicalStringify(document)}\n`,
       );
@@ -652,7 +657,7 @@ export class StagingWorkspace {
       if (findings.length === 0) {
         await removeIfPresent(findingsPath);
       } else {
-        await atomicWrite(findingsPath, `${canonicalStringify(envelope)}\n`);
+        await atomicWrite(this.root, findingsPath, `${canonicalStringify(envelope)}\n`);
       }
     }
     await this.transitionCurrent(previous, {
@@ -688,18 +693,7 @@ export class StagingWorkspace {
   }
 
   private async recoverTemporaryFiles(): Promise<void> {
-    for (const directory of [
-      path.join(this.root, "staging"),
-      path.join(this.root, "quarantine"),
-      path.join(this.root, "original"),
-      path.join(this.root, "source"),
-      path.join(this.root, "active"),
-      path.join(this.root, "current"),
-      path.join(this.root, "superseded"),
-      path.join(this.root, "quarantine", "source-failures"),
-    ]) {
-      await removeTemporaryFiles(directory);
-    }
+    await recoverWorkspaceTemporaryFiles(this.root);
   }
 
   private async recoverCorrectionJournals(): Promise<void> {

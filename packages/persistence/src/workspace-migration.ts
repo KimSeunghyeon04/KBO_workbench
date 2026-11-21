@@ -322,8 +322,9 @@ async function applyManifestUpgrade(
     "journals",
     `manifest-upgrade-${upgrade.target.gameId}-${transitionId}.json`,
   );
-  await atomicWrite(journalPath, `${canonicalStringify(journal)}\n`);
+  await atomicWrite(root, journalPath, `${canonicalStringify(journal)}\n`);
   await atomicWrite(
+    root,
     path.join(root, "current", `${upgrade.target.gameId}.json`),
     `${canonicalStringify(upgrade.target)}\n`,
   );
@@ -463,11 +464,12 @@ async function migrateCandidate(
   }
   const artifactAbsolute = path.join(root, ...artifactPath.split("/"));
   if (prepared.authority === "source_failure") {
-    await atomicWrite(artifactAbsolute, `${canonicalStringify(prepared.record)}\n`);
+    await atomicWrite(root, artifactAbsolute, `${canonicalStringify(prepared.record)}\n`);
   } else {
-    await atomicWrite(artifactAbsolute, `${canonicalStringify(prepared.document)}\n`);
+    await atomicWrite(root, artifactAbsolute, `${canonicalStringify(prepared.document)}\n`);
     if (prepared.findings.length > 0) {
       await atomicWrite(
+        root,
         artifactAbsolute.replace(".document.json", ".findings.json"),
         `${canonicalStringify(findingEnvelope(prepared.findings))}\n`,
       );
@@ -487,8 +489,9 @@ async function migrateCandidate(
     "journals",
     `workspace-${prepared.gameId}-${transitionId}.json`,
   );
-  await atomicWrite(journalPath, `${canonicalStringify(journal)}\n`);
+  await atomicWrite(root, journalPath, `${canonicalStringify(journal)}\n`);
   await atomicWrite(
+    root,
     path.join(root, "current", `${prepared.gameId}.json`),
     `${canonicalStringify(target)}\n`,
   );
