@@ -1,3 +1,4 @@
+import { AnalysisSeasonOptions } from "../analysis/analysis-seasons";
 import { useQuery } from "@tanstack/react-query";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import { useState } from "react";
@@ -38,9 +39,7 @@ export function ParkEnvironmentPage() {
         <label>
           시즌
           <select value={season} onChange={(e) => change("season", e.target.value)}>
-            {[2020, 2021, 2022, 2023, 2024, 2025].map((y) => (
-              <option key={y}>{y}</option>
-            ))}
+            <AnalysisSeasonOptions season={season} />
           </select>
         </label>
         <AnalysisScopeFields params={selected} onChange={change} />

@@ -79,7 +79,7 @@ export class AnalysisModelJobWorkspace {
         };
   }
   public async setPolicy(applicationSeason: number, enabled: boolean) {
-    Value.Decode(Type.Integer({ minimum: 2023, maximum: 2025 }), applicationSeason);
+    Value.Decode(Type.Integer({ minimum: 2023, maximum: 2200 }), applicationSeason);
     const current = await this.policy();
     const seasons = new Set(current.enabledSeasons);
     if (enabled) seasons.add(applicationSeason);

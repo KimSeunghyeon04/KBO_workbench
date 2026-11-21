@@ -1,3 +1,4 @@
+import { useAnalysisSeason } from "./analysis-seasons";
 import { useSearchParams } from "react-router-dom";
 import {
   changeAnalysisParams,
@@ -13,7 +14,7 @@ export function useAnalysisScope({
   throughSeasonEnd?: boolean;
 } = {}) {
   const [params, setParams] = useSearchParams();
-  const season = Number(params.get("season") ?? 2025);
+  const season = useAnalysisSeason(params.get("season"));
   const selected = new URLSearchParams(params);
   if (!selected.has("competition")) selected.set("competition", "regular");
   if (throughSeasonEnd && !selected.has("dateTo")) selected.set("dateTo", `${season}-12-31`);

@@ -1,3 +1,4 @@
+import { AnalysisSeasonOptions, useAnalysisSeason } from "../analysis/analysis-seasons";
 import { useQuery } from "@tanstack/react-query";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import { useEffect, useRef } from "react";
@@ -12,7 +13,7 @@ const percent = (v: number | null) => (v === null ? "—" : `${(v * 100).toFixed
 export function BaserunningPage() {
   const [params, setParams] = useSearchParams(),
     selected = new URLSearchParams(params),
-    season = Number(params.get("season") ?? 2025);
+    season = useAnalysisSeason(params.get("season"));
   if (!selected.has("competition")) selected.set("competition", "regular");
   const scope = scopeFromParams(season, selected),
     query = { season, ...scope.options },
@@ -64,9 +65,7 @@ export function BaserunningPage() {
         <label>
           시즌
           <select value={season} onChange={(e) => change("season", e.target.value)}>
-            {[2020, 2021, 2022, 2023, 2024, 2025].map((y) => (
-              <option key={y}>{y}</option>
-            ))}
+            <AnalysisSeasonOptions season={season} />
           </select>
         </label>
         <AnalysisScopeFields params={selected} onChange={change} />

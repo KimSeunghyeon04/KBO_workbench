@@ -135,8 +135,8 @@ export { manifest as readPitchQualityManifest, readRows as readPitchQualityRows 
 export class PitchQualityRepository {
   public constructor(private readonly pool: Pool) {}
   public async training(through: number, signal?: AbortSignal) {
-    if (!Number.isInteger(through) || through < 2020 || through > 2024)
-      throw new Error("훈련 마지막 시즌은 2020–2024여야 합니다.");
+    if (!Number.isInteger(through) || through < 2020 || through > 2199)
+      throw new Error("훈련 마지막 시즌은 2020–2199여야 합니다.");
     return withAnalysisSnapshot(this.pool, async (client) => {
       const source = await manifest(client, through),
         rows: PitchQualityRow[] = [];

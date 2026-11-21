@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { createElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -30,7 +31,7 @@ function catalogResponse(input: RequestInfo | URL) {
 it("shares one catalog request between outcome and sequence pages with the same scope", async () => {
   const fetch = vi.fn(async (input: RequestInfo | URL) => Response.json(catalogResponse(input)));
   vi.stubGlobal("fetch", fetch);
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = createAnalysisQueryClient();
   render(
     createElement(
       QueryClientProvider,

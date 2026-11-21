@@ -40,7 +40,17 @@ it("requires two prior validation years and keeps unsupported win rules distinct
   }
   expect(modelTrainingPeriod("win", 2021).support).toBe("unsupported_rules");
   expect(modelTrainingPeriod("win", 2024).support).toBe("insufficient_history");
-  expect(() => modelTrainingPeriod("quality", 2026)).toThrow();
+  for (const kind of ["re24", "count", "quality", "matchup", "park"] as const) {
+    expect(modelTrainingPeriod(kind, 2026)).toMatchObject({
+      applicationSeason: 2026,
+      trainedThrough: 2025,
+      validationSeasons: [2024, 2025],
+      support: "eligible",
+    });
+    expect(modelTrainingPeriod(kind, 2027).trainedThrough).toBe(2026);
+  }
+  expect(modelTrainingPeriod("win", 2027).support).toBe("unsupported_rules");
+  expect(() => modelTrainingPeriod("quality", 2201)).toThrow();
 });
 
 it.each([2023, 2024, 2025])(

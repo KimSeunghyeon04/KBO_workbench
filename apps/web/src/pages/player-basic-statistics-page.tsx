@@ -1,3 +1,4 @@
+import { AnalysisSeasonOptions } from "../analysis/analysis-seasons";
 import { useQuery } from "@tanstack/react-query";
 import { Value } from "@sinclair/typebox/value";
 import {
@@ -89,9 +90,7 @@ export function PlayerBasicStatisticsPage() {
               value={season}
               onChange={(event) => change("season", event.target.value, { [role]: playerId })}
             >
-              {[2020, 2021, 2022, 2023, 2024, 2025].map((year) => (
-                <option key={year}>{year}</option>
-              ))}
+              <AnalysisSeasonOptions season={season} />
             </select>
           </label>
           <label>

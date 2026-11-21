@@ -224,3 +224,10 @@ it("does not show individual-player navigation on league rankings", () => {
   show("/analysis/statistics?season=2025");
   expect(screen.queryByRole("navigation", { name: "선수 분석 항목" })).toBeNull();
 });
+it("preserves new season scope across shape and discipline navigation", () => {
+  const params = new URLSearchParams("season=2026&competition=all&pitcher=anonymous");
+  expect(playerNavigationScope("/analysis/pitch-shape", params).season).toBe(2026);
+  expect(
+    playerNavigationScope("/analysis/batter-discipline", new URLSearchParams("season=2027")).season,
+  ).toBe(2027);
+});

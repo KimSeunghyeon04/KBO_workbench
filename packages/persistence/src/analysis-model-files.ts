@@ -43,7 +43,7 @@ export async function readAnalysisModelFile<S extends TSchema>(
   through: number,
   schema: S,
 ): Promise<{ payload: Static<S>; hash: string } | null> {
-  if (!Number.isInteger(through) || through < 2020 || through > 2024) return null;
+  if (!Number.isInteger(through) || through < 2020 || through > 2199) return null;
   try {
     const pointer: unknown = JSON.parse(
       await readFile(path.join(root, "analysis", kind, `through-${through}.json`), "utf8"),

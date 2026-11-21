@@ -16,10 +16,10 @@ async function main() {
     else if (args[i] === "--dry-run") dryRun = true;
     else if (args[i] === "--count") countModel = true;
     else if (args[i] === "--win") winModel = true;
-    else throw new Error("허용 인자: --through <2020–2024> [--count | --win] [--dry-run]");
+    else throw new Error("허용 인자: --through <2020–2199> [--count | --win] [--dry-run]");
   }
-  if (!Number.isInteger(through) || through < 2020 || through > 2024)
-    throw new Error("훈련 마지막 시즌은 2020–2024여야 합니다.");
+  if (!Number.isInteger(through) || through < 2020 || through > 2199)
+    throw new Error("훈련 마지막 시즌은 2020–2199여야 합니다.");
   if (
     modelTrainingPeriod(winModel ? "win" : countModel ? "count" : "re24", through + 1).support !==
     "eligible"

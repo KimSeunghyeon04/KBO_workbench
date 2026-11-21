@@ -1,3 +1,4 @@
+import { AnalysisSeasonOptions, useAnalysisSeason } from "../analysis/analysis-seasons";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import "../styles/pitch-analysis.css";
@@ -20,7 +21,7 @@ export function PlayerStatisticsPage() {
   const [expanded, setExpanded] = useState(false);
   const selected = new URLSearchParams(params);
   if (!selected.has("competition")) selected.set("competition", "regular");
-  const season = Number(params.get("season") ?? 2025),
+  const season = useAnalysisSeason(params.get("season")),
     scope = scopeFromParams(season, selected);
   const kind = params.get("kind") === "pitching" ? "pitching" : "batting";
   const common = {
@@ -182,9 +183,7 @@ export function PlayerStatisticsPage() {
             value={season}
             onChange={(e) => change("season", e.target.value)}
           >
-            {[2020, 2021, 2022, 2023, 2024, 2025].map((y) => (
-              <option key={y}>{y}</option>
-            ))}
+            <AnalysisSeasonOptions season={season} />
           </select>
         </label>
         <label>

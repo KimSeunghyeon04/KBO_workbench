@@ -10,8 +10,8 @@ export function modelTrainingPeriod(
   kind: AnalysisModelKind,
   applicationSeason: number,
 ): AnalysisModelPeriod {
-  if (!Number.isInteger(applicationSeason) || applicationSeason < 2020 || applicationSeason > 2025)
-    throw new Error("Model application season must be 2020–2025");
+  if (!Number.isInteger(applicationSeason) || applicationSeason < 2020 || applicationSeason > 2200)
+    throw new Error("Model application season must be 2020–2200");
   const trainedThrough = applicationSeason - 1,
     trainingStartSeason = kind === "win" ? 2022 : 2020,
     validationSeasons = modelValidationSeasons(trainedThrough, trainingStartSeason);

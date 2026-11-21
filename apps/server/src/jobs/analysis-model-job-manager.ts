@@ -67,13 +67,13 @@ export class AnalysisModelJobManager {
     requestId: string,
     force: boolean,
     applicationSeason = 2025,
-    trigger: "manual" | "automatic" = "manual",
+    trigger: "manual" | "automatic" | "import" = "manual",
   ) {
     return this.serial(async () => {
       if (this.closed) throw new AnalysisModelJobConflictError("서비스가 종료 중입니다.");
       if (modelTrainingPeriod("re24", applicationSeason).support !== "eligible")
         throw new AnalysisModelJobConflictError(
-          "학습과 두 검증 시즌이 확보되는 2023–2025 시즌만 갱신할 수 있습니다.",
+          "학습과 두 검증 시즌이 확보되는 2023 이후 시즌만 갱신할 수 있습니다.",
         );
       if (trigger === "automatic" && !this.enabledSeasons.includes(applicationSeason))
         throw new AnalysisModelJobConflictError("자동 갱신이 꺼져 있습니다.");
@@ -231,6 +231,26 @@ export class AnalysisModelJobManager {
   }
   private async waitForActive() {
     await this.active?.promise;
+  }
+  /** Import refresh is independent of the optional six-hour polling policy. */
+  public async afterImport(applicationSeason: number) {
+    if (modelTrainingPeriod("re24", applicationSeason).support !== "eligible") return;
+    while (!this.closed) {
+      await this.waitForActive();
+      let job: AnalysisModelJob;
+      try {
+        job = await this.create(this.uuid(), false, applicationSeason, "import");
+      } catch (error) {
+        if (this.active !== null) continue;
+        throw error;
+      }
+      await this.waitForActive();
+      const completed = await this.get(job.id);
+      if (completed.state !== "succeeded")
+        throw new Error(completed.error ?? "모델 갱신이 중단되었습니다.");
+      return;
+    }
+    throw new Error("서비스가 종료 중입니다.");
   }
   public async close() {
     this.closed = true;

@@ -7,9 +7,20 @@ import {
   changeAnalysisParams,
   scopeFromParams,
 } from "../../apps/web/src/analysis/analysis-scope.js";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { useAnalysisScope } from "../../apps/web/src/analysis/use-analysis-scope.js";
 
 afterEach(cleanup);
+function scopeWrapper(initial: string) {
+  const client = createAnalysisQueryClient();
+  return ({ children }: PropsWithChildren) =>
+    createElement(
+      QueryClientProvider,
+      { client },
+      createElement(MemoryRouter, { initialEntries: [initial] }, children),
+    );
+}
 
 it("restores URL scope through history and resets dates while preserving both players", () => {
   const initial = "/?season=2024&dateFrom=2024-04-01&dateTo=2024-07-31&pitcher=p&batter=b&balls=2";
@@ -20,8 +31,7 @@ it("restores URL scope through history and resets dates while preserving both pl
       navigate: useNavigate(),
     }),
     {
-      wrapper: ({ children }: PropsWithChildren) =>
-        createElement(MemoryRouter, { initialEntries: [initial] }, children),
+      wrapper: scopeWrapper(initial),
     },
   );
   expect(result.current.scope.options).toEqual({
@@ -81,8 +91,7 @@ it.each([
   "competition=",
 ])("keeps invalid URL scope visible and ineligible for requests: %s", (query) => {
   const { result } = renderHook(() => useAnalysisScope(), {
-    wrapper: ({ children }: PropsWithChildren) =>
-      createElement(MemoryRouter, { initialEntries: [`/?season=2024&${query}`] }, children),
+    wrapper: scopeWrapper(`/?season=2024&${query}`),
   });
   expect(result.current.scope.error).not.toBeNull();
   expect(result.current.scope.options).toEqual({});

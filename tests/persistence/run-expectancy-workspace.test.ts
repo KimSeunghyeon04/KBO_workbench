@@ -4,6 +4,33 @@ import path from "node:path";
 import { expect, it } from "vitest";
 import { StagingWorkspace, runTrainingHash } from "@kbo/persistence";
 import { trainRunExpectancy, trainCountRunExpectancy, trainWinProbability } from "@kbo/game-core";
+it("publishes and reopens 2026 application models without replacing the prior season pointers", async () => {
+  await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-model-2026-"));
+  const workspace = await StagingWorkspace.open(temporary.path);
+  try {
+    for (const through of [2024, 2025]) {
+      const manifest = { version: 1 as const, through, games: [], scopeHashes: [] };
+      const sourceHash = runTrainingHash(manifest);
+      const re24 = trainRunExpectancy([], sourceHash, through);
+      const count = trainCountRunExpectancy([], [], sourceHash, through);
+      const win = trainWinProbability([], sourceHash, through);
+      await workspace.runExpectancy.save(re24, manifest);
+      await workspace.runExpectancy.saveCount(count, manifest);
+      await workspace.runExpectancy.saveWin(win, manifest);
+      expect((await workspace.runExpectancy.read(through))?.model).toEqual(re24);
+      expect((await workspace.runExpectancy.readCount(through))?.model).toEqual(count);
+      expect((await workspace.runExpectancy.readWin(through))?.model).toEqual(win);
+    }
+    expect((await workspace.runExpectancy.readWin(2024))?.model.policy).toBe(
+      "regular-2022-2025-shortened-limit-v1",
+    );
+    expect((await workspace.runExpectancy.readWin(2025))?.model.policy).toBe(
+      "regular-2022-2026-shortened-limit-v2",
+    );
+  } finally {
+    await workspace.close();
+  }
+});
 it("publishes a complete hash-verified model under the writer lock and rejects corrupt or cancelled updates", async () => {
   await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-run-model-"));
   const workspace = await StagingWorkspace.open(temporary.path);

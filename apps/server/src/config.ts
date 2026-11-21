@@ -4,6 +4,7 @@ export const EXPECTED_POSTGRES_MAJOR_VERSION = 16;
 export const EXPECTED_MIGRATION_VERSION = "0014_player_batting_profiles";
 
 export interface AppConfig {
+  readonly analysisAutoRefresh: boolean;
   readonly apiVersion: string;
   readonly database: {
     readonly database: string;
@@ -70,6 +71,7 @@ function booleanEnvironment(name: string, fallback: boolean): boolean {
 
 export function loadConfig(): AppConfig {
   return {
+    analysisAutoRefresh: booleanEnvironment("KBO_ANALYSIS_AUTO_REFRESH", true),
     apiVersion: rootPackageVersion(),
     collection: {
       maxConcurrentJobs: positiveIntegerEnvironment("KBO_COLLECTION_CONCURRENCY", 1),

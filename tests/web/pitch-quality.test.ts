@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
+import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { createElement } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { resolveAnalysisScope, type PitchQualityResponse } from "@kbo/contracts";
@@ -25,7 +26,7 @@ it("loads on demand and preserves observed denominators when a model is unavaila
   render(
     createElement(
       QueryClientProvider,
-      { client: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
+      { client: createAnalysisQueryClient() },
       createElement(PitchQualityPanel, {
         pitcherId: "p",
         query: { season: 2025, competition: "regular" },
@@ -75,7 +76,7 @@ it.each([
       "fetch",
       vi.fn(async () => Response.json(data)),
     );
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = createAnalysisQueryClient();
     render(
       createElement(
         QueryClientProvider,

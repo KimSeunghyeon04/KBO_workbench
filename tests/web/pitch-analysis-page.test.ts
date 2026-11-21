@@ -3,8 +3,9 @@
 import { resolveAnalysisScope } from "@kbo/contracts";
 import { act, cleanup, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router-dom";
+import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PITCH_CLUSTER_PARAMETERS, type PitchAnalysisResponse } from "@kbo/contracts";
@@ -108,7 +109,7 @@ describe("투구 움직임 화면", () => {
         );
       });
       vi.stubGlobal("fetch", fetcher);
-      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const client = createAnalysisQueryClient();
       render(
         createElement(
           MemoryRouter,
@@ -166,7 +167,7 @@ describe("투구 움직임 화면", () => {
           ),
       ),
     );
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = createAnalysisQueryClient();
     render(
       createElement(
         MemoryRouter,
@@ -281,7 +282,7 @@ describe("투구 움직임 화면", () => {
         ),
     );
     vi.stubGlobal("fetch", fetcher);
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = createAnalysisQueryClient();
     const user = userEvent.setup();
     render(
       createElement(
@@ -335,7 +336,7 @@ describe("투구 움직임 화면", () => {
         ),
     );
     vi.stubGlobal("fetch", fetcher);
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = createAnalysisQueryClient();
     const user = userEvent.setup();
     render(
       createElement(
@@ -386,7 +387,7 @@ describe("투구 움직임 화면", () => {
       );
     });
     vi.stubGlobal("fetch", fetcher);
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = createAnalysisQueryClient();
     const user = userEvent.setup();
     render(
       createElement(
@@ -468,7 +469,7 @@ describe("투구 움직임 화면", () => {
         ),
     );
     vi.stubGlobal("fetch", fetcher);
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = createAnalysisQueryClient();
     const user = userEvent.setup();
     render(
       createElement(
@@ -518,7 +519,7 @@ describe("투구 움직임 화면", () => {
         );
       }),
     );
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = createAnalysisQueryClient();
     const user = userEvent.setup();
     render(
       createElement(
@@ -602,7 +603,7 @@ describe("투구 움직임 화면", () => {
           ),
       ),
     );
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = createAnalysisQueryClient();
     render(
       createElement(
         MemoryRouter,
@@ -657,7 +658,7 @@ it.each([true, false])(
       return Response.json(data);
     });
     vi.stubGlobal("fetch", fetch);
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = createAnalysisQueryClient();
     render(
       createElement(
         MemoryRouter,
@@ -695,7 +696,7 @@ it("keeps the parent all-games scope when opening the quality panel", async () =
     ),
   );
   vi.stubGlobal("fetch", fetch);
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = createAnalysisQueryClient();
   render(
     createElement(
       MemoryRouter,

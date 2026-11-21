@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
+import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { createElement } from "react";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import { resolveAnalysisScope } from "@kbo/contracts";
@@ -19,7 +20,7 @@ it("shows distinct denominators and restores the selected season", async () => {
   render(
     createElement(
       QueryClientProvider,
-      { client: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
+      { client: createAnalysisQueryClient() },
       createElement(
         MemoryRouter,
         { initialEntries: ["/analysis/coverage?season=2020"] },
@@ -61,7 +62,7 @@ it("polls preparation to completion and offers an explicit retry after failure",
   const preparing = { state: "preparing", scope: fixture.scope, sourceKey: "a".repeat(64) };
   const fetcher = vi.fn(async () => new Response(JSON.stringify(preparing), { status: 202 }));
   vi.stubGlobal("fetch", fetcher);
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = createAnalysisQueryClient();
   render(
     createElement(
       QueryClientProvider,
@@ -119,7 +120,7 @@ it("keeps competition and dates in related analysis links, resetting dates only 
       });
     }),
   );
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = createAnalysisQueryClient();
   render(
     createElement(
       QueryClientProvider,

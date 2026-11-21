@@ -1,3 +1,4 @@
+import { AnalysisSeasonOptions } from "./analysis-seasons";
 import type { PropsWithChildren, ReactNode } from "react";
 import type { PitchAnalysisCatalog } from "@kbo/contracts";
 import { AnalysisScopeFields, analysisScopeSummary } from "./analysis-scope-fields";
@@ -41,9 +42,7 @@ export function PitcherScopeFields({
           value={season}
           onChange={(e) => onChange("season", e.target.value, { pitcher: pitcherId })}
         >
-          {[2020, 2021, 2022, 2023, 2024, 2025].map((y) => (
-            <option key={y}>{y}</option>
-          ))}
+          <AnalysisSeasonOptions season={season} />
         </select>
       </label>
       <label>

@@ -6,8 +6,14 @@ import {
   NaverHttpClient,
   NaverSourceEvidenceError,
   PlaywrightScheduleExplorer,
+  KboScheduleCollector,
 } from "@kbo/collection";
-import { GameRevisionStore, RecordCorrectionRepository, StagingWorkspace } from "@kbo/persistence";
+import {
+  GameCompetitionRepository,
+  GameRevisionStore,
+  RecordCorrectionRepository,
+  StagingWorkspace,
+} from "@kbo/persistence";
 import type { Pool } from "pg";
 
 import type { AppConfig } from "./config.js";
@@ -23,9 +29,11 @@ import { RecordCorrectionService } from "./record-correction-service.js";
 import { ComputationPool } from "./computation-pool.js";
 import { AnalysisModelService } from "./analysis-model-service.js";
 import { AnalysisModelJobManager } from "./jobs/analysis-model-job-manager.js";
+import { AnalysisPreparationManager } from "./jobs/analysis-preparation-manager.js";
 import { compileDocument, createRevisionProjectionComputation } from "./computation.js";
 
 export interface AppRuntime {
+  readonly analysisPreparation?: AnalysisPreparationManager;
   readonly analysisModelJobs?: AnalysisModelJobManager;
   readonly workspace: StagingWorkspace;
   readonly collectionJobs: CollectionJobManager;
@@ -185,16 +193,52 @@ export async function createRuntime(config: AppConfig, pool: Pool): Promise<AppR
     async (gameIds) => ({ games: [...(await revisionStore.catalog(gameIds))] }),
   );
   await collectionOperations.restore();
+  const analysisModelJobs = new AnalysisModelJobManager(
+    workspace.analysisModelJobs,
+    new AnalysisModelService(pool, workspace, config.workspacePath),
+    undefined,
+    undefined,
+    (error) =>
+      process.stderr.write(
+        JSON.stringify({
+          level: "error",
+          event: "analysis_model_refresh_failed",
+          message: error instanceof Error ? error.message : "Unknown model error",
+        }) + "\n",
+      ),
+  );
+  await analysisModelJobs.start();
+  const schedule = new KboScheduleCollector();
+  const analysisPreparation = new AnalysisPreparationManager(
+    new GameCompetitionRepository(pool),
+    workspace.analysisPreparation,
+    (season, signal) =>
+      schedule.collect(season, (page) => workspace.competitionSources.save(season, page), signal),
+    analysisModelJobs,
+    () => importJobs.list().some((job) => job.status === "queued" || job.status === "running"),
+    undefined,
+    (error) =>
+      process.stderr.write(
+        JSON.stringify({
+          level: "error",
+          event: "analysis_preparation_failed",
+          message: error instanceof Error ? error.message : "Unknown refresh error",
+        }) + "\n",
+      ),
+  );
   const importJobs = new ImportJobManager(
     workspace,
     revisionStore,
     undefined,
     undefined,
     2,
-    (gameId, revision, documentHash) =>
-      recordCorrectionService.afterImport(gameId, revision, documentHash),
+    async (gameId, revision, documentHash) => {
+      if (config.analysisAutoRefresh) analysisPreparation.wake();
+      await recordCorrectionService.afterImport(gameId, revision, documentHash);
+    },
   );
   await importJobs.restore();
+  if (config.analysisAutoRefresh) analysisPreparation.start();
   const recordCorrectionJobs = new RecordCorrectionJobManager(
     new KboRecordCorrectionCollector(
       new KboRecordCorrectionHttpClient({
@@ -213,21 +257,6 @@ export async function createRuntime(config: AppConfig, pool: Pool): Promise<AppR
     },
   );
   await recordCorrectionJobs.start();
-  const analysisModelJobs = new AnalysisModelJobManager(
-    workspace.analysisModelJobs,
-    new AnalysisModelService(pool, workspace, config.workspacePath),
-    undefined,
-    undefined,
-    (error) =>
-      process.stderr.write(
-        JSON.stringify({
-          level: "error",
-          event: "analysis_model_refresh_failed",
-          message: error instanceof Error ? error.message : "Unknown model error",
-        }) + "\n",
-      ),
-  );
-  await analysisModelJobs.start();
   return {
     workspace,
     collectionJobs,
@@ -239,8 +268,9 @@ export async function createRuntime(config: AppConfig, pool: Pool): Promise<AppR
     recordCorrectionService,
     recordCorrectionJobs,
     analysisModelJobs,
+    analysisPreparation,
     async close() {
-      await analysisModelJobs.close();
+      await Promise.all([analysisPreparation.close(), analysisModelJobs.close()]);
       await recordCorrectionJobs.close();
       correctionSessions.close();
       await importJobs.close();

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
+import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { createElement } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { cleanup, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -65,7 +66,7 @@ it("defaults new statistics to confirmed regular games and distinguishes incompl
   render(
     createElement(
       QueryClientProvider,
-      { client: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
+      { client: createAnalysisQueryClient() },
       createElement(MemoryRouter, null, createElement(PlayerStatisticsPage)),
     ),
   );
@@ -94,7 +95,7 @@ it.each(["batting", "pitching"] as const)(
   async (kind) => {
     const fetch = statisticsFetch();
     vi.stubGlobal("fetch", fetch);
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = createAnalysisQueryClient();
     const sort = kind === "batting" ? "avg" : "era";
     const search = `?season=2025&competition=all&kind=${kind}&dateFrom=2025-04-01&dateTo=2025-10-01&group=player&minimum=1000&sort=${sort}&page=2`;
     render(
@@ -133,7 +134,7 @@ it.each(["batting", "pitching"] as const)(
     const sort = kind === "batting" ? "avg" : "era";
     const sortLabel = kind === "batting" ? "타율" : "ERA";
     const search = `?season=2024&competition=all&kind=${kind}&dateFrom=2024-04-01&dateTo=2024-04-30&group=team&minimum=25&sort=${sort}&page=2`;
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = createAnalysisQueryClient();
     render(
       createElement(
         QueryClientProvider,
@@ -206,7 +207,7 @@ it.each(["batting", "pitching"] as const)(
 it("keeps invalid folded conditions discoverable without sending a request", async () => {
   const fetch = statisticsFetch();
   vi.stubGlobal("fetch", fetch);
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = createAnalysisQueryClient();
   render(
     createElement(
       QueryClientProvider,

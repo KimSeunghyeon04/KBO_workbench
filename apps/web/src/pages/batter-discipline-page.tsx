@@ -1,3 +1,4 @@
+import { AnalysisSeasonOptions, useAnalysisSeason } from "../analysis/analysis-seasons";
 import { AnalysisScopeFields, analysisScopeSummary } from "../analysis/analysis-scope-fields";
 import { AnalysisFilterBar } from "../analysis/analysis-filter-bar";
 import { changeAnalysisParams, scopeFromParams } from "../analysis/analysis-scope";
@@ -26,11 +27,7 @@ import "../styles/batter-discipline.css";
 const identity = (p: DisciplinePoint) => JSON.stringify([p.gameId, p.revision, p.pitchId]);
 export function BatterDisciplinePage() {
   const [params, setParams] = useSearchParams();
-  const requestedSeason = Number(params.get("season"));
-  const season =
-    Number.isInteger(requestedSeason) && requestedSeason >= 1982 && requestedSeason <= 2026
-      ? requestedSeason
-      : 2025;
+  const season = useAnalysisSeason(params.get("season"));
   const scope = scopeFromParams(season, params);
   const candidate = {
     ...scope.options,
@@ -210,11 +207,7 @@ export function BatterDisciplinePage() {
             value={season}
             onChange={(e) => change("season", e.target.value)}
           >
-            {Array.from({ length: 45 }, (_, i) => 2026 - i).map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
+            <AnalysisSeasonOptions season={season} />
           </select>
         </label>
         <label>

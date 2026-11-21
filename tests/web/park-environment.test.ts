@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
+import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { createElement } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -25,7 +26,7 @@ it("shows descriptive denominators with exact revision links without requiring a
   render(
     createElement(
       QueryClientProvider,
-      { client: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
+      { client: createAnalysisQueryClient() },
       createElement(
         MemoryRouter,
         { initialEntries: ["/analysis/park-environment?season=2025"] },

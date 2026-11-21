@@ -56,7 +56,10 @@ export const WinModelSchema = Type.Object(
   {
     version: Type.Literal(1),
     kind: Type.Literal("home-win-draw-loss"),
-    policy: Type.Literal("regular-2022-2025-shortened-limit-v1"),
+    policy: Type.Union([
+      Type.Literal("regular-2022-2025-shortened-limit-v1"),
+      Type.Literal("regular-2022-2026-shortened-limit-v2"),
+    ]),
     sourceHash: Type.String({ pattern: "^[a-f0-9]{64}$" }),
     trainedThrough: Type.Integer(),
     status: Type.Union([Type.Literal("ready"), Type.Literal("insufficient_data")]),

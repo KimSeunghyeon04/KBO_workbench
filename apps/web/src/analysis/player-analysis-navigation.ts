@@ -33,13 +33,10 @@ export function playerRoleForPath(
 }
 
 /** Legacy URLs keep their page's existing default. Cross-page links make that scope explicit. */
-export function playerNavigationScope(path: string, params: URLSearchParams) {
-  let season = Number(params.get("season") ?? 2025);
+export function playerNavigationScope(path: string, params: URLSearchParams, defaultSeason = 2025) {
+  const season = Number(params.get("season") ?? defaultSeason);
   const legacyShape = path === "/analysis/pitch-shape";
   const legacyDiscipline = path === "/analysis/batter-discipline";
-  if (legacyShape && (!Number.isInteger(season) || season < 2020 || season > 2025)) season = 2025;
-  if (legacyDiscipline && (!Number.isInteger(season) || season < 1982 || season > 2026))
-    season = 2025;
   const selected = new URLSearchParams(params);
   if (!selected.has("competition"))
     selected.set("competition", legacyShape || legacyDiscipline ? "all" : "regular");

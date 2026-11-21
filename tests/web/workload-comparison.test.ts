@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
+import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { createElement } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { resolveAnalysisScope } from "@kbo/contracts";
@@ -28,7 +29,7 @@ it("defers work until opened, switches metrics locally and shows denominators an
   render(
     createElement(
       QueryClientProvider,
-      { client: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
+      { client: createAnalysisQueryClient() },
       createElement(WorkloadComparisonPanel, { query, pitcherId: "p" }),
     ),
   );

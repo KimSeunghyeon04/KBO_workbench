@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
+import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { createElement } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -17,7 +18,7 @@ afterEach(() => {
 function wrap(child: ReturnType<typeof createElement>) {
   return createElement(
     QueryClientProvider,
-    { client: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
+    { client: createAnalysisQueryClient() },
     createElement(MemoryRouter, null, child),
   );
 }

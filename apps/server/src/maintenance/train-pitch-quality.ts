@@ -11,10 +11,10 @@ async function main() {
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--through") through = Number(args[++i]);
     else if (args[i] === "--dry-run") dryRun = true;
-    else throw new Error("허용 인자: --through <2020–2024> [--dry-run]");
+    else throw new Error("허용 인자: --through <2020–2199> [--dry-run]");
   }
-  if (!Number.isInteger(through) || through < 2020 || through > 2024)
-    throw new Error("훈련 마지막 시즌은 2020–2024여야 합니다.");
+  if (!Number.isInteger(through) || through < 2020 || through > 2199)
+    throw new Error("훈련 마지막 시즌은 2020–2199여야 합니다.");
   if (modelTrainingPeriod("quality", through + 1).support !== "eligible")
     throw new Error("적용 시즌 이전의 학습 자료와 두 검증 시즌이 필요합니다.");
   const config = loadConfig(),

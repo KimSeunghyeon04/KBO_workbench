@@ -30,6 +30,38 @@ const Fastify: () => ReturnType<typeof createApp> = createRequire(
   new URL("../../apps/server/package.json", import.meta.url),
 )("fastify");
 const hash = createHash("sha256").update("test").digest("hex");
+it("refreshes an imported 2026 season with the periodic policy disabled", async () => {
+  await using dir = await mkdtempDisposable(path.join(tmpdir(), "kbo-model-import-"));
+  const workspace = await StagingWorkspace.open(dir.path);
+  const service = {
+    status: async () =>
+      MODEL_ORDER.map((kind) => ({
+        kind,
+        ...modelTrainingPeriod(kind, 2026),
+        state: "missing" as const,
+        sourceHash: hash,
+        modelHash: null,
+        adoptedTargets: 0,
+        totalTargets: 1,
+      })),
+    refresh: vi.fn(async () => hash),
+  };
+  const manager = new AnalysisModelJobManager(workspace.analysisModelJobs, service);
+  try {
+    await manager.start();
+    await manager.afterImport(2026);
+    expect(service.refresh).toHaveBeenCalledTimes(6);
+    expect(await workspace.analysisModelJobs.policy()).toEqual({ version: 2, enabledSeasons: [] });
+    expect(await workspace.analysisModelJobs.latest()).toMatchObject({
+      applicationSeason: 2026,
+      trigger: "import",
+      state: "succeeded",
+    });
+  } finally {
+    await manager.close();
+    await workspace.close();
+  }
+});
 const statuses = (state: AnalysisModelStatus["state"] = "current"): AnalysisModelStatus[] =>
   MODEL_ORDER.map((kind) => ({
     kind,
@@ -233,7 +265,7 @@ it("validates route bodies, reports conflicts and returns the durable accepted j
       ).statusCode,
     ).toBe(400);
     expect((await app.inject(`/api/v2/analysis/model-jobs/${randomUUID()}`)).statusCode).toBe(404);
-    expect((await app.inject("/api/v2/analysis/models?season=2026")).statusCode).toBe(400);
+    expect((await app.inject("/api/v2/analysis/models?season=2026")).statusCode).toBe(200);
     expect(
       (
         await app.inject({

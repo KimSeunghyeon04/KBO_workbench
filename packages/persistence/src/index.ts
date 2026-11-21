@@ -108,7 +108,10 @@ export {
   AnalysisCoverageRepository,
   type CoverageInspection,
 } from "./analysis-coverage-repository.js";
-export { GameCompetitionRepository } from "./game-competition-repository.js";
+export {
+  GameCompetitionRepository,
+  CompetitionScheduleNoMatchesError,
+} from "./game-competition-repository.js";
 export { PlayerStatisticsRepository } from "./player-statistics-repository.js";
 export { PitchLocationRepository } from "./pitch-location-repository.js";
 export { BatterProfileRepository } from "./batter-profile-repository.js";
@@ -139,3 +142,4 @@ export { trainPitchQualityFromFacts } from "./pitch-quality-training.js";
 export { MatchupModelRepository } from "./matchup-model-repository.js";
 export { MatchupModelWorkspace } from "./matchup-model-workspace.js";
 export { PitchAnglesRepository } from "./pitch-angles-repository.js";
+export { AnalysisPreparationWorkspace } from "./analysis-preparation-workspace.js";

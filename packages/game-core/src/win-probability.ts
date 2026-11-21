@@ -95,7 +95,10 @@ function fit(
   return {
     version: 1,
     kind: "home-win-draw-loss",
-    policy: "regular-2022-2025-shortened-limit-v1",
+    policy:
+      through <= 2024
+        ? "regular-2022-2025-shortened-limit-v1"
+        : "regular-2022-2026-shortened-limit-v2",
     sourceHash,
     trainedThrough: through,
     status:

@@ -19,7 +19,7 @@ $environmentNames = @(
   "COMPOSE_PROJECT_NAME", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB",
   "KBO_DATA_DIR", "KBO_WEB_PORT", "KBO_DB_PORT", "KBO_POSTGRES_VOLUME_NAME", "KBO_COLLECTION_CONCURRENCY",
   "KBO_NAVER_MAX_ATTEMPTS", "KBO_NAVER_REQUESTS_PER_SECOND", "KBO_NAVER_TIMEOUT_MS",
-  "KBO_RECORD_CORRECTION_AUTO_SYNC"
+  "KBO_RECORD_CORRECTION_AUTO_SYNC", "KBO_ANALYSIS_AUTO_REFRESH"
 )
 $previousEnvironment = @{}
 
@@ -352,6 +352,7 @@ foreach ($name in $environmentNames) {
 [Environment]::SetEnvironmentVariable("KBO_NAVER_REQUESTS_PER_SECOND", "100", "Process")
 [Environment]::SetEnvironmentVariable("KBO_NAVER_TIMEOUT_MS", "1000", "Process")
 [Environment]::SetEnvironmentVariable("KBO_RECORD_CORRECTION_AUTO_SYNC", "false", "Process")
+[Environment]::SetEnvironmentVariable("KBO_ANALYSIS_AUTO_REFRESH", "false", "Process")
 
 $null = New-Item -ItemType Directory -Path $testRoot
 $composeStarted = $false
@@ -703,7 +704,8 @@ try {
       sourceBundleHash:document.source.sourceBundleHash,payloads:{lineup:{result:{previewData:{awayTeamLineUp:{
         fullLineUp:document.rosters.away.players.map(p=>({playerCode:p.playerId,batsThrows:"\uc88c\ud0c0"}))
       }}}}}}));
-  for (const season of [2024, 2025]) {
+  // Season selectors now come from imported facts, including historical model-period examples.
+  for (const season of [2020, 2023, 2024, 2025]) {
     const document = structuredClone(fixture);
     document.revisionBase = { kind: "new_game" };
     document.metadata = { ...document.metadata, gameId: `analysis-${season}`, season, gameDate: `${season}-06-01` };

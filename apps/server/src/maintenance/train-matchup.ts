@@ -18,10 +18,10 @@ async function main() {
       baseDirectory = args[++i];
       if (!baseDirectory) throw new Error("Missing base workspace");
     } else
-      throw new Error("허용 인자: --through <2020–2024> [--dry-run] [--base-workspace <path>]");
+      throw new Error("허용 인자: --through <2020–2199> [--dry-run] [--base-workspace <path>]");
   }
-  if (!Number.isInteger(through) || through < 2020 || through > 2024)
-    throw new Error("훈련 마지막 시즌은 2020–2024여야 합니다.");
+  if (!Number.isInteger(through) || through < 2020 || through > 2199)
+    throw new Error("훈련 마지막 시즌은 2020–2199여야 합니다.");
   if (modelTrainingPeriod("matchup", through + 1).support !== "eligible")
     throw new Error("적용 시즌 이전의 학습 자료와 두 검증 시즌이 필요합니다.");
   const config = loadConfig(),

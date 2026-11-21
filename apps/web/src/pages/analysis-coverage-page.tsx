@@ -1,3 +1,4 @@
+import { AnalysisSeasonOptions, useAnalysisSeason } from "../analysis/analysis-seasons";
 import { AnalysisScopeFields, competitionLabels } from "../analysis/analysis-scope-fields";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import {
@@ -59,9 +60,7 @@ function Counts({ counts: c }: { counts: AnalysisCoverageCounts }) {
 }
 export function AnalysisCoveragePage() {
   const [params, setParams] = useSearchParams();
-  const requested = Number(params.get("season"));
-  const season =
-    Number.isInteger(requested) && requested >= 1982 && requested <= 2200 ? requested : 2025;
+  const season = useAnalysisSeason(params.get("season"));
   const scope = scopeFromParams(season, params);
   function change(key: string, value: string) {
     const next = new URLSearchParams(params);
@@ -111,10 +110,7 @@ export function AnalysisCoveragePage() {
               setParams(changeAnalysisParams(params, "season", event.target.value))
             }
           >
-            {[2020, 2021, 2022, 2023, 2024, 2025].map((year) => (
-              <option key={year}>{year}</option>
-            ))}
-            {season < 2020 || season > 2025 ? <option>{season}</option> : null}
+            <AnalysisSeasonOptions season={season} />
           </select>
         </label>
         <AnalysisScopeFields params={params} onChange={change} />

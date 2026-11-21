@@ -1,3 +1,4 @@
+import { AnalysisSeasonOptions, useAnalysisSeason } from "../analysis/analysis-seasons";
 import { useId, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
@@ -23,12 +24,11 @@ const pageSize = 48;
 export function AnalysisPlayersPage() {
   const idPrefix = useId();
   const [params, setParams] = useSearchParams();
-  const season = Number(params.get("season") ?? 2025);
+  const season = useAnalysisSeason(params.get("season"));
   const selected = new URLSearchParams(params);
   if (!selected.has("competition")) selected.set("competition", "regular");
   const scope = scopeFromParams(season, selected);
-  const error =
-    scope.error ?? (season >= 2020 && season <= 2025 ? null : "2020~2025 시즌을 선택해 주세요.");
+  const error = scope.error;
   const role: PlayerAnalysisRole = params.get("role") === "batter" ? "batter" : "pitcher";
   const roleLabel = role === "pitcher" ? "투수" : "타자";
   const search = params.get("q") ?? "";
@@ -86,11 +86,7 @@ export function AnalysisPlayersPage() {
             value={season}
             onChange={(event) => change("season", event.target.value)}
           >
-            {[2020, 2021, 2022, 2023, 2024, 2025].map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
+            <AnalysisSeasonOptions season={season} />
           </select>
         </label>
         <div className="analysis-player-role" role="group" aria-label="선수 유형">

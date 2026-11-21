@@ -47,7 +47,7 @@ export class ParkEnvironmentRepository {
     });
   }
   public async training(through: number, signal?: AbortSignal) {
-    if (!Number.isInteger(through) || through < 2020 || through > 2024)
+    if (!Number.isInteger(through) || through < 2020 || through > 2199)
       throw new Error("Invalid training season");
     return withAnalysisSnapshot(this.pool, async (client, release) => {
       const manifest = await parkManifest(client, through),

@@ -246,6 +246,7 @@ function emptyCorrectionSessions() {
 function testConfig(workspacePath: string): AppConfig {
   return {
     apiVersion: "test",
+    analysisAutoRefresh: false,
     collection: {
       maxConcurrentJobs: 1,
       maxAttempts: 1,

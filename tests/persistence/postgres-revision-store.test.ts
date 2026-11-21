@@ -34,6 +34,7 @@ import {
   PitchAnalysisRepository,
   AnalysisCoverageRepository,
   GameCompetitionRepository,
+  CompetitionScheduleNoMatchesError,
   PlayerStatisticsRepository,
   PitchLocationRepository,
   RunValueRepository,
@@ -68,6 +69,7 @@ import { recordCorrectionVenueFixture } from "../helpers/record-correction-fixtu
 import { plateTracking, plateZoneCases } from "../helpers/tracking-geometry.js";
 import { pitchAnalysisFixture } from "../helpers/pitch-analysis-fixture.js";
 import { competitionFixture } from "../helpers/game-competition.js";
+import { AnalysisPreparationManager } from "../../apps/server/src/jobs/analysis-preparation-manager.js";
 import { BoundedReadCache } from "../../apps/server/src/bounded-read-cache.js";
 import { ComputationPool } from "../../apps/server/src/computation-pool.js";
 import {
@@ -785,6 +787,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       },
     ]);
     const adopted = await repository.adopt(dataset);
+    expect(await repository.current(2026)).toEqual(dataset);
     await store.importRevision(source);
     expect(
       (await pool.query("SELECT competition FROM analytics.current_analysis_games")).rows,
@@ -792,10 +795,107 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(
       (await pool.query("SELECT dataset_hash FROM reference.current_competition_datasets")).rows,
     ).toEqual([{ dataset_hash: adopted.datasetHash }]);
+    expect((await repository.seasons())[0]).toMatchObject({
+      season: 2026,
+      unclassified: 0,
+      competitionHash: adopted.datasetHash,
+    });
     expect((await store.loadCompiled(source.metadata.gameId, 1)).documentHash).toBe(
       stagingDocumentHash(source),
     );
+    const season2026 = await new AnalysisModelSourceRepository(pool).read(2025);
+    expect(season2026.re24).toMatch(/^[a-f0-9]{64}$/);
+    await using directory = await mkdtempDisposable(path.join(tmpdir(), "kbo-analysis-import-"));
+    const workspace = await StagingWorkspace.open(directory.path);
+    const refresh = vi.fn(async () => {});
+    const collect = vi.fn(async () => dataset);
+    const manager = new AnalysisPreparationManager(
+      repository,
+      workspace.analysisPreparation,
+      collect,
+      { afterImport: refresh },
+      () => false,
+    );
+    try {
+      await workspace.saveCorrectionDraft(source);
+      const before = await workspace.readCurrentDocumentSnapshot(source.metadata.gameId);
+      await manager.check();
+      expect(collect).not.toHaveBeenCalled();
+      expect(refresh).toHaveBeenCalledWith(2026);
+      expect(await workspace.analysisPreparation.read(2026)).toMatchObject({
+        state: "ready",
+        unclassified: 0,
+      });
+      expect(await workspace.readCurrentDocumentSnapshot(source.metadata.gameId)).toEqual(before);
+      expect((await store.loadCompiled(source.metadata.gameId, 1)).documentHash).toBe(
+        stagingDocumentHash(source),
+      );
+    } finally {
+      await manager.close();
+      await workspace.close();
+    }
   });
+
+  it.each(["empty", "unrelated"] as const)(
+    "collects a fresh official schedule when the first imported game matches no entry in a saved %s schedule",
+    async (savedEntries) => {
+      const repository = new GameCompetitionRepository(pool);
+      const stale = competitionFixture(
+        2026,
+        savedEntries === "empty"
+          ? []
+          : [{ sourceGameId: "20260531LGKT0", gameDate: "2026-05-31", competition: "regular" }],
+      );
+      const old = await repository.adopt(stale);
+      const fixture = pitchAnalysisFixture(2026);
+      const document = parseStagingGameDocumentV2({
+        ...fixture,
+        source: { ...fixture.source, sourceGameId: "20260601LGKT02026" },
+      });
+      const imported = await store.importRevision(document);
+      await expect(repository.adopt(stale)).rejects.toBeInstanceOf(
+        CompetitionScheduleNoMatchesError,
+      );
+      expect(await repository.seasons()).toMatchObject([
+        { season: 2026, competitionHash: old.datasetHash, unclassified: 1 },
+      ]);
+
+      const fresh = competitionFixture(2026, [
+        { sourceGameId: "20260601LGKT0", gameDate: "2026-06-01", competition: "regular" },
+      ]);
+      const collect = vi.fn(async () => fresh);
+      const afterImport = vi.fn(async () => {
+        expect(await repository.seasons()).toMatchObject([{ season: 2026, unclassified: 0 }]);
+      });
+      await using directory = await mkdtempDisposable(
+        path.join(tmpdir(), "kbo-preparation-stale-"),
+      );
+      const workspace = await StagingWorkspace.open(directory.path);
+      const manager = new AnalysisPreparationManager(
+        repository,
+        workspace.analysisPreparation,
+        collect,
+        { afterImport },
+        () => false,
+      );
+      try {
+        await manager.check();
+        await manager.check();
+        expect(collect).toHaveBeenCalledExactlyOnceWith(2026, expect.any(AbortSignal));
+        expect(afterImport).toHaveBeenCalledExactlyOnceWith(2026);
+        expect(await workspace.analysisPreparation.read(2026)).toMatchObject({
+          state: "ready",
+          unclassified: 0,
+        });
+        expect((await store.loadCompiled(imported.gameId, 1)).documentHash).toBe(
+          imported.documentHash,
+        );
+      } finally {
+        await manager.close();
+        await workspace.close();
+      }
+    },
+  );
 
   it("preserves both provider IDs and seals only a unique dated competition link", async () => {
     const source = pitchAnalysisFixture(2024);

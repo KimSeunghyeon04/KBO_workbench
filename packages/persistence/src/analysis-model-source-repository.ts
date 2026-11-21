@@ -8,7 +8,7 @@ import { readPitchQualityManifest, pitchQualitySourceHash } from "./pitch-qualit
 export class AnalysisModelSourceRepository {
   public constructor(private readonly pool: Pool) {}
   public async read(through: number) {
-    if (!Number.isInteger(through) || through < 2020 || through > 2024)
+    if (!Number.isInteger(through) || through < 2020 || through > 2199)
       throw new Error("Unsupported model training period");
     return withAnalysisSnapshot(this.pool, async (client, release) => {
       const run = runTrainingHash(await readRunManifest(client, through));

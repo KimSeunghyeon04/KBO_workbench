@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { createElement, type ReactElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
@@ -19,7 +20,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 function show(page: ReactElement, search: string) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = createAnalysisQueryClient();
   clients.push(client);
   render(
     createElement(

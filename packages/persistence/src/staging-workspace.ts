@@ -5,6 +5,7 @@ import { hostname } from "node:os";
 import path from "node:path";
 import { AnalysisCoverageWorkspace } from "./analysis-coverage-workspace.js";
 import { AnalysisModelJobWorkspace } from "./analysis-model-job-workspace.js";
+import { AnalysisPreparationWorkspace } from "./analysis-preparation-workspace.js";
 import { readImmutableSourceBundle } from "./source-bundle-reader.js";
 import { saveImmutableSourceBundle, type ImmutableSourceBundle } from "./source-bundle-store.js";
 import { WorkspaceCurrentStore, snapshotContentHash } from "./workspace-current-store.js";
@@ -91,6 +92,7 @@ export class StagingWorkspace {
   private readonly originalStorage: WorkspaceOriginalStore;
   private readonly journals: WorkspaceJournalStore;
   public readonly analysisModelJobs: AnalysisModelJobWorkspace;
+  public readonly analysisPreparation: AnalysisPreparationWorkspace;
   public readonly collection: CollectionWorkspace;
   public readonly imports: ImportWorkspace;
   public readonly pitchReferences: PitchReferenceWorkspace;
@@ -125,6 +127,10 @@ export class StagingWorkspace {
       (current) => this.readCurrentFindings(current),
     );
     this.lockPath = path.join(this.root, ".writer.lock");
+    this.analysisPreparation = new AnalysisPreparationWorkspace(this.root, async () => {
+      this.assertOpen();
+      await this.verifyLock();
+    });
     this.analysisModelJobs = new AnalysisModelJobWorkspace(this.root, async () => {
       this.assertOpen();
       await this.verifyLock();

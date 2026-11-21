@@ -3,6 +3,7 @@ import { Route, Routes } from "react-router-dom";
 
 import { AppShell } from "./components/app-shell";
 import { PlayerAnalysisFrame } from "./analysis/player-analysis-frame";
+import { AnalysisRefreshBoundary } from "./analysis/analysis-seasons";
 import { NotFoundPage } from "./pages/not-found-page";
 const AnalysisPlayersPage = lazy(() =>
   import("./pages/analysis-players-page").then((m) => ({ default: m.AnalysisPlayersPage })),
@@ -82,6 +83,7 @@ const AnalysisCoveragePage = lazy(() =>
 export function App(): React.JSX.Element {
   return (
     <AppShell>
+      <AnalysisRefreshBoundary />
       <Suspense fallback={<div className="panel loading-panel">화면을 불러오는 중입니다.</div>}>
         <PlayerAnalysisFrame>
           <Routes>

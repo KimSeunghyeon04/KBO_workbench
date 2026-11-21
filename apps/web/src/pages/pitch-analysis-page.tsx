@@ -1,3 +1,4 @@
+import { AnalysisSeasonOptions, useAnalysisSeason } from "../analysis/analysis-seasons";
 import { AnalysisEvidenceLink } from "../analysis/analysis-evidence-link";
 import { PitchQualityPanel } from "../analysis/pitch-quality-panel";
 import { PitchAnglesPanel } from "../analysis/pitch-angles-panel";
@@ -25,11 +26,7 @@ const pitchKey = (point: PitchAnalysisPoint): string =>
 
 export function PitchAnalysisPage(): React.JSX.Element {
   const [params, setParams] = useSearchParams();
-  const requestedSeason = Number(params.get("season"));
-  const season =
-    Number.isInteger(requestedSeason) && requestedSeason >= 2020 && requestedSeason <= 2025
-      ? requestedSeason
-      : 2025;
+  const season = useAnalysisSeason(params.get("season"));
   const scope = scopeFromParams(season, params);
   const catalog = useQuery({
     ...pitcherCatalogQueryOptions(season, scope.options),
@@ -150,11 +147,7 @@ export function PitchAnalysisPage(): React.JSX.Element {
             value={season}
             onChange={(event) => change("season", event.target.value)}
           >
-            {[2020, 2021, 2022, 2023, 2024, 2025].map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
+            <AnalysisSeasonOptions season={season} />
           </select>
         </label>
         <label>

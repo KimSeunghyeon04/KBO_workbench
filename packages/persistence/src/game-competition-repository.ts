@@ -8,6 +8,7 @@ import {
   CompetitionEntrySchema,
   CompetitionPageSchema,
   CompetitionGameLinkSchema,
+  GameCompetitionDatasetSchema,
   type CompetitionGameLink,
 } from "@kbo/contracts";
 
@@ -20,8 +21,102 @@ const storedEntrySchema = Type.Object(
   { ...CompetitionEntrySchema.properties, gameId: Type.Union([Type.String(), Type.Null()]) },
   { additionalProperties: false },
 );
+
+export class CompetitionScheduleNoMatchesError extends Error {
+  public constructor(message: string) {
+    super(message);
+    this.name = "CompetitionScheduleNoMatchesError";
+  }
+}
+
 export class GameCompetitionRepository {
   public constructor(private readonly pool: Pool) {}
+  public async seasons() {
+    const rows = Value.Decode(
+      Type.Array(
+        Type.Object(
+          {
+            season: Type.Integer({ minimum: 1982, maximum: 2200 }),
+            gameId: Type.String(),
+            revision: Type.Integer(),
+            documentHash: Type.String(),
+            competitionHash: Type.Union([Type.String(), Type.Null()]),
+            competition: Type.String(),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+      (
+        await this.pool.query<Record<string, unknown>>(`
+        SELECT season, game_id AS "gameId", revision, document_hash AS "documentHash",
+          competition_dataset_hash AS "competitionHash", competition
+        FROM analytics.current_analysis_games ORDER BY season, game_id COLLATE "C"`)
+      ).rows,
+    );
+    const grouped = new Map<number, typeof rows>();
+    for (const row of rows) {
+      const values = grouped.get(row.season) ?? [];
+      values.push(row);
+      grouped.set(row.season, values);
+    }
+    return [...grouped].map(([season, games]) => ({
+      season,
+      sourceHash: createHash("sha256")
+        .update(
+          canonicalStringify(
+            games.map(({ gameId, revision, documentHash }) => ({ gameId, revision, documentHash })),
+          ),
+        )
+        .digest("hex"),
+      competitionHash: games[0]?.competitionHash ?? null,
+      unclassified: games.filter((game) => game.competition === "unknown").length,
+    }));
+  }
+  public async current(season: number) {
+    // One SQL snapshot keeps the pointer, pages and entries from the same sealed dataset.
+    const pageRows = await this.pool.query<Record<string, unknown>>(
+      `
+      SELECT p.month,p.competition,p.source_url AS "sourceUrl",p.content_hash AS "contentHash",
+        p.artifact_key AS "artifactKey",p.collected_at AS "collectedAt",p.dataset_hash AS "datasetHash"
+      FROM reference.competition_pages p JOIN reference.current_competition_datasets d USING(dataset_hash)
+      WHERE d.season=$1 ORDER BY p.month,p.competition COLLATE "C"`,
+      [season],
+    );
+    const pages = Value.Decode(
+      Type.Array(
+        Type.Object(
+          { ...CompetitionPageSchema.properties, datasetHash: Type.String() },
+          { additionalProperties: false },
+        ),
+      ),
+      pageRows.rows,
+    );
+    const datasetHash = pages[0]?.datasetHash;
+    if (datasetHash === undefined) return null;
+    const entries = await this.pool.query<Record<string, unknown>>(
+      `
+      SELECT source_game_id AS "sourceGameId",to_char(game_date,'YYYY-MM-DD') AS "gameDate",competition,page_hash AS "pageHash"
+      FROM reference.game_competitions WHERE dataset_hash=$1 ORDER BY source_game_id COLLATE "C"`,
+      [datasetHash],
+    );
+    return parseGameCompetitionDataset(
+      Value.Decode(GameCompetitionDatasetSchema, {
+        version: 1,
+        season,
+        pages: pages.map(
+          ({ month, competition, sourceUrl, contentHash, artifactKey, collectedAt }) => ({
+            month,
+            competition,
+            sourceUrl,
+            contentHash,
+            artifactKey,
+            collectedAt,
+          }),
+        ),
+        entries: entries.rows,
+      }),
+    );
+  }
   public async games(season: number) {
     return Value.Decode(
       Type.Array(gameSchema),
@@ -73,7 +168,9 @@ export class GameCompetitionRepository {
         ).rows,
       );
       if (games.length > 0 && dataset.entries.length === 0)
-        throw new Error("저장 경기가 있는데 공식 일정이 모두 비어 있습니다.");
+        throw new CompetitionScheduleNoMatchesError(
+          "저장 경기가 있는데 공식 일정이 모두 비어 있습니다.",
+        );
       const gamesBySource = new Map<string, typeof games>();
       for (const game of games) {
         const values = gamesBySource.get(game.sourceGameId) ?? [];
@@ -98,7 +195,7 @@ export class GameCompetitionRepository {
       });
       const matched = rows.filter((r) => r.gameId !== null);
       if (games.length > 0 && matched.length === 0)
-        throw new Error("공식 일정과 연결된 저장 경기가 없습니다.");
+        throw new CompetitionScheduleNoMatchesError("공식 일정과 연결된 저장 경기가 없습니다.");
       const datasetHash = createHash("sha256")
         .update(
           canonicalStringify({

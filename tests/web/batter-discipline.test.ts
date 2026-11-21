@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { DisciplineQuerySchema, resolveAnalysisScope } from "@kbo/contracts";
 import { Value } from "@sinclair/typebox/value";
+import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { createElement } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -35,7 +36,7 @@ function show(url = "/analysis/batter-discipline?season=2024") {
   render(
     createElement(
       QueryClientProvider,
-      { client: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
+      { client: createAnalysisQueryClient() },
       createElement(
         MemoryRouter,
         { initialEntries: [url] },

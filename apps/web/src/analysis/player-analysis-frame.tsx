@@ -1,3 +1,4 @@
+import { useAnalysisSeason } from "./analysis-seasons";
 import { useEffect, useRef, type PropsWithChildren } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, NavLink, useLocation } from "react-router-dom";
@@ -46,7 +47,8 @@ function PlayerNavigation({
     observer?.observe(nav);
     return () => observer?.disconnect();
   }, [path, role]);
-  const scope = playerNavigationScope(path, params);
+  const defaultSeason = useAnalysisSeason(params.get("season"));
+  const scope = playerNavigationScope(path, params, defaultSeason);
   // Observe the page's catalog cache. The analysis page remains the request owner,
   // so this navigation never adds a catalog request or starts another analysis.
   const catalog = useQuery<

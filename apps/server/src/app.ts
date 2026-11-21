@@ -15,6 +15,7 @@ import { importRoutes } from "./routes/import.js";
 import { replayRoutes } from "./routes/replay.js";
 import { analysisRoutes } from "./routes/analysis.js";
 import { analysisModelRoutes } from "./routes/analysis-models.js";
+import { analysisPreparationRoutes } from "./routes/analysis-preparation.js";
 import { recordCorrectionRoutes } from "./routes/record-correction.js";
 import { systemRoutes } from "./routes/system.js";
 import type { AppRuntime } from "./runtime.js";
@@ -62,6 +63,8 @@ export function createApp(
   app.register(recordCorrectionRoutes, context);
   if (runtime.analysisModelJobs !== undefined)
     app.register(analysisModelRoutes, { jobs: runtime.analysisModelJobs });
+  if (runtime.analysisPreparation !== undefined)
+    app.register(analysisPreparationRoutes, { preparation: runtime.analysisPreparation });
 
   app.addHook("onClose", async () => {
     context.replayService.close();

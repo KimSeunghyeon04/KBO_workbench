@@ -1,3 +1,4 @@
+import { AnalysisSeasonOptions } from "../analysis/analysis-seasons";
 import { useQuery } from "@tanstack/react-query";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import { Link } from "react-router-dom";
@@ -156,9 +157,7 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
             value={season}
             onChange={(e) => change("season", e.target.value, { [role]: id })}
           >
-            {[2020, 2021, 2022, 2023, 2024, 2025].map((y) => (
-              <option key={y}>{y}</option>
-            ))}
+            <AnalysisSeasonOptions season={season} />
           </select>
         </label>
         <label>

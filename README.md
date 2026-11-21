@@ -242,3 +242,5 @@ UI 작업은 [설계 도구·작업 기준](docs/analysis/ui-design-workflow.md)
 | 데이터 준비 | [수집](docs/collection-and-staging.md) · [보정·기록정정](docs/correction.md) · [PostgreSQL·Registry](docs/postgresql-persistence.md)                                      |
 | 분석·재생   | [분석 전체 안내](docs/analysis/README.md) · [구현 상태](docs/analysis/implementation-status.md) · [모델 운영](docs/analysis/model-management.md) · [재생](docs/replay.md) |
 | 유지보수    | [스트라이크존·신장](docs/strike-zone.md) · [구속·구종 보완](docs/pitch-metadata-enrichment.md) · [테스트·성능](docs/testing-and-performance.md)                           |
+
+새 경기·시즌을 적재하면 공식 경기 분류와 필요한 분석 모델을 자동 갱신한다. 기존 수동 교정 원장과 sealed 기록은 보존한다. [자동 반영·복구·지원 범위](docs/analysis/automatic-preparation.md)를 따른다.

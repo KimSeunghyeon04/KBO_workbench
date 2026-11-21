@@ -11,7 +11,7 @@ import { trainMatchupModel } from "@kbo/game-core";
 import { loadConfig } from "../config.js";
 const { through, baseDirectory } = Value.Decode(
   Type.Object(
-    { through: Type.Integer({ minimum: 2020, maximum: 2024 }), baseDirectory: Type.String() },
+    { through: Type.Integer({ minimum: 2020, maximum: 2199 }), baseDirectory: Type.String() },
     { additionalProperties: false },
   ),
   workerData,

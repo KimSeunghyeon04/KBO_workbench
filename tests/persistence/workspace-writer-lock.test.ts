@@ -45,6 +45,17 @@ it("rejects a delayed stale lock takeover once a new owner has opened the worksp
     resume.resolve(previous);
     expect(await delayed).toMatchObject({ status: "rejected" });
     expect(await readFile(lock, "utf8")).toBe(acceptedOwner);
+    await winner.analysisPreparation.write({
+      version: 1,
+      season: 2026,
+      sourceHash: "a".repeat(64),
+      competitionHash: null,
+      state: "ready",
+      unclassified: 0,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      error: null,
+    });
+    expect((await winner.analysisPreparation.read(2026))?.sourceHash).toBe("a".repeat(64));
   } finally {
     resume.resolve(previous);
     await delayed;

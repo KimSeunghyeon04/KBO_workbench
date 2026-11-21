@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { createElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
@@ -58,7 +59,7 @@ function Location() {
 }
 
 function show(search = "season=2024") {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = createAnalysisQueryClient();
   clients.push(client);
   render(
     createElement(
@@ -201,7 +202,7 @@ it("distinguishes no matching name from an empty scoped catalog", async () => {
   expect(fetch).toHaveBeenCalledTimes(2);
 });
 
-it.each(["season=2024&dateFrom=2024-09-01&dateTo=2024-04-01", "season=2026"])(
+it.each(["season=2024&dateFrom=2024-09-01&dateTo=2024-04-01", "season=2201"])(
   "does not request a catalog for invalid scope %s",
   (search) => {
     const fetch = mockCatalogs();
@@ -232,3 +233,17 @@ it("retries a failed catalog request and clears obsolete dates when the season c
   expect(screen.getByLabelText("현재 주소").textContent).not.toMatch(/dateFrom|dateTo|page=/);
   expect(fetch).toHaveBeenCalledTimes(3);
 });
+
+it.each(["pitcher", "batter"])(
+  "loads a newly imported 2026 %s catalog without changing the requested season",
+  async (role) => {
+    const fetch = mockCatalogs();
+    show(`season=2026&competition=all&role=${role}`);
+    const link = await screen.findByRole("link", {
+      name: role === "pitcher" ? "가상 투수 분석 보기" : "가상 타자 분석 보기",
+    });
+    expect(destination(link).searchParams.get("season")).toBe("2026");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(String(fetch.mock.calls[0]?.[0])).toContain("season=2026");
+  },
+);

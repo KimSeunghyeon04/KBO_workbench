@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { createElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
@@ -79,7 +80,7 @@ it.each([false, true])(
       });
     }
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(response))));
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = createAnalysisQueryClient();
     clients.push(client);
     render(
       createElement(

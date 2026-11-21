@@ -12,11 +12,11 @@ export const AnalysisModelKindSchema = Type.Union([
   Type.Literal("matchup"),
 ]);
 export type AnalysisModelKind = Static<typeof AnalysisModelKindSchema>;
-export const AnalysisModelSeasonSchema = Type.Integer({ minimum: 2020, maximum: 2025 });
-export const AnalysisModelTrainingSeasonSchema = Type.Integer({ minimum: 2020, maximum: 2024 });
+export const AnalysisModelSeasonSchema = Type.Integer({ minimum: 2020, maximum: 2200 });
+export const AnalysisModelTrainingSeasonSchema = Type.Integer({ minimum: 2020, maximum: 2199 });
 export const AnalysisModelPeriodSchema = Type.Object(
   {
-    trainedThrough: Type.Integer({ minimum: 2019, maximum: 2024 }),
+    trainedThrough: Type.Integer({ minimum: 2019, maximum: 2199 }),
     applicationSeason: AnalysisModelSeasonSchema,
     trainingStartSeason: Type.Integer({ minimum: 2020, maximum: 2022 }),
     validationSeasons: Type.Array(AnalysisModelTrainingSeasonSchema, {
@@ -111,6 +111,11 @@ export const AnalysisModelJobSchema = Type.Object(
     ...LegacyAnalysisModelJobSchema.properties,
     version: Type.Literal(2),
     applicationSeason: AnalysisModelSeasonSchema,
+    trigger: Type.Union([
+      Type.Literal("manual"),
+      Type.Literal("automatic"),
+      Type.Literal("import"),
+    ]),
     steps: Type.Array(
       Type.Object(
         {
@@ -129,8 +134,8 @@ export const LegacyAnalysisModelPolicySchema = Type.Object({ enabled: Type.Boole
 export const AnalysisModelPolicySchema = Type.Object(
   {
     version: Type.Literal(2),
-    enabledSeasons: Type.Array(Type.Integer({ minimum: 2023, maximum: 2025 }), {
-      maxItems: 3,
+    enabledSeasons: Type.Array(Type.Integer({ minimum: 2023, maximum: 2200 }), {
+      maxItems: 178,
       uniqueItems: true,
     }),
   },
@@ -138,7 +143,7 @@ export const AnalysisModelPolicySchema = Type.Object(
 );
 export const AnalysisModelPolicyUpdateSchema = Type.Object(
   {
-    applicationSeason: Type.Integer({ minimum: 2023, maximum: 2025 }),
+    applicationSeason: Type.Integer({ minimum: 2023, maximum: 2200 }),
     enabled: Type.Boolean(),
   },
   strict,

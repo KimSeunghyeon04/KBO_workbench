@@ -1,6 +1,7 @@
+import { AnalysisSeasonOptions, useAnalysisSeason } from "../analysis/analysis-seasons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
-import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import type { AnalysisModelKind } from "@kbo/contracts";
 import {
   getAnalysisModels,
@@ -36,7 +37,8 @@ const phases = {
   done: "완료",
 };
 export function AnalysisModelsPage() {
-  const [season, setSeason] = useState(2025);
+  const [params, setParams] = useSearchParams();
+  const season = useAnalysisSeason(params.get("season"));
   const client = useQueryClient();
   const query = useQuery({
     queryKey: ["analysis-models", season],
@@ -74,12 +76,15 @@ export function AnalysisModelsPage() {
         </div>
         <label className="model-season-field">
           적용 시즌{" "}
-          <select value={season} onChange={(e) => setSeason(Number(e.target.value))}>
-            {[2025, 2024, 2023, 2022, 2021, 2020].map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
+          <select
+            value={season}
+            onChange={(event) => {
+              const next = new URLSearchParams(params);
+              next.set("season", event.target.value);
+              setParams(next);
+            }}
+          >
+            <AnalysisSeasonOptions season={season} />
           </select>
         </label>
       </header>
@@ -140,8 +145,9 @@ export function AnalysisModelsPage() {
       <section className="panel">
         <h2>갱신 설정</h2>
         <p>
-          선택한 시즌의 자동 갱신을 켜면 6시간마다 원천 변경을 확인합니다. 모든 시즌의 학습은 한
-          번에 하나씩 실행하며 수분과 수 GB 메모리가 필요할 수 있습니다.
+          경기를 적재하면 분류와 필요한 모델을 자동 갱신합니다. 아래 설정은 별도로 6시간마다
+          확인합니다. 모든 시즌의 학습은 한 번에 하나씩 실행하며 수분과 수 GB 메모리가 필요할 수
+          있습니다.
         </p>
         <label>
           <input
@@ -150,7 +156,7 @@ export function AnalysisModelsPage() {
             disabled={!data || !trainable || policy.isPending}
             onChange={(e) => policy.mutate({ enabled: e.target.checked, season })}
           />{" "}
-          {season} 시즌 자료 자동 갱신
+          {season} 시즌 6시간 주기 점검
         </label>
         <div className="model-refresh-actions">
           <button
@@ -181,7 +187,7 @@ export function AnalysisModelsPage() {
             통계만 제공합니다.
           </p>
         )}
-        {data && <p>자동 갱신 시즌: {data.policy.enabledSeasons.join(", ") || "꺼짐"}</p>}
+        {data && <p>주기 점검 시즌: {data.policy.enabledSeasons.join(", ") || "꺼짐"}</p>}
       </section>
       {job && (
         <section className="panel">
@@ -190,7 +196,11 @@ export function AnalysisModelsPage() {
           </h2>
           <p>
             {new Date(job.createdAt).toLocaleString("ko-KR")} ·{" "}
-            {job.trigger === "automatic" ? "자동" : "직접 실행"}
+            {job.trigger === "import"
+              ? "경기 적재 후 자동"
+              : job.trigger === "automatic"
+                ? "주기 점검"
+                : "직접 실행"}
           </p>
           {job.error && <p role="alert">{job.error}</p>}
           {running && (
