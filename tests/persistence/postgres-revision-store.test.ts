@@ -78,6 +78,29 @@ const dsn = process.env.KBO_TEST_POSTGRES_DSN;
 const describeIntegration = dsn === undefined ? describe.skip : describe;
 
 describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
+  it("keeps the SQL calendar date through import, replay, correction and catalog in Asia/Seoul", async () => {
+    const timezone = process.env.TZ;
+    process.env.TZ = "Asia/Seoul";
+    try {
+      const date = await pool.query<{ game_date: Date }>("SELECT DATE '2026-08-20' AS game_date");
+      expect(date.rows[0]?.game_date.toISOString()).toBe("2026-08-19T15:00:00.000Z");
+      const document = parseStagingGameDocumentV2(makeDocument([]));
+      expect(document.metadata.gameDate).toBe("2026-08-20");
+      const { gameId, documentHash } = await store.importRevision(document);
+
+      expect(documentHash).toBe(stagingDocumentHash(document));
+      expect((await store.loadCompiled(gameId, 1)).source.gameDate).toBe("2026-08-20");
+      expect((await store.loadCorrectionDraft(gameId, 1)).metadata.gameDate).toBe("2026-08-20");
+      expect(await store.catalog([gameId])).toMatchObject([{ gameId, gameDate: "2026-08-20" }]);
+      expect((await store.catalogPage({ authority: "database" })).games).toMatchObject([
+        { gameId, gameDate: "2026-08-20" },
+      ]);
+    } finally {
+      if (timezone === undefined) delete process.env.TZ;
+      else process.env.TZ = timezone;
+    }
+  });
+
   it("keeps historical source/cache periods independent of later season imports", async () => {
     const sources = new AnalysisModelSourceRepository(pool);
     const earlier = await sources.read(2022),

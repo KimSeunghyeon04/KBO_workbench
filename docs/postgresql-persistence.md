@@ -127,6 +127,8 @@ projection descriptor는 각 table의 SQL column 순서뿐 아니라 runtime row
 rowCount, 요청 game/revision과 key uniqueness를 통과해야 한다. manifest도 provider, contract version,
 hash, 날짜와 seal 타입을 decode한다. 위반은 `PersistenceIntegrityError`이며 partial replay나 seal을
 만들지 않는다.
+경기일은 PostgreSQL `DATE`의 달력 날짜를 유지한다. DB 드라이버가 현지 자정으로 읽은 값은
+해당 연·월·일을 사용해 hydrate·재생·목록에 같은 경기일을 전달한다.
 
 ## Registry provenance
 

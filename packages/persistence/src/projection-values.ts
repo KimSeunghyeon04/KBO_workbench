@@ -205,5 +205,12 @@ export function findingSeverity(value: unknown): Finding["severity"] {
 }
 
 export function dateText(value: string | Date): string {
-  return value instanceof Date ? value.toISOString().slice(0, 10) : value.slice(0, 10);
+  if (!(value instanceof Date)) return value.slice(0, 10);
+  if (!Number.isFinite(value.getTime()))
+    throw new PersistenceIntegrityError("DB 경기 날짜가 올바르지 않습니다.");
+  // node-postgres represents SQL DATE as local midnight.
+  const year = String(value.getFullYear()).padStart(4, "0");
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }

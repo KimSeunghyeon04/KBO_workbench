@@ -2,6 +2,7 @@ import type { GameCatalogItem } from "@kbo/contracts";
 import type { Pool, QueryResultRow } from "pg";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
+import { dateText } from "./projection-values.js";
 
 type CatalogPool = Pick<Pool, "query">;
 
@@ -73,10 +74,6 @@ export async function readDatabaseCatalog(
     blockingFindings: 0,
     warningFindings: row.warning_count,
   }));
-}
-
-function dateText(value: string | Date): string {
-  return value instanceof Date ? value.toISOString().slice(0, 10) : value.slice(0, 10);
 }
 
 function iso(value: string | Date): string {

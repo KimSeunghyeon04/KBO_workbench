@@ -352,6 +352,8 @@ snapshot, typed ledger, official line, validation issue/detail, tracking 원천 
 projection descriptor는 SQL column 순서와 runtime decoder를 함께 소유한다. DB 재조회 행의 shape,
 nullability, enum, 정수, row count, game/revision 문맥과 key uniqueness를 검증하지 못하면
 `PersistenceIntegrityError`로 transaction/replay를 중단한다.
+typed ledger, 재생, DB 경기 목록에서 `game_date`는 드라이버가 읽은 달력 날짜를 보존한다.
+Node의 시간대가 달라도 동일한 원장 hash를 유지한다.
 
 `registry`에는 collection run, immutable season revision/current pointer, source page artifact provenance,
 일별 등록 snapshot, 이동 event, resolution issue, first-team registration과 organization affiliation stint를
