@@ -4,15 +4,23 @@
 
 이 파일은 저장소 전체에 적용된다. 하위 디렉터리에 더 구체적인 `AGENTS.md`가 생기면 그 파일은 해당 하위 트리에서 이 규칙을 보완하거나 좁힐 수 있다.
 
-이 저장소는 단순한 경기 JSON 편집기가 아니다. 외부 제공자의 불완전한 경기 기록을 원본 증거로 보존하고, 사람이 교정할 수 있는 평탄한 원장으로 정규화한 뒤, 단 하나의 결정론적 컴파일러로 야구 상태와 통계를 계산하여, 검증된 사실만 PostgreSQL에 봉인하고 재생하는 로컬 웹 워크벤치다.
+KBO Workbench는 Naver KBO 문자중계를 원본 증거로 보존하고, 교정 가능한 원장으로 정규화하는 로컬 웹 워크벤치다. 단일 결정론적 컴파일러가 경기 상태와 통계를 계산하며, PostgreSQL에 봉인된 기록을 분석과 재생에 사용한다.
 
-변경 전에는 최소한 다음 문서를 함께 읽는다.
+## 작업 시작
 
-- `README.md`
-- `kbo_workbench_web_implementation_spec.md`
-- 변경 영역과 관련된 `docs/*.md`
-- 관련 패키지의 공개 진입점인 `src/index.ts`
-- 변경 동작을 고정하는 기존 테스트
+`git status --short`로 기존 변경을 확인하고 보존한다. 코드 탐색은 아래 Graft 지침을 따른다.
+변경 전에 [README](README.md), [구현 명세](kbo_workbench_web_implementation_spec.md), 해당 영역 문서,
+패키지의 공개 진입점 `src/index.ts`, 현재 동작을 고정하는 테스트와 실제 호출 경로를 확인한다.
+
+| 작업 영역                   | 관련 문서                                                                                                                    |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Naver 수집·원장 정규화      | [수집과 staging](docs/collection-and-staging.md)                                                                             |
+| 경기 상태·공식 집계         | [Game Core 규칙](docs/game-core-rules.md)                                                                                    |
+| 원장 교정·KBO 공식 기록정정 | [보정 운영](docs/correction.md)                                                                                              |
+| DB 적재·migration·재생      | [PostgreSQL persistence](docs/postgresql-persistence.md), [경기 재생](docs/replay.md)                                        |
+| 분석 지표·보조자료·모델     | [분석 설계](docs/analysis/design.md), [기능별 문서](docs/analysis/README.md), [모델 운영](docs/analysis/model-management.md) |
+| 실행·배포·복구              | [배포](docs/deployment.md), [백업·복원](docs/backup-and-restore.md)                                                          |
+| 테스트·성능·품질 점검       | [테스트·성능](docs/testing-and-performance.md), [품질 점검 프로필](docs/quality-sweep/kbo-workbench.md)                      |
 
 문서와 코드가 어긋나면 임의로 둘 중 하나를 정답으로 간주하지 않는다. 현재 테스트와 런타임 경로를 확인하고, 의도된 계약을 명확히 한 다음 코드·테스트·문서를 함께 맞춘다.
 
@@ -28,8 +36,8 @@ Naver 응답
   -> versioned current manifest와 active artifact (ready/quarantine/source_failure)
   -> persistence 트랜잭션 투영 및 봉인
   -> PostgreSQL typed facts
-  -> replay API
-  -> web 로컬 재생
+       ├─ 분석 조회 및 모델 입력 → 분석 API → web 분석 화면
+       └─ replay API → web 로컬 재생
 ```
 
 각 계층의 권위는 분리되어 있다.
@@ -127,7 +135,7 @@ Canonical JSON은 해시, fingerprint, idempotency의 기반이다.
 
 1. `packages/contracts`의 TypeBox 소스와 필요한 명시적 barrel export를 수정한다.
 2. collection, compiler, correction, persistence, web의 소비자를 함께 점검한다.
-3. 서버 또는 contracts build 후 `pnpm schema:game:write`로 `schemas/staging-game-document-v1.schema.json`을 재생성한다.
+3. `pnpm build:server`로 contracts 출력을 갱신한 뒤 `pnpm schema:game:write`로 `schemas/staging-game-document-v2.schema.json`을 재생성한다.
 4. `pnpm schema:game:check`와 contract/golden 테스트를 실행한다.
 
 명시적인 버전/제품 결정 없이 호환성 분기, revision 2, 암묵적 backfill을 추가하지 않는다.
@@ -187,6 +195,7 @@ Canonical JSON은 해시, fingerprint, idempotency의 기반이다.
 - pitch 삭제 시 tracking row를 보존하고 연결만 명시적으로 해제한다. ID가 없는 투구 연결을 추측하지 않는다.
 - `unresolved`를 typed event로 바꿀 때 identity, source 위치, 원문을 보존한다.
 - 저장된 source finding 중 재현할 수 없는 항목은 현재 compiler finding과 병합하되, 재계산 가능한 compiler finding set은 매 command마다 교체한다.
+- 교정 구현 결함을 수정할 때는 선수·팀 정보를 비식별화한 재현 fixture와 회귀 테스트를 추가한다.
 
 ### Persistence와 Replay
 
@@ -201,6 +210,13 @@ Canonical JSON은 해시, fingerprint, idempotency의 기반이다.
 - replay frame은 atomic play 단위다.
 - cursor는 game, revision, document hash, frame hash와 결합하며 page limit 상한 1000을 유지한다.
 - 웹은 모든 page의 manifest, count, order, hash를 검증한 뒤 로컬 index만 이동해 재생한다.
+
+### 분석 조회와 모델
+
+- 분석 표본은 현재 봉인된 revision의 typed fact와 채택된 보조자료에서 조회한다. 한 응답의 표본과 비교 기준은 동일한 읽기 전용 snapshot에서 확정한다.
+- 지표를 바꿀 때는 표본 단위(실제 투구, 공식 타석, 플레이 등), 분자·분모, 결측 처리와 비교 범위를 해당 기능 문서와 API 계약에서 확인한다. 분석 근거의 재생 링크에는 조회에 사용한 경기와 revision을 전달한다.
+- 캐시 키와 모델 manifest에는 현재 revision 집합과 실제 사용한 보조자료·기반 모델을 식별하는 hash를 반영한다. 학습과 평가를 경기 단위로 시간 분할하고 전처리도 학습 구간의 자료로 적합한다. [분석 설계](docs/analysis/design.md), [모델 운영](docs/analysis/model-management.md)
+- 실자료 분석을 재현할 때는 별도 PostgreSQL 사본을 사용하는 저장소 검증 절차를 따른다. [실자료 검증](docs/analysis/real-data-validation.md)
 
 ### Server와 Web
 
@@ -265,16 +281,17 @@ Canonical JSON은 해시, fingerprint, idempotency의 기반이다.
 
 빠른 검증은 변경 범위에 맞춰 수행한다.
 
-| 변경 범위             | 최소 추가 검증                                     |
-| --------------------- | -------------------------------------------------- |
-| 계약/스키마           | contract 테스트, `pnpm schema:game:check`          |
-| package import/barrel | `pnpm test:architecture`                           |
-| compiler/야구 규칙    | 관련 unit/property/golden 테스트                   |
-| collection            | normalization/fixture 테스트, 실제 Naver 호출 금지 |
-| correction            | command/session/API/UI 테스트                      |
-| persistence/replay    | 관련 unit 테스트와 `pnpm test:integration`         |
-| 서버-웹 전체 흐름     | `pnpm test:e2e`                                    |
-| hot path              | `pnpm performance`                                 |
+| 변경 범위             | 최소 추가 검증                                          |
+| --------------------- | ------------------------------------------------------- |
+| 계약/스키마           | contract 테스트, `pnpm schema:game:check`               |
+| package import/barrel | `pnpm test:architecture`                                |
+| compiler/야구 규칙    | 관련 unit/property/golden 테스트                        |
+| collection            | normalization/fixture 테스트, 실제 Naver 호출 금지      |
+| correction            | command/session/API/UI 테스트                           |
+| persistence/replay    | 관련 unit 테스트와 `pnpm test:integration`              |
+| 분석 조회·모델        | 기능별 수치·표본 회귀와 변경 경계의 API/SQL/UI 테스트   |
+| 서버-웹 전체 흐름     | `pnpm test:e2e`                                         |
+| 성능 경로             | `pnpm performance`, 분석은 `pnpm performance:analytics` |
 
 완료 전 기본 품질 게이트는 다음과 같다.
 
@@ -319,14 +336,10 @@ pnpm build
 - 관련 targeted 테스트와 필요한 저장소 품질 게이트가 통과한다.
 - `.env`, `.data`, `.backups`, DB volume 등 사용자 데이터가 노출되거나 변경되지 않았다.
 
-## 준수 사항
-
-- Correction의 구현 오류가 발생되어 수정할 시 해당 데이터를 선수 정보, 팀 정보를 비식별 처리한 fixture로 만들고 이후에 같은 오류가 발생하지 않도록 회귀 테스트로 만든다.
-
 ## 분석 UI 설계 도구
 
 분석 화면의 설계·개선·검토에는 사용 가능한 `kbo-analysis-ui` 스킬과
-[UI 설계 도구·작업 기준](docs/analysis/ui-design-workflow.md)을 적용한다. Impeccable,
+[UI 설계 도구·작업 기준](docs/analysis/ui-design-workflow.md), [디자인 기준](DESIGN.md)을 적용한다. Impeccable,
 frontend-design, web-design-guidelines는 해당 작업에 필요한 역할만 선택하고 같은 화면을
 중복 재설계하지 않는다. 코드 경계는 Graft로, 라이브러리 사용법은 Context7으로 확인하며,
 UI 변경 결과는 실제 브라우저에서 검증한다. 외부 스킬의 미적 선호는 사용자의 요구와
