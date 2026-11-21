@@ -492,6 +492,14 @@
   margin: 8px 0 6px;
 }
 
+.correction-workbench > .correction-events {
+  overflow-y: auto;
+}
+
+.correction-events > * {
+  flex-shrink: 0;
+}
+
 .correction-detail {
   overflow-y: auto !important;
 }
@@ -842,8 +850,8 @@ button.finding-select {
 
 .virtual-event-list {
   position: relative;
-  min-height: 0;
-  flex: 1 1 auto;
+  min-height: 216px;
+  flex: 1 0 216px;
   margin-top: 12px;
   overflow-y: auto;
   border: 1px solid #e1e5e2;
@@ -870,6 +878,65 @@ button.finding-select {
   color: #536059;
   background: #ffffff;
   text-align: left;
+}
+
+.event-selection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ui-line);
+  font-size: 12px;
+}
+
+.event-selection-summary,
+.event-selection-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.event-selection-summary span {
+  color: var(--ui-muted);
+}
+
+.event-selection-actions button {
+  min-height: 30px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.event-selection-confirm,
+.event-selection-move {
+  width: 100%;
+  min-width: 0;
+  padding: 12px;
+  background: var(--ui-surface-subtle);
+}
+
+.event-selection-confirm p,
+.event-selection-move p {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+
+.event-selection-confirm button + button {
+  margin-left: 8px;
+}
+
+.event-selection-move label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.event-selection-move input {
+  width: 100px;
 }
 
 .event-row.starts-half {

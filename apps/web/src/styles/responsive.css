@@ -256,6 +256,15 @@
     overflow: visible !important;
   }
 
+  .correction-workbench > .correction-events {
+    height: auto;
+  }
+
+  .correction-events > .virtual-event-list {
+    height: 288px;
+    flex: none;
+  }
+
   .correction-source-controls {
     grid-template-columns: minmax(140px, 0.5fr) minmax(240px, 1fr) auto auto;
   }
@@ -427,6 +436,10 @@
   .correction-game-summary {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .correction-game-summary > div:first-child {
+    flex-basis: auto;
   }
 
   .correction-source-controls {

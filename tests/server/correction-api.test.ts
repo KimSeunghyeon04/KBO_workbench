@@ -11,8 +11,134 @@ import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../../apps/server/src/app.js";
 import type { AppConfig } from "../../apps/server/src/config.js";
 import { CorrectionSessionManager } from "../../apps/server/src/correction-session-manager.js";
+import { makeDocument } from "../helpers/game-document.js";
 
 describe("correction HTTP API", () => {
+  it("다중 행 명령을 한 버전으로 적용하고 stale·부분 실패·undo/redo를 원자적으로 처리한다", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-bulk-api-"));
+    const workspace = await StagingWorkspace.open(temporary.path);
+    const document = parseStagingGameDocumentV2(
+      makeDocument(
+        Array.from({ length: 150 }, () => ({
+          kind: "administrative",
+          payload: { code: "announcement" },
+          relayText: "비식별 원문",
+        })),
+      ),
+    );
+    await workspace.saveReady(document, []);
+    const sessions = new CorrectionSessionManager(workspace);
+    const app = createApp(testConfig(temporary.path), { end: vi.fn() } as unknown as Pool, {
+      workspace,
+      correctionSessions: sessions,
+      collectionJobs: emptyCollectionJobs(),
+      revisionStore: emptyRevisionStore(),
+      importJobs: emptyImportJobs(),
+      async close() {
+        sessions.close();
+        await workspace.close();
+      },
+    });
+    try {
+      const initial = await sessions.create({
+        authority: "staging",
+        gameId: document.metadata.gameId,
+      });
+      const url = `/api/v2/correction-sessions/${initial.sessionId}`;
+      const command = {
+        commandId: "delete-many",
+        kind: "delete_events",
+        eventIds: document.events.slice(5, 135).map((event) => event.identity.eventId),
+      };
+      const applied = await app.inject({
+        method: "POST",
+        url: `${url}/commands`,
+        payload: { expectedSessionVersion: 0, apply: true, command },
+      });
+      expect(applied.statusCode).toBe(200);
+      expect(sessions.get(initial.sessionId)).toMatchObject({
+        sessionVersion: 1,
+        canUndo: true,
+        draftDocument: { events: expect.any(Array) },
+      });
+      expect(sessions.get(initial.sessionId).draftDocument.events).toHaveLength(20);
+      const stale = await app.inject({
+        method: "POST",
+        url: `${url}/commands`,
+        payload: { expectedSessionVersion: 0, apply: true, command },
+      });
+      expect(stale.statusCode).toBe(409);
+      const beforeFailure = sessions.get(initial.sessionId);
+      const invalid = await app.inject({
+        method: "POST",
+        url: `${url}/commands`,
+        payload: {
+          expectedSessionVersion: 1,
+          apply: true,
+          command: { commandId: "missing", kind: "delete_events", eventIds: ["e0", "missing"] },
+        },
+      });
+      expect(invalid.statusCode).toBe(400);
+      expect(sessions.get(initial.sessionId)).toEqual(beforeFailure);
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: `${url}/undo`,
+            payload: { expectedSessionVersion: 1 },
+          })
+        ).statusCode,
+      ).toBe(200);
+      expect(sessions.get(initial.sessionId).draftDocument).toEqual(document);
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: `${url}/redo`,
+            payload: { expectedSessionVersion: 2 },
+          })
+        ).statusCode,
+      ).toBe(200);
+      expect(sessions.get(initial.sessionId).draftDocument.events).toHaveLength(20);
+      const moved = await app.inject({
+        method: "POST",
+        url: `${url}/commands`,
+        payload: {
+          expectedSessionVersion: 3,
+          apply: true,
+          command: {
+            commandId: "move-many",
+            kind: "move_events",
+            eventIds: ["e149", "e1"],
+            beforeEventId: "e0",
+          },
+        },
+      });
+      expect(moved.statusCode).toBe(200);
+      expect(
+        sessions
+          .get(initial.sessionId)
+          .draftDocument.events.slice(0, 3)
+          .map((event) => event.identity.eventId),
+      ).toEqual(["e1", "e149", "e0"]);
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: `${url}/undo`,
+            payload: { expectedSessionVersion: 4 },
+          })
+        ).statusCode,
+      ).toBe(200);
+      expect(sessions.get(initial.sessionId).draftDocument).toEqual(beforeFailure.draftDocument);
+      expect(
+        await workspace.readDocument("staging", document.metadata.season, document.metadata.gameId),
+      ).toEqual(document);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("관측·문구 교정의 검증·version·undo/redo·저장과 원본 보존을 함께 확인한다", async () => {
     await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-observation-api-"));
     const workspace = await StagingWorkspace.open(temporary.path);

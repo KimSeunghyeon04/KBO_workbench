@@ -1,5 +1,6 @@
 import type { StagingRelayEvent } from "@kbo/contracts";
 import { useEffect, useRef, useState } from "react";
+import type { EventSelectionIntent } from "./event-selection";
 import { useFixedVirtualList } from "../components/use-fixed-virtual-list";
 import { eventMoveCapabilities } from "./event-actions";
 import type { EventCollapseGroup, EventCollapseKind } from "./event-collapse";
@@ -12,6 +13,7 @@ export function VirtualEventList({
   rows,
   canonicalEvents,
   selectedEventId,
+  selectedEventIds = new Set(selectedEventId === null ? [] : [selectedEventId]),
   disabled,
   collapseGroups = new Map(),
   collapsedInningEventIds = new Set(),
@@ -25,13 +27,14 @@ export function VirtualEventList({
   readonly rows: readonly CorrectionTimelinePresentation[];
   readonly canonicalEvents: readonly StagingRelayEvent[];
   readonly selectedEventId: string | null;
+  readonly selectedEventIds?: ReadonlySet<string>;
   readonly disabled: boolean;
   readonly collapseGroups?: ReadonlyMap<string, readonly EventCollapseGroup[]>;
   readonly collapsedInningEventIds?: ReadonlySet<string>;
   readonly collapsedPlateEventIds?: ReadonlySet<string>;
   readonly collapseDisabled?: boolean;
   readonly focusRequest?: number;
-  readonly onSelect: (id: string) => void;
+  readonly onSelect: (id: string, intent?: EventSelectionIntent) => void;
   readonly onAction: (id: string, action: RowAction) => void;
   readonly onToggleCollapse?: (kind: EventCollapseKind, eventId: string) => void;
 }): React.JSX.Element {
@@ -41,6 +44,7 @@ export function VirtualEventList({
   const [menuOpensUpward, setMenuOpensUpward] = useState(false);
   const [menuMaxHeight, setMenuMaxHeight] = useState(280);
   const handledFocusRequest = useRef(0);
+  const pendingFocusId = useRef<string | null>(null);
   const selectedIndex = rows.findIndex(
     (row) => row.presentation.event.identity.eventId === selectedEventId,
   );
@@ -55,12 +59,20 @@ export function VirtualEventList({
   useEffect(() => {
     if (focusRequest === 0 || handledFocusRequest.current === focusRequest) return;
     const selected = listRef.current?.querySelector<HTMLButtonElement>(
-      '.event-row-select[aria-pressed="true"]',
+      '.event-row-select[data-current="true"]',
     );
     if (selected === null || selected === undefined) return;
     handledFocusRequest.current = focusRequest;
     queueMicrotask(() => selected.focus({ preventScroll: true }));
   }, [focusRequest, listRef, selectedEventId, window.start, window.end]);
+  useEffect(() => {
+    if (pendingFocusId.current === null) return;
+    const button = document.getElementById(`ledger-event-select-${pendingFocusId.current}`);
+    if (button !== null) {
+      button.focus({ preventScroll: true });
+      pendingFocusId.current = null;
+    }
+  }, [selectedEventId, window.start, window.end]);
 
   useEffect(() => {
     if (menu === null) return;
@@ -152,14 +164,43 @@ export function VirtualEventList({
           return (
             <li
               key={row.key}
-              className={`event-row ${item.startsHalf ? "starts-half" : ""} ${collapsedGroups.length > 0 ? "collapsed-group" : ""} ${selectedEventId === id ? "selected" : ""}`}
+              className={`event-row ${item.startsHalf ? "starts-half" : ""} ${collapsedGroups.length > 0 ? "collapsed-group" : ""} ${selectedEventIds.has(id) ? "selected" : ""}`}
               style={{ top: rowIndex * rowHeight, height: rowHeight }}
             >
               <button
                 type="button"
+                id={`ledger-event-select-${id}`}
                 className="event-row-select"
-                aria-pressed={selectedEventId === id}
-                onClick={() => onSelect(id)}
+                data-current={selectedEventId === id}
+                aria-pressed={selectedEventIds.has(id)}
+                disabled={disabled}
+                onClick={(event) => {
+                  if (event.ctrlKey || event.metaKey || event.shiftKey)
+                    onSelect(id, { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey });
+                  else onSelect(id);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === " " && (event.ctrlKey || event.metaKey || event.shiftKey)) {
+                    event.preventDefault();
+                    onSelect(id, { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey });
+                  }
+                  if (["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
+                    event.preventDefault();
+                    const index =
+                      event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? rows.length - 1
+                          : rowIndex + (event.key === "ArrowUp" ? -1 : 1);
+                    const next = rows[index]?.presentation.event.identity.eventId;
+                    if (next === undefined) return;
+                    pendingFocusId.current = next;
+                    onSelect(next, {
+                      range: event.shiftKey,
+                      toggle: event.shiftKey && (event.ctrlKey || event.metaKey),
+                    });
+                  }
+                }}
               >
                 <span className="event-position">
                   <b>{item.location}</b>
@@ -190,7 +231,7 @@ export function VirtualEventList({
                       controls="correction-ledger-events"
                       disabled={disabled || collapseDisabled || group.childCount === 0}
                       onClick={() => {
-                        onSelect(id);
+                        if (selectedEventIds.size <= 1) onSelect(id);
                         onToggleCollapse(group.kind, id);
                       }}
                     />

@@ -28,6 +28,12 @@ const DateTimeSchema = Type.String({
 });
 
 const CommandBase = { commandId: IdSchema } as const;
+export const MAX_BULK_CORRECTION_EVENTS = 10_000;
+const SelectedEventIdsSchema = Type.Array(EventIdSchema, {
+  minItems: 1,
+  maxItems: MAX_BULK_CORRECTION_EVENTS,
+  uniqueItems: true,
+});
 
 export const AddEventCommandSchema = Type.Object(
   {
@@ -46,6 +52,10 @@ export const DeleteEventCommandSchema = Type.Object(
   },
   strict,
 );
+export const DeleteEventsCommandSchema = Type.Object(
+  { ...CommandBase, kind: Type.Literal("delete_events"), eventIds: SelectedEventIdsSchema },
+  strict,
+);
 export const ReplaceEventCommandSchema = Type.Object(
   {
     ...CommandBase,
@@ -60,6 +70,15 @@ export const MoveEventCommandSchema = Type.Object(
     ...CommandBase,
     kind: Type.Literal("move_event"),
     eventId: EventIdSchema,
+    beforeEventId: Type.Union([EventIdSchema, Type.Null()]),
+  },
+  strict,
+);
+export const MoveEventsCommandSchema = Type.Object(
+  {
+    ...CommandBase,
+    kind: Type.Literal("move_events"),
+    eventIds: SelectedEventIdsSchema,
     beforeEventId: Type.Union([EventIdSchema, Type.Null()]),
   },
   strict,
@@ -161,9 +180,11 @@ export const ReconcileTrackingPlateAppearanceContextsCommandSchema = Type.Object
 export const AtomicCorrectionCommandSchema = Type.Union([
   AddEventCommandSchema,
   DeleteEventCommandSchema,
+  DeleteEventsCommandSchema,
   ReplaceEventCommandSchema,
   UpdateObservedStateCommandSchema,
   MoveEventCommandSchema,
+  MoveEventsCommandSchema,
   UpdateRosterPlayerCommandSchema,
   UpdateRosterPositionCommandSchema,
   UpdateOfficialRecordCommandSchema,

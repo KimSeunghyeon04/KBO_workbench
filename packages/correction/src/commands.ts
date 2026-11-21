@@ -13,6 +13,7 @@ import {
 import { compileStagingGameDocumentV2, type ReplayResult } from "@kbo/game-core";
 
 import { buildCorrectionPreview } from "./preview.js";
+import { deleteEvents, moveEvents } from "./bulk-event-commands.js";
 import {
   updateTrackingResolution,
   requiredTrackingCandidate,
@@ -91,6 +92,8 @@ function applyAtomic(
       );
     case "delete_event":
       return deleteEvent(document, command.eventId);
+    case "delete_events":
+      return deleteEvents(document, command.eventIds);
     case "replace_event":
       return replaceEvent(document, command.eventId, command.event);
     case "update_observed_state": {
@@ -111,6 +114,8 @@ function applyAtomic(
         document,
         moveEvent(document.events, command.eventId, command.beforeEventId),
       );
+    case "move_events":
+      return moveEvents(document, command.eventIds, command.beforeEventId);
     case "update_roster_player":
       return updateRosterPlayer(document, command.side, command.playerId, command.player);
     case "update_roster_position":

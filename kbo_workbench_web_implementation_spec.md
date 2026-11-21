@@ -293,6 +293,12 @@ correction은 structured command만 허용한다. 매 command/batch 뒤 resequen
 표시한다. 미저장 session은 반영하지 않고 차단·미완성·stale base를 구분한다. 조회는 영속 case 상태를
 바꾸지 않으며, 저장/적재 완료 뒤 관련 화면을 갱신한다.
 이닝·타석 접기 또는 펼치기는 해당 그룹 시작 행을 선택한 뒤 가상 목록을 갱신한다.
+Ctrl/Command·Shift와 키보드로 여러 원장 행을 선택한다. 별도 체크박스·상시 조작 설명은 없고
+선택 작업은 타임라인 아래에 둔다. 열린 사본의 KBO 문자중계 링크는 경기 요약에 바로 표시한다.
+범위와 이동 순서는 canonical 전체
+배열을 기준으로 하며 접기·필터로 숨겨진 선택 수를 표시한다. 선택 삭제·이동은 각각 하나의
+`delete_events`·`move_events` 명령이며, 중복 없는 최대 10,000개 ID와 목적지를 먼저 검증한다.
+한 번의 전체 컴파일·session version 증가·undo/redo를 유지하며 투구 삭제 시 tracking 관찰은 보존한다.
 기록정정 공식 기록 비교는 field descriptor가 정한 생략 의미를 사용한다. 비발생 선택 계수는 0,
 coverage 부재 가능 필드는 미제공으로 유지하며 원천 원장과 projection hash는 변경하지 않는다.
 생략된 선택 계수의 0이 공지 전후와 모두 다르면 KBO 정정 후 값으로 보완하는 명시적 제안을

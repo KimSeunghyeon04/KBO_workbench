@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CorrectionCommand,
@@ -18,6 +18,12 @@ import { correctionOriginalQueryOptions, queryKeys } from "../api/query-options"
 import type { DrawerRequest } from "./event-editor-registry";
 import { useOwnedSession } from "./use-owned-session";
 import { ApiClientError } from "../api/transport";
+import {
+  reconcileEventSelection,
+  selectEventRows,
+  singleEventSelection,
+  type EventSelectionIntent,
+} from "./event-selection";
 
 export type CorrectionCommitCompletion = Readonly<{
   sessionId: string;
@@ -30,7 +36,16 @@ export type CorrectionCommitCompletion = Readonly<{
 export function useCorrectionSessionController(selectedGame: CorrectionGameCatalogItem | null) {
   const queryClient = useQueryClient();
   const { session, setSession, release } = useOwnedSession();
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [eventSelection, setEventSelection] = useState(() => singleEventSelection(null));
+  const selectedEventId = eventSelection.activeId;
+  const setSelectedEventId = useCallback(
+    (id: string | null) => setEventSelection(singleEventSelection(id)),
+    [],
+  );
+  const selectEvent = (id: string, intent?: EventSelectionIntent): void =>
+    setEventSelection((current) =>
+      selectEventRows(session?.draftDocument.events ?? [], current, id, intent),
+    );
   const [drawer, setDrawer] = useState<DrawerRequest | null>(null);
   const [notice, setNotice] = useState("");
   const [lastPreview, setLastPreview] = useState<CorrectionPreview | null>(null);
@@ -86,11 +101,27 @@ export function useCorrectionSessionController(selectedGame: CorrectionGameCatal
             : [];
       const lastAddedEvent = addedEvents.at(-1);
       if (lastAddedEvent !== undefined) setSelectedEventId(lastAddedEvent.identity.eventId);
+      else
+        setEventSelection((current) =>
+          reconcileEventSelection(
+            current,
+            session?.draftDocument.events ?? [],
+            result.session.draftDocument.events,
+          ),
+        );
       const delta = result.preview.eventCountDelta;
+      const bulkLabel =
+        command.kind === "delete_events"
+          ? `${command.eventIds.length}행을 삭제했습니다.`
+          : command.kind === "move_events"
+            ? `${command.eventIds.length}행을 이동했습니다.`
+            : null;
       setNotice(
-        addedEvents.length > 1
-          ? `${String(addedEvents.length)}개 행을 한 번에 반영했습니다. 차단 ${String(result.preview.beforeBlockingCount)} → ${String(result.preview.afterBlockingCount)} · 원장 행 +${String(delta)}`
-          : `즉시 반영했습니다. 차단 ${String(result.preview.beforeBlockingCount)} → ${String(result.preview.afterBlockingCount)}${delta === 0 ? "" : ` · 원장 행 ${delta > 0 ? "+" : ""}${String(delta)}`}`,
+        bulkLabel !== null
+          ? `${bulkLabel} 차단 ${result.preview.beforeBlockingCount} → ${result.preview.afterBlockingCount}`
+          : addedEvents.length > 1
+            ? `${String(addedEvents.length)}개 행을 한 번에 반영했습니다. 차단 ${String(result.preview.beforeBlockingCount)} → ${String(result.preview.afterBlockingCount)} · 원장 행 +${String(delta)}`
+            : `즉시 반영했습니다. 차단 ${String(result.preview.beforeBlockingCount)} → ${String(result.preview.afterBlockingCount)}${delta === 0 ? "" : ` · 원장 행 ${delta > 0 ? "+" : ""}${String(delta)}`}`,
       );
     },
   });
@@ -101,6 +132,13 @@ export function useCorrectionSessionController(selectedGame: CorrectionGameCatal
     },
     onSuccess(result) {
       setSession(result.session);
+      setEventSelection((current) =>
+        reconcileEventSelection(
+          current,
+          session?.draftDocument.events ?? [],
+          result.session.draftDocument.events,
+        ),
+      );
       setLastPreview(result.preview);
       setNotice("작업 이력을 이동했습니다.");
     },
@@ -172,6 +210,13 @@ export function useCorrectionSessionController(selectedGame: CorrectionGameCatal
     },
     onSuccess(result) {
       setSession(result.session);
+      setEventSelection((current) =>
+        reconcileEventSelection(
+          current,
+          session?.draftDocument.events ?? [],
+          result.session.draftDocument.events,
+        ),
+      );
       setLastPreview(result.preview);
       setNotice("최초 정리 원장을 작업 사본으로 불러왔습니다.");
     },
@@ -199,12 +244,30 @@ export function useCorrectionSessionController(selectedGame: CorrectionGameCatal
     message: string,
   ): void => {
     setSession(result.session);
+    setEventSelection((current) =>
+      reconcileEventSelection(
+        current,
+        session?.draftDocument.events ?? [],
+        result.session.draftDocument.events,
+      ),
+    );
     setLastPreview(result.preview);
     setNotice(message);
   };
   return {
     session,
     selectedEventId,
+    selectedEventIds: eventSelection.eventIds,
+    selectEvent,
+    clearEventSelection: () => setSelectedEventId(null),
+    selectAllEvents: () => {
+      const events = session?.draftDocument.events ?? [];
+      setEventSelection({
+        eventIds: new Set(events.map((event) => event.identity.eventId)),
+        activeId: events[0]?.identity.eventId ?? null,
+        anchorId: events[0]?.identity.eventId ?? null,
+      });
+    },
     setSelectedEventId,
     drawer,
     setDrawer,

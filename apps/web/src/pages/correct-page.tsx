@@ -21,7 +21,6 @@ import {
   buildAdjacentMoveCommand,
   buildImmediateDeleteCommand,
   insertionReferenceAfter,
-  selectionAfterDelete,
 } from "../correction/event-actions";
 import { EVENT_KINDS, newCommandId } from "../correction/event-editor-registry";
 import {
@@ -38,6 +37,8 @@ import { kboLiveTextLink } from "../correction/kbo-live";
 import { compareWithOriginal } from "../correction/original-comparison";
 import { parseOfficialRecordIdentity, type RecordKind } from "../correction/record-comparison";
 import { useCorrectionSessionController } from "../correction/use-correction-session-controller";
+import { BulkEventActions } from "../correction/bulk-event-actions";
+import type { EventSelectionIntent } from "../correction/event-selection";
 import { rememberedCorrectionSessionId } from "../correction/use-owned-session";
 import { CommitCompletionPanel } from "../correction/commit-completion-panel";
 import { CorrectionDrawer } from "../correction/correction-drawer";
@@ -148,6 +149,10 @@ export function CorrectPage(): React.JSX.Element {
   const {
     session,
     selectedEventId,
+    selectedEventIds,
+    selectEvent,
+    selectAllEvents,
+    clearEventSelection,
     setSelectedEventId,
     drawer,
     setDrawer,
@@ -345,7 +350,6 @@ export function CorrectPage(): React.JSX.Element {
     }
     if (action === "delete") {
       setRecordView(null);
-      setSelectedEventId(selectionAfterDelete(events, eventId));
       apply(buildImmediateDeleteCommand(session.draftDocument, eventId, newCommandId()));
       return;
     }
@@ -372,11 +376,11 @@ export function CorrectPage(): React.JSX.Element {
     if (session?.dirty === true) setConfirmOpen(true);
     else openGame();
   };
-  const selectLedgerEvent = (eventId: string): void => {
+  const selectLedgerEvent = (eventId: string, intent?: EventSelectionIntent): void => {
     setSelectedFindingIdentity(null);
     setRecordView(null);
     setSelectedTrackingId(null);
-    setSelectedEventId(eventId);
+    selectEvent(eventId, intent);
   };
   const selectFindingEvent = (eventId: string, findingIdentity?: string): void => {
     setSelectedFindingIdentity(findingIdentity ?? null);
@@ -628,16 +632,18 @@ export function CorrectPage(): React.JSX.Element {
           >
             {openSession.isPending ? "작업 사본 여는 중…" : "작업 사본 열기"}
           </button>
-          <a
-            className="secondary-button correction-live-button"
-            href={live.url ?? undefined}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={live.error ?? "KBO 공식 문자중계 열기"}
-            aria-disabled={live.url === null}
-          >
-            KBO 문자중계
-          </a>
+          {session === null ? (
+            <a
+              className="secondary-button correction-live-button"
+              href={live.url ?? undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={live.error ?? "KBO 공식 문자중계 열기"}
+              aria-disabled={live.url === null}
+            >
+              KBO 문자중계
+            </a>
+          ) : null}
         </div>
         {catalog.data !== undefined && searchParams.get("game") !== null && selectedKey === "" ? (
           <p className="inline-error" role="status">
@@ -747,6 +753,16 @@ export function CorrectPage(): React.JSX.Element {
               </span>
               <span>경고 {String(session.warningCount)}</span>
               <span>원장 {String(session.draftDocument.events.length)}행</span>
+              <a
+                className="secondary-button correction-live-button"
+                href={live.url ?? undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={live.error ?? "KBO 공식 문자중계 열기"}
+                aria-disabled={live.url === null}
+              >
+                KBO 문자중계
+              </a>
             </div>
           </section>
           {recordCorrectionNoticeId !== null ? (
@@ -953,6 +969,7 @@ export function CorrectPage(): React.JSX.Element {
                 rows={visibleRows}
                 canonicalEvents={session.draftDocument.events}
                 selectedEventId={selectedEventId}
+                selectedEventIds={selectedEventIds}
                 disabled={busy}
                 collapseGroups={collapseModel.groupsByEventId}
                 collapsedInningEventIds={collapsedInningEventIds}
@@ -964,6 +981,18 @@ export function CorrectPage(): React.JSX.Element {
                 focusRequest={
                   navigationRequest?.destination === "events" ? navigationRequest.version : 0
                 }
+              />
+              <BulkEventActions
+                events={session.draftDocument.events}
+                selectedIds={selectedEventIds}
+                visibleIds={
+                  new Set(visibleRows.map((row) => row.presentation.event.identity.eventId))
+                }
+                sessionKey={`${session.sessionId}:${session.sessionVersion}`}
+                pending={busy}
+                onApply={apply}
+                onClear={clearEventSelection}
+                onSelectAll={selectAllEvents}
               />
             </section>
             {recordView === null ? (
