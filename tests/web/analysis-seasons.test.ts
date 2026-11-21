@@ -4,7 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { act, cleanup, render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { resolveAnalysisScope } from "@kbo/contracts";
+import { resolveAnalysisScope, type AnalysisPreparation } from "@kbo/contracts";
+import { modelTrainingPeriod } from "@kbo/game-core";
 import { App } from "../../apps/web/src/app.js";
 
 const clients: QueryClient[] = [];
@@ -33,6 +34,27 @@ function show(url = "/analysis/players", options: { stale?: boolean } = {}) {
     ),
   );
   return client;
+}
+
+function prepared(season: number, source: string, overrides: Partial<AnalysisPreparation> = {}) {
+  return {
+    version: 1,
+    season,
+    sourceHash: source.repeat(64),
+    competitionHash: "a".repeat(64),
+    state: "ready",
+    unclassified: 0,
+    updatedAt: "2026-11-21T00:00:00Z",
+    error: null,
+    ...overrides,
+  } satisfies AnalysisPreparation;
+}
+
+async function refreshSeasons(client: QueryClient) {
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ["analysis-seasons"] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
 }
 
 it.each([false, true])("waits for the latest season on entry (stale cache: %s)", async (stale) => {
@@ -153,8 +175,11 @@ it("rechecks a stale season list when navigating from an explicit season to a se
   await waitFor(() => expect(modelSeasons).toEqual(["2026"]));
 });
 
-it("discovers imported seasons, defaults to the latest and refreshes active analysis when a new source arrives", async () => {
+it("discovers imported seasons and refreshes analysis only when its own source or classification changes", async () => {
   let version = 1;
+  let current = prepared(2026, "a");
+  let previous = prepared(2024, "a");
+  let playerName = "가상 투수";
   const calls: string[] = [];
   const fetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input), "http://localhost");
@@ -162,7 +187,7 @@ it("discovers imported seasons, defaults to the latest and refreshes active anal
       return Response.json({
         sourceHash: String(version).repeat(64),
         seasons: version === 1 ? [2026, 2024] : [2027, 2026, 2024],
-        preparation: [],
+        preparation: version === 1 ? [current, previous] : [prepared(2027, "a"), current, previous],
       });
     if (url.pathname === "/api/v2/analysis/pitch-shape") {
       calls.push(url.search);
@@ -170,7 +195,7 @@ it("discovers imported seasons, defaults to the latest and refreshes active anal
       return Response.json({
         season,
         scope: resolveAnalysisScope({ season, competition: "regular" }),
-        pitchers: [{ pitcherId: "anonymous", name: "가상 투수", pitches: version * 100 }],
+        pitchers: [{ pitcherId: "anonymous", name: playerName, pitches: 100 }],
       });
     }
     throw new Error(`Unexpected request: ${url.pathname}`);
@@ -181,7 +206,7 @@ it("discovers imported seasons, defaults to the latest and refreshes active anal
   expect(await screen.findByRole("option", { name: "2024" })).toBeTruthy();
   await screen.findByRole("link", { name: "가상 투수 분석 보기" });
   version = 2;
-  await client.invalidateQueries({ queryKey: ["analysis-seasons"] });
+  await refreshSeasons(client);
   await screen.findByRole("option", { name: "2027" });
   await waitFor(() => expect(calls.some((call) => call.includes("season=2027"))).toBe(true));
   fireEvent.change(screen.getByRole("combobox", { name: "선수 분석 시즌" }), {
@@ -192,11 +217,74 @@ it("discovers imported seasons, defaults to the latest and refreshes active anal
       screen.getByRole("link", { name: "가상 투수 분석 보기" }).getAttribute("href"),
     ).toContain("season=2026"),
   );
+  await waitFor(() => expect(client.isFetching()).toBe(0));
   const prior = calls.length;
   version = 3;
-  await client.invalidateQueries({ queryKey: ["analysis-seasons"] });
-  await waitFor(() => expect(calls.length).toBeGreaterThan(prior));
-  expect(screen.getByRole("link", { name: "가상 투수 분석 보기" }).getAttribute("href")).toContain(
-    "season=2026",
-  );
+  previous = prepared(2024, "b");
+  await refreshSeasons(client);
+  expect(calls).toHaveLength(prior);
+
+  version = 4;
+  current = prepared(2026, "a", { state: "models" });
+  await refreshSeasons(client);
+  await screen.findByText(/분석 모델을 갱신하고 있습니다/u);
+  expect(calls).toHaveLength(prior);
+
+  version = 5;
+  current = prepared(2026, "a", { competitionHash: "b".repeat(64) });
+  playerName = "분류가 반영된 가상 투수";
+  await refreshSeasons(client);
+  await screen.findByRole("link", { name: "분류가 반영된 가상 투수 분석 보기" });
+  expect(calls.slice(prior)).toHaveLength(1);
+  expect(calls.at(-1)).toContain("season=2026");
+});
+
+it("refreshes model status when automatic training for the viewed season settles", async () => {
+  let current = prepared(2025, "a");
+  let version = 1;
+  const modelCalls: (string | null)[] = [];
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+    const url = new URL(String(input), "http://localhost");
+    if (url.pathname.endsWith("/analysis/seasons")) {
+      return Response.json({
+        sourceHash: String(version).repeat(64),
+        seasons: [2025, 2024],
+        preparation: [current, prepared(2024, "b")],
+      });
+    }
+    if (url.pathname !== "/api/v2/analysis/models") throw new Error(url.pathname);
+    modelCalls.push(url.searchParams.get("season"));
+    return Response.json({
+      models: (["re24", "count", "win", "park", "quality", "matchup"] as const).map((kind) => {
+        const period = modelTrainingPeriod(kind, 2025);
+        return {
+          ...period,
+          kind,
+          state: period.support === "eligible" ? "missing" : "unsupported",
+          sourceHash: null,
+          modelHash: null,
+          adoptedTargets: 0,
+          totalTargets: 1,
+        };
+      }),
+      latestJob: null,
+      policy: { version: 2, enabledSeasons: [] },
+      checkIntervalHours: 6,
+    });
+  });
+
+  const client = show("/analysis/models?season=2025");
+  await screen.findByRole("table", { name: "모델 상태" });
+  expect(modelCalls).toEqual(["2025"]);
+
+  version = 2;
+  current = prepared(2025, "a", { state: "models" });
+  await refreshSeasons(client);
+  await screen.findByText(/분석 모델을 갱신하고 있습니다/u);
+  expect(modelCalls).toEqual(["2025"]);
+
+  version = 3;
+  current = prepared(2025, "a", { updatedAt: "2026-11-21T00:01:00Z" });
+  await refreshSeasons(client);
+  await waitFor(() => expect(modelCalls).toEqual(["2025", "2025"]));
 });

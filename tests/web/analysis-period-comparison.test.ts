@@ -3,13 +3,15 @@ import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { createElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   analysisPeriodQueries,
   resolveAnalysisScope,
   type AnalysisPeriodQuery,
+  type AnalysisPreparation,
 } from "@kbo/contracts";
+import { AnalysisRefreshBoundary } from "../../apps/web/src/analysis/analysis-seasons.js";
 import { PlayerPeriodComparison } from "../../apps/web/src/analysis/player-period-comparison.js";
 import { PeriodComparisonResults } from "../../apps/web/src/analysis/period-comparison-results.js";
 import {
@@ -106,24 +108,73 @@ function show(kind: PeriodComparisonKind, search = "", dates = false, seasons?: 
       createElement(
         MemoryRouter,
         { initialEntries: [`/?${search}`] },
-        createElement(PlayerPeriodComparison, {
-          kind,
-          playerId: "p1",
-          role: "batter",
-          query: {
-            season: 2025,
-            competition: "regular",
-            ...(dates ? { dateFrom: "2025-04-01", dateTo: "2025-08-01" } : {}),
-            ...(kind === "batter-profile" || kind === "batter-discipline"
-              ? { balls: 2, pitchType: "직구", stance: "L" }
-              : {}),
-          },
-        }),
+        createElement(
+          AnalysisRefreshBoundary,
+          null,
+          createElement(PlayerPeriodComparison, {
+            kind,
+            playerId: "p1",
+            role: "batter",
+            query: {
+              season: 2025,
+              competition: "regular",
+              ...(dates ? { dateFrom: "2025-04-01", dateTo: "2025-08-01" } : {}),
+              ...(kind === "batter-profile" || kind === "batter-discipline"
+                ? { balls: 2, pitchType: "직구", stance: "L" }
+                : {}),
+            },
+          }),
+        ),
         createElement(Location),
       ),
     ),
   );
+  return client;
 }
+
+it("refreshes an applied comparison for changes in either selected season", async () => {
+  const fetch = mock();
+  const client = show("pitch-shape", "season=2025&periodASeason=2025&periodBSeason=2024");
+  const seasons = [2026, 2025, 2024];
+  let rows: AnalysisPreparation[] = seasons.map((season) => ({
+    version: 1,
+    season,
+    sourceHash: "a".repeat(64),
+    competitionHash: null,
+    state: "ready",
+    unclassified: 0,
+    updatedAt: "2026-11-21T00:00:00Z",
+    error: null,
+  }));
+  async function publish(sourceHash: string) {
+    await act(async () => {
+      client.setQueryData(["analysis-seasons"], { sourceHash, seasons, preparation: rows });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+
+  await publish("a".repeat(64));
+  fireEvent.click(screen.getByRole("button", { name: "기간 비교 열기" }));
+  fireEvent.click(screen.getByRole("button", { name: "두 기간 비교 적용" }));
+  await screen.findByRole("table", { name: "두 기간 지표 비교" });
+  expect(fetch).toHaveBeenCalledTimes(1);
+  for (const [season, count] of [
+    [2026, 1],
+    [2024, 2],
+    [2025, 3],
+  ] as const) {
+    rows = rows.map((row) =>
+      row.season === season ? { ...row, sourceHash: "b".repeat(64) } : row,
+    );
+    await publish(String(season % 10).repeat(64));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(count));
+  }
+  for (const [input] of fetch.mock.calls) {
+    const params = new URL(String(input), "http://localhost").searchParams;
+    expect(params.get("season")).toBe("2025");
+    expect(params.get("compareSeason")).toBe("2024");
+  }
+});
 it.each<PeriodComparisonKind>(["statistics", "pitch-shape", "batter-profile", "batter-discipline"])(
   "applies common A/B selection lazily and retains filters for %s",
   async (kind) => {

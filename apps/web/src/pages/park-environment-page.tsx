@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { AnalysisSeasonOptions } from "../analysis/analysis-seasons";
 import { useQuery } from "@tanstack/react-query";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
@@ -16,6 +17,7 @@ export function ParkEnvironmentPage() {
   const query = { season, ...scope.options },
     result = useQuery({
       queryKey: ["park-environment", query],
+      meta: analysisQueryMeta(query, "models"),
       enabled: scope.error === null,
       queryFn: ({ signal }) => getParkEnvironment(query, signal),
     }),

@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { PitcherScopeFields } from "../analysis/pitcher-scope-fields";
 import { PlayerPeriodComparison } from "../analysis/player-period-comparison";
 import { PitchAnglesPanel } from "../analysis/pitch-angles-panel";
@@ -30,6 +31,7 @@ export function PitcherChangesPage() {
   const id = params.get("pitcher") ?? catalog.data?.pitchers[0]?.pitcherId ?? "";
   const result = useQuery({
     queryKey: ["pitcher-changes", id, query],
+    meta: analysisQueryMeta(query),
     enabled: valid && id !== "",
     queryFn: ({ signal }) => getPitcherChanges(query, id, signal),
   });

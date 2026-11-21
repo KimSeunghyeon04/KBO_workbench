@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "./analysis-query-meta";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type {
@@ -35,6 +36,7 @@ export function WorkloadComparisonPanel({
   const [open, setOpen] = useState(false),
     result = useQuery({
       queryKey: ["workload-comparison", pitcherId, query],
+      meta: analysisQueryMeta(query),
       queryFn: ({ signal }) => getWorkloadComparison(query, pitcherId, signal),
       enabled: open && pitcherId !== "",
     });

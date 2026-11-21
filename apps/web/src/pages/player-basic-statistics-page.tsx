@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { AnalysisSeasonOptions } from "../analysis/analysis-seasons";
 import { useQuery } from "@tanstack/react-query";
 import { PlayerPeriodComparison } from "../analysis/player-period-comparison";
@@ -45,6 +46,7 @@ export function PlayerBasicStatisticsPage() {
   const validPitching = Value.Check(PitchingStatisticsQuerySchema, query);
   const bat = useQuery({
     queryKey: ["statistics-batting", query],
+    meta: analysisQueryMeta(query),
     enabled: role === "batter" && scope.error === null && validBatting,
     queryFn: ({ signal }) => {
       if (!Value.Check(BattingStatisticsQuerySchema, query)) throw new Error("잘못된 타격 조건");
@@ -53,6 +55,7 @@ export function PlayerBasicStatisticsPage() {
   });
   const pitch = useQuery({
     queryKey: ["statistics-pitching", query],
+    meta: analysisQueryMeta(query),
     enabled: role === "pitcher" && scope.error === null && validPitching,
     queryFn: ({ signal }) => {
       if (!Value.Check(PitchingStatisticsQuerySchema, query)) throw new Error("잘못된 투구 조건");

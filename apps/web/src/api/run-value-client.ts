@@ -6,11 +6,23 @@ import {
   type ReplayManifest,
 } from "@kbo/contracts";
 import { requestJson } from "./transport";
+
+export function replayAnalysisSeason(manifest: ReplayManifest) {
+  return Number(manifest.gameDate.slice(0, 4));
+}
+
+function replayAnalysisSearch(manifest: ReplayManifest) {
+  return new URLSearchParams({
+    revision: String(manifest.revision),
+    season: String(replayAnalysisSeason(manifest)),
+  });
+}
+
 export async function getRunValues(manifest: ReplayManifest, signal: AbortSignal) {
   const result = Value.Decode(
     RunValueResponseSchema,
     await requestJson(
-      `/api/v2/analysis/run-value/games/${encodeURIComponent(manifest.gameId)}?${new URLSearchParams({ revision: String(manifest.revision), season: manifest.gameDate.slice(0, 4) })}`,
+      `/api/v2/analysis/run-value/games/${encodeURIComponent(manifest.gameId)}?${replayAnalysisSearch(manifest)}`,
       { signal },
     ),
   );
@@ -26,7 +38,7 @@ export async function getWinProbabilities(manifest: ReplayManifest, signal: Abor
   const result = Value.Decode(
     WinProbabilityResponseSchema,
     await requestJson(
-      `/api/v2/analysis/win-probability/games/${encodeURIComponent(manifest.gameId)}?${new URLSearchParams({ revision: String(manifest.revision), season: manifest.gameDate.slice(0, 4) })}`,
+      `/api/v2/analysis/win-probability/games/${encodeURIComponent(manifest.gameId)}?${replayAnalysisSearch(manifest)}`,
       { signal },
     ),
   );
@@ -50,7 +62,7 @@ export async function getCountRunValues(manifest: ReplayManifest, signal: AbortS
   const result = Value.Decode(
     CountRunValueResponseSchema,
     await requestJson(
-      `/api/v2/analysis/count-run-value/games/${encodeURIComponent(manifest.gameId)}?${new URLSearchParams({ revision: String(manifest.revision), season: manifest.gameDate.slice(0, 4) })}`,
+      `/api/v2/analysis/count-run-value/games/${encodeURIComponent(manifest.gameId)}?${replayAnalysisSearch(manifest)}`,
       { signal },
     ),
   );

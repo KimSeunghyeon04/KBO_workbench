@@ -1,7 +1,8 @@
+import { analysisQueryMeta } from "./analysis-query-meta";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ReplayManifest } from "@kbo/contracts";
-import { getRunValues } from "../api/run-value-client";
+import { getRunValues, replayAnalysisSeason } from "../api/run-value-client";
 const n = (value: number | null) => value?.toFixed(3) ?? "—";
 export function RunValuePanel({
   manifest,
@@ -14,6 +15,7 @@ export function RunValuePanel({
     [page, setPage] = useState(0),
     query = useQuery({
       queryKey: ["run-values", manifest.gameId, manifest.revision, manifest.documentHash],
+      meta: analysisQueryMeta(replayAnalysisSeason(manifest), "models"),
       enabled: open,
       queryFn: ({ signal }) => getRunValues(manifest, signal),
     });

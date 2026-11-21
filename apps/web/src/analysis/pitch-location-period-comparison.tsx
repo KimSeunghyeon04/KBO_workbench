@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "./analysis-query-meta";
 import { useQuery } from "@tanstack/react-query";
 import type { PitchOutcomeQuery, PitchLocationComparisonQuery } from "@kbo/contracts";
 import { getPitchLocationComparison } from "../api/pitch-location-comparison-client";
@@ -49,6 +50,7 @@ function LocationComparisonData({
 }) {
   const result = useQuery({
     queryKey: ["pitch-location-comparison", id, query],
+    meta: analysisQueryMeta(query),
     staleTime: 60_000,
     queryFn: ({ signal }) => getPitchLocationComparison(query, id, signal),
   });

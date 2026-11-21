@@ -815,4 +815,4 @@ writer lock·current token 검증·versioned transition 경로를 사용하고 �
 2024-01-01부터 2024-12-31까지 다시 수집한다. blocking 경기는 quarantine에 남고 교정이 끝난
 경기만 revision 1로 적재한다.
 
-새 경기·시즌을 적재하면 공식 경기 분류와 필요한 분석 모델을 자동 갱신한다. 모델 작업 전 영향받는 각 시즌의 진행 상태를 저장해 재시작 후 이어서 처리한다. 기존 수동 교정 원장과 sealed 기록은 보존한다. [자동 반영·복구·지원 범위](docs/analysis/automatic-preparation.md)를 따른다.
+새 경기·시즌을 적재하면 공식 경기 분류와 필요한 분석 모델을 자동 갱신한다. 모델 작업 전 영향받는 각 시즌의 진행 상태를 저장해 재시작 후 이어서 처리한다. 웹은 15초 상태 확인 응답을 조회에 사용하는 시즌별로 대조한다. 기존 수동 교정 원장과 sealed 기록은 보존한다. [자동 반영·복구·지원 범위](docs/analysis/automatic-preparation.md)를 따른다.

@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { AnalysisEvidenceLink } from "../analysis/analysis-evidence-link";
 import { useQuery } from "@tanstack/react-query";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
@@ -34,6 +35,7 @@ export function MatchupPage() {
     query = { season, ...scope.options, pitcherId, batterId };
   const result = useQuery({
     queryKey: ["matchup", query],
+    meta: analysisQueryMeta(query),
     enabled: scope.error === null && pitcherId !== "" && batterId !== "",
     queryFn: ({ signal }) => getMatchup(query, signal),
   });

@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "./analysis-query-meta";
 import { useSearchParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -84,6 +85,7 @@ function PeriodComparisonData({
 }) {
   const result = useQuery({
     queryKey: ["analysis-period-comparison", kind, playerId, query],
+    meta: analysisQueryMeta(query),
     staleTime: 60_000,
     queryFn: ({ signal }) => getAnalysisPeriodComparison(kind, query, playerId, signal),
   });

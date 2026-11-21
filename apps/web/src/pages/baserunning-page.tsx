@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { AnalysisSeasonOptions, useAnalysisSeason } from "../analysis/analysis-seasons";
 import { useQuery } from "@tanstack/react-query";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
@@ -24,6 +25,7 @@ export function BaserunningPage() {
   const pendingSelection = useRef<string | null>(null);
   const result = useQuery({
     queryKey: ["baserunning", query, playerId],
+    meta: analysisQueryMeta(query),
     enabled: scope.error === null,
     queryFn: ({ signal }) => getBaserunning(query, playerId, signal),
   });

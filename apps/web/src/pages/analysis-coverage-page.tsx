@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { AnalysisSeasonOptions, useAnalysisSeason } from "../analysis/analysis-seasons";
 import { AnalysisScopeFields, competitionLabels } from "../analysis/analysis-scope-fields";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
@@ -72,6 +73,7 @@ export function AnalysisCoveragePage() {
   const queryKey = ["analysis-coverage", season, scope.options];
   const query = useQuery<AnalysisCoverageResult>({
     queryKey,
+    meta: analysisQueryMeta(season),
     refetchInterval: (query) =>
       query.state.data && "state" in query.state.data && query.state.data.state === "preparing"
         ? 1000

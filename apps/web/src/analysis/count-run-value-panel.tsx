@@ -1,7 +1,8 @@
+import { analysisQueryMeta } from "./analysis-query-meta";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ReplayManifest } from "@kbo/contracts";
-import { getCountRunValues } from "../api/run-value-client";
+import { getCountRunValues, replayAnalysisSeason } from "../api/run-value-client";
 const n = (v: number | null) => v?.toFixed(3) ?? "—";
 export function CountRunValuePanel({
   manifest,
@@ -14,6 +15,7 @@ export function CountRunValuePanel({
     [page, setPage] = useState(0),
     query = useQuery({
       queryKey: ["count-run-values", manifest.gameId, manifest.revision, manifest.documentHash],
+      meta: analysisQueryMeta(replayAnalysisSeason(manifest), "models"),
       enabled: open,
       queryFn: ({ signal }) => getCountRunValues(manifest, signal),
     }),

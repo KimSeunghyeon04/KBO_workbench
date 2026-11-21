@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "./analysis-query-meta";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { AnalysisScopeQuery, PitchQualityResponse } from "@kbo/contracts";
@@ -21,6 +22,7 @@ export function PitchQualityPanel({
   const [open, setOpen] = useState(false),
     analysis = useQuery({
       queryKey: ["pitch-quality", pitcherId, query],
+      meta: analysisQueryMeta(query, "models"),
       queryFn: ({ signal }) => getPitchQuality(pitcherId, query, signal),
       enabled: open,
     }),

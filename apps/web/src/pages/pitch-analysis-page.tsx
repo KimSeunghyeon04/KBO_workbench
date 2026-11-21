@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { AnalysisSeasonOptions, useAnalysisSeason } from "../analysis/analysis-seasons";
 import { AnalysisEvidenceLink } from "../analysis/analysis-evidence-link";
 import { PitchQualityPanel } from "../analysis/pitch-quality-panel";
@@ -45,6 +46,7 @@ export function PitchAnalysisPage(): React.JSX.Element {
     (!/^[1-9]\d*$/.test(countParam ?? "") || !Number.isSafeInteger(requestedCount));
   const analysis = useQuery({
     queryKey: ["pitch-analysis", season, pitcherId, countParam ?? "default", scope.options],
+    meta: analysisQueryMeta(season),
     queryFn: ({ signal }) =>
       getPitchAnalysis(season, pitcherId, signal, requestedCount, scope.options),
     enabled: pitcherId.length > 0 && !invalidCount && scope.error === null,

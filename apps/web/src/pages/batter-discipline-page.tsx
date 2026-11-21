@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { AnalysisSeasonOptions, useAnalysisSeason } from "../analysis/analysis-seasons";
 import { AnalysisScopeFields, analysisScopeSummary } from "../analysis/analysis-scope-fields";
 import { AnalysisFilterBar } from "../analysis/analysis-filter-bar";
@@ -51,6 +52,7 @@ export function BatterDisciplinePage() {
   const batterId = requested ?? batter?.batterId ?? "";
   const analysis = useQuery({
     queryKey: ["batter-discipline", batterId, candidate],
+    meta: analysisQueryMeta(candidate),
     enabled: valid && batter !== undefined,
     queryFn: ({ signal }) => {
       if (!Value.Check(DisciplineQuerySchema, candidate))

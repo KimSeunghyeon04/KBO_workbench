@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { AnalysisSeasonOptions, useAnalysisSeason } from "../analysis/analysis-seasons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
@@ -42,6 +43,7 @@ export function AnalysisModelsPage() {
   const client = useQueryClient();
   const query = useQuery({
     queryKey: ["analysis-models", season],
+    meta: analysisQueryMeta(season, "models"),
     queryFn: ({ signal }) => getAnalysisModels(season, signal),
     refetchInterval: (result) => (result.state.data?.latestJob?.state === "running" ? 3000 : false),
   });

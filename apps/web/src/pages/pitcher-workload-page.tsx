@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { useQuery } from "@tanstack/react-query";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import { useState } from "react";
@@ -28,6 +29,7 @@ export function PitcherWorkloadPage() {
   const id = params.get("pitcher") ?? catalog.data?.pitchers[0]?.pitcherId ?? "";
   const result = useQuery({
     queryKey: ["pitcher-workload", id, query],
+    meta: analysisQueryMeta(query),
     enabled: scope.error === null && id !== "",
     queryFn: ({ signal }) => getPitcherWorkload(query, id, signal),
   });

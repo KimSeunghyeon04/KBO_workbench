@@ -1,7 +1,8 @@
+import { analysisQueryMeta } from "./analysis-query-meta";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ReplayManifest } from "@kbo/contracts";
-import { getWinProbabilities } from "../api/run-value-client";
+import { getWinProbabilities, replayAnalysisSeason } from "../api/run-value-client";
 const pct = (v: number | null | undefined) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`),
   n = (v: number | null) => v?.toFixed(3) ?? "—";
 export function WinProbabilityPanel({
@@ -15,6 +16,7 @@ export function WinProbabilityPanel({
     [page, setPage] = useState(0),
     query = useQuery({
       queryKey: ["win-probability", manifest.gameId, manifest.revision, manifest.documentHash],
+      meta: analysisQueryMeta(replayAnalysisSeason(manifest), "models"),
       enabled: open,
       queryFn: ({ signal }) => getWinProbabilities(manifest, signal),
     }),

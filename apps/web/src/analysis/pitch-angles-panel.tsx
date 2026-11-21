@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "./analysis-query-meta";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -14,6 +15,7 @@ export function PitchAnglesPanel({
   const [open, setOpen] = useState(false),
     result = useQuery({
       queryKey: ["pitch-angles", pitcherId, query],
+      meta: analysisQueryMeta(query),
       queryFn: ({ signal }) => getPitchAngles(pitcherId, query, signal),
       enabled: open,
     });

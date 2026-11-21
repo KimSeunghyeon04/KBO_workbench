@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { useQuery } from "@tanstack/react-query";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import { Value } from "@sinclair/typebox/value";
@@ -31,6 +32,7 @@ export function PitchSequencesPage() {
     id = params.get("pitcher") ?? catalog.data?.pitchers[0]?.pitcherId ?? "";
   const analysis = useQuery({
     queryKey: ["pitch-sequences", id, query],
+    meta: analysisQueryMeta(query),
     enabled: valid && id !== "",
     queryFn: ({ signal }) => {
       if (!Value.Check(PitchSequenceQuerySchema, query)) throw new Error("잘못된 배합 조건");

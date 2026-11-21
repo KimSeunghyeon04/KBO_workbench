@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import type { AnalysisScopeOptions } from "@kbo/contracts";
 import { getDisciplineCatalog } from "./batter-discipline-client";
 import { getPitchAnalysisCatalog } from "./pitch-analysis-client";
@@ -16,6 +17,7 @@ function catalogScope(season: number, options: AnalysisScopeOptions) {
 export function pitcherCatalogQueryOptions(season: number, options: AnalysisScopeOptions) {
   return {
     queryKey: ["analysis-catalog", "pitchers", catalogScope(season, options)] as const,
+    meta: analysisQueryMeta(season),
     queryFn: ({ signal }: { signal: AbortSignal }) =>
       getPitchAnalysisCatalog(season, signal, options),
   };
@@ -24,6 +26,7 @@ export function pitcherCatalogQueryOptions(season: number, options: AnalysisScop
 export function batterCatalogQueryOptions(season: number, options: AnalysisScopeOptions) {
   return {
     queryKey: ["analysis-catalog", "batters", catalogScope(season, options)] as const,
+    meta: analysisQueryMeta(season),
     queryFn: ({ signal }: { signal: AbortSignal }) => getDisciplineCatalog(season, signal, options),
   };
 }

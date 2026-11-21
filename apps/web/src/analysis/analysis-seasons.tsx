@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type PropsWithChildren } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useMatch, useSearchParams } from "react-router-dom";
 import { Value } from "@sinclair/typebox/value";
-import { AnalysisSeasonsSchema } from "@kbo/contracts";
+import { AnalysisSeasonsSchema, type AnalysisPreparation } from "@kbo/contracts";
 import { requestJson } from "../api/transport";
 
 export function useAnalysisSeasons(enabled = true) {
@@ -66,22 +66,46 @@ export function AnalysisRefreshBoundary({ children }: PropsWithChildren) {
   useEffect(() => {
     if (entry.unconfirmedAt > 0) void refetch({ cancelRefetch: false });
   }, [entry, refetch]);
-  const previous = useRef<string | undefined>(undefined);
+  const preparationRows = result.data?.preparation;
+  const previous = useRef<Map<number, AnalysisPreparation> | undefined>(undefined);
   useEffect(() => {
-    const hash = result.data?.sourceHash;
-    if (hash === undefined) return;
-    const changed = previous.current !== undefined && previous.current !== hash;
-    previous.current = hash;
-    if (changed)
-      void client.invalidateQueries({
-        predicate: (query) =>
+    if (preparationRows === undefined) return;
+    const next = new Map(preparationRows.map((row) => [row.season, row]));
+    const prior = previous.current;
+    previous.current = next;
+    if (prior === undefined) return;
+
+    const sourcesChanged = new Set([...prior.keys()].filter((season) => !next.has(season)));
+    const modelsSettled = new Set<number>();
+    for (const row of preparationRows) {
+      const before = prior.get(row.season);
+      if (before?.sourceHash !== row.sourceHash || before.competitionHash !== row.competitionHash) {
+        sourcesChanged.add(row.season);
+      }
+      // An older season can trigger model training for this application season.
+      // Training can publish some models even when preparation reports a failure.
+      if (
+        (row.state === "ready" || row.state === "failed") &&
+        (before?.state !== row.state || before.updatedAt !== row.updatedAt)
+      ) {
+        modelsSettled.add(row.season);
+      }
+    }
+    if (sourcesChanged.size === 0 && modelsSettled.size === 0) return;
+    void client.invalidateQueries({
+      predicate: (query) => {
+        const scope = query.meta?.analysis;
+        return (
           query.state.data !== undefined &&
-          query.queryKey[0] !== "analysis-seasons" &&
-          /^(analysis|pitch|batter|baserunning|park|matchup|statistics|run-value|count-run|win-probability|workload-comparison|player-statistics)/.test(
-            String(query.queryKey[0]),
-          ),
-      });
-  }, [result.data?.sourceHash, client]);
+          scope !== undefined &&
+          scope.seasons.some(
+            (season) =>
+              sourcesChanged.has(season) || (scope.usesModels && modelsSettled.has(season)),
+          )
+        );
+      },
+    });
+  }, [preparationRows, client]);
   if (replay) return children;
   const seasonsConfirmed = result.dataUpdatedAt > entry.unconfirmedAt;
   const season = analysisSeason(requested, seasonsConfirmed ? result.data?.seasons[0] : undefined);

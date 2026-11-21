@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "./analysis-query-meta";
 import { AnalysisEvidenceLink } from "./analysis-evidence-link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -22,6 +23,7 @@ export function MatchupModelPanel({ query }: { query: MatchupQuery }) {
   const [open, setOpen] = useState(false),
     result = useQuery({
       queryKey: ["matchup-model", query],
+      meta: analysisQueryMeta(query, "models"),
       queryFn: ({ signal }) => getMatchupModel(query, signal),
       enabled: open,
     });

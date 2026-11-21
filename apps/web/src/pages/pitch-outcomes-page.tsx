@@ -1,3 +1,4 @@
+import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { useRef } from "react";
 import { AnalysisSeasonOptions } from "../analysis/analysis-seasons";
 import { useQuery } from "@tanstack/react-query";
@@ -107,6 +108,7 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
   const isComparisonTab = activeTab === "period";
   const analysis = useQuery({
     queryKey: ["pitch-outcomes", role, id, candidate],
+    meta: analysisQueryMeta(candidate),
     enabled: canAnalyze && !isComparisonTab,
     subscribed: !isComparisonTab,
     queryFn: async ({ signal }) => {
