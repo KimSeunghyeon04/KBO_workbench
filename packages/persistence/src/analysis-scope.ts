@@ -21,30 +21,38 @@ const sourceSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+const sourceListSchema = Type.Array(sourceSchema);
+const datasetListSchema = Type.Array(
+  Type.Object({ hash: Type.String() }, { additionalProperties: false }),
+);
+export const ANALYSIS_SOURCE_COLUMNS = `r.game_id AS "gameId",r.revision,
+  r.document_hash AS "documentHash",r.competition,r.competition_dataset_hash AS "datasetHash"`;
+export const ANALYSIS_COMPETITION_DATASET =
+  "SELECT dataset_hash AS hash FROM reference.current_competition_datasets WHERE season=$1";
+
 export async function analysisSourceHash(
   client: PoolClient,
   scope: AnalysisScope,
 ): Promise<string> {
   const result = await client.query<Record<string, unknown>>(
-    `SELECT r.game_id AS "gameId",r.revision,
-    r.document_hash AS "documentHash",r.competition,r.competition_dataset_hash AS "datasetHash"
+    `SELECT ${ANALYSIS_SOURCE_COLUMNS}
     FROM analytics.current_analysis_games r WHERE ${ANALYSIS_GAME_WHERE} ORDER BY r.game_id COLLATE "C"`,
     analysisScopeParameters(scope),
   );
-  const dataset = await client.query<Record<string, unknown>>(
-    "SELECT dataset_hash AS hash FROM reference.current_competition_datasets WHERE season=$1",
-    [scope.season],
-  );
+  const dataset = await client.query<Record<string, unknown>>(ANALYSIS_COMPETITION_DATASET, [
+    scope.season,
+  ]);
+  return analysisManifestHash(scope, result.rows, dataset.rows);
+}
+
+export function analysisManifestHash(scope: AnalysisScope, sources: unknown, dataset: unknown) {
   return createHash("sha256")
     .update(
       canonicalStringify({
         version: 1,
         scope,
-        sources: Value.Decode(Type.Array(sourceSchema), result.rows),
-        dataset: Value.Decode(
-          Type.Array(Type.Object({ hash: Type.String() }, { additionalProperties: false })),
-          dataset.rows,
-        ),
+        sources: Value.Decode(sourceListSchema, sources),
+        dataset: Value.Decode(datasetListSchema, dataset),
       }),
     )
     .digest("hex");

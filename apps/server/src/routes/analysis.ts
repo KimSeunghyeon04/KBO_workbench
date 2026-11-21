@@ -7,9 +7,11 @@ import type {
   ParkEnvironmentWorkspace,
   PitchQualityWorkspace,
   MatchupModelWorkspace,
+  PitchOutcomeSnapshot,
 } from "@kbo/persistence";
 import { createPitchAnalysisComputation } from "../pitch-analysis-computation.js";
 import { ComputationPool } from "../computation-pool.js";
+import { BoundedReadCache } from "../bounded-read-cache.js";
 import type { RouteContext } from "./context.js";
 import { pitchAnalysisRoutes } from "./pitch-analysis.js";
 import { batterDisciplineRoutes } from "./batter-discipline.js";
@@ -40,6 +42,7 @@ type Options = Pick<RouteContext, "pool"> & {
 export const analysisRoutes: FastifyPluginAsyncTypebox<Options> = async (app, context) => {
   const workers = new ComputationPool(1, 16);
   const computation = createPitchAnalysisComputation(workers);
+  const outcomeSamples = new BoundedReadCache<PitchOutcomeSnapshot>(16 * 1024 * 1024, 32, 300_000);
   await app.register(pitchAnalysisRoutes, { ...context, computation });
   await app.register(batterDisciplineRoutes, {
     pool: context.pool,
@@ -53,7 +56,7 @@ export const analysisRoutes: FastifyPluginAsyncTypebox<Options> = async (app, co
     summaries: context.summaries,
   });
   await app.register(playerStatisticsRoutes, { pool: context.pool });
-  await app.register(pitchLocationRoutes, { pool: context.pool });
+  await app.register(pitchLocationRoutes, { pool: context.pool, outcomeSamples });
   await app.register(pitchAnglesRoutes, { pool: context.pool, computation: workers });
   await app.register(runValueRoutes, { pool: context.pool, models: context.runModels });
   await app.register(pitchQualityRoutes, {
@@ -71,6 +74,9 @@ export const analysisRoutes: FastifyPluginAsyncTypebox<Options> = async (app, co
   await app.register(baserunningAnalysisRoutes, { pool: context.pool });
   await app.register(pitchSequenceRoutes, { pool: context.pool });
   await app.register(pitcherChangesRoutes, { ...context, computation });
-  await app.register(batterProfileRoutes, { pool: context.pool });
-  app.addHook("onClose", async () => workers.close());
+  await app.register(batterProfileRoutes, { pool: context.pool, outcomeSamples });
+  app.addHook("onClose", async () => {
+    outcomeSamples.clear();
+    await workers.close();
+  });
 };

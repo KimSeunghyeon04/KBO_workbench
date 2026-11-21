@@ -10,13 +10,11 @@ import {
 } from "@kbo/contracts";
 import { compareBatterProfilePeriods } from "@kbo/game-core";
 import { periodSnapshot } from "../analysis-period-pair.js";
-import { BatterProfileRepository } from "@kbo/persistence";
+import { BatterProfileRepository, type PitchOutcomeCache } from "@kbo/persistence";
 import type { RouteContext } from "./context.js";
-export const batterProfileRoutes: FastifyPluginAsyncTypebox<Pick<RouteContext, "pool">> = async (
-  app,
-  context,
-) => {
-  const repository = new BatterProfileRepository(context.pool);
+type Options = Pick<RouteContext, "pool"> & { outcomeSamples?: PitchOutcomeCache };
+export const batterProfileRoutes: FastifyPluginAsyncTypebox<Options> = async (app, context) => {
+  const repository = new BatterProfileRepository(context.pool, context.outcomeSamples);
   app.get(
     "/api/v2/analysis/batter-profile/:batterId/comparison",
     {

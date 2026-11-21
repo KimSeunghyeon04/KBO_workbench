@@ -7,13 +7,11 @@ import {
   PitchLocationComparisonResponseSchema,
   PitchAnalysisPitcherParamsSchema,
 } from "@kbo/contracts";
-import { PitchLocationRepository } from "@kbo/persistence";
+import { PitchLocationRepository, type PitchOutcomeCache } from "@kbo/persistence";
 import type { RouteContext } from "./context.js";
-export const pitchLocationRoutes: FastifyPluginAsyncTypebox<Pick<RouteContext, "pool">> = async (
-  app,
-  context,
-) => {
-  const repository = new PitchLocationRepository(context.pool);
+type Options = Pick<RouteContext, "pool"> & { outcomeSamples?: PitchOutcomeCache };
+export const pitchLocationRoutes: FastifyPluginAsyncTypebox<Options> = async (app, context) => {
+  const repository = new PitchLocationRepository(context.pool, context.outcomeSamples);
   app.get(
     "/api/v2/analysis/pitch-location/:pitcherId/comparison",
     {

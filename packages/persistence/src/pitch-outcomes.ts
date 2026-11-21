@@ -25,17 +25,32 @@ import {
   pitchGeometrySql,
   pitchEligibilitySql,
 } from "./analysis-pitch-input.js";
+import { readPitchOutcomeSources } from "./pitch-outcome-sources.js";
+
+export interface PitchOutcomeSnapshot {
+  readonly scope: AnalysisScope;
+  readonly sourceHash: string;
+  readonly rows: readonly PitchOutcomeRow[];
+  readonly plateAppearances: readonly TerminalPaRow[];
+}
+
+export interface PitchOutcomeCache {
+  get(key: string): Promise<PitchOutcomeSnapshot> | undefined;
+  load(key: string, load: () => Promise<PitchOutcomeSnapshot>): Promise<PitchOutcomeSnapshot>;
+}
+
 /** Physical pitch rows and compiler PA rows are separate reads in one immutable-source snapshot. */
 export async function readPitchOutcomes(
   pool: Pool,
   scope: AnalysisScope,
   actorId: string,
   role: "pitcher" | "batter",
+  cache?: PitchOutcomeCache,
 ) {
   const input = await withAnalysisSnapshot(pool, (client) =>
-    readPitchOutcomeInput(client, scope, actorId, role),
+    readPitchOutcomeInput(client, scope, actorId, role, cache),
   );
-  return pitchOutcomeSnapshot(input, role, actorId);
+  return finishPitchOutcomeInput(input, role, actorId, cache);
 }
 
 export async function readPitchOutcomePair(
@@ -44,18 +59,19 @@ export async function readPitchOutcomePair(
   secondScope: AnalysisScope,
   actorId: string,
   role: "pitcher" | "batter",
+  cache?: PitchOutcomeCache,
 ) {
   const [first, second] = await withAnalysisSnapshot(
     pool,
     async (client) =>
       [
-        await readPitchOutcomeInput(client, firstScope, actorId, role),
-        await readPitchOutcomeInput(client, secondScope, actorId, role),
+        await readPitchOutcomeInput(client, firstScope, actorId, role, cache),
+        await readPitchOutcomeInput(client, secondScope, actorId, role, cache),
       ] as const,
   );
   return {
-    first: pitchOutcomeSnapshot(first, role, actorId),
-    second: pitchOutcomeSnapshot(second, role, actorId),
+    first: await finishPitchOutcomeInput(first, role, actorId, cache),
+    second: await finishPitchOutcomeInput(second, role, actorId, cache),
   };
 }
 
@@ -76,27 +92,39 @@ async function readPitchOutcomeInput(
   scope: AnalysisScope,
   actorId: string,
   role: "pitcher" | "batter",
+  cache?: PitchOutcomeCache,
 ) {
-  const manifest = await analysisSourceHash(client, scope);
+  const source = cache === undefined ? undefined : await readPitchOutcomeSources(client, scope);
+  const key =
+    source === undefined
+      ? undefined
+      : canonicalStringify([role, actorId, source.manifest, source.supplements]);
+  const cached = key === undefined ? undefined : cache?.get(key);
+  if (cached !== undefined) return { cached };
   return {
     scope,
-    manifest,
+    manifest: source?.manifest ?? (await analysisSourceHash(client, scope)),
+    key,
     ...(await readPitchOutcomeRows(client, scope, actorId, role)),
   };
 }
 
-function pitchOutcomeSnapshot(
-  { scope, manifest, rows, plateAppearances }: Awaited<ReturnType<typeof readPitchOutcomeInput>>,
+async function finishPitchOutcomeInput(
+  input: Awaited<ReturnType<typeof readPitchOutcomeInput>>,
   role: "pitcher" | "batter",
   actorId: string,
-) {
-  // Hash effective heights, batting profiles and geometry so supplement imports invalidate results.
-  return {
+  cache?: PitchOutcomeCache,
+): Promise<PitchOutcomeSnapshot> {
+  // Wait for cache work and hash the full response inputs after returning the connection.
+  if (input.cached !== undefined) return input.cached;
+  const { scope, manifest, rows, plateAppearances, key } = input;
+  const snapshot = async () => ({
     scope,
     sourceHash: pitchOutcomeSourceHash(manifest, role, actorId, rows, plateAppearances),
     rows,
     plateAppearances,
-  };
+  });
+  return key === undefined || cache === undefined ? snapshot() : cache.load(key, snapshot);
 }
 
 function pitchOutcomeSourceHash(

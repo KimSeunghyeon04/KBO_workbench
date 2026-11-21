@@ -116,6 +116,7 @@ export {
 export { PlayerStatisticsRepository } from "./player-statistics-repository.js";
 export { PitchLocationRepository } from "./pitch-location-repository.js";
 export { BatterProfileRepository } from "./batter-profile-repository.js";
+export { type PitchOutcomeCache, type PitchOutcomeSnapshot } from "./pitch-outcomes.js";
 export { PitcherChangesRepository } from "./pitcher-changes-repository.js";
 export { PitchSequenceRepository } from "./pitch-sequence-repository.js";
 export { BaserunningAnalysisRepository } from "./baserunning-analysis-repository.js";

@@ -6,9 +6,18 @@ import {
   type PitchOutcomeQuery,
 } from "@kbo/contracts";
 import { analyzeBatterProfile } from "@kbo/game-core";
-import { pitchOutcomeScope, readPitchOutcomePair, readPitchOutcomes } from "./pitch-outcomes.js";
+import {
+  pitchOutcomeScope,
+  readPitchOutcomePair,
+  readPitchOutcomes,
+  type PitchOutcomeCache,
+  type PitchOutcomeSnapshot,
+} from "./pitch-outcomes.js";
 export class BatterProfileRepository {
-  public constructor(private readonly pool: Pool) {}
+  public constructor(
+    private readonly pool: Pool,
+    private readonly samples?: PitchOutcomeCache,
+  ) {}
   public async analyze(input: PitchOutcomeQuery, batterId: string) {
     const query = Value.Decode(PitchOutcomeQuerySchema, input);
     const snapshot = await readPitchOutcomes(
@@ -16,6 +25,7 @@ export class BatterProfileRepository {
       pitchOutcomeScope(query),
       batterId,
       "batter",
+      this.samples,
     );
     return profile(query, batterId, snapshot);
   }
@@ -33,6 +43,7 @@ export class BatterProfileRepository {
       pitchOutcomeScope(second),
       batterId,
       "batter",
+      this.samples,
     );
     return {
       first: profile(first, batterId, snapshots.first),
@@ -41,11 +52,7 @@ export class BatterProfileRepository {
   }
 }
 
-function profile(
-  query: PitchOutcomeQuery,
-  batterId: string,
-  snapshot: Awaited<ReturnType<typeof readPitchOutcomes>>,
-) {
+function profile(query: PitchOutcomeQuery, batterId: string, snapshot: PitchOutcomeSnapshot) {
   return Value.Decode(
     BatterProfileResponseSchema,
     analyzeBatterProfile(

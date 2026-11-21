@@ -10,9 +10,18 @@ import {
   type PitchLocationComparisonQuery,
 } from "@kbo/contracts";
 import { analyzePitchLocation, comparePitchLocations } from "@kbo/game-core";
-import { pitchOutcomeScope, readPitchOutcomePair, readPitchOutcomes } from "./pitch-outcomes.js";
+import {
+  pitchOutcomeScope,
+  readPitchOutcomePair,
+  readPitchOutcomes,
+  type PitchOutcomeCache,
+  type PitchOutcomeSnapshot,
+} from "./pitch-outcomes.js";
 export class PitchLocationRepository {
-  public constructor(private readonly pool: Pool) {}
+  public constructor(
+    private readonly pool: Pool,
+    private readonly samples?: PitchOutcomeCache,
+  ) {}
   public async compare(input: PitchLocationComparisonQuery, pitcherId: string) {
     const query = Value.Decode(PitchLocationComparisonQuerySchema, input);
     const { first, second } = pitchLocationComparisonQueries(query);
@@ -22,6 +31,7 @@ export class PitchLocationRepository {
       pitchOutcomeScope(second),
       pitcherId,
       "pitcher",
+      this.samples,
     );
     return Value.Decode(
       PitchLocationComparisonResponseSchema,
@@ -40,16 +50,13 @@ export class PitchLocationRepository {
       pitchOutcomeScope(query),
       pitcherId,
       "pitcher",
+      this.samples,
     );
     return Value.Decode(PitchLocationResponseSchema, location(query, pitcherId, snapshot));
   }
 }
 
-function location(
-  query: PitchOutcomeQuery,
-  pitcherId: string,
-  snapshot: Awaited<ReturnType<typeof readPitchOutcomes>>,
-) {
+function location(query: PitchOutcomeQuery, pitcherId: string, snapshot: PitchOutcomeSnapshot) {
   return analyzePitchLocation(
     query,
     pitcherId,

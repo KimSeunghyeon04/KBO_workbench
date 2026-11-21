@@ -37,6 +37,7 @@ import {
   CompetitionScheduleNoMatchesError,
   PlayerStatisticsRepository,
   PitchLocationRepository,
+  type PitchOutcomeSnapshot,
   RunValueRepository,
   runTrainingHash,
   MatchupRepository,
@@ -240,6 +241,12 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       observations: [],
     });
     expect(await supplement.resolveSeason(2024)).toEqual([]);
+    const outcomes = new PitchLocationRepository(
+      pool,
+      new BoundedReadCache<PitchOutcomeSnapshot>(1024 * 1024, 8, 60_000),
+    );
+    const query = { season: 2024, competition: "all" as const };
+    const withoutChoice = await outcomes.analyze(query, "hp1");
     const official = {
       season: 2024,
       playerId: "a1",
@@ -263,6 +270,9 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(await supplement.resolveSeason(2024)).toEqual([
       { sourceKind: "official_profile", players: 1 },
     ]);
+    const withChoice = await outcomes.analyze(query, "hp1");
+    expect(withChoice.sourceHash).not.toBe(withoutChoice.sourceHash);
+    expect(withChoice).toEqual(await new PitchLocationRepository(pool).analyze(query, "hp1"));
     const conflict = parseStagingGameDocumentV2({
       ...target,
       metadata: { ...target.metadata, gameId: "conflicting-height" },
@@ -517,7 +527,14 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       ),
     });
     const { gameId } = await store.importRevision(document);
+    const outcomeCache = new BoundedReadCache<PitchOutcomeSnapshot>(1024 * 1024, 8, 60_000);
+    const location = new PitchLocationRepository(pool, outcomeCache);
+    const query = { season: 2027, competition: "all" as const };
+    const beforeHeight = await location.analyze(query, "hp1");
     await seedBatterHeights(pool, document, 180);
+    const afterHeight = await location.analyze(query, "hp1");
+    expect(afterHeight.sourceHash).not.toBe(beforeHeight.sourceHash);
+    expect(afterHeight).toEqual(await new PitchLocationRepository(pool).analyze(query, "hp1"));
     const result = await pool.query(
       "SELECT in_zone FROM analytics.current_pitches WHERE game_id=$1 AND pitch_id='e2'",
       [gameId],
@@ -1012,6 +1029,12 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       new BoundedReadCache(1024 * 1024, 10, 10000),
     );
     const discipline = new BatterDisciplineRepository(pool, referenceCache);
+    const location = new PitchLocationRepository(
+      pool,
+      new BoundedReadCache<PitchOutcomeSnapshot>(1024 * 1024, 8, 60_000),
+    );
+    const regular = { season: 2024, competition: "regular" as const };
+    expect((await location.analyze(regular, "hp1")).total.pitches).toBe(0);
     const before = await pitch.analyze(2024, "hp1", { competition: "regular" });
     const disciplineBefore = await discipline.snapshot(2024, undefined, { competition: "regular" });
     expect(await discipline.readSourceHash({ season: 2024, competition: "regular" })).toBe(
@@ -1031,6 +1054,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       },
     ]);
     await new GameCompetitionRepository(pool).adopt(dataset);
+    expect((await location.analyze(regular, "hp1")).total.pitches).toBe(4);
     const after = await pitch.analyze(2024, "hp1", { competition: "regular" });
     expect(after.sourceHash).not.toBe(before.sourceHash);
     expect(after.actualPitchCount).toBe(4);
@@ -1077,7 +1101,11 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     });
     await store.importRevision(source);
     const query = { season: 2024, competition: "all" as const };
-    const location = new PitchLocationRepository(pool);
+    const outcomeCache = new BoundedReadCache<PitchOutcomeSnapshot>(1024 * 1024, 8, 60_000);
+    const location = new PitchLocationRepository(pool, outcomeCache);
+    const batters = new BatterProfileRepository(pool, outcomeCache);
+    const left = { ...query, stance: "L" as const };
+    expect((await batters.analyze(left, "a1")).total.pitches).toBe(0);
     const before = await location.analyze(query, "hp1");
     const manifests = (await pool.query("SELECT * FROM workbench.game_revisions")).rows;
     const facts = (await pool.query("SELECT * FROM baseball.pitch_facts ORDER BY pitch_sequence"))
@@ -1112,7 +1140,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       (await location.compare({ ...query, stance: "L", compareSeason: 2024 }, "hp1")).first.total
         .pitches,
     ).toBe(4);
-    const batter = await new BatterProfileRepository(pool).analyze({ ...query, stance: "L" }, "a1");
+    const batter = await batters.analyze(left, "a1");
     expect(batter.total.pitches).toBe(4);
     expect(batter.plateAppearances.rows[0]?.stance).toBe("L");
     expect((await pool.query("SELECT * FROM workbench.game_revisions")).rows).toEqual(manifests);
@@ -1221,7 +1249,9 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     const source = pitchAnalysisFixture(2024);
     await store.importRevision(source);
     const query = { season: 2024, competition: "all" as const };
-    const pitch = await new PitchLocationRepository(pool).analyze(query, "hp1");
+    const samples = new BoundedReadCache<PitchOutcomeSnapshot>(1024 * 1024, 8, 60_000);
+    const location = new PitchLocationRepository(pool, samples);
+    const pitch = await location.analyze(query, "hp1");
     expect(pitch.total).toMatchObject({
       pitches: 4,
       swings: 3,
@@ -1231,7 +1261,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     });
     expect(pitch.coverage).toMatchObject({ locationPitches: 0, missingLocation: 4 });
     expect(pitch.arsenal.reduce((sum, group) => sum + group.pitches, 0)).toBe(4);
-    const comparison = await new PitchLocationRepository(pool).compare(
+    const comparison = await location.compare(
       {
         ...query,
         compareSeason: 2024,
@@ -1243,13 +1273,10 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(comparison.first.sourceHash).toBe(pitch.sourceHash);
     expect(comparison.second.total.pitches).toBe(0);
     expect(comparison.differences.every((cell) => cell.usageRate === null)).toBe(true);
-    const same = await new PitchLocationRepository(pool).compare(
-      { ...query, compareSeason: 2024 },
-      "hp1",
-    );
+    const same = await location.compare({ ...query, compareSeason: 2024 }, "hp1");
     expect(same.first).toEqual(same.second);
     await expect(
-      new PitchLocationRepository(pool).compare(
+      location.compare(
         {
           ...query,
           compareSeason: 2024,
@@ -1258,7 +1285,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
         "hp1",
       ),
     ).rejects.toThrow("유효한 날짜");
-    const batters = new BatterProfileRepository(pool);
+    const batters = new BatterProfileRepository(pool, samples);
     const bat = await batters.analyze(query, "a1");
     expect(bat.plateAppearances.total).toMatchObject({ pa: 1, ab: 1, strikeouts: 1 });
     expect(bat.plateAppearances.byTerminalType[0]?.key).toBe("직구");
@@ -1272,12 +1299,10 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     await store.importRevision(
       parseStagingGameDocumentV2({ ...draft, metadata: { ...draft.metadata, stadium: "잠실" } }),
     );
-    const next = await new PitchLocationRepository(pool).analyze(query, "hp1");
+    const next = await location.analyze(query, "hp1");
     expect(next.total).toEqual(pitch.total);
     expect(next.sourceHash).not.toBe(pitch.sourceHash);
-    expect(
-      (await new PitchLocationRepository(pool).analyze({ season: 2024 }, "hp1")).total.pitches,
-    ).toBe(0);
+    expect((await location.analyze({ season: 2024 }, "hp1")).total.pitches).toBe(0);
   });
 
   it("preserves full sequence before pair filtering and does not skip missing tracking", async () => {
@@ -2868,10 +2893,19 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     ).toEqual([
       { zone_opportunities: "3", chase_opportunities: "2", chases: "1", chase_rate: 0.5 },
     ]);
+    const outcomes = new PitchLocationRepository(
+      pool,
+      new BoundedReadCache<PitchOutcomeSnapshot>(1024 * 1024, 8, 60_000),
+    );
+    const scope = { season: document.metadata.season, competition: "all" as const };
+    const beforePolicy = await outcomes.analyze(scope, "hp1");
     await pool.query(
       "UPDATE catalog.tracking_measurement_profiles SET supports_zone=FALSE,zone_formula_version=NULL WHERE measurement_profile_id='naver_pts_v1'",
     );
     try {
+      const afterPolicy = await outcomes.analyze(scope, "hp1");
+      expect(afterPolicy.sourceHash).not.toBe(beforePolicy.sourceHash);
+      expect(afterPolicy).toEqual(await new PitchLocationRepository(pool).analyze(scope, "hp1"));
       expect(
         (await pool.query("SELECT DISTINCT in_zone,chase FROM analytics.current_pitches")).rows,
       ).toEqual([{ in_zone: null, chase: null }]);
