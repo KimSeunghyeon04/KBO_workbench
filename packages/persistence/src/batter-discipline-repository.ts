@@ -105,7 +105,7 @@ export class BatterDisciplineRepository {
         .update(
           canonicalStringify({
             referenceHash,
-            zonePolicy: "frozen-player-height-2024-through-2024-2025-through-2026-v3",
+            zonePolicy: "frozen-player-height-effective-season-v4",
             heights: Value.Decode(Type.Array(heightInputSchema), heights.rows),
           }),
         )

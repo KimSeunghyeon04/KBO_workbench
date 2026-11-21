@@ -1,5 +1,8 @@
 # A02. 선수·팀 성적 비교
 
+선수 기본 기록의 자유 A/B 기간 비교는 [기간 비교](../period-comparison.md)를 따른다.
+팀별 분자·분모를 서버에서 합산하고 기존 공식 성적 계산 함수를 재사용한다.
+
 선행 조건: A01의 경기 범위. 기존 `database/examples/player-season-*.sql`과 typed 집계를 확장한다.
 
 ## 첫 화면과 지표

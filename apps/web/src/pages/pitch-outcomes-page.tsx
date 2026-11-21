@@ -18,6 +18,7 @@ import { AnalysisFilterBar } from "../analysis/analysis-filter-bar";
 import { PitchOutcomeQuickFilters } from "../analysis/pitch-outcome-quick-filters";
 import { outcomePercent } from "../analysis/pitch-outcome-presentation";
 import { PitchOutcomeComparison } from "../analysis/pitch-outcome-comparison";
+import { PlayerPeriodComparison } from "../analysis/player-period-comparison";
 import { SMALL_RATE_DENOMINATOR } from "../analysis/sample-rate";
 import { sharedPitchSituationParams } from "../analysis/pitch-situation-params";
 import {
@@ -244,15 +245,19 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
             />
             <PitchOutcomeBreakdown key={role} data={data} />
           </div>
-          <PitchOutcomeComparison
-            key={`${role}-${id}`}
-            query={data.query}
-            id={id}
-            role={role}
-            current={data.total}
-          />
-          {"batterId" in data && (
-            <TerminalBattingPanel key={data.sourceHash} data={data.plateAppearances} />
+          {"batterId" in data ? (
+            <>
+              <TerminalBattingPanel key={data.sourceHash} data={data.plateAppearances} />
+              <PlayerPeriodComparison kind="batter-profile" query={data.query} playerId={id} />
+            </>
+          ) : (
+            <PitchOutcomeComparison
+              key={id}
+              query={data.query}
+              id={id}
+              role="pitcher"
+              current={data.total}
+            />
           )}
           <details className="panel analysis-disclosure">
             <summary>전체 반응 지표</summary>

@@ -1,0 +1,131 @@
+.location-period-comparison > .analysis-caption {
+  margin: 12px 0 20px;
+  max-width: 75ch;
+}
+.location-period-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+}
+.location-period-comparison .analysis-panel-heading {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.location-period-fields {
+  margin: 20px 0;
+}
+.location-period-fields fieldset {
+  display: grid;
+  grid-template-columns: 76px repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px 0 0;
+  border: 0;
+  border-top: 1px solid var(--ui-line);
+  min-width: 0;
+}
+.location-period-fields legend {
+  padding: 0 12px 0 0;
+  font-weight: 650;
+}
+.location-period-fields label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+.location-period-fields input,
+.location-period-fields select {
+  min-width: 0;
+  width: 100%;
+  min-height: 40px;
+  padding: 7px 8px;
+  border: 1px solid var(--ui-line);
+  border-radius: 4px;
+  color: var(--ui-ink);
+  background: var(--ui-surface);
+  font: inherit;
+}
+@media (max-width: 1100px) {
+  .location-period-fields {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .location-period-fields fieldset {
+    grid-template-columns: 1fr 1fr;
+  }
+  .location-period-fields label:first-of-type {
+    grid-column: 1 / -1;
+  }
+}
+.period-results {
+  display: grid;
+  gap: 20px;
+  margin: 24px 0;
+  min-width: 0;
+}
+.period-results .location-period-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.period-snapshot h3 {
+  margin: 0 0 8px;
+}
+.period-snapshot ul {
+  padding: 0;
+  list-style: none;
+  line-height: 1.8;
+}
+.period-snapshot p {
+  color: var(--ui-muted);
+  font-size: 13px;
+}
+.period-snapshot strong {
+  font-variant-numeric: tabular-nums;
+}
+.period-result-controls,
+.period-evidence-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 28px;
+}
+.period-result-controls label {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+.period-result-controls select {
+  min-height: 40px;
+  max-width: 100%;
+}
+.period-denominator {
+  display: block;
+  color: var(--ui-muted);
+  margin-top: 6px;
+  white-space: nowrap;
+}
+.period-metric-chart {
+  margin: 0;
+  overflow-x: auto;
+}
+.period-metric-chart figcaption {
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.period-metric-chart svg {
+  display: block;
+  width: 100%;
+  min-width: 560px;
+  font-size: 12px;
+  fill: var(--ui-text);
+}
+.period-results code {
+  overflow-wrap: anywhere;
+}
+.period-results .table-scroll {
+  min-width: 0;
+  max-width: 100%;
+}
+@media (max-width: 760px) {
+  .period-results .location-period-fields {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,5 +1,6 @@
 import { AnalysisSeasonOptions } from "../analysis/analysis-seasons";
 import { useQuery } from "@tanstack/react-query";
+import { PlayerPeriodComparison } from "../analysis/player-period-comparison";
 import { Value } from "@sinclair/typebox/value";
 import {
   BattingStatisticsQuerySchema,
@@ -190,6 +191,14 @@ export function PlayerBasicStatisticsPage() {
             </>
           )}
         </section>
+      )}
+      {error === null && playerId && (
+        <PlayerPeriodComparison
+          kind="statistics"
+          query={{ season, ...scope.options }}
+          playerId={playerId}
+          role={role}
+        />
       )}
     </div>
   );

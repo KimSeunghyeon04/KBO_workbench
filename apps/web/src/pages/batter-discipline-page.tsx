@@ -387,12 +387,7 @@ export function BatterDisciplinePage() {
             </section>
           </div>
           <DisciplineCourseComparison data={data} />
-          <DisciplinePeriodComparison
-            data={data}
-            params={params}
-            onChange={change}
-            onRefresh={() => void analysis.refetch()}
-          />
+          <DisciplinePeriodComparison data={data} />
           <section className="panel discipline-panel">
             <h2>포심 가정 → 실제 존 도착</h2>
             <p className="discipline-caption">

@@ -1,4 +1,5 @@
 import { PitcherScopeFields } from "../analysis/pitcher-scope-fields";
+import { PlayerPeriodComparison } from "../analysis/player-period-comparison";
 import { PitchAnglesPanel } from "../analysis/pitch-angles-panel";
 import { useQuery } from "@tanstack/react-query";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
@@ -38,7 +39,10 @@ export function PitcherChangesPage() {
       <header className="page-header">
         <div>
           <h1>투수 변화</h1>
-          <p>종료일까지 완료된 등판의 최근 3경기와 이전 5경기를 비교합니다.</p>
+          <p>
+            A/B 기간의 구질을 비교하고, 종료일까지 완료된 최근 3등판과 이전 5등판의 변화를
+            확인합니다.
+          </p>
         </div>
       </header>
       <PitcherScopeFields
@@ -55,6 +59,16 @@ export function PitcherChangesPage() {
       {catalog.data?.pitchers.length === 0 && <p>이 범위에 수집된 투수가 없습니다.</p>}
       {data && (
         <>
+          <PlayerPeriodComparison
+            kind="pitch-shape"
+            query={{ season, ...scope.options }}
+            playerId={id}
+          />
+          <h2>최근 3등판 / 이전 5등판 · 종료일 기준 자동 비교</h2>
+          <p className="analysis-caption">
+            위 A/B 비교는 수집 투구의 시즌 포심 기준을 사용합니다. 아래 자동 비교는 완료 경기와
+            종료일 이전 기준을 사용하며 경기 단위 재표집 구간을 제공합니다.
+          </p>
           <PitcherChangeSummary data={data} />
           <details className="panel analysis-disclosure">
             <summary>비교 방법과 표본 구성</summary>

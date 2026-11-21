@@ -1121,7 +1121,38 @@ try {
     }
   }
   if (errors.length > 0) throw new Error(errors.join(" | "));
-  console.log(JSON.stringify({ playerDiscovery: "ok", playerScopeNavigation: "ok", playerBasicStatistics: "ok", quickSituationFilters: "ok", pitchRateSorting: "ok", pitchAnalysis: "ok", seasons: [2024, 2025], workspaces: "ok", clustering: "ok", rotation: "ok", keyboard: "ok", canvas: "ok", responsive: "ok" }));
+  for (const [path, role, id] of [
+    ["player-statistics", "pitcher", pitcher], ["player-statistics", "batter", batter],
+    ["pitch-shape", "pitcher", pitcher], ["pitcher-changes", "pitcher", pitcher],
+    ["batter-profile", "batter", batter], ["batter-discipline", "batter", batter],
+  ]) {
+    const params = new URLSearchParams({ season: "2025", competition: "all", playerRole: role, [role]: id });
+    let comparisonRequests = 0;
+    const countComparison = request => { if (new URL(request.url()).pathname.endsWith("/comparison")) comparisonRequests++; };
+    page.on("request", countComparison);
+    try {
+      await page.goto(`http://localhost/analysis/${path}?${params}`, { waitUntil: "networkidle" });
+      await page.getByRole("button", { name: "\uae30\uac04 \ube44\uad50 \uc5f4\uae30", exact: true }).click();
+      await page.getByLabel("\uae30\uac04 A \uc2dc\uc98c", { exact: true }).selectOption("2024");
+      if (comparisonRequests !== 0) throw new Error(`${path}: comparison was fetched before apply.`);
+      const responsePromise = page.waitForResponse(response => new URL(response.url()).pathname.endsWith("/comparison"));
+      await page.getByRole("button", { name: "\ub450 \uae30\uac04 \ube44\uad50 \uc801\uc6a9", exact: true }).click();
+      const response = await responsePromise;
+      if (response.status() !== 200) throw new Error(`${path}: comparison ${response.status()} ${await response.text()}`);
+      await page.locator(".period-results table").waitFor();
+      if (comparisonRequests !== 1) throw new Error(`${path}: applying periods sent duplicate requests.`);
+      if (await page.locator(".period-snapshot").count() !== 2) throw new Error(`${path}: missing A/B sample coverage.`);
+      for (const width of [1280, 390]) {
+        await page.setViewportSize({ width, height: 844 });
+        if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)) throw new Error(`${path}: A/B comparison overflows.`);
+      }
+      await page.reload({ waitUntil: "networkidle" });
+      await page.locator(".period-results table").waitFor();
+      if (await page.getByLabel("\uae30\uac04 A \uc2dc\uc98c", { exact: true }).inputValue() !== "2024") throw new Error(`${path}: A/B URL was not restored.`);
+    } finally { page.off("request", countComparison); }
+  }
+  if (errors.length > 0) throw new Error(errors.join(" | "));
+  console.log(JSON.stringify({ playerDiscovery: "ok", playerScopeNavigation: "ok", playerBasicStatistics: "ok", quickSituationFilters: "ok", pitchRateSorting: "ok", pitchAnalysis: "ok", periodComparisons: "six pages, lazy requests, URL restore, desktop/mobile", seasons: [2024, 2025], workspaces: "ok", clustering: "ok", rotation: "ok", keyboard: "ok", canvas: "ok", responsive: "ok" }));
 } finally { await browser.close(); }
 '@
   $analysisSmoke | & docker compose exec -T --workdir /app/packages/collection api node --input-type=module

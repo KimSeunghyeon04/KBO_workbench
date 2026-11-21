@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
 export const EXPECTED_POSTGRES_MAJOR_VERSION = 16;
-export const EXPECTED_MIGRATION_VERSION = "0014_player_batting_profiles";
+export const EXPECTED_MIGRATION_VERSION = "0015_strike_zone_rule_fallback";
 
 export interface AppConfig {
   readonly analysisAutoRefresh: boolean;

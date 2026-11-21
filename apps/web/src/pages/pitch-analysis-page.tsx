@@ -3,6 +3,7 @@ import { AnalysisEvidenceLink } from "../analysis/analysis-evidence-link";
 import { PitchQualityPanel } from "../analysis/pitch-quality-panel";
 import { PitchAnglesPanel } from "../analysis/pitch-angles-panel";
 import { PitchProfilePanel } from "../analysis/pitch-profile-panel";
+import { PlayerPeriodComparison } from "../analysis/player-period-comparison";
 import { canonicalStringify, resolveAnalysisScope } from "@kbo/contracts";
 import { AnalysisScopeFields, analysisScopeSummary } from "../analysis/analysis-scope-fields";
 import { AnalysisFilterBar } from "../analysis/analysis-filter-bar";
@@ -535,6 +536,11 @@ export function PitchAnalysisPage(): React.JSX.Element {
             구종·클러스터 선택은 적용하지 않습니다.
           </p>
           <PitchProfilePanel profile={data.profile} />
+          <PlayerPeriodComparison
+            kind="pitch-shape"
+            query={{ season, ...scope.options }}
+            playerId={pitcherId}
+          />
         </>
       )}
       {data && !updating && (

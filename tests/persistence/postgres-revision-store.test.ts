@@ -307,7 +307,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     });
     const importer = new GameRevisionStore(
       pool,
-      "0014_player_batting_profiles",
+      "0015_strike_zone_rule_fallback",
       undefined,
       undefined,
       async () => ({ ...batterHeightDataset(target), observations: [] }),
@@ -337,7 +337,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     const dataset = batterHeightDataset(document, 180);
     const importer = new GameRevisionStore(
       pool,
-      "0014_player_batting_profiles",
+      "0015_strike_zone_rule_fallback",
       undefined,
       undefined,
       async () => dataset,
@@ -402,7 +402,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     if (sample === undefined) throw new Error("fixture");
     const wrong = new GameRevisionStore(
       pool,
-      "0014_player_batting_profiles",
+      "0015_strike_zone_rule_fallback",
       undefined,
       undefined,
       async () => ({ ...dataset, gameId: "wrong" }),
@@ -490,20 +490,63 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(taller.rows?.every((r) => r.batterHeightCm === 190)).toBe(true);
   });
 
-  it.each([2020, 2023, 2024, 2025, 2026])(
+  it.each([1981, 1982, 2020, 2023, 2024, 2025, 2026, 2027, 2200, 9999, 10000])(
     "SQL and game-core use identical height rules for %i",
     async (season) => {
       const { resolveBatterStrikeZone } = await import("@kbo/game-core");
-      for (const height of [100, 168, 180, 200, 250]) {
+      for (const height of [null, 99, 100, 168, 180, 200, 250, 251]) {
         const zone = resolveBatterStrikeZone(season, height);
         const result = await pool.query(
           "SELECT analytics.batter_zone_top($1,$2) AS top, analytics.batter_zone_bottom($1,$2) AS bottom",
           [season, height],
         );
-        expect(result.rows).toEqual([{ top: zone?.topFeet, bottom: zone?.bottomFeet }]);
+        expect(result.rows).toEqual([
+          { top: zone?.topFeet ?? null, bottom: zone?.bottomFeet ?? null },
+        ]);
       }
     },
   );
+
+  it("uses the latest defined zone for a 2027 game in SQL, discipline and replay inputs", async () => {
+    const base = pitchAnalysisFixture(2027);
+    const document = parseStagingGameDocumentV2({
+      ...base,
+      trackingCandidates: base.trackingCandidates.map((row, index) =>
+        index === 0 ? { ...row, z0: 5 } : row,
+      ),
+    });
+    const { gameId } = await store.importRevision(document);
+    await seedBatterHeights(pool, document, 180);
+    const result = await pool.query(
+      "SELECT in_zone FROM analytics.current_pitches WHERE game_id=$1 AND pitch_id='e2'",
+      [gameId],
+    );
+    expect(result.rows).toEqual([{ in_zone: true }]);
+    const zones = await new BatterStrikeZoneRepository(pool).forGame(gameId, 1);
+    expect(zones.get("e2")).toMatchObject({
+      ruleYear: 2025,
+      batterHeightCm: 180,
+      topFeet: (180 * 0.5575) / 30.48,
+      bottomFeet: (180 * 0.2704) / 30.48,
+    });
+
+    await using directory = await mkdtempDisposable(path.join(tmpdir(), "kbo-zone-fallback-"));
+    const workspace = await StagingWorkspace.open(directory.path);
+    try {
+      const snapshot = await new BatterDisciplineRepository(
+        pool,
+        workspace.pitchReferences,
+      ).snapshot(2027);
+      expect(snapshot.rows?.find((row) => row.pitchId === "e2")).toMatchObject({
+        season: 2027,
+        batterHeightCm: 180,
+        inZone: true,
+      });
+    } finally {
+      await workspace.close();
+    }
+  });
+
   it.each(["project", "hash", "reproject"])(
     "projection worker failure at %s rolls back every fact",
     async (failure) => {
@@ -512,7 +555,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       const document = pitchAnalysisFixture(2024);
       let projects = 0;
       try {
-        const failing = new GameRevisionStore(pool, "0014_player_batting_profiles", undefined, {
+        const failing = new GameRevisionStore(pool, "0015_strike_zone_rule_fallback", undefined, {
           async project(...args) {
             projects += 1;
             if (
@@ -559,7 +602,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
 
   beforeAll(() => {
     pool = new Pool({ connectionString: dsn });
-    store = new GameRevisionStore(pool, "0014_player_batting_profiles");
+    store = new GameRevisionStore(pool, "0015_strike_zone_rule_fallback");
   });
   beforeEach(async () => {
     await pool.query("TRUNCATE reference.competition_datasets CASCADE");
@@ -1128,7 +1171,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     };
     const withProfiles = new GameRevisionStore(
       pool,
-      "0014_player_batting_profiles",
+      "0015_strike_zone_rule_fallback",
       undefined,
       undefined,
       undefined,
@@ -1142,7 +1185,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     ).toBe(0);
     const wrongSource = new GameRevisionStore(
       pool,
-      "0014_player_batting_profiles",
+      "0015_strike_zone_rule_fallback",
       undefined,
       undefined,
       undefined,
@@ -1887,11 +1930,15 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     let calls = 0;
     const document = pitchAnalysisFixture(2024);
     try {
-      const failing = new GameRevisionStore(pool, "0014_player_batting_profiles", async (input) => {
-        calls += 1;
-        if (calls === 2) throw new Error("worker unavailable during verification");
-        return compileDocument(workers, input);
-      });
+      const failing = new GameRevisionStore(
+        pool,
+        "0015_strike_zone_rule_fallback",
+        async (input) => {
+          calls += 1;
+          if (calls === 2) throw new Error("worker unavailable during verification");
+          return compileDocument(workers, input);
+        },
+      );
       await expect(failing.importRevision(document)).rejects.toThrow("worker unavailable");
       expect(calls).toBe(2);
       expect(
@@ -1903,7 +1950,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       ).toBe(0);
       const workerStore = new GameRevisionStore(
         pool,
-        "0014_player_batting_profiles",
+        "0015_strike_zone_rule_fallback",
         (input) => compileDocument(workers, input),
         createRevisionProjectionComputation(workers),
       );
@@ -2118,7 +2165,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
 
   it("기록정정 경기는 구장 표기·미제공과 무관하게 날짜·원정/홈 팀으로 찾고 DH 후보를 보존한다", async () => {
     const { document, notice } = await recordCorrectionVenueFixture();
-    const repository = new RecordCorrectionRepository(pool, "0014_player_batting_profiles");
+    const repository = new RecordCorrectionRepository(pool, "0015_strike_zone_rule_fallback");
     const first = await store.importRevision(document);
     expect(await repository.gameCandidates(notice)).toEqual([
       expect.objectContaining({ gameId: first.gameId, revision: 1, stadium: "대전(신)" }),
@@ -2147,7 +2194,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
   });
 
   it("기록정정 source revision을 봉인하고 no-change와 append-only 검토 이력을 보장한다", async () => {
-    const repository = new RecordCorrectionRepository(pool, "0014_player_batting_profiles");
+    const repository = new RecordCorrectionRepository(pool, "0015_strike_zone_rule_fallback");
     const importedGame = await store.importRevision(await golden());
     const dataset = parseRecordCorrectionSeasonDataset({
       season: 2024,
@@ -2820,7 +2867,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
   it("registry는 공식 KBO identity, snapshot 공백, 비소속 event와 모호성을 보존한다", async () => {
     const document = await golden();
     await store.importRevision(document);
-    const repository = new RegistryRepository(pool, "0014_player_batting_profiles");
+    const repository = new RegistryRepository(pool, "0015_strike_zone_rule_fallback");
     expect(await repository.seasonDateRange(2026)).toEqual({
       dateFrom: document.metadata.gameDate,
       dateTo: document.metadata.gameDate,
@@ -2947,7 +2994,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
   });
 
   it("구조적으로 완전한 개막 전 빈 등록 snapshot을 season revision으로 seal한다", async () => {
-    const repository = new RegistryRepository(pool, "0014_player_batting_profiles");
+    const repository = new RegistryRepository(pool, "0015_strike_zone_rule_fallback");
     const dataset = parseRegistrySeasonDataset({
       season: 2024,
       dateFrom: "2024-03-09",

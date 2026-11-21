@@ -1,5 +1,6 @@
 import type { AnalysisScopeOptions, DisciplineCatalog, PitchAnalysisCatalog } from "@kbo/contracts";
 import { analysisScopeSearch, scopeFromParams } from "./analysis-scope";
+import { periodUrlKeys } from "./period-selection";
 
 export type PlayerAnalysisRole = "pitcher" | "batter";
 
@@ -51,9 +52,14 @@ export function playerAnalysisHref(
   id: string,
   season: number,
   options: AnalysisScopeOptions,
+  comparison?: URLSearchParams,
 ): string {
   const params = new URLSearchParams(analysisScopeSearch(season, options));
   params.set(role, id);
+  for (const key of periodUrlKeys) {
+    const value = comparison?.get(key);
+    if (value !== undefined && value !== null) params.set(key, value);
+  }
   if (path === "/analysis/matchups" || path === "/analysis/player-statistics")
     params.set("playerRole", role);
   return `${path}?${params}`;

@@ -335,7 +335,7 @@ typed 행으로 교체하거나 명시적으로 삭제한 행의 finding은 immu
 ## 8. PostgreSQL V3
 
 활성 DB는 PostgreSQL 16에 `database/v3/0001_v3_initial.sql`을 적용하고 migration head
-`database/v3/0014_player_batting_profiles.sql`까지 올린다.
+`database/v3/0015_strike_zone_rule_fallback.sql`까지 올린다.
 analytics/projection/registry/record correction contract는 `4/4/1/2`이다. V2 SQL은
 `database/migrations`에 복구용 legacy로
 보존하며 V2 DB에 V3 DDL을 적용하지 않는다. JSON, JSONB, ARRAY와 tracking EAV 컬럼은 사용하지 않는다.
@@ -456,6 +456,11 @@ SQL 함수를 `PARALLEL UNSAFE`로 지정한다. 10,000개 궤적과 병렬 실�
 
 공식 ER처럼 compiler가 독립 계산하지 못한 값은 `official_*` 이름으로 구분한다. 2024 규모에는
 partition을 사용하지 않고 season/date/player/pitcher/batter/count/result 중심 index를 둔다.
+
+선수 기본 기록·구질·타자 특성·선구안의 기간 비교는 공통 A/B 시즌·날짜 선택과 URL을 사용한다.
+기능별 strict 비교 API와 game-core의 명시적 계산을 유지하며, 원천 갱신은 A/B 조회 후 재검증해 거부한다.
+투수 변화는 기존 3/5등판 자동 비교도 제공한다.
+세부 범위·분모·시즌 간 구질 제한은 [기간 비교](docs/analysis/period-comparison.md)에 정의한다.
 
 ## 10. API, Web, SQL 접속과 replay
 

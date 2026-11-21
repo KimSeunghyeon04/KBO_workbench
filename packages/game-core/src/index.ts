@@ -109,3 +109,10 @@ export {
 } from "./model-training-period.js";
 export { summarizeMatchupModel } from "./matchup-model.js";
 export { analyzePitchAngles, type PitchAngleInput } from "./pitch-angles.js";
+export {
+  compareBattingPeriods,
+  comparePitchingPeriods,
+  comparePitchProfilePeriods,
+  compareBatterProfilePeriods,
+  compareDisciplinePeriods,
+} from "./analysis-period-comparison.js";

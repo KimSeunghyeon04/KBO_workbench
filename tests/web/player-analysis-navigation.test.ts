@@ -224,6 +224,25 @@ it("does not show individual-player navigation on league rankings", () => {
   show("/analysis/statistics?season=2025");
   expect(screen.queryByRole("navigation", { name: "선수 분석 항목" })).toBeNull();
 });
+it("carries explicit A/B periods between analysis tabs without leaking situation filters", () => {
+  const comparison = new URLSearchParams(
+    "periodCompare=1&periodASeason=2024&periodAFrom=&periodATo=&periodBSeason=2025&periodBFrom=2025-06-01&periodBTo=&balls=2&sort=ops",
+  );
+  const href = playerAnalysisHref(
+    "/analysis/pitch-shape",
+    "pitcher",
+    "p1",
+    2025,
+    { competition: "regular" },
+    comparison,
+  );
+  const params = new URL(href, "http://localhost").searchParams;
+  expect(params.get("periodAFrom")).toBe("");
+  expect(params.get("periodBFrom")).toBe("2025-06-01");
+  expect(params.get("periodCompare")).toBe("1");
+  expect(params.has("balls")).toBe(false);
+  expect(params.has("sort")).toBe(false);
+});
 it("preserves new season scope across shape and discipline navigation", () => {
   const params = new URLSearchParams("season=2026&competition=all&pitcher=anonymous");
   expect(playerNavigationScope("/analysis/pitch-shape", params).season).toBe(2026);

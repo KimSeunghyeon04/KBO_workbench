@@ -114,7 +114,7 @@ function PlayerNavigation({
               to={
                 section.path === path
                   ? `${path}?${params}`
-                  : playerAnalysisHref(section.path, role, id, scope.season, scope.options)
+                  : playerAnalysisHref(section.path, role, id, scope.season, scope.options, params)
               }
               className={({ isActive }) => (isActive ? "selected" : undefined)}
             >

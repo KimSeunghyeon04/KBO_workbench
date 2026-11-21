@@ -192,14 +192,12 @@ describe("batter discipline view", () => {
     expect(screen.getByLabelText("현재 주소").textContent).toContain("balls=1&strikes=2");
     fireEvent.click(screen.getByRole("button", { name: "조건 초기화" }));
     await screen.findByRole("button", { name: "코스 13: 스윙 0 / 1구" });
-    fireEvent.change(screen.getByLabelText("선구안 비교 시작일"), {
-      target: { value: "2024-07-01" },
-    });
-    fireEvent.change(screen.getByLabelText("선구안 비교 종료일"), {
-      target: { value: "2024-07-31" },
-    });
-    await screen.findByRole("table", { name: "선구안 기간 비교" });
-    expect(screen.getByLabelText("현재 주소").textContent).toContain("compareFrom=2024-07-01");
+    const beforeComparison = fetch.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "기간 비교 열기" }));
+    fireEvent.change(screen.getByLabelText("기간 B 시작일"), { target: { value: "2024-07-01" } });
+    fireEvent.change(screen.getByLabelText("기간 B 종료일"), { target: { value: "2024-07-31" } });
+    expect(screen.getByLabelText<HTMLInputElement>("기간 B 시작일").value).toBe("2024-07-01");
+    expect(fetch).toHaveBeenCalledTimes(beforeComparison);
     expect(screen.queryByLabelText("선택한 투구 상세")).toBeNull();
     fireEvent.change(screen.getByLabelText("선구안 카운트"), { target: { value: "*-2" } });
     await screen.findByText("선택 조건에서 코스를 계산할 수 있는 투구가 없습니다.");

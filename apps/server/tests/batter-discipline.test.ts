@@ -57,7 +57,10 @@ describe("batter discipline API and worker", () => {
   it("validates filters and returns a strict API response", async () => {
     const read = vi
       .spyOn(BatterDisciplineRepository.prototype, "snapshot")
-      .mockImplementation(async () => disciplineSnapshot());
+      .mockImplementation(async (season) => ({
+        ...disciplineSnapshot([disciplineRow({ season, gameDate: `${season}-06-01` })]),
+        season,
+      }));
     const catalog = vi.spyOn(BatterDisciplineRepository.prototype, "catalog").mockResolvedValue({
       season: 2024,
       scope: resolveAnalysisScope({ season: 2024 }),
@@ -71,7 +74,7 @@ describe("batter discipline API and worker", () => {
       for (const query of [
         "",
         "season=bad",
-        "season=2027",
+        "season=2201",
         "season=2024&balls=4",
         "season=2024&strikes=-1",
         "season=2024&stance=bad",
@@ -93,6 +96,24 @@ describe("batter discipline API and worker", () => {
         chaseRate: null,
       });
       expect(response.json().courseComparison.paired).toHaveLength(3);
+
+      const future = await app.inject("/api/v2/analysis/batter-discipline/b1?season=2027");
+      expect(future.statusCode, future.body).toBe(200);
+      expect(future.json()).toMatchObject({
+        query: { season: 2027 },
+        coverage: { locationPitches: 1 },
+      });
+
+      read.mockClear();
+      const comparison = await app.inject(
+        "/api/v2/analysis/batter-discipline/b1/comparison?season=2026&compareSeason=2027",
+      );
+      expect(comparison.statusCode, comparison.body).toBe(200);
+      expect(comparison.json()).toMatchObject({
+        first: { scope: { season: 2026 } },
+        second: { scope: { season: 2027 } },
+      });
+      expect(read.mock.calls.map(([season]) => season)).toEqual([2026, 2027, 2026]);
     } finally {
       await app.close();
       await pool.end();

@@ -31,7 +31,7 @@ PostgreSQL은 검증된 `StagingGameDocumentV2`를 typed fact로 투영해 봉�
 
 - PostgreSQL 16
 - fresh baseline: `database/v3/0001_v3_initial.sql`
-- migration head: `database/v3/0014_player_batting_profiles.sql`
+- migration head: `database/v3/0015_strike_zone_rule_fallback.sql`
 - analytics/projection/registry/record correction contract: `4/4/1/2`
 - schema: `catalog`, `workbench`, `baseball`, `registry`, `record_correction`, `analytics`
 - JSON, JSONB, ARRAY, tracking EAV 컬럼 없음
@@ -191,7 +191,7 @@ DB 경기 목록은 `GET /api/v2/database/games`에서 authority·season·search
 `POST /api/v2/import-jobs/:jobId/reconcile`은 저장 성공 후 남은 정리만 수행한다.
 
 행정 code의 `called_game` 확장은 기존 text fact에 저장한다. analytics/projection 4/4와 migration
-`0014_player_batting_profiles`를 사용한다. 계산 수정 전 봉인 자료는 기존 descriptor와 저장 hash로 검증·재생한다.
+`0015_strike_zone_rule_fallback`를 사용한다. 계산 수정 전 봉인 자료는 기존 descriptor와 저장 hash로 검증·재생한다.
 새 컴파일 결과 반영은 current draft를 열어 append-only revision으로 수행한다.
 
 공개 game/replay/correction API와 `playerId` 의미는 기존 `/api/v2` 그대로다. 기록정정 전용 API와

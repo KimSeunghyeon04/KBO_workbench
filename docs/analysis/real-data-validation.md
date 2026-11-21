@@ -10,7 +10,7 @@ pnpm analysis:validate --source-container kbo-workbench-db-1 --source-user kbo -
 
 원본 container/user/database는 반드시 명시한다. 도구가 고유 container·anonymous volume과
 localhost 임시 포트를 만들고, `analysis/validation/<UUID>/`에 실행 상태·원문 증거·모델·보고서를
-저장한다. DB에는 `0014_player_batting_profiles`까지 migration을 적용한다. 기존 DB나 비어 있지
+저장한다. DB에는 `0015_strike_zone_rule_fallback`까지 migration을 적용한다. 기존 DB나 비어 있지
 않은 DB에 snapshot을 덮어쓰지 않는다. 원본의 비밀번호나 `.env`를 읽어 출력하지 않는다.
 
 ## 단계와 재개

@@ -10,7 +10,6 @@ const textOrNull = Type.Union([Type.String(), Type.Null()]);
 export const DisciplineQuerySchema = Type.Object(
   {
     ...AnalysisScopeQuerySchema.properties,
-    season: Type.Integer({ minimum: 1982, maximum: 2026 }),
     balls: Type.Optional(Type.Integer({ minimum: 0, maximum: 3 })),
     strikes: Type.Optional(Type.Integer({ minimum: 0, maximum: 2 })),
     pitchType: Type.Optional(id),
@@ -51,7 +50,7 @@ export const DisciplineRowSchema = Type.Object(
     inZone: Type.Union([Type.Boolean(), Type.Null()]),
     crossPlateX: numberOrNull,
     crossPlateY: numberOrNull,
-    season: Type.Integer({ minimum: 1982, maximum: 2026 }),
+    season: AnalysisScopeQuerySchema.properties.season,
     batterHeightCm: Type.Union([Type.Integer({ minimum: 100, maximum: 250 }), Type.Null()]),
     x0: numberOrNull,
     y0: numberOrNull,
