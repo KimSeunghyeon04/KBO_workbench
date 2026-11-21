@@ -23,7 +23,8 @@
 ## 분석 대상과 실제 코스
 
 같은 repeatable-read/read-only DB snapshot의 `analytics.current_pitches` 실제 투구를 읽는다.
-번트로 기록된 PA, 고의사구 PA, 사구 투구, 번트 파울 투구는 별도 제외 건수로 집계한다. 기록에
+실제 투구의 적격 여부는 공통 SQL `pitchEligibilitySql`로 판단한다. 번트로 기록된 PA, 고의사구 PA,
+사구 투구, 번트 파울 투구는 별도 제외 건수로 집계한다. 기록에
 없는 작전이나 번트 의도는 추정하지 않는다. 타석 stance L/R/S 및 미상은 원천값을 유지한다.
 투수 좌우는 추정하지 않으며 이 버전의 필터·보정 대상에 포함하지 않는다.
 

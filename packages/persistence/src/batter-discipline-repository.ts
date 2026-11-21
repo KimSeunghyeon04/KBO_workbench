@@ -21,6 +21,7 @@ import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { TypeCompiler } from "@sinclair/typebox/compiler";
 import type { Pool } from "pg";
+import { pitchEligibilitySql } from "./analysis-pitch-input.js";
 import type { PitchReferenceWorkspace } from "./pitch-reference-workspace.js";
 import {
   prepareReference,
@@ -121,8 +122,7 @@ export class BatterDisciplineRepository {
           p.pitch_type AS "pitchType", p.stance, p.before_balls AS balls, p.before_strikes AS strikes,
           p.season, p.batter_height_cm AS "batterHeightCm",
           p.swing, p.whiff, p.tracking_id AS "trackingId", p.in_zone AS "inZone",
-          (p.pitch_call NOT IN ('hit_by_pitch','foul_bunt') AND
-            NOT COALESCE(pa.is_bunt,FALSE) AND pa.result IS DISTINCT FROM 'intentional_walk') AS eligible,
+          ${pitchEligibilitySql} AS eligible,
           COALESCE(t.measurement_profile_id='naver_pts_v1',FALSE) AS supported, ${columns}
         FROM analytics.current_pitches p
         JOIN analytics.current_analysis_games r ON r.game_id=p.game_id AND r.revision=p.revision

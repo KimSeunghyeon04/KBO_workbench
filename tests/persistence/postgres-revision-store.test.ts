@@ -68,6 +68,7 @@ import { makeDocument, safe, scored } from "../helpers/game-document.js";
 import { recordCorrectionVenueFixture } from "../helpers/record-correction-fixture.js";
 import { plateTracking, plateZoneCases } from "../helpers/tracking-geometry.js";
 import { pitchAnalysisFixture } from "../helpers/pitch-analysis-fixture.js";
+import { disciplineEligibilityFixture } from "../helpers/discipline-eligibility-fixture.js";
 import { competitionFixture } from "../helpers/game-competition.js";
 import { AnalysisPreparationManager } from "../../apps/server/src/jobs/analysis-preparation-manager.js";
 import { BoundedReadCache } from "../../apps/server/src/bounded-read-cache.js";
@@ -2058,6 +2059,46 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect((await store.catalogPage({ authority: "database", page: 3, limit: 1 })).games).toEqual(
       [],
     );
+  });
+
+  it("타자 선구안은 공통 표본 제외 대상을 실제 투구 합계에 보존하고 적격 분모에서 뺀다", async () => {
+    const tracked = pitchAnalysisFixture(2024);
+    const situations = disciplineEligibilityFixture();
+    await store.importRevision(tracked);
+    await store.importRevision(situations);
+    await seedBatterHeights(pool, tracked);
+    const repository = new BatterDisciplineRepository(pool, {
+      getOrCreate: async (_key, calculate) => calculate(),
+    });
+    const snapshot = await repository.snapshot(2024);
+    expect(
+      snapshot.rows?.map(({ gameId, pitchId, eligible }) => [gameId, pitchId, eligible]),
+    ).toEqual([
+      ["analysis-2024-hp1", "e2", true],
+      ["analysis-2024-hp1", "e3", true],
+      ["analysis-2024-hp1", "e4", true],
+      ["analysis-2024-hp1", "e5", true],
+      ["discipline-eligibility", "e2", false],
+      ["discipline-eligibility", "e3", true],
+      ["discipline-eligibility", "e6", false],
+      ["discipline-eligibility", "e7", false],
+      ["discipline-eligibility", "e10", false],
+      ["discipline-eligibility", "e13", false],
+      ["discipline-eligibility", "e18", true],
+    ]);
+
+    const prepared = prepareDisciplineSeason(snapshot);
+    const coverages = ["a1", "a2", "a3", "a4", "a5"].map((batterId) => {
+      const { coverage } = analyzeBatterDiscipline(prepared, batterId, { season: 2024 });
+      return [coverage.actualPitches, coverage.excludedSituations, coverage.locationPitches];
+    });
+    expect(coverages).toEqual([
+      [6, 1, 2],
+      [2, 2, 0],
+      [1, 1, 0],
+      [1, 1, 0],
+      [1, 0, 0],
+    ]);
   });
 
   it("타자 선구안은 같은 snapshot의 typed 코스·판단을 읽고 기준 캐시와 current revision을 공유한다", async () => {
