@@ -41,7 +41,7 @@ try {
     -v "${repositoryRoot}:/source:ro" -v "${workspaceVolume}:/workspace" -w /workspace `
     -e PGHOST=$containerName -e PGPORT=5432 -e PGUSER=kbo_test `
     -e PGPASSWORD=kbo_integration_password -e PGDATABASE=kbo_test `
-    -e EXPECTED_MIGRATION_VERSION=0012_competition_game_links `
+    -e EXPECTED_MIGRATION_VERSION=0014_player_batting_profiles `
     -e MIGRATIONS_DIR=database/v3 `
     -e KBO_ANALYST_USER=kbo_analyst_test `
     -e KBO_ANALYST_PASSWORD=kbo_analyst_test_password `

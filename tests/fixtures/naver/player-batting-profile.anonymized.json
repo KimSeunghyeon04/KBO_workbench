@@ -1,0 +1,30 @@
+{
+  "lineup": {
+    "result": {
+      "previewData": {
+        "awayTeamLineUp": {
+          "fullLineUp": [
+            {
+              "playerCode": "a1",
+              "playerName": "익명 타자",
+              "batsThrows": "좌타",
+              "hitType": "우투좌타"
+            }
+          ],
+          "batterCandidate": [{ "playerCode": "a2", "hitType": "우투양타" }]
+        },
+        "home_starter": [{ "pcode": "h1", "hitType": "좌투우타" }]
+      }
+    }
+  },
+  "relay_001": {
+    "result": {
+      "textRelayData": {
+        "textRelays": [
+          { "textOptions": [{ "batterRecord": { "pcode": "a1", "hitType": "우투좌타" } }] }
+        ],
+        "ptsOptions": []
+      }
+    }
+  }
+}

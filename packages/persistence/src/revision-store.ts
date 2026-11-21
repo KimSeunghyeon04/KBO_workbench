@@ -2,6 +2,7 @@ import type {
   DatabaseGamesQuery,
   GameCatalogItem,
   GamePlayerHeightDataset,
+  GamePlayerBattingProfileDataset,
   RevisionCatalog,
   StagingGameDocumentV2,
 } from "@kbo/contracts";
@@ -14,6 +15,7 @@ import {
 import type { Pool, PoolClient } from "pg";
 import { PersistenceIntegrityError } from "./errors.js";
 import { writeGamePlayerHeights } from "./player-height-repository.js";
+import { writeGamePlayerBattingProfiles } from "./player-batting-profile-repository.js";
 import { resolvePlayerHeights } from "./player-height-supplement-repository.js";
 import { hydrateProjectionLedger } from "./projection-ledger.js";
 import { replayFromProjection, replaySourceFromProjection } from "./projection-replay.js";
@@ -68,6 +70,9 @@ export class GameRevisionStore {
     private readonly readPlayerHeights?: (
       document: StagingGameDocumentV2,
     ) => Promise<GamePlayerHeightDataset>,
+    private readonly readPlayerBattingProfiles?: (
+      document: StagingGameDocumentV2,
+    ) => Promise<GamePlayerBattingProfileDataset>,
   ) {}
 
   public async importRevision(
@@ -81,6 +86,14 @@ export class GameRevisionStore {
     const replay = stagingReplay;
     const documentHash = stagingDocumentHash(document);
     const heights = await this.readPlayerHeights?.(document);
+    const battingProfiles = await this.readPlayerBattingProfiles?.(document);
+    if (
+      battingProfiles !== undefined &&
+      (battingProfiles.gameId !== document.metadata.gameId ||
+        battingProfiles.season !== document.metadata.season ||
+        battingProfiles.sourceBundleHash !== document.source.sourceBundleHash)
+    )
+      throw new PersistenceIntegrityError("선수 타석 프로필 원문이 경기 문서의 출처와 다릅니다.");
     if (
       heights !== undefined &&
       (heights.gameId !== document.metadata.gameId ||
@@ -93,6 +106,8 @@ export class GameRevisionStore {
       await client.query("BEGIN");
       await assertDatabaseContract(client, this.expectedMigrationVersion);
       if (heights !== undefined) await writeGamePlayerHeights(client, heights);
+      if (battingProfiles !== undefined)
+        await writeGamePlayerBattingProfiles(client, battingProfiles);
       const existing = await client.query(
         "SELECT current_revision FROM workbench.games WHERE game_id=$1 FOR UPDATE",
         [document.metadata.gameId],

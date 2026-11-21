@@ -25,7 +25,7 @@ export const TerminalBattingGroupSchema = Type.Object(
 );
 export const BatterProfileResponseSchema = Type.Object(
   {
-    ...Type.Omit(PitchLocationResponseSchema, ["pitcherId"]).properties,
+    ...Type.Omit(PitchLocationResponseSchema, ["pitcherId", "arsenal"]).properties,
     batterId: Type.String({ minLength: 1 }),
     bySpeed: Type.Array(PitchRateGroupSchema),
     plateAppearances: Type.Object(

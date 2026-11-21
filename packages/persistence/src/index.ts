@@ -94,6 +94,7 @@ export { PitchReferenceWorkspace } from "./pitch-reference-workspace.js";
 export { BatterDisciplineRepository } from "./batter-discipline-repository.js";
 export { BatterStrikeZoneRepository } from "./batter-strike-zone-repository.js";
 export { PlayerHeightRepository } from "./player-height-repository.js";
+export { PlayerBattingProfileRepository } from "./player-batting-profile-repository.js";
 export { PlayerHeightSupplementRepository } from "./player-height-supplement-repository.js";
 export { PitchCalibrationWorkspace } from "./pitch-calibration-workspace.js";
 export {

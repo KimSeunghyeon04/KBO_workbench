@@ -2,6 +2,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import { AnalysisScopeQuerySchema, AnalysisScopeSchema } from "./analysis-scope.js";
 import { DisciplineRowSchema } from "./batter-discipline.js";
 import { PitchCallSchema, PlateResultSchema } from "./game-document/events.js";
+import { PitchArsenalGroupSchema } from "./pitch-arsenal.js";
 const strict = { additionalProperties: false } as const;
 const text = Type.String({ minLength: 1 }),
   textOrNull = Type.Union([text, Type.Null()]);
@@ -139,6 +140,7 @@ export const PitchLocationResponseSchema = Type.Object(
     byType: Type.Array(PitchRateGroupSchema),
     byCount: Type.Array(PitchRateGroupSchema),
     byStance: Type.Array(PitchRateGroupSchema),
+    arsenal: Type.Array(PitchArsenalGroupSchema),
     cells: Type.Array(PitchRateGroupSchema, { minItems: 25, maxItems: 25 }),
     points: Type.Array(PitchLocationPointSchema, { maxItems: 25000 }),
   },

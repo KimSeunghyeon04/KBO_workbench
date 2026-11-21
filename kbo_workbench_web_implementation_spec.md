@@ -335,7 +335,7 @@ typed 행으로 교체하거나 명시적으로 삭제한 행의 finding은 immu
 ## 8. PostgreSQL V3
 
 활성 DB는 PostgreSQL 16에 `database/v3/0001_v3_initial.sql`을 적용하고 migration head
-`database/v3/0012_competition_game_links.sql`까지 올린다.
+`database/v3/0014_player_batting_profiles.sql`까지 올린다.
 analytics/projection/registry/record correction contract는 `4/4/1/2`이다. V2 SQL은
 `database/migrations`에 복구용 legacy로
 보존하며 V2 DB에 V3 DDL을 적용하지 않는다. JSON, JSONB, ARRAY와 tracking EAV 컬럼은 사용하지 않는다.
@@ -390,6 +390,14 @@ A04/A08은 실제 투구와 종결 PA를 분리하고 원천 판정면의 코스
 A12는 실제 대면과 공식 BF·물리적 승계주자를 구분한다. A13의 복합 플레이 가치를 개인 주자에게
 전부 배분하지 않는다. 서버는 각각의 repository/route를 조립하고 공통 규칙은 scope·원천
 hash·원천 코스·atomic play 조회·제한된 worker와 artifact I/O에만 둔다.
+
+A04 투수 코스 응답은 현재 조건의 카운트×타석×구종 배합을 `arsenal`로 제공한다.
+좌표 누락과 구종·타석 미상을 보존한다. 투구별 방향이 없으면
+`0014_player_batting_profiles`의 같은 경기·원문 해시·선수 ID에 묶인 프로필을 사용한다.
+collection은 `batsThrows`/`hitType`의 원문과 정규화 방향을 별도 typed registry에 봉인하고,
+관측 방향을 덮어쓰거나 봉인된 경기 projection을 바꾸지 않는다. S는 별도로 집계하고 프로필이
+충돌하거나 없으면 미확인으로 둔다. 좌우 필터와 종결 PA에도 같은 정책을 적용하며 좌표·존 결측은
+유지한다. 투타 매치업의 타자·상대 투수·리그 표본은 같은 타석 방향 판정을 사용한다.
 
 A10/A11/A14 학습은 고정 snapshot을 읽고 연결을 반환한 뒤 별도 maintenance worker에서 실행한다.
 시간 분할에서 전처리도 과거 자료만 적합한다. 결과는 기능별 strict schema와 manifest를 가진

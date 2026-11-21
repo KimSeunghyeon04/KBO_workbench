@@ -5,6 +5,14 @@ export const pitchTrackingJoinsSql = `LEFT JOIN baseball.pitch_tracking_links l
  LEFT JOIN workbench.tracking_observations t
   ON t.game_id=l.game_id AND t.revision=l.revision AND t.tracking_id=l.tracking_id`;
 
+export function gameBattingProfileJoinSql(pitch: "p" | "q"): string {
+  return `LEFT JOIN analytics.game_batter_profiles profile
+    ON profile.game_id=${pitch}.game_id AND profile.revision=${pitch}.revision
+    AND profile.player_id=${pitch}.batter_id`;
+}
+
+export const effectiveBattingSideSql = "COALESCE(t.stance,profile.batting_side)";
+
 export const pitchGeometrySql = [
   "x0",
   "y0",

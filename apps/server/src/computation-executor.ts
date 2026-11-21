@@ -1,4 +1,4 @@
-import { extractNaverPlayerHeights } from "@kbo/collection";
+import { extractNaverPlayerHeights, extractNaverPlayerBattingProfiles } from "@kbo/collection";
 import { applyCorrectionCommand, buildRecordCorrectionBatchProposal } from "@kbo/correction";
 import {
   compileStagingGameDocumentV2,
@@ -147,6 +147,13 @@ export function compute(input: Computation): ComputationResult | Promise<Computa
         (bundle) => ({
           kind: "player_heights",
           value: extractNaverPlayerHeights(bundle),
+        }),
+      );
+    case "player_batting_profiles":
+      return readImmutableSourceBundle(input.root, input.season, input.gameId, input.hash).then(
+        (bundle) => ({
+          kind: "player_batting_profiles",
+          value: extractNaverPlayerBattingProfiles(bundle),
         }),
       );
     case "source_bundle":

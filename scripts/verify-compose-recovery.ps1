@@ -690,7 +690,7 @@ import { readFile } from "node:fs/promises";
 import { Pool } from "pg";
 import { parseStagingGameDocumentV2 } from "@kbo/contracts";
 import { GameRevisionStore } from "@kbo/persistence";
-import { extractNaverPlayerHeights } from "@kbo/collection";
+import { extractNaverPlayerHeights, extractNaverPlayerBattingProfiles } from "@kbo/collection";
 const fixture = JSON.parse(await readFile("/var/lib/kbo/original/2026/golden-game-1.json", "utf8"));
 const pool = new Pool();
 try {
@@ -698,6 +698,10 @@ try {
     async document=>extractNaverPlayerHeights({gameId:document.metadata.gameId,season:document.metadata.season,
       sourceBundleHash:document.source.sourceBundleHash,payloads:{lineup:{result:{previewData:{awayTeamLineUp:{
         fullLineUp:document.rosters.away.players.map(p=>({playerCode:p.playerId,height:"180.0"}))
+      }}}}}}),
+    async document=>extractNaverPlayerBattingProfiles({gameId:document.metadata.gameId,season:document.metadata.season,
+      sourceBundleHash:document.source.sourceBundleHash,payloads:{lineup:{result:{previewData:{awayTeamLineUp:{
+        fullLineUp:document.rosters.away.players.map(p=>({playerCode:p.playerId,batsThrows:"\uc88c\ud0c0"}))
       }}}}}}));
   for (const season of [2024, 2025]) {
     const document = structuredClone(fixture);
@@ -713,6 +717,7 @@ try {
     for (const tracking of document.trackingCandidates) Object.assign(tracking, {
       x0: -1, y0: 50, z0: 6, vx0: 2, vy0: season === 2024 ? -140 : -145, vz0: -4,
       ax: -8, ay: 25, az: -15, crossPlateX: 0.1, crossPlateY: 1.4167,
+      stance: "R",
     });
     await store.importRevision(parseStagingGameDocumentV2(document));
     for (let sample = 1; sample <= 4; sample++) {
@@ -878,6 +883,15 @@ try {
   await pitchRateTable.getByRole("button", { name: "Whiff% \uc624\ub984\ucc28\uc21c \uc815\ub82c", exact: true }).click();
   await pitchRateTable.locator('thead th[aria-sort="ascending"]').filter({ hasText: "Whiff%" }).waitFor();
   await assertPlayerDestination("/analysis/pitch-location", { pitcher, pitchType: null, stance: null, balls: null, strikes: null, cohort: null });
+  const profileArsenal = await page.evaluate(async id => {
+    const response = await fetch(`/api/v2/analysis/pitch-location/${encodeURIComponent(id)}?season=2024&competition=all`);
+    if (!response.ok) throw new Error("Profile arsenal API failed.");
+    return response.json();
+  }, pitcher);
+  if (profileArsenal.arsenal.some(group => group.stance === null) ||
+      !profileArsenal.arsenal.some(group => group.stance === "L" && group.pitches > 0)) {
+    throw new Error("Untracked pitches must use declared batter profiles without inventing locations.");
+  }
   await inspectPlayerStatistics("pitcher", pitcher);
   await playerNavigation.getByRole("link", { name: "\uad6c\uc9c8\u00b7\uc6c0\uc9c1\uc784", exact: true }).click();
   await assertPlayerDestination("/analysis/pitch-shape", { pitcher });

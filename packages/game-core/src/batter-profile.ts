@@ -54,8 +54,16 @@ export function analyzeBatterProfile(
   rows: readonly PitchOutcomeRow[],
   pas: readonly TerminalPaRow[],
 ): BatterProfileResponse {
-  const { pitcherId, ...location } = analyzePitchLocation(query, "", scope, sourceHash, rows, pas);
+  const { pitcherId, arsenal, ...location } = analyzePitchLocation(
+    query,
+    "",
+    scope,
+    sourceHash,
+    rows,
+    pas,
+  );
   void pitcherId;
+  void arsenal;
   const own = pas.filter((p) => p.batterId === batterId),
     complete = own.filter((p) => p.completed && p.countsAsPa);
   // Official attribution follows the compiler's PA owner. A replacement batter's final pitch does not transfer its type.

@@ -8,6 +8,7 @@ import type {
   AnalysisScope,
 } from "@kbo/contracts";
 import { observedPitchLocation } from "./pitch-location.js";
+import { summarizePitchArsenal } from "./pitch-arsenal.js";
 const key = (r: { gameId: string; revision: number; pitchId: string }) =>
   JSON.stringify([r.gameId, r.revision, r.pitchId]);
 const divide = (n: number, d: number) => (d === 0 ? null : n / d);
@@ -212,6 +213,7 @@ export function analyzePitchLocation(
     byType: group((r) => r.pitchType ?? "구종 미상"),
     byCount: group((r) => `${r.balls}-${r.strikes}`),
     byStance: group((r) => r.stance ?? "미상"),
+    arsenal: summarizePitchArsenal(selected),
     cells: cellRows.map((values, index) => summarize(String(index), values)),
     points,
   };

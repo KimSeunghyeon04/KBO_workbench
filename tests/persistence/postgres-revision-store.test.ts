@@ -50,6 +50,7 @@ import {
   BatterDisciplineRepository,
   BatterStrikeZoneRepository,
   PlayerHeightRepository,
+  PlayerBattingProfileRepository,
   PlayerHeightSupplementRepository,
   StagingWorkspace,
   RecordCorrectionRepository,
@@ -304,7 +305,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     });
     const importer = new GameRevisionStore(
       pool,
-      "0012_competition_game_links",
+      "0014_player_batting_profiles",
       undefined,
       undefined,
       async () => ({ ...batterHeightDataset(target), observations: [] }),
@@ -334,7 +335,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     const dataset = batterHeightDataset(document, 180);
     const importer = new GameRevisionStore(
       pool,
-      "0012_competition_game_links",
+      "0014_player_batting_profiles",
       undefined,
       undefined,
       async () => dataset,
@@ -399,7 +400,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     if (sample === undefined) throw new Error("fixture");
     const wrong = new GameRevisionStore(
       pool,
-      "0012_competition_game_links",
+      "0014_player_batting_profiles",
       undefined,
       undefined,
       async () => ({ ...dataset, gameId: "wrong" }),
@@ -509,7 +510,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       const document = pitchAnalysisFixture(2024);
       let projects = 0;
       try {
-        const failing = new GameRevisionStore(pool, "0012_competition_game_links", undefined, {
+        const failing = new GameRevisionStore(pool, "0014_player_batting_profiles", undefined, {
           async project(...args) {
             projects += 1;
             if (
@@ -556,7 +557,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
 
   beforeAll(() => {
     pool = new Pool({ connectionString: dsn });
-    store = new GameRevisionStore(pool, "0012_competition_game_links");
+    store = new GameRevisionStore(pool, "0014_player_batting_profiles");
   });
   beforeEach(async () => {
     await pool.query("TRUNCATE reference.competition_datasets CASCADE");
@@ -564,7 +565,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       "TRUNCATE record_correction.collection_runs,record_correction.season_current_revisions CASCADE",
     );
     await pool.query(
-      "TRUNCATE registry.game_height_bundles,registry.official_player_heights,registry.collection_runs,registry.season_current_revisions,workbench.games CASCADE",
+      "TRUNCATE registry.game_batting_profile_bundles,registry.game_height_bundles,registry.official_player_heights,registry.collection_runs,registry.season_current_revisions,workbench.games CASCADE",
     );
     await pool.query(
       "TRUNCATE catalog.seasons,catalog.teams,catalog.players,catalog.venues CASCADE",
@@ -767,6 +768,35 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(loaded.documentHash).toBe(stagingDocumentHash(source));
   });
 
+  it("classifies a later import from sealed schedule evidence without changing manually corrected game facts", async () => {
+    const original = pitchAnalysisFixture(2026);
+    const source = parseStagingGameDocumentV2({
+      ...original,
+      events: original.events.map((event, index) =>
+        index === 0 ? { ...event, relayText: "수동으로 보정한 중계 문구" } : event,
+      ),
+    });
+    const repository = new GameCompetitionRepository(pool);
+    const dataset = competitionFixture(2026, [
+      {
+        sourceGameId: source.source.sourceGameId,
+        gameDate: source.metadata.gameDate,
+        competition: "regular",
+      },
+    ]);
+    const adopted = await repository.adopt(dataset);
+    await store.importRevision(source);
+    expect(
+      (await pool.query("SELECT competition FROM analytics.current_analysis_games")).rows,
+    ).toEqual([{ competition: "regular" }]);
+    expect(
+      (await pool.query("SELECT dataset_hash FROM reference.current_competition_datasets")).rows,
+    ).toEqual([{ dataset_hash: adopted.datasetHash }]);
+    expect((await store.loadCompiled(source.metadata.gameId, 1)).documentHash).toBe(
+      stagingDocumentHash(source),
+    );
+  });
+
   it("preserves both provider IDs and seals only a unique dated competition link", async () => {
     const source = pitchAnalysisFixture(2024);
     await store.importRevision(source);
@@ -882,6 +912,149 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(disc.reference?.summary.candidateCount).toBe(3);
   });
 
+  it("classifies untracked pitches and terminal PA from same-game profiles without changing sealed facts or geometry", async () => {
+    const source = parseStagingGameDocumentV2({
+      ...pitchAnalysisFixture(2024),
+      trackingCandidates: [],
+    });
+    await store.importRevision(source);
+    const query = { season: 2024, competition: "all" as const };
+    const location = new PitchLocationRepository(pool);
+    const before = await location.analyze(query, "hp1");
+    const manifests = (await pool.query("SELECT * FROM workbench.game_revisions")).rows;
+    const facts = (await pool.query("SELECT * FROM baseball.pitch_facts ORDER BY pitch_sequence"))
+      .rows;
+    const repository = new PlayerBattingProfileRepository(pool);
+    const dataset = {
+      gameId: source.metadata.gameId,
+      season: 2024,
+      sourceBundleHash: source.source.sourceBundleHash,
+      observations: [
+        {
+          playerId: "a1",
+          battingSide: "L",
+          rawValue: "좌타",
+          endpoint: "lineup",
+          sourcePath: "fullLineUp[0].batsThrows",
+        },
+      ],
+    };
+    expect(await repository.pendingSources(2024)).toHaveLength(1);
+    expect(await repository.importDataset(dataset)).toBe(true);
+    expect(await repository.importDataset(dataset)).toBe(false);
+    expect(await repository.pendingSources(2024)).toHaveLength(0);
+    const after = await location.analyze(query, "hp1");
+    expect(after.total).toEqual(before.total);
+    expect(after.coverage).toEqual(before.coverage);
+    expect(after.coverage.locationPitches).toBe(0);
+    expect(after.arsenal.every((group) => group.stance === "L")).toBe(true);
+    expect(after.sourceHash).not.toBe(before.sourceHash);
+    expect((await location.analyze({ ...query, stance: "L" }, "hp1")).total.pitches).toBe(4);
+    const batter = await new BatterProfileRepository(pool).analyze({ ...query, stance: "L" }, "a1");
+    expect(batter.total.pitches).toBe(4);
+    expect(batter.plateAppearances.rows[0]?.stance).toBe("L");
+    expect((await pool.query("SELECT * FROM workbench.game_revisions")).rows).toEqual(manifests);
+    expect(
+      (await pool.query("SELECT * FROM baseball.pitch_facts ORDER BY pitch_sequence")).rows,
+    ).toEqual(facts);
+    await expect(repository.importDataset({ ...dataset, observations: [] })).rejects.toThrow(
+      "추출 결과",
+    );
+    await expect(
+      pool.query("UPDATE registry.game_player_batting_profile_observations SET batting_side='R'"),
+    ).rejects.toThrow("immutable");
+    await expect(pool.query("DELETE FROM registry.game_batting_profile_bundles")).rejects.toThrow(
+      "immutable",
+    );
+  });
+
+  it.each([
+    { sides: ["L"], expected: "L" },
+    { sides: ["S"], expected: "S" },
+    { sides: ["L", "R"], expected: null },
+    { sides: ["L", "S"], expected: null },
+    { sides: [null], expected: null },
+  ])(
+    "preserves observed direction with profile $sides and leaves unresolved profiles separate",
+    async ({ sides, expected }) => {
+      const base = pitchAnalysisFixture(2024);
+      const source = parseStagingGameDocumentV2({
+        ...base,
+        trackingCandidates: base.trackingCandidates.map((row, i) =>
+          i === 0 ? { ...row, stance: "R" } : row,
+        ),
+      });
+      await store.importRevision(source);
+      const repository = new PlayerBattingProfileRepository(pool);
+      const dataset = {
+        gameId: source.metadata.gameId,
+        season: 2024,
+        sourceBundleHash: source.source.sourceBundleHash,
+        observations: sides.map((battingSide, i) => ({
+          playerId: "a1",
+          battingSide,
+          rawValue: `declaration-${i}`,
+          endpoint: "lineup",
+          sourcePath: `row[${i}]`,
+        })),
+      };
+      // An unrelated source bundle cannot classify this game's pitches.
+      await repository.importDataset({ ...dataset, sourceBundleHash: "e".repeat(64) });
+      const query = { season: 2024, competition: "all" as const };
+      const location = new PitchLocationRepository(pool);
+      const unrelated = await location.analyze(query, "hp1");
+      expect(
+        unrelated.arsenal.filter((g) => g.stance === null).reduce((n, g) => n + g.pitches, 0),
+      ).toBe(3);
+      await repository.importDataset(dataset);
+      const result = await location.analyze(query, "hp1");
+      expect(
+        result.arsenal.filter((g) => g.stance === "R").reduce((n, g) => n + g.pitches, 0),
+      ).toBe(1);
+      expect(
+        result.arsenal.filter((g) => g.stance === expected).reduce((n, g) => n + g.pitches, 0),
+      ).toBe(3);
+      expect(result.total.pitches).toBe(4);
+    },
+  );
+
+  it("rolls profile extraction back with failed imports and rejects mismatched source provenance", async () => {
+    const source = pitchAnalysisFixture(2024);
+    const dataset = {
+      gameId: source.metadata.gameId,
+      season: 2024,
+      sourceBundleHash: source.source.sourceBundleHash,
+      observations: [],
+    };
+    const withProfiles = new GameRevisionStore(
+      pool,
+      "0014_player_batting_profiles",
+      undefined,
+      undefined,
+      undefined,
+      async () => dataset,
+    );
+    await expect(
+      withProfiles.importRevision(source, { failurePoint: "after_facts" }),
+    ).rejects.toThrow("injected");
+    expect(
+      (await pool.query("SELECT game_id FROM registry.game_batting_profile_bundles")).rowCount,
+    ).toBe(0);
+    const wrongSource = new GameRevisionStore(
+      pool,
+      "0014_player_batting_profiles",
+      undefined,
+      undefined,
+      undefined,
+      async () => ({ ...dataset, sourceBundleHash: "f".repeat(64) }),
+    );
+    await expect(wrongSource.importRevision(source)).rejects.toThrow("출처");
+    await withProfiles.importRevision(source);
+    expect(
+      (await pool.query("SELECT sealed FROM registry.game_batting_profile_bundles")).rows,
+    ).toEqual([{ sealed: true }]);
+  });
+
   it("keeps pitch outcomes separate from official terminal PA grain and current revision", async () => {
     const source = pitchAnalysisFixture(2024);
     await store.importRevision(source);
@@ -895,6 +1068,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       terminalStrikeouts: 1,
     });
     expect(pitch.coverage).toMatchObject({ locationPitches: 0, missingLocation: 4 });
+    expect(pitch.arsenal.reduce((sum, group) => sum + group.pitches, 0)).toBe(4);
     const bat = await new BatterProfileRepository(pool).analyze(query, "a1");
     expect(bat.plateAppearances.total).toMatchObject({ pa: 1, ab: 1, strikeouts: 1 });
     expect(bat.plateAppearances.byTerminalType[0]?.key).toBe("직구");
@@ -1191,6 +1365,77 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(result.excludedSimilar).toBe(4);
     expect(result.conditions).toEqual([]);
     expect(result.predictionStatus).toBe("not_validated");
+  });
+
+  it("uses the same tracked-first batting side for matchup batter, pitcher, and league samples", async () => {
+    const profiles = new PlayerBattingProfileRepository(pool);
+    const games = [
+      { id: "matchup-target-tracked", pitcherId: "hp1", batterId: "a1", tracked: true },
+      { id: "matchup-target-profile", pitcherId: "hp1", batterId: "a1", tracked: false },
+      { id: "matchup-target-unknown", pitcherId: "hp1", batterId: "a1", tracked: false },
+      { id: "matchup-league-tracked", pitcherId: "hp2", batterId: "other", tracked: true },
+      { id: "matchup-league-profile", pitcherId: "hp2", batterId: "other", tracked: false },
+    ];
+    for (const { id, pitcherId, batterId, tracked } of games) {
+      const base = pitchAnalysisFixture(2024, pitcherId);
+      const document = parseStagingGameDocumentV2({
+        ...base,
+        metadata: { ...base.metadata, gameId: id },
+        rosters: {
+          ...base.rosters,
+          away: {
+            ...base.rosters.away,
+            players: base.rosters.away.players.map((player) =>
+              player.playerId === "a1" ? { ...player, playerId: batterId } : player,
+            ),
+          },
+        },
+        events: base.events.map((event) =>
+          event.kind === "batter_start" || event.kind === "plate_result"
+            ? { ...event, payload: { ...event.payload, batterId } }
+            : event,
+        ),
+        trackingCandidates: tracked
+          ? base.trackingCandidates.slice(0, 1).map((row) => ({ ...row, stance: "R" }))
+          : [],
+      });
+      await store.importRevision(document);
+      if (id === "matchup-target-unknown") continue;
+      await profiles.importDataset({
+        gameId: id,
+        season: document.metadata.season,
+        sourceBundleHash: document.source.sourceBundleHash,
+        observations: [
+          {
+            playerId: batterId,
+            battingSide: "L",
+            rawValue: "좌타",
+            endpoint: "lineup",
+            sourcePath: "fullLineUp[0].batsThrows",
+          },
+        ],
+      });
+    }
+    const result = await new MatchupRepository(pool).analyze({
+      season: 2024,
+      competition: "all",
+      pitcherId: "hp1",
+      batterId: "a1",
+    });
+    const firstPitch = { pitchType: "직구", balls: 0, strikes: 0, speedBand: 29 };
+    expect(
+      result.conditions.filter(
+        (row) => row.balls === firstPitch.balls && row.strikes === firstPitch.strikes,
+      ),
+    ).toMatchObject([
+      { ...firstPitch, stance: "L", batterPitches: 1, targetPitcherPitches: 1, leaguePitches: 1 },
+      { ...firstPitch, stance: "R", batterPitches: 1, targetPitcherPitches: 1, leaguePitches: 1 },
+    ]);
+    expect(result.direct.rows.filter((row) => row.balls === 0 && row.strikes === 0)).toMatchObject([
+      { gameId: "matchup-target-profile", stance: "L" },
+      { gameId: "matchup-target-tracked", stance: "R" },
+      { gameId: "matchup-target-unknown", stance: null },
+    ]);
   });
 
   it("trains RE24 on completed regular halves and preserves exact revision reads with stale-model detection", async () => {
@@ -1542,7 +1787,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     let calls = 0;
     const document = pitchAnalysisFixture(2024);
     try {
-      const failing = new GameRevisionStore(pool, "0012_competition_game_links", async (input) => {
+      const failing = new GameRevisionStore(pool, "0014_player_batting_profiles", async (input) => {
         calls += 1;
         if (calls === 2) throw new Error("worker unavailable during verification");
         return compileDocument(workers, input);
@@ -1558,7 +1803,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       ).toBe(0);
       const workerStore = new GameRevisionStore(
         pool,
-        "0012_competition_game_links",
+        "0014_player_batting_profiles",
         (input) => compileDocument(workers, input),
         createRevisionProjectionComputation(workers),
       );
@@ -1773,7 +2018,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
 
   it("기록정정 경기는 구장 표기·미제공과 무관하게 날짜·원정/홈 팀으로 찾고 DH 후보를 보존한다", async () => {
     const { document, notice } = await recordCorrectionVenueFixture();
-    const repository = new RecordCorrectionRepository(pool, "0012_competition_game_links");
+    const repository = new RecordCorrectionRepository(pool, "0014_player_batting_profiles");
     const first = await store.importRevision(document);
     expect(await repository.gameCandidates(notice)).toEqual([
       expect.objectContaining({ gameId: first.gameId, revision: 1, stadium: "대전(신)" }),
@@ -1802,7 +2047,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
   });
 
   it("기록정정 source revision을 봉인하고 no-change와 append-only 검토 이력을 보장한다", async () => {
-    const repository = new RecordCorrectionRepository(pool, "0012_competition_game_links");
+    const repository = new RecordCorrectionRepository(pool, "0014_player_batting_profiles");
     const importedGame = await store.importRevision(await golden());
     const dataset = parseRecordCorrectionSeasonDataset({
       season: 2024,
@@ -2475,7 +2720,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
   it("registry는 공식 KBO identity, snapshot 공백, 비소속 event와 모호성을 보존한다", async () => {
     const document = await golden();
     await store.importRevision(document);
-    const repository = new RegistryRepository(pool, "0012_competition_game_links");
+    const repository = new RegistryRepository(pool, "0014_player_batting_profiles");
     expect(await repository.seasonDateRange(2026)).toEqual({
       dateFrom: document.metadata.gameDate,
       dateTo: document.metadata.gameDate,
@@ -2602,7 +2847,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
   });
 
   it("구조적으로 완전한 개막 전 빈 등록 snapshot을 season revision으로 seal한다", async () => {
-    const repository = new RegistryRepository(pool, "0012_competition_game_links");
+    const repository = new RegistryRepository(pool, "0014_player_batting_profiles");
     const dataset = parseRegistrySeasonDataset({
       season: 2024,
       dateFrom: "2024-03-09",

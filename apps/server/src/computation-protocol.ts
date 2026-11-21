@@ -3,6 +3,7 @@ import type { RunModelComputation, RunModel } from "./run-model-computation.js";
 import type {
   CorrectionCommand,
   GamePlayerHeightDataset,
+  GamePlayerBattingProfileDataset,
   StagingGameDocumentV2,
   RecordCorrectionNotice,
   RecordCorrectionMatchCandidate,
@@ -102,6 +103,7 @@ export type Computation =
     }
   | { kind: "source_bundle"; root: string; season: number; gameId: string; hash: string }
   | { kind: "player_heights"; root: string; season: number; gameId: string; hash: string }
+  | { kind: "player_batting_profiles"; root: string; season: number; gameId: string; hash: string }
   | {
       kind: "projection";
       document: StagingGameDocumentV2;
@@ -163,6 +165,7 @@ export type ComputationResult =
   | { kind: "command"; value: CorrectionResult; snapshot?: PreparedCorrectionSnapshot }
   | { kind: "source_bundle"; value: { bundle: ImmutableSourceBundle; bytes: number } }
   | { kind: "player_heights"; value: GamePlayerHeightDataset }
+  | { kind: "player_batting_profiles"; value: GamePlayerBattingProfileDataset }
   | { kind: "projection"; value: RelationalProjection }
   | { kind: "projection_hash"; value: string }
   | { kind: "record_correction_match"; value: RecordCorrectionMatchCandidate[] }

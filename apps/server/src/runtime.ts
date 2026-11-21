@@ -111,6 +111,18 @@ export async function createRuntime(config: AppConfig, pool: Pool): Promise<AppR
       if (result.kind !== "player_heights") throw new Error("Unexpected player height result");
       return result.value;
     },
+    async (document) => {
+      const result = await computation.run({
+        kind: "player_batting_profiles",
+        root: config.workspacePath,
+        season: document.metadata.season,
+        gameId: document.metadata.gameId,
+        hash: document.source.sourceBundleHash,
+      });
+      if (result.kind !== "player_batting_profiles")
+        throw new Error("Unexpected batting profile result");
+      return result.value;
+    },
   );
   const correctionSessions = new CorrectionSessionManager(
     workspace,

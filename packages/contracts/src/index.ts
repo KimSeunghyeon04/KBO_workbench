@@ -496,6 +496,13 @@ export {
   type GamePlayerHeightDataset,
 } from "./player-height.js";
 export {
+  PlayerBattingProfileObservationSchema,
+  GamePlayerBattingProfileDatasetSchema,
+  parseGamePlayerBattingProfileDataset,
+  type PlayerBattingProfileObservation,
+  type GamePlayerBattingProfileDataset,
+} from "./player-batting-profile.js";
+export {
   PITCH_CALIBRATION_PARAMETERS,
   PitchCalibrationCoefficientSchema,
   PitchCalibrationProfileSchema,
@@ -581,6 +588,7 @@ export {
   type PitchLocationPoint,
   type PitchLocationResponse,
 } from "./pitch-outcomes.js";
+export { PitchArsenalGroupSchema, type PitchArsenalGroup } from "./pitch-arsenal.js";
 export {
   BatterProfileResponseSchema,
   TerminalBattingGroupSchema,
