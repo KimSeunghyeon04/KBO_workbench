@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PropsWithChildren } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type Query } from "@tanstack/react-query";
 import { Link, useMatch, useSearchParams } from "react-router-dom";
 import { Value } from "@sinclair/typebox/value";
 import { AnalysisSeasonsSchema, type AnalysisPreparation } from "@kbo/contracts";
@@ -92,19 +92,29 @@ export function AnalysisRefreshBoundary({ children }: PropsWithChildren) {
       }
     }
     if (sourcesChanged.size === 0 && modelsSettled.size === 0) return;
-    void client.invalidateQueries({
-      predicate: (query) => {
-        const scope = query.meta?.analysis;
-        return (
-          query.state.data !== undefined &&
-          scope !== undefined &&
-          scope.seasons.some(
-            (season) =>
-              sourcesChanged.has(season) || (scope.usesModels && modelsSettled.has(season)),
-          )
-        );
-      },
-    });
+    const matchesChangedSeason = (query: Query) => {
+      const scope = query.meta?.analysis;
+      return (
+        scope?.seasons.some(
+          (season) => sourcesChanged.has(season) || (scope.usesModels && modelsSettled.has(season)),
+        ) ?? false
+      );
+    };
+    // Invalidation alone reuses an in-flight first fetch when there is no cached data.
+    void client
+      .cancelQueries({
+        predicate: (query) =>
+          query.isActive() &&
+          query.state.data === undefined &&
+          query.state.fetchStatus !== "idle" &&
+          matchesChangedSeason(query),
+      })
+      .then(() =>
+        client.invalidateQueries({
+          predicate: (query) =>
+            (query.state.data !== undefined || query.isActive()) && matchesChangedSeason(query),
+        }),
+      );
   }, [preparationRows, client]);
   if (replay) return children;
   const seasonsConfirmed = result.dataUpdatedAt > entry.unconfirmedAt;

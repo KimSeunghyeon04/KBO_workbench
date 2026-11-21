@@ -291,6 +291,57 @@ it("discovers imported seasons and refreshes analysis only when its own source o
   expect(calls.at(-1)).toContain("season=2026");
 });
 
+it("restarts a pending first catalog request only when its season changes", async () => {
+  let current = prepared(2024, "a");
+  let other = prepared(2025, "c");
+  const firstResponse = Promise.withResolvers<Response>();
+  const signals: (AbortSignal | null | undefined)[] = [];
+  const catalog = (name: string) =>
+    Response.json({
+      season: 2024,
+      scope: resolveAnalysisScope({ season: 2024, competition: "regular" }),
+      pitchers: [{ pitcherId: "anonymous", name, pitches: 100 }],
+    });
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input), "http://localhost");
+    if (url.pathname === "/api/v2/analysis/seasons") {
+      return Response.json({
+        sourceHash: current.sourceHash.slice(0, 32) + other.sourceHash.slice(0, 32),
+        seasons: [2025, 2024],
+        preparation: [other, current],
+      });
+    }
+    if (
+      url.pathname !== "/api/v2/analysis/pitch-shape" ||
+      url.searchParams.get("season") !== "2024"
+    )
+      throw new Error(url.href);
+    signals.push(init?.signal);
+    return signals.length === 1 ? firstResponse.promise : catalog("새 기록의 선수");
+  });
+
+  const client = show("/analysis/players?season=2024");
+  await screen.findByRole("option", { name: "2025" });
+  expect(signals).toHaveLength(1);
+
+  other = prepared(2025, "d");
+  await refreshSeasons(client);
+  expect(signals).toHaveLength(1);
+  expect(signals[0]?.aborted).toBe(false);
+
+  current = prepared(2024, "b");
+  await refreshSeasons(client);
+  await waitFor(() => expect(signals).toHaveLength(2));
+  expect(signals[0]?.aborted).toBe(true);
+  await screen.findByRole("link", { name: "새 기록의 선수 분석 보기" });
+
+  await act(async () => firstResponse.resolve(catalog("이전 기록의 선수")));
+  await refreshSeasons(client);
+  expect(signals).toHaveLength(2);
+  expect(screen.queryByRole("link", { name: "이전 기록의 선수 분석 보기" })).toBeNull();
+  expect(screen.getByRole("link", { name: "새 기록의 선수 분석 보기" })).toBeTruthy();
+});
+
 it("refreshes model status when automatic training for the viewed season settles", async () => {
   let current = prepared(2025, "a");
   let version = 1;
