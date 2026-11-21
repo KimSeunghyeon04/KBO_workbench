@@ -77,18 +77,26 @@ export class RetryingHttpTransport {
         () => timeoutController.abort(new Error("HTTP 요청 제한 시간을 초과했습니다.")),
         this.timeoutMs,
       );
+      const attemptSignal = AbortSignal.any([signal, timeoutController.signal]);
+      let response: Response | undefined;
       try {
-        const response = await this.fetchImplementation(request.url, {
+        response = await this.fetchImplementation(request.url, {
           ...request.init,
-          signal: AbortSignal.any([signal, timeoutController.signal]),
+          signal: attemptSignal,
         });
         if (!response.ok) throw new HttpStatusError(response.status, request.url);
         const value = await request.decode(response);
+        throwIfAborted(attemptSignal);
         return { value, receivedAt: new Date(this.now()).toISOString() };
       } catch (error: unknown) {
+        // 정리 전에 실패를 고정해 늦은 HTTP 응답과 본문 정리 중의 지연을 구분한다.
+        const failure = timeoutController.signal.aborted
+          ? abortReason(timeoutController.signal)
+          : error;
+        await response?.body?.cancel().catch(() => {});
         if (signal.aborted) throw abortReason(signal);
-        lastError = error;
-        if (!request.retryable(error)) throw error;
+        lastError = failure;
+        if (!request.retryable(failure)) throw failure;
       } finally {
         clearTimeout(timeout);
       }

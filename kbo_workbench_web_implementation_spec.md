@@ -101,6 +101,10 @@ source 위치와 sequence를 유지한다.
 status·URL·본문, 일정 observer와 원문 보존, 기존 retry·rate·크기 제한과 strict decode를 유지한다.
 설치 진단도 같은 WebKit을 검사하며 Docker 운영에서 display 서버를 요구하지 않는다.
 
+공통 HTTP transport는 decode 완료 뒤 시도별 취소·timeout signal을 다시 검사한다. 늦게 도착한
+정상 응답도 취소·시간 초과 뒤에는 성공으로 반환하지 않는다. HTTP 상태 오류와 decode 실패의
+본문은 종료·재시도 전에 해제하며, 정리 실패가 원래 오류 분류를 덮어쓰지 않는다.
+
 제공자 preview의 숫자 상태 `0`·`4`는 relay summary의 type 99 종료 footer와 3아웃 관측이
 함께 있을 때만 `final`로 해석한다. 코드만으로 종료를 추정하지 않으며, 원장·공식 기록·종료 조건은
 기존 compiler가 다시 검증한다. 실제 상태 `4` 응답의 비식별 fixture로 증거 누락 거부도 확인한다.
