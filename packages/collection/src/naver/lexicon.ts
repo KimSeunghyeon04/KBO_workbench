@@ -488,12 +488,6 @@ export function isNonRbiRunnerText(textValue: string | null): boolean {
   );
 }
 
-export function resultAllowsBattedBall(result: PlateResult): boolean {
-  return !["walk", "intentional_walk", "hit_by_pitch", "strikeout", "interference"].includes(
-    result,
-  );
-}
-
 export function pitchCallMatchesAward(call: PitchCall, award: PitchCall): boolean {
   return award === "automatic_ball"
     ? call === "ball"

@@ -2,8 +2,8 @@ import { Value } from "@sinclair/typebox/value";
 
 import { StagingGameDocumentV2Schema } from "./game-document/document.js";
 import type { StagingGameDocumentV2 } from "./game-document/document.js";
-import { StagingRelayEventSchema } from "./game-document/events.js";
-import type { PlateResult, StagingRelayEvent } from "./game-document/events.js";
+import { plateResultAllowsBattedBall, StagingRelayEventSchema } from "./game-document/events.js";
+import type { StagingRelayEvent } from "./game-document/events.js";
 
 export {
   EventIdentitySchema,
@@ -19,6 +19,7 @@ export {
   PitchCallSchema,
   PitchEventSchema,
   PitchMetadataSchema,
+  plateResultAllowsBattedBall,
   PlateResultEventSchema,
   PlateResultSchema,
   ReviewEventSchema,
@@ -190,7 +191,7 @@ export function validateStagingGameDocumentV2Semantics(
       );
     if (
       event.kind === "plate_result" &&
-      !allowsBattedBall(event.payload.result) &&
+      !plateResultAllowsBattedBall(event.payload.result) &&
       (event.payload.battedBallType !== undefined || event.payload.isBunt !== undefined)
     ) {
       issues.push(
@@ -249,12 +250,6 @@ export function validateStagingGameDocumentV2Semantics(
     }
   }
   return issues;
-}
-
-function allowsBattedBall(result: PlateResult): boolean {
-  return !["walk", "intentional_walk", "hit_by_pitch", "strikeout", "interference"].includes(
-    result,
-  );
 }
 
 function normalizeDateTimes(document: StagingGameDocumentV2): StagingGameDocumentV2 {

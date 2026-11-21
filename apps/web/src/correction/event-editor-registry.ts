@@ -1,5 +1,6 @@
 import {
   canonicalStringify,
+  plateResultAllowsBattedBall,
   StagingRelayEventSchema,
   type Half,
   type Side,
@@ -223,18 +224,6 @@ export function formForKind(current: FormState, kind: StagingRelayEventKind): Fo
     relayText: current.relayText,
     beforeEventId: current.beforeEventId,
   };
-}
-
-const NON_BATTED_BALL_RESULTS = new Set([
-  "walk",
-  "intentional_walk",
-  "hit_by_pitch",
-  "strikeout",
-  "interference",
-]);
-
-export function plateResultAllowsBattedBall(result: string): boolean {
-  return !NON_BATTED_BALL_RESULTS.has(result);
 }
 
 export function resultDefaults(result: string): Partial<FormState> {

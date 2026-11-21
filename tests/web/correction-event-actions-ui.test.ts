@@ -16,6 +16,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { BATTED_BALL_CASES } from "../helpers/batted-ball-cases.js";
 
 import type { EventPresentation } from "../../apps/web/src/correction/event-presentation.js";
 import { prepareCorrectionSnapshot } from "../../apps/server/src/correction-snapshot.js";
@@ -928,7 +929,7 @@ describe("평면 원장 빠른 보정 UI", () => {
     expect(command.event.payload.isBunt).toBe(false);
   });
 
-  it("삼진을 선택하면 타구 입력을 숨기고 오래된 타구 정보를 command에서 제거한다", async () => {
+  it("타석 결과에 따라 타구·번트 입력을 표시하고 삼진 전환 시 오래된 정보를 제거한다", async () => {
     const document = fixture();
     const result = document.events.find((item) => item.kind === "plate_result");
     if (result?.kind !== "plate_result") throw new Error("plate result fixture missing");
@@ -948,6 +949,16 @@ describe("평면 원장 빠른 보정 UI", () => {
     const resultSelect = within(dialog).getByRole("combobox", { name: "타석 결과" });
     expect(within(dialog).getByText("타구 유형")).toBeTruthy();
     expect(within(dialog).getByText("번트 여부")).toBeTruthy();
+    for (const [result, allowed] of BATTED_BALL_CASES) {
+      fireEvent.change(resultSelect, { target: { value: result } });
+      expect(within(dialog).queryByRole("combobox", { name: "타구 유형" }) !== null, result).toBe(
+        allowed,
+      );
+      expect(within(dialog).queryByRole("combobox", { name: "번트 여부" }) !== null, result).toBe(
+        allowed,
+      );
+    }
+    fireEvent.change(resultSelect, { target: { value: "field_out" } });
     fireEvent.change(within(dialog).getByRole("spinbutton", { name: "타점 (선택)" }), {
       target: { value: "2" },
     });

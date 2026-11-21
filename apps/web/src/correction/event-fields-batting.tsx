@@ -1,10 +1,6 @@
+import { plateResultAllowsBattedBall } from "@kbo/contracts";
 import { autofillReason } from "./event-editor-autofill";
-import {
-  PITCH_CALLS,
-  PLATE_RESULTS,
-  plateResultAllowsBattedBall,
-  resultDefaults,
-} from "./event-editor-registry";
+import { PITCH_CALLS, PLATE_RESULTS, resultDefaults } from "./event-editor-registry";
 import {
   autoHint,
   contextStateForForm,

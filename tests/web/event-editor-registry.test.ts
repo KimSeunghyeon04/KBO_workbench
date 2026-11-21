@@ -1,59 +1,117 @@
+import { normalizeNaverRelay } from "@kbo/collection";
 import {
   parseStagingGameDocumentV2,
+  PlateResultSchema,
   type StagingGameDocumentV2,
   type StagingRelayEvent,
 } from "@kbo/contracts";
 import { describe, expect, it } from "vitest";
+import { BATTED_BALL_CASES } from "../helpers/batted-ball-cases.js";
 
 import {
   emptyForm,
   eventFromForm,
-  plateResultAllowsBattedBall,
   resultDefaults,
   validateForm,
 } from "../../apps/web/src/correction/event-editor-registry.js";
 
-const NON_BATTED_BALL_RESULTS = [
-  "walk",
-  "intentional_walk",
-  "hit_by_pitch",
-  "strikeout",
-  "interference",
-] as const;
-
 describe("타석 결과 편집기 타구 정보", () => {
-  it.each(NON_BATTED_BALL_RESULTS)(
-    "%s 선택 시 타구 입력을 초기화하고 payload에서 제외한다",
-    (result) => {
+  it("계약의 모든 타석 결과를 검증한다", () => {
+    expect(BATTED_BALL_CASES.map(([result]) => result).sort()).toEqual(
+      PlateResultSchema.anyOf.map((result) => result.const).sort(),
+    );
+  });
+
+  it.each(BATTED_BALL_CASES)(
+    "%s 타구·번트 정보 판정은 수집·원장 검증·교정 입력에서 일치한다",
+    (result, allowed) => {
       const document = fixture();
       const original = document.events[0];
       if (original?.kind !== "plate_result") throw new Error("plate result fixture missing");
+      const { batterId, pitcherId } = original.payload;
+      const isSacrificeFly = result === "sacrifice_fly";
+      const text = `비식별 타자 : ${isSacrificeFly ? "뜬공" : "번트 땅볼"}`;
+      const collected = normalizeNaverRelay({
+        gameId: document.metadata.gameId,
+        players: [
+          {
+            playerId: batterId,
+            name: "비식별 타자",
+            side: "away",
+            starter: true,
+            positions: ["야수"],
+          },
+          {
+            playerId: pitcherId,
+            name: "비식별 투수",
+            side: "home",
+            starter: true,
+            positions: ["투수"],
+          },
+        ],
+        startingPitchers: { away: null, home: pitcherId },
+        closeTrailingHalf: false,
+        blocks: [
+          {
+            endpoint: "relay_001",
+            endpointBlockIndex: 0,
+            block: {
+              inn: 9,
+              homeOrAway: "0",
+              textOptions: [
+                { seqno: 0, kind: "half_inning_start", text: "9회초 시작" },
+                { seqno: 1, kind: "batter_start", text: "비식별 타자 타석", batterId, pitcherId },
+                { seqno: 2, kind: "plate_result", text, result, batterId, pitcherId },
+              ],
+            },
+          },
+        ],
+      }).events.find((event) => event.kind === "plate_result");
+      expect(collected).toMatchObject({ relayText: text, payload: { result } });
+      expect(collected?.payload.battedBallType).toBe(
+        allowed ? (isSacrificeFly ? "fly_ball" : "ground_ball") : undefined,
+      );
+      expect(collected?.payload.isBunt).toBe(allowed ? !isSacrificeFly : undefined);
+
+      for (const fields of [{ battedBallType: "ground_ball" }, { isBunt: false }] as const) {
+        const ledger = {
+          ...document,
+          events: [{ ...original, payload: { result, batterId, pitcherId, ...fields } }],
+        };
+        if (allowed) {
+          expect(parseStagingGameDocumentV2(ledger).events[0]?.payload).toMatchObject(fields);
+        } else {
+          expect(() => parseStagingGameDocumentV2(ledger)).toThrow(/비인플레이 결과/);
+        }
+      }
+
       const form = {
         ...emptyForm(9, "top"),
         kind: "plate_result" as const,
         result,
-        batterId: "away-batter",
-        pitcherId: "home-pitcher",
+        batterId,
+        pitcherId,
         relayText: "비식별 타자 : 타석 결과",
         battedBallType: "ground_ball",
         isBunt: "false",
       };
 
-      expect(plateResultAllowsBattedBall(result)).toBe(false);
-      expect(resultDefaults(result)).toEqual({
-        result,
-        creditedRbi: "",
-        outsRecorded: "",
-        batterDestination: "",
-        battedBallType: "",
-        isBunt: "",
-      });
+      if (!allowed) {
+        expect(resultDefaults(result)).toEqual({
+          result,
+          creditedRbi: "",
+          outsRecorded: "",
+          batterDestination: "",
+          battedBallType: "",
+          isBunt: "",
+        });
+      }
 
       const event = eventFromForm(form, document, original);
-      expect(event?.kind).toBe("plate_result");
-      if (event?.kind !== "plate_result") return;
-      expect(event.payload).not.toHaveProperty("battedBallType");
-      expect(event.payload).not.toHaveProperty("isBunt");
+      expect(event).toMatchObject({ kind: "plate_result", payload: { result } });
+      if (event?.kind !== "plate_result") throw new Error("plate result form was not accepted");
+      expect(event.payload.battedBallType).toBe(allowed ? "ground_ball" : undefined);
+      expect(event.payload.isBunt).toBe(allowed ? false : undefined);
     },
   );
 
@@ -65,7 +123,6 @@ describe("타석 결과 편집기 타구 정보", () => {
       isBunt: "",
     };
 
-    expect(plateResultAllowsBattedBall("field_out")).toBe(true);
     expect({ ...current, ...resultDefaults("field_out") }).toMatchObject({
       result: "field_out",
       battedBallType: "",

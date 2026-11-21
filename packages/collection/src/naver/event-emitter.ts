@@ -1,4 +1,10 @@
-import type { ObservedState, PitchCall, Side, StagingRelayEvent } from "@kbo/contracts";
+import {
+  plateResultAllowsBattedBall,
+  type ObservedState,
+  type PitchCall,
+  type Side,
+  type StagingRelayEvent,
+} from "@kbo/contracts";
 
 import type { SourceFinding } from "../types.js";
 import type { ParseDecision } from "./decision.js";
@@ -14,7 +20,6 @@ import {
   pitchCallDecision,
   pitchCallMatchesAward,
   plateResultDecision,
-  resultAllowsBattedBall,
   reviewDecision,
   runnerDestination,
   runnerFromBase,
@@ -187,7 +192,7 @@ function emitPlateResult(
   }
   const battedBall = battedBallTypeDecision(row.relayText);
   const bunt = buntDecision(row.relayText);
-  const acceptsBattedBall = resultAllowsBattedBall(result.value);
+  const acceptsBattedBall = plateResultAllowsBattedBall(result.value);
   const battedBallType =
     result.value === "sacrifice_fly"
       ? battedBall.status === "matched"

@@ -93,6 +93,24 @@ export const PlateResultSchema = Type.Union([
   Type.Literal("other"),
 ]);
 export type PlateResult = Static<typeof PlateResultSchema>;
+
+const nonBattedBallResults: readonly PlateResult[] = [
+  "walk",
+  "intentional_walk",
+  "hit_by_pitch",
+  "strikeout",
+  "interference",
+];
+const battedBallResults = new Set<string>(
+  PlateResultSchema.anyOf
+    .map((result) => result.const)
+    .filter((result) => !nonBattedBallResults.includes(result)),
+);
+
+export function plateResultAllowsBattedBall(result: string): boolean {
+  return battedBallResults.has(result);
+}
+
 export const BattedBallTypeSchema = Type.Union([
   Type.Literal("ground_ball"),
   Type.Literal("fly_ball"),

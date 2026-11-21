@@ -166,6 +166,7 @@ export {
   PitchCallSchema,
   PitchEventSchema,
   PitchMetadataSchema,
+  plateResultAllowsBattedBall,
   PlateResultEventSchema,
   PlateResultSchema,
   ReviewEventSchema,
