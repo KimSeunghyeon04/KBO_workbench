@@ -726,6 +726,7 @@ try {
       const extra = structuredClone(document);
       extra.metadata.gameId = `analysis-${season}-sample-${sample}`;
       for (const t of extra.trackingCandidates) {
+        t.stance = sample % 2 === 0 ? "L" : "R";
         t.vy0 -= sample * 2;
         t.ax += sample * 1.5;
         t.az += sample % 2 === 0 ? 2 : -2;
@@ -885,6 +886,8 @@ try {
   await pitchRateTable.getByRole("button", { name: "Whiff% \uc624\ub984\ucc28\uc21c \uc815\ub82c", exact: true }).click();
   await pitchRateTable.locator('thead th[aria-sort="ascending"]').filter({ hasText: "Whiff%" }).waitFor();
   await assertPlayerDestination("/analysis/pitch-location", { pitcher, pitchType: null, stance: null, balls: null, strikes: null, cohort: null });
+  await page.getByRole("tab", { name: "\uad6c\uc885 \ubc30\ud569", exact: true }).click();
+  await page.locator(".outcome-arsenal").waitFor();
   const profileArsenal = await page.evaluate(async id => {
     const response = await fetch(`/api/v2/analysis/pitch-location/${encodeURIComponent(id)}?season=2024&competition=all`);
     if (!response.ok) throw new Error("Profile arsenal API failed.");
@@ -893,6 +896,56 @@ try {
   if (profileArsenal.arsenal.some(group => group.stance === null) ||
       !profileArsenal.arsenal.some(group => group.stance === "L" && group.pitches > 0)) {
     throw new Error("Untracked pitches must use declared batter profiles without inventing locations.");
+  }
+  await page.locator(".arsenal-state-node:not(:disabled)").first().click();
+  const arsenalChoice = page.locator(".arsenal-pitch-choices button:not(:disabled)").first();
+  await arsenalChoice.click();
+  await page.waitForURL((url) => url.searchParams.has("pitchType") && url.searchParams.has("balls") && url.searchParams.has("strikes") && url.searchParams.has("stance"));
+  await pitchRateTable.waitFor();
+  await quickFilters.getByRole("button", { name: "\uc0c1\ud669 \uc870\uac74 \ucd08\uae30\ud654", exact: true }).click();
+  await assertPlayerDestination("/analysis/pitch-location", { pitcher, pitchType: null, stance: null, balls: null, strikes: null, cohort: null });
+  await page.getByRole("tab", { name: "\uae30\uac04 \ube44\uad50", exact: true }).click();
+  await page.getByRole("button", { name: "\ub450 \uae30\uac04 \ube44\uad50 \uc801\uc6a9", exact: true }).click();
+  const comparisonMaps = page.locator(".location-comparison-maps");
+  await comparisonMaps.waitFor();
+  if (await comparisonMaps.locator(".outcome-zone-grid button").count() !== 50) throw new Error("Period comparison must show two complete location maps.");
+  await page.getByLabel("\uc9c0\ub3c4 \uc9c0\ud45c", { exact: true }).selectOption("whiffRate");
+  await comparisonMaps.locator(".outcome-zone-grid").first().getByRole("button").first().click();
+  if (await comparisonMaps.locator('button[aria-pressed="true"]').count() !== 2) throw new Error("Location map selection was not shared.");
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const selector of [".location-period-comparison", ".outcome-workspace-tabs .workspace-tabs"]) {
+      if (await page.locator(selector).evaluate((element) => element.scrollWidth > element.clientWidth + 1)) {
+        throw new Error(`${selector} overflows its content width.`);
+      }
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const periodBMap = comparisonMaps.locator(".outcome-zone-grid").nth(1);
+  await periodBMap.getByRole("button", { name: /: 0\uad6c$/ }).first().click();
+  await page.locator(".location-comparison-values a").nth(1).click();
+  const evidenceMap = page.getByRole("group", { name: "\uc2e4\uc81c \ucf54\uc2a4 \uc9c0\ub3c4", exact: true });
+  const initialZone = await evidenceMap.locator('button[aria-pressed="true"]').getAttribute("aria-label");
+  if (!initialZone?.endsWith(": 0\uad6c")) throw new Error("Comparison evidence did not open its empty zone.");
+  const populatedZone = evidenceMap.getByRole("button", { name: /: [1-9][\d,]*\uad6c$/ }).first();
+  const populatedLabel = await populatedZone.getAttribute("aria-label");
+  await populatedZone.click();
+  async function replayLocationEvidenceAndReturn() {
+    const evidence = page.locator(".outcome-location-panel .analysis-evidence");
+    await evidence.locator(":scope > summary").click();
+    await evidence.locator("tbody a").first().click();
+    await page.getByRole("slider").waitFor();
+    await page.locator(".replay-analysis-return").getByRole("link").click();
+    await evidenceMap.waitFor();
+  }
+  await replayLocationEvidenceAndReturn();
+  const returnedZone = await evidenceMap.locator('button[aria-pressed="true"]').getAttribute("aria-label");
+  if (returnedZone !== populatedLabel) throw new Error("Replay restored " + returnedZone + " instead of " + populatedLabel);
+  const allZones = page.getByRole("button", { name: "\ubaa8\ub4e0 \ucf54\uc2a4", exact: true });
+  await allZones.click();
+  await replayLocationEvidenceAndReturn();
+  if (await allZones.getAttribute("aria-pressed") !== "true" || new URL(page.url()).searchParams.has("locationCell")) {
+    throw new Error("Replay did not restore all location zones.");
   }
   await inspectPlayerStatistics("pitcher", pitcher);
   await playerNavigation.getByRole("link", { name: "\uad6c\uc9c8\u00b7\uc6c0\uc9c1\uc784", exact: true }).click();
@@ -1132,7 +1185,8 @@ try {
     page.on("request", countComparison);
     try {
       await page.goto(`http://localhost/analysis/${path}?${params}`, { waitUntil: "networkidle" });
-      await page.getByRole("button", { name: "\uae30\uac04 \ube44\uad50 \uc5f4\uae30", exact: true }).click();
+      if (path === "batter-profile") await page.getByRole("tab", { name: "\uae30\uac04 \ube44\uad50", exact: true }).click();
+      else await page.getByRole("button", { name: "\uae30\uac04 \ube44\uad50 \uc5f4\uae30", exact: true }).click();
       await page.getByLabel("\uae30\uac04 A \uc2dc\uc98c", { exact: true }).selectOption("2024");
       if (comparisonRequests !== 0) throw new Error(`${path}: comparison was fetched before apply.`);
       const responsePromise = page.waitForResponse(response => new URL(response.url()).pathname.endsWith("/comparison"));
@@ -1152,7 +1206,7 @@ try {
     } finally { page.off("request", countComparison); }
   }
   if (errors.length > 0) throw new Error(errors.join(" | "));
-  console.log(JSON.stringify({ playerDiscovery: "ok", playerScopeNavigation: "ok", playerBasicStatistics: "ok", quickSituationFilters: "ok", pitchRateSorting: "ok", pitchAnalysis: "ok", periodComparisons: "six pages, lazy requests, URL restore, desktop/mobile", seasons: [2024, 2025], workspaces: "ok", clustering: "ok", rotation: "ok", keyboard: "ok", canvas: "ok", responsive: "ok" }));
+  console.log(JSON.stringify({ playerDiscovery: "ok", playerScopeNavigation: "ok", playerBasicStatistics: "ok", quickSituationFilters: "ok", pitchRateSorting: "ok", pitchLocationReplayReturn: "selected zone and all zones", pitchAnalysis: "ok", periodComparisons: "six pages, lazy requests, URL restore, desktop/mobile", seasons: [2024, 2025], workspaces: "ok", clustering: "ok", rotation: "ok", keyboard: "ok", canvas: "ok", responsive: "ok" }));
 } finally { await browser.close(); }
 '@
   $analysisSmoke | & docker compose exec -T --workdir /app/packages/collection api node --input-type=module

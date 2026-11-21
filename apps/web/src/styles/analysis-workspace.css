@@ -482,6 +482,47 @@
 .outcome-related-link:hover {
   text-decoration: underline;
 }
+.outcome-workspace {
+  --outcome-tabs-top: 56px;
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  scroll-margin-top: var(--outcome-tabs-top);
+}
+.outcome-workspace-tabs {
+  position: sticky;
+  top: var(--outcome-tabs-top);
+  z-index: 3;
+  min-width: 0;
+  background: var(--ui-surface);
+}
+.outcome-workspace-tabs .workspace-tabs {
+  padding-inline: 2px;
+}
+.outcome-workspace-tabs button {
+  height: 44px;
+  color: var(--ui-muted);
+  font-size: 13px;
+}
+.outcome-workspace-tabs button:focus-visible {
+  outline-offset: -3px;
+}
+.outcome-view:not([hidden]) {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .outcome-workspace {
+    --outcome-tabs-top: 96px;
+  }
+  .outcome-workspace-tabs button {
+    flex: 1;
+    justify-content: center;
+    padding-inline: 5px;
+    font-size: 12px;
+  }
+}
 .outcome-analysis-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

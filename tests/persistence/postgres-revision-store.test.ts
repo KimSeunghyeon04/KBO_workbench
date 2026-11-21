@@ -1093,6 +1093,10 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(after.arsenal.every((group) => group.stance === "L")).toBe(true);
     expect(after.sourceHash).not.toBe(before.sourceHash);
     expect((await location.analyze({ ...query, stance: "L" }, "hp1")).total.pitches).toBe(4);
+    expect(
+      (await location.compare({ ...query, stance: "L", compareSeason: 2024 }, "hp1")).first.total
+        .pitches,
+    ).toBe(4);
     const batter = await new BatterProfileRepository(pool).analyze({ ...query, stance: "L" }, "a1");
     expect(batter.total.pitches).toBe(4);
     expect(batter.plateAppearances.rows[0]?.stance).toBe("L");
@@ -1212,6 +1216,33 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     });
     expect(pitch.coverage).toMatchObject({ locationPitches: 0, missingLocation: 4 });
     expect(pitch.arsenal.reduce((sum, group) => sum + group.pitches, 0)).toBe(4);
+    const comparison = await new PitchLocationRepository(pool).compare(
+      {
+        ...query,
+        compareSeason: 2024,
+        compareDateFrom: "2024-06-02",
+      },
+      "hp1",
+    );
+    expect(comparison.first.total).toEqual(pitch.total);
+    expect(comparison.first.sourceHash).toBe(pitch.sourceHash);
+    expect(comparison.second.total.pitches).toBe(0);
+    expect(comparison.differences.every((cell) => cell.usageRate === null)).toBe(true);
+    const same = await new PitchLocationRepository(pool).compare(
+      { ...query, compareSeason: 2024 },
+      "hp1",
+    );
+    expect(same.first).toEqual(same.second);
+    await expect(
+      new PitchLocationRepository(pool).compare(
+        {
+          ...query,
+          compareSeason: 2024,
+          compareDateFrom: "2024-02-30",
+        },
+        "hp1",
+      ),
+    ).rejects.toThrow("유효한 날짜");
     const bat = await new BatterProfileRepository(pool).analyze(query, "a1");
     expect(bat.plateAppearances.total).toMatchObject({ pa: 1, ab: 1, strikeouts: 1 });
     expect(bat.plateAppearances.byTerminalType[0]?.key).toBe("직구");

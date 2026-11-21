@@ -66,6 +66,7 @@ export {
 export { summarizePitchProfile } from "./pitch-profile.js";
 export { battingStatistics, pitchingStatistics } from "./player-statistics.js";
 export { observedPitchLocation } from "./pitch-location.js";
+export { comparePitchLocations } from "./pitch-location-comparison.js";
 export {
   hasTerminalPitch,
   matchesPitchOutcome,

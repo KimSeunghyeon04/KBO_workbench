@@ -2,7 +2,7 @@
 import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { createElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { cleanup, render, screen, within, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Value } from "@sinclair/typebox/value";
@@ -72,7 +72,14 @@ function mockOutcomes(
 }
 
 function Location() {
-  return createElement("output", { "aria-label": "현재 주소" }, useLocation().search);
+  const location = useLocation();
+  const navigate = useNavigate();
+  return createElement(
+    "div",
+    null,
+    createElement("output", { "aria-label": "현재 주소" }, location.search),
+    createElement("button", { onClick: () => navigate(-1) }, "이전 주소"),
+  );
 }
 
 function show(role: "pitcher" | "batter", search = "season=2024&competition=all") {
@@ -103,15 +110,87 @@ function detailsFor(label: string | RegExp) {
   return { trigger, details };
 }
 
+it("opens count/stance composition without refetching and drills back to the map with exact filters", async () => {
+  const fetch = mockOutcomes([
+    outcomeRow({ pitchId: "l-fast", stance: "L", strikes: 2, pitchType: "직구" }),
+    outcomeRow({
+      pitchId: "l-slide",
+      stance: "L",
+      strikes: 2,
+      pitchType: "슬라이더",
+      trackingId: null,
+    }),
+    outcomeRow({ pitchId: "r-fast", stance: "R", strikes: 2, pitchType: "직구" }),
+  ]);
+  show("pitcher", "season=2024&competition=all&pitcher=hp1&dateFrom=2024-06-01&dateTo=2024-06-30");
+  await screen.findByRole("table", { name: "구종별 반응" });
+  const before = fetch.mock.calls.length;
+  expect(screen.queryByRole("heading", { name: /좌우 타자별 구종 배합/ })).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "구종 배합" }));
+  const panel = screen.getByRole("tabpanel", { name: "구종 배합" });
+  expect(screen.queryByRole("group", { name: "실제 코스 지도" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /^0볼 2스트라이크 배합 선택/ }));
+  const left = within(panel).getByRole("region", { name: "좌타자 선택 카운트 구종 배합" });
+  expect(within(left).getAllByText("1/2구")).toHaveLength(2);
+  expect(within(left).getAllByText("50.0%")).toHaveLength(2);
+  expect(fetch).toHaveBeenCalledTimes(before);
+  fireEvent.click(
+    screen.getByRole("button", { name: "좌타자 0볼 2스트라이크 슬라이더 코스 보기" }),
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText("현재 주소").textContent).toContain("pitchType="),
+  );
+  const params = new URLSearchParams(screen.getByLabelText("현재 주소").textContent ?? "");
+  expect(Object.fromEntries(params)).toMatchObject({
+    season: "2024",
+    competition: "all",
+    pitcher: "hp1",
+    dateFrom: "2024-06-01",
+    dateTo: "2024-06-30",
+    pitchType: "슬라이더",
+    stance: "L",
+    balls: "0",
+    strikes: "2",
+    outcomeView: "overview",
+  });
+  await screen.findByRole("group", { name: "실제 코스 지도" });
+  fireEvent.click(screen.getByRole("button", { name: "이전 주소" }));
+  expect(screen.getByRole("tab", { name: "구종 배합", selected: true })).toBeTruthy();
+  expect(screen.getByLabelText("현재 주소").textContent).not.toContain("pitchType=");
+});
+
+it("keeps evidence map selection in the URL while preserving the comparison and fetched data", async () => {
+  const fetch = mockOutcomes();
+  show(
+    "pitcher",
+    "season=2024&competition=all&pitcher=hp1&periodCompare=1&periodASeason=2023&locationCell=12",
+  );
+  const map = await screen.findByRole("group", { name: "실제 코스 지도" });
+  expect(within(map).getByRole("button", { name: /^코스 12:/, pressed: true })).toBeTruthy();
+  const before = fetch.mock.calls.length;
+  fireEvent.click(within(map).getByRole("button", { name: /^코스 0:/ }));
+  const currentParams = () =>
+    new URLSearchParams(screen.getByLabelText("현재 주소").textContent ?? "");
+  expect(currentParams().get("locationCell")).toBe("0");
+  expect(within(map).getByRole("button", { name: /^코스 0:/, pressed: true })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "모든 코스" }));
+  expect(currentParams().get("locationCell")).toBeNull();
+  expect(currentParams().get("pitcher")).toBe("hp1");
+  expect(currentParams().get("periodASeason")).toBe("2023");
+  expect(screen.getByRole("tab", { name: "코스·반응", selected: true })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "모든 코스", pressed: true })).toBeTruthy();
+  expect(fetch).toHaveBeenCalledTimes(before);
+});
+
 it("keeps pitch and PA denominators distinct while disclosing detailed metrics and revision-bound evidence", async () => {
   mockOutcomes();
   show("batter", "season=2024&competition=all&batter=b1");
+  fireEvent.click(screen.getByRole("tab", { name: "종결 성적" }));
   await screen.findByRole("table", { name: "종결 구종 성적" });
-  const total = detailsFor("전체 반응 지표");
-  expect(total.details.open).toBe(false);
-  fireEvent.click(total.trigger);
-  expect(total.details.open).toBe(true);
-  const table = within(total.details).getByRole("table", { name: "전체 반응" });
+  expect(screen.queryByRole("tab", { name: "구종 배합" })).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "코스·반응" }));
+  fireEvent.click(screen.getByRole("button", { name: "전체", exact: true }));
+  const table = screen.getByRole("table", { name: "전체 반응" });
   expect(within(table).getAllByText("—").length).toBeGreaterThan(0);
   const evidence = detailsFor(/투구 기록 보기/);
   expect(evidence.details.open).toBe(false);
@@ -128,6 +207,22 @@ it("keeps pitch and PA denominators distinct while disclosing detailed metrics a
   expect(within(evidence.details).queryAllByRole("link")).toHaveLength(0);
   fireEvent.click(screen.getByRole("button", { name: "모든 코스", exact: true }));
   expect(within(evidence.details).getByRole("link", { name: "투구 장면 r1" })).toBeTruthy();
+});
+
+it("restores selected tabs from the URL and opens A/B controls without issuing a comparison request", async () => {
+  const fetch = mockOutcomes();
+  show("pitcher", "season=2024&competition=all&pitcher=hp1&outcomeView=sample");
+  const sampleTab = screen.getByRole("tab", { name: "표본 기준", selected: true });
+  await screen.findByRole("heading", { name: "표본과 계산 기준" });
+  expect(screen.queryByRole("group", { name: "실제 코스 지도" })).toBeNull();
+  fireEvent.keyDown(sampleTab, { key: "ArrowLeft" });
+  expect(screen.getByRole("tab", { name: "기간 비교", selected: true })).toBe(
+    document.activeElement,
+  );
+  expect(screen.getByRole("tabpanel", { name: "기간 비교" })).toBeTruthy();
+  expect(screen.getByLabelText("기간 A 시즌")).toBeTruthy();
+  expect(screen.getByLabelText("기간 B 시즌")).toBeTruthy();
+  expect(fetch.mock.calls.some(([url]) => String(url).includes("/comparison"))).toBe(false);
 });
 
 it.each(["pitcher", "batter"] as const)(

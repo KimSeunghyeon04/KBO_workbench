@@ -25,7 +25,13 @@ it.each([2020, 2021, 2022, 2023, 2024, 2025])(
       createElement(
         MemoryRouter,
         null,
-        createElement(PitchLocationMap, { season, cells: [], points: [] }),
+        createElement(PitchLocationMap, {
+          season,
+          cells: [],
+          points: [],
+          selectedCell: null,
+          onSelectCell: vi.fn(),
+        }),
       ),
     );
     const expectedRule = resolveBatterStrikeZone(season, 180)?.ruleYear;

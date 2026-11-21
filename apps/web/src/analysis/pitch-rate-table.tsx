@@ -308,6 +308,7 @@ export function PitchOutcomeBreakdown({
     ...("batterId" in data
       ? [{ id: "speed", label: "구속대별", title: "구속대별 반응", rows: data.bySpeed }]
       : []),
+    { id: "overall", label: "전체", title: "전체 반응", rows: [data.total] },
   ];
   const active = groups.find((group) => group.id === selected) ?? groups[0];
   if (!active) return null;

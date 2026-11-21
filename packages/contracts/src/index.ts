@@ -590,6 +590,13 @@ export {
 } from "./pitch-outcomes.js";
 export { PitchArsenalGroupSchema, type PitchArsenalGroup } from "./pitch-arsenal.js";
 export {
+  PitchLocationComparisonQuerySchema,
+  PitchLocationComparisonResponseSchema,
+  pitchLocationComparisonQueries,
+  type PitchLocationComparisonQuery,
+  type PitchLocationComparisonResponse,
+} from "./pitch-location-comparison.js";
+export {
   BatterProfileResponseSchema,
   TerminalBattingGroupSchema,
   type BatterProfileResponse,
@@ -743,11 +750,6 @@ export {
   type MatchupModelResponse,
 } from "./matchup-model.js";
 export {
-  AnalysisPreparationSchema,
-  AnalysisSeasonsSchema,
-  type AnalysisPreparation,
-} from "./analysis-preparation.js";
-export {
   AnalysisPeriodQuerySchema,
   PitchProfilePeriodQuerySchema,
   StatisticsPeriodQuerySchema,
@@ -771,3 +773,8 @@ export {
   type BatterPeriodResponse,
   type DisciplinePeriodResponse,
 } from "./analysis-period-comparison.js";
+export {
+  AnalysisPreparationSchema,
+  AnalysisSeasonsSchema,
+  type AnalysisPreparation,
+} from "./analysis-preparation.js";

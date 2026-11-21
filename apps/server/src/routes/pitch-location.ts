@@ -3,6 +3,8 @@ import {
   ApiErrorSchema,
   PitchOutcomeQuerySchema,
   PitchLocationResponseSchema,
+  PitchLocationComparisonQuerySchema,
+  PitchLocationComparisonResponseSchema,
   PitchAnalysisPitcherParamsSchema,
 } from "@kbo/contracts";
 import { PitchLocationRepository } from "@kbo/persistence";
@@ -12,6 +14,21 @@ export const pitchLocationRoutes: FastifyPluginAsyncTypebox<Pick<RouteContext, "
   context,
 ) => {
   const repository = new PitchLocationRepository(context.pool);
+  app.get(
+    "/api/v2/analysis/pitch-location/:pitcherId/comparison",
+    {
+      schema: {
+        params: PitchAnalysisPitcherParamsSchema,
+        querystring: PitchLocationComparisonQuerySchema,
+        response: {
+          200: PitchLocationComparisonResponseSchema,
+          400: ApiErrorSchema,
+          500: ApiErrorSchema,
+        },
+      },
+    },
+    (request) => repository.compare(request.query, request.params.pitcherId),
+  );
   app.get(
     "/api/v2/analysis/pitch-location/:pitcherId",
     {

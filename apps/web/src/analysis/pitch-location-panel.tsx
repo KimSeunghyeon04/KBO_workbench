@@ -3,25 +3,31 @@ import { useMemo, useState } from "react";
 import type { PitchRateGroup, PitchLocationPoint } from "@kbo/contracts";
 import { replayEvidenceUrl } from "../replay/evidence-target";
 import { outcomePercent as percent } from "./pitch-outcome-presentation";
-
-const cellOrder = Array.from({ length: 25 }, (_, i) => Math.floor((24 - i) / 5) * 5 + (i % 5));
+import { PitchLocationGrid } from "./pitch-location-grid";
 
 export function PitchLocationMap({
   season,
   cells,
   points,
+  selectedCell: cell,
+  onSelectCell,
 }: {
   season: number;
   cells: PitchRateGroup[];
   points: PitchLocationPoint[];
+  selectedCell: number | null;
+  onSelectCell: (cell: number | null) => void;
 }) {
-  const [cell, setCell] = useState<number | null>(null);
   const [page, setPage] = useState(0);
   const selected = useMemo(
     () => (cell === null ? points : points.filter((p) => p.cell === cell)),
     [points, cell],
   );
   const group = cell === null ? undefined : cells[cell];
+  function selectCell(index: number | null) {
+    onSelectCell(index);
+    setPage(0);
+  }
   return (
     <section className="panel outcome-location-panel">
       <div className="analysis-panel-heading">
@@ -33,45 +39,18 @@ export function PitchLocationMap({
       <div className="outcome-location-layout">
         <div className="outcome-zone-figure">
           <span className="outcome-zone-axis">높은 공</span>
-          <div className="outcome-zone-grid" aria-label="실제 코스 지도">
-            {cellOrder.map((index) => {
-              const g = cells[index];
-              if (!g) return null;
-              const small = g.swings < 20;
-              const intensity = Math.min(1, (g.whiffRate ?? 0) / 0.5);
-              const lightness = 95 - 60 * intensity;
-              return (
-                <button
-                  key={index}
-                  aria-label={`코스 ${index}: ${g.pitches}구`}
-                  aria-pressed={cell === index}
-                  className={small ? "small-sample" : undefined}
-                  onClick={() => {
-                    setCell(index);
-                    setPage(0);
-                  }}
-                  style={
-                    small
-                      ? undefined
-                      : {
-                          background: `hsl(164 40% ${lightness}%)`,
-                          // This boundary keeps both text colors above 4.5:1 on the fixed scale.
-                          color: lightness < 36.5 ? "#fff" : "#000",
-                        }
-                  }
-                >
-                  <strong>{percent(g.whiffRate)}</strong>
-                  <small>{g.pitches.toLocaleString()}구</small>
-                  {small && (
-                    <span className="outcome-sample-dot" title="20스윙 미만">
-                      ·
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-            <div className="outcome-zone-outline" aria-hidden="true" />
-          </div>
+          <PitchLocationGrid
+            label="실제 코스 지도"
+            cells={cells.map((g) => ({
+              value: g.whiffRate,
+              pitches: g.pitches,
+              numerator: g.whiffs,
+              denominator: g.swings,
+              unit: "스윙",
+            }))}
+            selected={cell}
+            onSelect={selectCell}
+          />
           <div className="outcome-home-plate" aria-hidden="true" />
           <div className="outcome-zone-legend">
             <span>헛스윙률</span>
@@ -124,10 +103,7 @@ export function PitchLocationMap({
           <button
             className="analysis-button"
             aria-pressed={cell === null}
-            onClick={() => {
-              setCell(null);
-              setPage(0);
-            }}
+            onClick={() => selectCell(null)}
           >
             모든 코스
           </button>

@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { AnalysisSeasonOptions } from "../analysis/analysis-seasons";
 import { useQuery } from "@tanstack/react-query";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
@@ -12,13 +13,15 @@ import { AnalysisScopeFields, analysisScopeSummary } from "../analysis/analysis-
 import { useAnalysisScope } from "../analysis/use-analysis-scope";
 import { AnalysisEmptyState } from "../analysis/analysis-empty-state";
 import { TerminalBattingPanel } from "../analysis/terminal-batting-panel";
-import { PitchRateTable, PitchOutcomeBreakdown } from "../analysis/pitch-rate-table";
+import { PitchOutcomeBreakdown } from "../analysis/pitch-rate-table";
+import { WorkspaceTabs } from "../components/workspace-tabs";
 import { PitchLocationMap } from "../analysis/pitch-location-panel";
 import { AnalysisFilterBar } from "../analysis/analysis-filter-bar";
 import { PitchOutcomeQuickFilters } from "../analysis/pitch-outcome-quick-filters";
 import { outcomePercent } from "../analysis/pitch-outcome-presentation";
-import { PitchOutcomeComparison } from "../analysis/pitch-outcome-comparison";
 import { PlayerPeriodComparison } from "../analysis/player-period-comparison";
+import { PitchArsenalPanel } from "../analysis/pitch-arsenal-panel";
+import { PitchLocationPeriodComparison } from "../analysis/pitch-location-period-comparison";
 import { SMALL_RATE_DENOMINATOR } from "../analysis/sample-rate";
 import { sharedPitchSituationParams } from "../analysis/pitch-situation-params";
 import {
@@ -28,6 +31,7 @@ import {
 import { getPitchLocation, getBatterProfile } from "../api/pitch-outcomes-client";
 import "../styles/pitch-analysis.css";
 import "../styles/analysis-workspace.css";
+import "../styles/pitch-location-comparison.css";
 
 function catalogPlayers(catalog: PitchAnalysisCatalog | DisciplineCatalog) {
   return "pitchers" in catalog
@@ -35,8 +39,47 @@ function catalogPlayers(catalog: PitchAnalysisCatalog | DisciplineCatalog) {
     : catalog.batters.map((p) => ({ id: p.batterId, name: p.name }));
 }
 
+const outcomeTabsId = "pitch-outcomes";
+
 export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
   const { params, selected, season, scope, change, setParams } = useAnalysisScope();
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const tabs = [
+    { id: "overview", label: "코스·반응" },
+    role === "pitcher"
+      ? { id: "arsenal", label: "구종 배합" }
+      : { id: "terminal", label: "종결 성적" },
+    { id: "period", label: "기간 비교" },
+    { id: "sample", label: "표본 기준" },
+  ] as const;
+  const requestedCell = Number(params.get("locationCell")?.trim() || Number.NaN);
+  const selectedCell =
+    Number.isInteger(requestedCell) && requestedCell >= 0 && requestedCell < 25
+      ? requestedCell
+      : null;
+  const activeTab =
+    tabs.find((tab) => tab.id === params.get("outcomeView"))?.id ??
+    (selectedCell !== null || params.get("periodCompare") !== "1" ? "overview" : "period");
+  function selectCell(cell: number | null) {
+    const next = new URLSearchParams(params);
+    if (cell === null) next.delete("locationCell");
+    else next.set("locationCell", String(cell));
+    next.set("outcomeView", "overview");
+    setParams(next, { replace: true, preventScrollReset: true });
+  }
+  function switchTab(tab: (typeof tabs)[number]["id"], next = new URLSearchParams(params)) {
+    if (tab === activeTab) return;
+    next.set("outcomeView", tab);
+    setParams(next);
+    const workspace = workspaceRef.current;
+    const tabList = workspace?.querySelector('[role="tablist"]');
+    if (
+      workspace &&
+      tabList &&
+      workspace.getBoundingClientRect().top < tabList.getBoundingClientRect().top
+    )
+      workspace.scrollIntoView({ block: "start" });
+  }
   const candidate = {
     season,
     ...scope.options,
@@ -175,146 +218,210 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
           </select>
         </label>
       </AnalysisFilterBar>
-      <PitchOutcomeQuickFilters params={params} onChange={setParams} />
-      {!valid && <p role="alert">{scope.error ?? "투구 조건이 올바르지 않습니다."}</p>}
-      <AnalysisQueryError queries={[analysis, catalog]} enabled={valid} />
-      {catalog.isLoading || analysis.isFetching ? (
-        <p role="status">분석 자료를 읽고 있습니다.</p>
-      ) : null}
-      {scope.error === null && players?.length === 0 && (
-        <AnalysisEmptyState season={season} options={scope.options} />
-      )}
-      {catalog.isSuccess && id !== "" && !players?.some((p) => p.id === id) && (
-        <p role="status">선택한 선수(ID {id})의 실제 투구가 이 조회 범위에 없습니다.</p>
-      )}
-      {data && (
-        <>
-          <dl className="outcome-metrics" aria-label="핵심 투구 지표">
-            <div>
-              <dt>분석 투구</dt>
-              <dd>
-                {data.total.pitches.toLocaleString()}
-                <small>구</small>
-              </dd>
-              <span>선택한 조건의 실제 투구</span>
-            </div>
-            <div>
-              <dt>
-                헛스윙률 <small>Whiff%</small>
-              </dt>
-              <dd>{outcomePercent(data.total.whiffRate)}</dd>
-              <span>
-                {data.total.swings.toLocaleString()}스윙 중 {data.total.whiffs.toLocaleString()}
-                헛스윙
-              </span>
-              {data.total.swings > 0 && data.total.swings < SMALL_RATE_DENOMINATOR && (
-                <span>소표본 · 20스윙 미만</span>
-              )}
-            </div>
-            <div>
-              <dt>
-                루킹 + 헛스윙 <small>CSW%</small>
-              </dt>
-              <dd>{outcomePercent(data.total.cswRate)}</dd>
-              <span>실제 투구 중 {data.total.csw.toLocaleString()}구</span>
-              {data.total.pitches > 0 && data.total.pitches < SMALL_RATE_DENOMINATOR && (
-                <span>소표본 · 20구 미만</span>
-              )}
-            </div>
-            <div>
-              <dt>
-                결정구 <small>PutAway%</small>
-              </dt>
-              <dd>{outcomePercent(data.total.putAwayRate)}</dd>
-              <span>
-                2S {data.total.twoStrikePitches.toLocaleString()}구 중{" "}
-                {data.total.terminalStrikeouts.toLocaleString()}삼진
-              </span>
-              {data.total.twoStrikePitches > 0 &&
-                data.total.twoStrikePitches < SMALL_RATE_DENOMINATOR && (
-                  <span>소표본 · 2S 공 20구 미만</span>
-                )}
-            </div>
-          </dl>
-          <div className="outcome-analysis-grid">
-            <PitchLocationMap
-              season={data.scope.season}
-              key={JSON.stringify([id, candidate, data.sourceHash])}
-              cells={data.cells}
-              points={data.points}
-            />
-            <PitchOutcomeBreakdown key={role} data={data} />
-          </div>
-          {"batterId" in data ? (
-            <>
-              <TerminalBattingPanel key={data.sourceHash} data={data.plateAppearances} />
-              <PlayerPeriodComparison kind="batter-profile" query={data.query} playerId={id} />
-            </>
-          ) : (
-            <PitchOutcomeComparison
-              key={id}
-              query={data.query}
-              id={id}
-              role="pitcher"
-              current={data.total}
-            />
-          )}
-          <details className="panel analysis-disclosure">
-            <summary>전체 반응 지표</summary>
-            <PitchRateTable title="전체 반응" rows={[data.total]} />
-          </details>
-          <details className="panel analysis-disclosure">
-            <summary>
-              표본과 계산 기준{" "}
-              <span>좌표·존 미확인 {data.coverage.missingLocation.toLocaleString()}구</span>
-            </summary>
-            <dl className="outcome-coverage-list">
-              <div>
-                <dt>기간 내 투구</dt>
-                <dd>{data.coverage.scopePitches.toLocaleString()}구</dd>
-              </div>
-              <div>
-                <dt>조건 일치</dt>
-                <dd>{data.coverage.filteredPitches.toLocaleString()}구</dd>
-              </div>
-              <div>
-                <dt>상황 제외</dt>
-                <dd>{data.coverage.excludedSituations.toLocaleString()}구</dd>
-              </div>
-              <div>
-                <dt>반응 분석</dt>
-                <dd>{data.total.pitches.toLocaleString()}구</dd>
-              </div>
-              <div>
-                <dt>지도에 표시</dt>
-                <dd>{data.coverage.locationPitches.toLocaleString()}구</dd>
-              </div>
-              <div>
-                <dt>자동 삼진</dt>
-                <dd>{data.coverage.automaticStrikeouts.toLocaleString()}개</dd>
-              </div>
-            </dl>
-            <p className="analysis-caption">
-              Whiff%와 Contact%는 스윙, SwStr%·CSW%는 실제 투구가 분모입니다. 결정구%는 2스트라이크
-              실제 투구 중 삼진 종결 비율이며, 인플레이 안타 비율은 연결된 종결 인플레이 결과가
-              분모입니다. 분모가 없으면 —로 표시합니다.
-            </p>
-          </details>
-          <Link
-            className="outcome-related-link"
-            to={`/analysis/${role === "pitcher" ? "pitch-shape" : "batter-discipline"}?${new URLSearchParams({ season: String(season), ...scope.options, [role]: id, ...(role === "batter" ? sharedPitchSituationParams(params) : {}) })}`}
+      <div className="outcome-workspace" ref={workspaceRef}>
+        <div className="outcome-workspace-tabs">
+          <WorkspaceTabs
+            activeTab={activeTab}
+            ariaLabel="세부 분석"
+            idPrefix={outcomeTabsId}
+            tabs={tabs}
+            onChange={(tab) => switchTab(tab)}
+          />
+        </div>
+        <PitchOutcomeQuickFilters params={params} onChange={setParams} />
+        {!valid && <p role="alert">{scope.error ?? "투구 조건이 올바르지 않습니다."}</p>}
+        <AnalysisQueryError queries={[analysis, catalog]} enabled={valid} />
+        {catalog.isLoading || analysis.isFetching ? (
+          <p role="status">분석 자료를 읽고 있습니다.</p>
+        ) : null}
+        {scope.error === null && players?.length === 0 && (
+          <AnalysisEmptyState season={season} options={scope.options} />
+        )}
+        {catalog.isSuccess && id !== "" && !players?.some((p) => p.id === id) && (
+          <p role="status">선택한 선수(ID {id})의 실제 투구가 이 조회 범위에 없습니다.</p>
+        )}
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            className="outcome-view"
+            role="tabpanel"
+            id={`${outcomeTabsId}-panel-${tab.id}`}
+            aria-labelledby={`${outcomeTabsId}-tab-${tab.id}`}
+            hidden={activeTab !== tab.id}
+            tabIndex={0}
           >
-            {role === "pitcher" ? "같은 범위 구질 보기" : "조건 일치 선구안 비교"}{" "}
-            <span aria-hidden="true">↗</span>
-          </Link>
-          {role === "batter" && (
-            <p className="analysis-caption">
-              구종·카운트·타석 좌우 조건을 유지합니다. 선구안은 자체 상황 제외 기준을 적용하므로
-              실제 투구 전체 표본과 분모가 다를 수 있습니다.
-            </p>
-          )}
-        </>
-      )}
+            {activeTab === tab.id && tab.id === "overview" && data && (
+              <>
+                <dl className="outcome-metrics" aria-label="핵심 투구 지표">
+                  <div>
+                    <dt>분석 투구</dt>
+                    <dd>
+                      {data.total.pitches.toLocaleString()}
+                      <small>구</small>
+                    </dd>
+                    <span>선택한 조건의 실제 투구</span>
+                  </div>
+                  <div>
+                    <dt>
+                      헛스윙률 <small>Whiff%</small>
+                    </dt>
+                    <dd>{outcomePercent(data.total.whiffRate)}</dd>
+                    <span>
+                      {data.total.swings.toLocaleString()}스윙 중{" "}
+                      {data.total.whiffs.toLocaleString()}
+                      헛스윙
+                    </span>
+                    {data.total.swings > 0 && data.total.swings < SMALL_RATE_DENOMINATOR && (
+                      <span>소표본 · 20스윙 미만</span>
+                    )}
+                  </div>
+                  <div>
+                    <dt>
+                      루킹 + 헛스윙 <small>CSW%</small>
+                    </dt>
+                    <dd>{outcomePercent(data.total.cswRate)}</dd>
+                    <span>실제 투구 중 {data.total.csw.toLocaleString()}구</span>
+                    {data.total.pitches > 0 && data.total.pitches < SMALL_RATE_DENOMINATOR && (
+                      <span>소표본 · 20구 미만</span>
+                    )}
+                  </div>
+                  <div>
+                    <dt>
+                      결정구 <small>PutAway%</small>
+                    </dt>
+                    <dd>{outcomePercent(data.total.putAwayRate)}</dd>
+                    <span>
+                      2S {data.total.twoStrikePitches.toLocaleString()}구 중{" "}
+                      {data.total.terminalStrikeouts.toLocaleString()}삼진
+                    </span>
+                    {data.total.twoStrikePitches > 0 &&
+                      data.total.twoStrikePitches < SMALL_RATE_DENOMINATOR && (
+                        <span>소표본 · 2S 공 20구 미만</span>
+                      )}
+                  </div>
+                </dl>
+                <div className="outcome-analysis-grid">
+                  <PitchLocationMap
+                    season={data.scope.season}
+                    key={JSON.stringify([id, candidate, data.sourceHash])}
+                    cells={data.cells}
+                    points={data.points}
+                    selectedCell={selectedCell}
+                    onSelectCell={selectCell}
+                  />
+                  <PitchOutcomeBreakdown key={role} data={data} />
+                </div>
+              </>
+            )}
+            {activeTab === tab.id && tab.id === "arsenal" && data && "arsenal" in data && (
+              <PitchArsenalPanel
+                groups={data.arsenal}
+                onSelect={(group, pitchType) => {
+                  if (
+                    pitchType === null ||
+                    (group.stance !== "L" && group.stance !== "R" && group.stance !== "S")
+                  )
+                    return;
+                  const next = new URLSearchParams(params);
+                  next.set("pitchType", pitchType);
+                  next.set("stance", group.stance);
+                  next.set("balls", String(group.balls));
+                  next.set("strikes", String(group.strikes));
+                  next.delete("locationCell");
+                  switchTab("overview", next);
+                  workspaceRef.current
+                    ?.querySelector<HTMLButtonElement>(`#${outcomeTabsId}-tab-overview`)
+                    ?.focus({ preventScroll: true });
+                }}
+              />
+            )}
+            {activeTab === tab.id &&
+              tab.id === "period" &&
+              valid &&
+              id !== "" &&
+              role === "pitcher" && (
+                <PitchLocationPeriodComparison
+                  query={candidate}
+                  id={id}
+                  params={params}
+                  onChange={setParams}
+                />
+              )}
+            {activeTab === tab.id &&
+              tab.id === "period" &&
+              valid &&
+              id !== "" &&
+              role === "batter" && (
+                <PlayerPeriodComparison
+                  kind="batter-profile"
+                  query={candidate}
+                  playerId={id}
+                  alwaysOpen
+                />
+              )}
+            {activeTab === tab.id && tab.id === "terminal" && data && "batterId" in data && (
+              <TerminalBattingPanel key={data.sourceHash} data={data.plateAppearances} />
+            )}
+            {activeTab === tab.id && tab.id === "sample" && data && (
+              <section className="panel">
+                <h2>표본과 계산 기준</h2>
+                <dl className="outcome-coverage-list">
+                  <div>
+                    <dt>기간 내 투구</dt>
+                    <dd>{data.coverage.scopePitches.toLocaleString()}구</dd>
+                  </div>
+                  <div>
+                    <dt>조건 일치</dt>
+                    <dd>{data.coverage.filteredPitches.toLocaleString()}구</dd>
+                  </div>
+                  <div>
+                    <dt>상황 제외</dt>
+                    <dd>{data.coverage.excludedSituations.toLocaleString()}구</dd>
+                  </div>
+                  <div>
+                    <dt>반응 분석</dt>
+                    <dd>{data.total.pitches.toLocaleString()}구</dd>
+                  </div>
+                  <div>
+                    <dt>지도에 표시</dt>
+                    <dd>{data.coverage.locationPitches.toLocaleString()}구</dd>
+                  </div>
+                  <div>
+                    <dt>좌표·존 미확인</dt>
+                    <dd>{data.coverage.missingLocation.toLocaleString()}구</dd>
+                  </div>
+                  <div>
+                    <dt>자동 삼진</dt>
+                    <dd>{data.coverage.automaticStrikeouts.toLocaleString()}개</dd>
+                  </div>
+                </dl>
+                <p className="analysis-caption">
+                  Whiff%와 Contact%는 스윙, SwStr%·CSW%는 실제 투구가 분모입니다. 결정구%는
+                  2스트라이크 실제 투구 중 삼진 종결 비율이며, 인플레이 안타 비율은 연결된 종결
+                  인플레이 결과가 분모입니다. 분모가 없으면 —로 표시합니다.
+                </p>
+              </section>
+            )}
+          </div>
+        ))}
+        {data && (
+          <>
+            <Link
+              className="outcome-related-link"
+              to={`/analysis/${role === "pitcher" ? "pitch-shape" : "batter-discipline"}?${new URLSearchParams({ season: String(season), ...scope.options, [role]: id, ...(role === "batter" ? sharedPitchSituationParams(params) : {}) })}`}
+            >
+              {role === "pitcher" ? "같은 범위 구질 보기" : "조건 일치 선구안 비교"}{" "}
+              <span aria-hidden="true">↗</span>
+            </Link>
+            {role === "batter" && (
+              <p className="analysis-caption">
+                구종·카운트·타석 좌우 조건을 유지합니다. 선구안은 자체 상황 제외 기준을 적용하므로
+                실제 투구 전체 표본과 분모가 다를 수 있습니다.
+              </p>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

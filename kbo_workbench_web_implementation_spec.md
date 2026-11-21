@@ -399,6 +399,19 @@ collection은 `batsThrows`/`hitType`의 원문과 정규화 방향을 별도 typ
 충돌하거나 없으면 미확인으로 둔다. 좌우 필터와 종결 PA에도 같은 정책을 적용하며 좌표·존 결측은
 유지한다. 투타 매치업의 타자·상대 투수·리그 표본은 같은 타석 방향 판정을 사용한다.
 
+두 기간 코스 comparison API는 동일한
+읽기 전용 snapshot에서 A/B fact와 manifest를 읽은 뒤 연결을 반환하고 기존 코스 집계를 적용한다.
+사용 비중은 기간별 위치 확인 투구가 분모이며 Whiff·CSW·종결 인플레이 안타 비율은 기존
+셀별 분모를 유지한다. 응답의 차이 B−A는 서버에서 계산하고 null·소표본·존 규칙 차이를 표시한다.
+웹은 분석 하위 탭과 A/B 기간을 URL에 보존한다. 코스·반응, 구종 배합(타자는 종결 성적),
+기간 비교, 표본 기준을 각각 상단 탭에서 연다. 기간 비교 탭에는 A/B 조건이 바로 보이고,
+최초 적용 또는 적용한 주소의 복원 시 결과를 조회한다. 선택 구역에서 투구 근거로 이동한다.
+일반 코스 화면은 구역을 URL의 `locationCell`에 저장하며 모든 코스를 선택하면 이를 지운다.
+재생에서 분석으로 돌아올 때 그 URL에서 마지막 구역 선택을 복원한다.
+
+배합은 볼 0–3 × 스트라이크 0–2 상태판에서 서버의 구종 구성비를 표시하고 선택 상태의 좌·우
+배합과 코스 이동을 제공한다. 상태 전이 확률은 계산하지 않는다.
+
 A10/A11/A14 학습은 고정 snapshot을 읽고 연결을 반환한 뒤 별도 maintenance worker에서 실행한다.
 시간 분할에서 전처리도 과거 자료만 적합한다. 결과는 기능별 strict schema와 manifest를 가진
 hash 파일로 원자적으로 공개한다. 잘못된/손상된 모델, 원천 변경, 학습 기간 안의 적용, 규정/시설
@@ -457,12 +470,12 @@ SQL 함수를 `PARALLEL UNSAFE`로 지정한다. 10,000개 궤적과 병렬 실�
 공식 ER처럼 compiler가 독립 계산하지 못한 값은 `official_*` 이름으로 구분한다. 2024 규모에는
 partition을 사용하지 않고 season/date/player/pitcher/batter/count/result 중심 index를 둔다.
 
-선수 기본 기록·구질·타자 특성·선구안의 기간 비교는 공통 A/B 시즌·날짜 선택과 URL을 사용한다.
-기능별 strict 비교 API와 game-core의 명시적 계산을 유지하며, 원천 갱신은 A/B 조회 후 재검증해 거부한다.
-투수 변화는 기존 3/5등판 자동 비교도 제공한다.
-세부 범위·분모·시즌 간 구질 제한은 [기간 비교](docs/analysis/period-comparison.md)에 정의한다.
-
 ## 10. API, Web, SQL 접속과 replay
+
+선수 기본 기록·구질·타자 특성·선구안·코스의 기간 비교는 공통 A/B 시즌·날짜 선택과 URL을 사용한다.
+기능별 strict 비교 API와 game-core의 명시적 계산을 유지하며, 원천 갱신은 A/B 조회 후 재검증해 거부한다.
+기존 코스의 단일 snapshot 비교와 투수 변화의 3/5등판 자동 비교는 유지한다.
+세부 범위·분모·시즌 간 구질 제한은 [기간 비교](docs/analysis/period-comparison.md)에 정의한다.
 
 `/analysis/models`와 `/api/v2/analysis/models`, `/api/v2/analysis/model-jobs`,
 `/api/v2/analysis/model-policy`는 적용 시즌별 여섯 모델의 상태·갱신·취소·선택적 자동 갱신을 제공한다.

@@ -1,7 +1,7 @@
 export interface WorkspaceTab<TabId extends string> {
   readonly id: TabId;
   readonly label: string;
-  readonly count: number;
+  readonly count?: number;
 }
 
 export function WorkspaceTabs<TabId extends string>({
@@ -30,7 +30,7 @@ export function WorkspaceTabs<TabId extends string>({
           role="tab"
           id={`${idPrefix}-tab-${tab.id}`}
           aria-controls={`${idPrefix}-panel-${tab.id}`}
-          aria-label={`${tab.label} ${String(tab.count)}`}
+          aria-label={tab.count === undefined ? undefined : `${tab.label} ${String(tab.count)}`}
           aria-selected={activeTab === tab.id}
           tabIndex={activeTab === tab.id ? 0 : -1}
           className={activeTab === tab.id ? "selected" : undefined}
@@ -55,7 +55,7 @@ export function WorkspaceTabs<TabId extends string>({
           }}
         >
           <span>{tab.label}</span>
-          <strong>{String(tab.count)}</strong>
+          {tab.count !== undefined && <strong>{String(tab.count)}</strong>}
         </button>
       ))}
     </div>

@@ -31,6 +31,18 @@ export async function getPitchLocation(query: PitchOutcomeQuery, id: string, sig
   );
   validate(query, result);
   if (result.pitcherId !== id) throw new Error("투수가 요청과 다릅니다.");
+  if (
+    result.arsenal.reduce((sum, group) => sum + group.pitches, 0) !== result.total.pitches ||
+    result.arsenal.some(
+      (group) =>
+        group.types.reduce((sum, type) => sum + type.pitches, 0) !== group.pitches ||
+        new Set(group.types.map((type) => type.pitchType)).size !== group.types.length,
+    ) ||
+    new Set(
+      result.arsenal.map((group) => JSON.stringify([group.stance, group.balls, group.strikes])),
+    ).size !== result.arsenal.length
+  )
+    throw new Error("구종 배합의 표본 합계가 다릅니다.");
   return result;
 }
 export async function getBatterProfile(query: PitchOutcomeQuery, id: string, signal: AbortSignal) {
