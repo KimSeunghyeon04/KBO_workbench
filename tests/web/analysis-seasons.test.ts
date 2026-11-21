@@ -2,7 +2,7 @@
 import { createElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { cleanup, render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { resolveAnalysisScope } from "@kbo/contracts";
 import { AnalysisPlayersPage } from "../../apps/web/src/pages/analysis-players-page.js";
@@ -15,6 +15,43 @@ afterEach(() => {
   clients.length = 0;
   vi.unstubAllGlobals();
 });
+
+it("keeps a completed analysis when the first season status arrives", async () => {
+  const seasons = Promise.withResolvers<Response>();
+  const catalog = vi.fn(() =>
+    Response.json({
+      season: 2025,
+      scope: resolveAnalysisScope({ season: 2025, competition: "regular" }),
+      pitchers: [{ pitcherId: "anonymous", name: "가상 투수", pitches: 100 }],
+    }),
+  );
+  vi.stubGlobal("fetch", (input: RequestInfo | URL) =>
+    String(input).includes("/analysis/seasons") ? seasons.promise : Promise.resolve(catalog()),
+  );
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  clients.push(client);
+  render(
+    createElement(
+      QueryClientProvider,
+      { client },
+      createElement(
+        MemoryRouter,
+        { initialEntries: ["/analysis/players?season=2025"] },
+        createElement(AnalysisRefreshBoundary),
+        createElement(AnalysisPlayersPage),
+      ),
+    ),
+  );
+  await screen.findByRole("link", { name: "가상 투수 분석 보기" });
+  await act(async () => {
+    seasons.resolve(
+      Response.json({ sourceHash: "a".repeat(64), seasons: [2025, 2024], preparation: [] }),
+    );
+  });
+  await screen.findByRole("option", { name: "2024" });
+  expect(catalog).toHaveBeenCalledTimes(1);
+});
+
 it("discovers imported seasons, defaults to the latest and refreshes active analysis when a new source arrives", async () => {
   let version = 1;
   const calls: string[] = [];

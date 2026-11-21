@@ -60,7 +60,7 @@ function AnalysisDataRefresh({ showStatus }: { showStatus: boolean }) {
   useEffect(() => {
     const hash = result.data?.sourceHash;
     if (hash === undefined) return;
-    const changed = previous.current !== hash;
+    const changed = previous.current !== undefined && previous.current !== hash;
     previous.current = hash;
     if (changed)
       void client.invalidateQueries({

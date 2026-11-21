@@ -30,6 +30,7 @@ function mockOutcomes(
 ) {
   const fetch = vi.fn(async (input: RequestInfo | URL) => {
     const u = new URL(String(input), "http://localhost");
+    if (u.pathname.endsWith("/comparison")) return Response.json(null, { status: 400 });
     const raw = Object.fromEntries(u.searchParams);
     const query = Value.Decode(PitchOutcomeQuerySchema, {
       ...raw,
@@ -223,6 +224,29 @@ it("restores selected tabs from the URL and opens A/B controls without issuing a
   expect(screen.getByLabelText("기간 A 시즌")).toBeTruthy();
   expect(screen.getByLabelText("기간 B 시즌")).toBeTruthy();
   expect(fetch.mock.calls.some(([url]) => String(url).includes("/comparison"))).toBe(false);
+});
+
+it.each([
+  ["pitcher", "/api/v2/analysis/pitch-location/hp1"],
+  ["batter", "/api/v2/analysis/batter-profile/b1"],
+] as const)("requests only the %s comparison after apply", async (role, path) => {
+  const fetch = mockOutcomes();
+  const analysisRequests = () =>
+    fetch.mock.calls
+      .map(([url]) => new URL(String(url), "http://localhost").pathname)
+      .filter((pathname) => pathname === path || pathname === `${path}/comparison`);
+  show(role, "season=2025&competition=all&outcomeView=period");
+
+  const apply = await screen.findByRole("button", { name: "두 기간 비교 적용" });
+  expect(analysisRequests()).toEqual([]);
+
+  fireEvent.click(apply);
+  expect((await screen.findByRole("alert")).textContent).toContain("요청에 실패했습니다 (400)");
+  expect(analysisRequests()).toEqual([`${path}/comparison`]);
+
+  fireEvent.click(screen.getByRole("tab", { name: "코스·반응" }));
+  await screen.findByRole("table", { name: "구종별 반응" });
+  expect(analysisRequests()).toEqual([`${path}/comparison`, path]);
 });
 
 it.each(["pitcher", "batter"] as const)(

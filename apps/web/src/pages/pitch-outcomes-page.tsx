@@ -103,9 +103,12 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
   });
   const players = catalog.data;
   const id = params.get(role) ?? players?.[0]?.id ?? "";
+  const canAnalyze = valid && id !== "";
+  const isComparisonTab = activeTab === "period";
   const analysis = useQuery({
     queryKey: ["pitch-outcomes", role, id, candidate],
-    enabled: valid && id !== "",
+    enabled: canAnalyze && !isComparisonTab,
+    subscribed: !isComparisonTab,
     queryFn: async ({ signal }) => {
       if (!Value.Check(PitchOutcomeQuerySchema, candidate)) throw new Error("잘못된 투구 조건");
       return role === "pitcher"
@@ -230,8 +233,11 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
         </div>
         <PitchOutcomeQuickFilters params={params} onChange={setParams} />
         {!valid && <p role="alert">{scope.error ?? "투구 조건이 올바르지 않습니다."}</p>}
-        <AnalysisQueryError queries={[analysis, catalog]} enabled={valid} />
-        {catalog.isLoading || analysis.isFetching ? (
+        <AnalysisQueryError
+          queries={isComparisonTab ? [catalog] : [analysis, catalog]}
+          enabled={valid}
+        />
+        {catalog.isLoading || (!isComparisonTab && analysis.isFetching) ? (
           <p role="status">분석 자료를 읽고 있습니다.</p>
         ) : null}
         {scope.error === null && players?.length === 0 && (
@@ -335,30 +341,22 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
                 }}
               />
             )}
-            {activeTab === tab.id &&
-              tab.id === "period" &&
-              valid &&
-              id !== "" &&
-              role === "pitcher" && (
-                <PitchLocationPeriodComparison
-                  query={candidate}
-                  id={id}
-                  params={params}
-                  onChange={setParams}
-                />
-              )}
-            {activeTab === tab.id &&
-              tab.id === "period" &&
-              valid &&
-              id !== "" &&
-              role === "batter" && (
-                <PlayerPeriodComparison
-                  kind="batter-profile"
-                  query={candidate}
-                  playerId={id}
-                  alwaysOpen
-                />
-              )}
+            {activeTab === tab.id && tab.id === "period" && canAnalyze && role === "pitcher" && (
+              <PitchLocationPeriodComparison
+                query={candidate}
+                id={id}
+                params={params}
+                onChange={setParams}
+              />
+            )}
+            {activeTab === tab.id && tab.id === "period" && canAnalyze && role === "batter" && (
+              <PlayerPeriodComparison
+                kind="batter-profile"
+                query={candidate}
+                playerId={id}
+                alwaysOpen
+              />
+            )}
             {activeTab === tab.id && tab.id === "terminal" && data && "batterId" in data && (
               <TerminalBattingPanel key={data.sourceHash} data={data.plateAppearances} />
             )}
@@ -404,7 +402,7 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
             )}
           </div>
         ))}
-        {data && (
+        {(data || (isComparisonTab && canAnalyze)) && (
           <>
             <Link
               className="outcome-related-link"
