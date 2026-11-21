@@ -252,7 +252,7 @@ describe("RecordCorrectionService 매칭", () => {
     });
   });
 
-  it("proposal hash가 stale이면 session을 바꾸지 않고 정상 batch는 한 번에 undo한다", async () => {
+  it("제안 검증이나 승인 저장에 실패하면 세션을 보존하고 성공한 batch는 한 번에 undo한다", async () => {
     await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-record-correction-"));
     const fixture = await setup([game("golden-game-1", "anon_DH1")]);
     const item = await fixture.service.assessNotice(fixture.notice);
@@ -284,6 +284,17 @@ describe("RecordCorrectionService 매칭", () => {
     ).rejects.toThrow(RecordCorrectionConflictError);
     expect(sessions.get(session.sessionId).sessionVersion).toBe(session.sessionVersion);
 
+    fixture.markProposalApplied.mockRejectedValueOnce(new Error("기록정정 승인 저장 실패"));
+    await expect(
+      service.applyProposal(
+        session.sessionId,
+        item.noticeId,
+        session.sessionVersion,
+        proposal.proposalHash,
+      ),
+    ).rejects.toThrow("기록정정 승인 저장 실패");
+    expect(sessions.get(session.sessionId)).toEqual(session);
+
     const applied = await service.applyProposal(
       session.sessionId,
       item.noticeId,
@@ -291,7 +302,10 @@ describe("RecordCorrectionService 매칭", () => {
       proposal.proposalHash,
     );
     expect(applied.session.sessionVersion).toBe(session.sessionVersion + 1);
-    expect(fixture.markProposalApplied).toHaveBeenCalledOnce();
+    expect(fixture.markProposalApplied).toHaveBeenCalledTimes(2);
+    expect(fixture.markProposalApplied).toHaveBeenLastCalledWith(
+      expect.objectContaining({ documentHash: applied.session.draftDocumentHash }),
+    );
     const undone = await sessions.undo(session.sessionId, applied.session.sessionVersion);
     expect(resultOf(undone.session, "e10")).toBe("single");
     sessions.close();

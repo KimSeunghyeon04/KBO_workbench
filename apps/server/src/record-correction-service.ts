@@ -431,20 +431,20 @@ export class RecordCorrectionService {
       throw new RecordCorrectionConflictError("KBO 정정 제안이 stale 상태입니다.");
     if (!proposal.eligible || proposal.batch === null)
       throw new RecordCorrectionConflictError("현재 제안은 적용할 수 없습니다.");
-    const result = await this.sessions.command(
+    return this.sessions.command(
       sessionId,
       expectedSessionVersion,
       proposal.batch,
       true,
+      (draftDocumentHash) =>
+        this.repository.markProposalApplied({
+          noticeId,
+          caseVersion: item.caseVersion,
+          sessionId,
+          proposalHash,
+          documentHash: draftDocumentHash,
+        }),
     );
-    await this.repository.markProposalApplied({
-      noticeId,
-      caseVersion: item.caseVersion,
-      sessionId,
-      proposalHash,
-      documentHash: result.session.draftDocumentHash,
-    });
-    return result;
   }
 
   public async afterImport(gameId: string, revision: number, documentHash: string): Promise<void> {

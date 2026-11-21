@@ -147,6 +147,7 @@ export class CorrectionSessionManager {
     expected: number,
     command: CorrectionCommand,
     apply: boolean,
+    beforeApply?: (draftDocumentHash: string) => Promise<void>,
   ): Promise<CorrectionMutationResult> {
     return this.sessions.withSessionLock(sessionId, expected, async (session) => {
       const computed = await this.computation.run({
@@ -159,6 +160,7 @@ export class CorrectionSessionManager {
       const result = computed.value;
       if (apply) {
         if (computed.snapshot === undefined) throw new Error("Missing correction snapshot");
+        if (beforeApply !== undefined) await beforeApply(computed.snapshot.draftDocumentHash);
         session.undoStack.push({ before: session.document, after: result.document });
         session.redoStack = [];
         session.document = result.document;

@@ -721,8 +721,8 @@ limit은 1000이다.
 
 기록정정 API는 job 생성·조회·취소, 상태 summary/list/detail, append-only review action, correction
 draft 생성, session proposal preview/apply를 제공한다. `/record-corrections`는 상태·시즌·팀·선수로
-필터링하고 실행 중 job만 polling한다. proposal apply는 correction session만 변경하며 commit/import
-API의 권위와 확인 절차를 우회하지 않는다.
+필터링하고 실행 중 job만 polling한다. proposal apply는 session lock 안에서 컴파일하고 승인 이력
+저장이 성공한 뒤 작업 사본과 버전을 갱신한다. 현재 원장과 봉인본은 commit/import API로 갱신한다.
 
 공지의 경기 연결은 날짜·원정/홈 팀을 기준으로 current sealed revision에서 찾는다. 구장명은
 연결 조건이 아니며 표기 차이나 미제공을 허용한다. 복수 대진은 DH 번호로 구분하고, 명시된 DH
