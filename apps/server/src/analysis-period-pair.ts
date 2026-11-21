@@ -31,11 +31,11 @@ export function periodSnapshot(
 export async function readAnalysisPeriodPair<T extends { sourceHash: string }>(
   first: () => Promise<T>,
   second: () => Promise<T>,
+  readFirstSourceHash = async () => (await first()).sourceHash,
 ): Promise<{ first: T; second: T }> {
   const a = await first();
   const b = await second();
-  const check = await first();
-  if (a.sourceHash !== check.sourceHash)
+  if (a.sourceHash !== (await readFirstSourceHash()))
     throw new InvalidAnalysisScopeError(
       "비교 조회 중 원천 기록이 갱신됐습니다. 두 기간 비교를 다시 시도하세요.",
     );

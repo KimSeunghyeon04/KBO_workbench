@@ -8,8 +8,8 @@ import {
   resolveAnalysisScope,
   PitchOutcomeRowSchema,
   TerminalPaRowSchema,
-  type AnalysisScopeOptions,
   type AnalysisScope,
+  type PitchOutcomeQuery,
   type PitchOutcomeRow,
   type TerminalPaRow,
 } from "@kbo/contracts";
@@ -28,23 +28,78 @@ import {
 /** Physical pitch rows and compiler PA rows are separate reads in one immutable-source snapshot. */
 export async function readPitchOutcomes(
   pool: Pool,
-  season: number,
-  options: AnalysisScopeOptions,
+  scope: AnalysisScope,
   actorId: string,
   role: "pitcher" | "batter",
 ) {
-  const scope = resolveAnalysisScope({ season, ...options }, "regular");
-  return withAnalysisSnapshot(pool, async (client, release) => {
-    const manifest = await analysisSourceHash(client, scope);
-    const { rows, plateAppearances } = await readPitchOutcomeRows(client, scope, actorId, role);
-    await release();
-    // Hash effective heights, batting profiles and geometry so supplement imports invalidate results.
-    const sourceHash = pitchOutcomeSourceHash(manifest, role, actorId, rows, plateAppearances);
-    return { scope, sourceHash, rows, plateAppearances };
-  });
+  const input = await withAnalysisSnapshot(pool, (client) =>
+    readPitchOutcomeInput(client, scope, actorId, role),
+  );
+  return pitchOutcomeSnapshot(input, role, actorId);
 }
 
-export function pitchOutcomeSourceHash(
+export async function readPitchOutcomePair(
+  pool: Pool,
+  firstScope: AnalysisScope,
+  secondScope: AnalysisScope,
+  actorId: string,
+  role: "pitcher" | "batter",
+) {
+  const [first, second] = await withAnalysisSnapshot(
+    pool,
+    async (client) =>
+      [
+        await readPitchOutcomeInput(client, firstScope, actorId, role),
+        await readPitchOutcomeInput(client, secondScope, actorId, role),
+      ] as const,
+  );
+  return {
+    first: pitchOutcomeSnapshot(first, role, actorId),
+    second: pitchOutcomeSnapshot(second, role, actorId),
+  };
+}
+
+export function pitchOutcomeScope({ season, competition, dateFrom, dateTo }: PitchOutcomeQuery) {
+  return resolveAnalysisScope(
+    {
+      season,
+      ...(competition === undefined ? {} : { competition }),
+      ...(dateFrom === undefined ? {} : { dateFrom }),
+      ...(dateTo === undefined ? {} : { dateTo }),
+    },
+    "regular",
+  );
+}
+
+async function readPitchOutcomeInput(
+  client: PoolClient,
+  scope: AnalysisScope,
+  actorId: string,
+  role: "pitcher" | "batter",
+) {
+  const manifest = await analysisSourceHash(client, scope);
+  return {
+    scope,
+    manifest,
+    ...(await readPitchOutcomeRows(client, scope, actorId, role)),
+  };
+}
+
+function pitchOutcomeSnapshot(
+  { scope, manifest, rows, plateAppearances }: Awaited<ReturnType<typeof readPitchOutcomeInput>>,
+  role: "pitcher" | "batter",
+  actorId: string,
+) {
+  // Hash effective heights, batting profiles and geometry so supplement imports invalidate results.
+  return {
+    scope,
+    sourceHash: pitchOutcomeSourceHash(manifest, role, actorId, rows, plateAppearances),
+    rows,
+    plateAppearances,
+  };
+}
+
+function pitchOutcomeSourceHash(
   manifest: string,
   role: "pitcher" | "batter",
   actorId: string,

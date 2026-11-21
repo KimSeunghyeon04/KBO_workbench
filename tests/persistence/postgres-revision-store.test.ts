@@ -1014,6 +1014,9 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     const discipline = new BatterDisciplineRepository(pool, referenceCache);
     const before = await pitch.analyze(2024, "hp1", { competition: "regular" });
     const disciplineBefore = await discipline.snapshot(2024, undefined, { competition: "regular" });
+    expect(await discipline.readSourceHash({ season: 2024, competition: "regular" })).toBe(
+      disciplineBefore.sourceHash,
+    );
     expect(before.actualPitchCount).toBe(0);
     const dataset = competitionFixture(2024, [
       {
@@ -1054,6 +1057,17 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(disc.sourceHash).not.toBe(disciplineBefore.sourceHash);
     expect(disc.rows).toHaveLength(4);
     expect(disc.reference?.summary.candidateCount).toBe(3);
+    expect(await discipline.readSourceHash({ season: 2024, competition: "regular" })).toBe(
+      disc.sourceHash,
+    );
+    await seedBatterHeights(pool, source, 185);
+    const nextDiscipline = await discipline.snapshot(2024, disc.sourceHash, {
+      competition: "regular",
+    });
+    expect(nextDiscipline.sourceHash).not.toBe(disc.sourceHash);
+    expect(await discipline.readSourceHash({ season: 2024, competition: "regular" })).toBe(
+      nextDiscipline.sourceHash,
+    );
   });
 
   it("classifies untracked pitches and terminal PA from same-game profiles without changing sealed facts or geometry", async () => {
@@ -1244,10 +1258,16 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
         "hp1",
       ),
     ).rejects.toThrow("유효한 날짜");
-    const bat = await new BatterProfileRepository(pool).analyze(query, "a1");
+    const batters = new BatterProfileRepository(pool);
+    const bat = await batters.analyze(query, "a1");
     expect(bat.plateAppearances.total).toMatchObject({ pa: 1, ab: 1, strikeouts: 1 });
     expect(bat.plateAppearances.byTerminalType[0]?.key).toBe("직구");
     expect(bat.total.pitches).toBe(4);
+    const nextPeriod = { ...query, dateFrom: "2024-06-02" };
+    const batPair = await batters.compare(query, nextPeriod, "a1");
+    expect(batPair.first).toEqual(bat);
+    expect(batPair.second.total.pitches).toBe(0);
+    expect(batPair.second).toEqual(await batters.analyze(nextPeriod, "a1"));
     const draft = await store.loadCorrectionDraft(source.metadata.gameId, 1);
     await store.importRevision(
       parseStagingGameDocumentV2({ ...draft, metadata: { ...draft.metadata, stadium: "잠실" } }),

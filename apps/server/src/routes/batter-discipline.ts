@@ -9,6 +9,9 @@ import {
   DisciplinePeriodQuerySchema,
   DisciplinePeriodResponseSchema,
   analysisPeriodQueries,
+  canonicalStringify,
+  type DisciplineQuery,
+  type DisciplineResponse,
 } from "@kbo/contracts";
 import { compareDisciplinePeriods } from "@kbo/game-core";
 import { readAnalysisPeriodPair, periodSnapshot } from "../analysis-period-pair.js";
@@ -19,6 +22,7 @@ import {
 } from "@kbo/persistence";
 import type { RouteContext } from "./context.js";
 import { BatterDisciplineService } from "../batter-discipline-service.js";
+import { BoundedReadCache } from "../bounded-read-cache.js";
 
 type Options = Pick<RouteContext, "pool"> & {
   references: Pick<PitchReferenceWorkspace, "getOrCreate">;
@@ -31,6 +35,15 @@ export const batterDisciplineRoutes: FastifyPluginAsyncTypebox<Options> = async 
     context.computeReference,
   );
   const service = new BatterDisciplineService(repository);
+  const periods = new BoundedReadCache<DisciplineResponse>(16 * 1024 * 1024, 16, 300_000);
+  const readPeriod = async (query: DisciplineQuery, batterId: string) => {
+    const key = canonicalStringify([query, batterId]);
+    const cached = await periods.get(key);
+    if (cached !== undefined && cached.sourceHash === (await repository.readSourceHash(query))) {
+      return cached;
+    }
+    return periods.load(key, () => service.analyze(query, batterId), true);
+  };
   app.get(
     "/api/v2/analysis/batter-discipline/:batterId/comparison",
     {
@@ -49,8 +62,9 @@ export const batterDisciplineRoutes: FastifyPluginAsyncTypebox<Options> = async 
       const { first, second } = analysisPeriodQueries(request.query);
       const playerId = request.params.batterId;
       const pair = await readAnalysisPeriodPair(
-        () => service.analyze(first, playerId),
-        () => service.analyze(second, playerId),
+        () => readPeriod(first, playerId),
+        () => readPeriod(second, playerId),
+        () => repository.readSourceHash(first),
       );
       const snapshot = (d: typeof pair.first) =>
         periodSnapshot(d.query, d.sourceHash, [
@@ -72,7 +86,10 @@ export const batterDisciplineRoutes: FastifyPluginAsyncTypebox<Options> = async 
       };
     },
   );
-  app.addHook("onClose", async () => service.close());
+  app.addHook("onClose", async () => {
+    periods.clear();
+    await service.close();
+  });
   app.get(
     "/api/v2/analysis/batter-discipline",
     {

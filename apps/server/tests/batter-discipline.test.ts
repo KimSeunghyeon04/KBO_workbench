@@ -55,12 +55,18 @@ describe("batter discipline API and worker", () => {
     expect((await pending).every((p) => p.status === "rejected")).toBe(true);
   });
   it("validates filters and returns a strict API response", async () => {
+    let firstPeriodHash = "a".repeat(64);
+    const sourceHash = (season: number) => (season === 2026 ? firstPeriodHash : "a".repeat(64));
     const read = vi
       .spyOn(BatterDisciplineRepository.prototype, "snapshot")
       .mockImplementation(async (season) => ({
         ...disciplineSnapshot([disciplineRow({ season, gameDate: `${season}-06-01` })]),
         season,
+        sourceHash: sourceHash(season),
       }));
+    const readHash = vi
+      .spyOn(BatterDisciplineRepository.prototype, "readSourceHash")
+      .mockImplementation(async ({ season }) => sourceHash(season));
     const catalog = vi.spyOn(BatterDisciplineRepository.prototype, "catalog").mockResolvedValue({
       season: 2024,
       scope: resolveAnalysisScope({ season: 2024 }),
@@ -105,19 +111,56 @@ describe("batter discipline API and worker", () => {
       });
 
       read.mockClear();
-      const comparison = await app.inject(
-        "/api/v2/analysis/batter-discipline/b1/comparison?season=2026&compareSeason=2027",
-      );
+      const comparisonUrl =
+        "/api/v2/analysis/batter-discipline/b1/comparison?season=2026&compareSeason=2027";
+      const comparison = await app.inject(comparisonUrl);
       expect(comparison.statusCode, comparison.body).toBe(200);
       expect(comparison.json()).toMatchObject({
         first: { scope: { season: 2026 } },
         second: { scope: { season: 2027 } },
       });
-      expect(read.mock.calls.map(([season]) => season)).toEqual([2026, 2027, 2026]);
+      expect(read.mock.calls.map(([season]) => season)).toEqual([2026, 2027]);
+      expect(readHash).toHaveBeenLastCalledWith({ season: 2026 });
+
+      read.mockClear();
+      const repeated = await app.inject(comparisonUrl);
+      expect(repeated.statusCode, repeated.body).toBe(200);
+      expect(repeated.json()).toEqual(comparison.json());
+      expect(read).not.toHaveBeenCalled();
+
+      // A changed source is rejected even if both period results were cache hits.
+      readHash
+        .mockResolvedValueOnce("a".repeat(64))
+        .mockResolvedValueOnce("a".repeat(64))
+        .mockResolvedValueOnce("b".repeat(64));
+      expect((await app.inject(comparisonUrl)).statusCode).toBe(400);
+      expect(read).not.toHaveBeenCalled();
+
+      const narrower = await app.inject(comparisonUrl + "&dateFrom=2026-06-02");
+      expect(narrower.statusCode, narrower.body).toBe(200);
+      expect(narrower.json()).toMatchObject({
+        first: {
+          scope: { season: 2026, dateFrom: "2026-06-02" },
+          samples: expect.arrayContaining([{ label: "지도 표본", count: 0 }]),
+        },
+        second: { scope: { season: 2027 } },
+      });
+      expect(read.mock.calls.map(([season]) => season)).toEqual([2026]);
+      read.mockClear();
+
+      firstPeriodHash = "b".repeat(64);
+      const refreshed = await app.inject(comparisonUrl);
+      expect(refreshed.statusCode, refreshed.body).toBe(200);
+      expect(refreshed.json()).toMatchObject({
+        first: { sourceHash: "b".repeat(64) },
+        second: { sourceHash: "a".repeat(64) },
+      });
+      expect(read.mock.calls.map(([season]) => season)).toEqual([2026]);
     } finally {
       await app.close();
       await pool.end();
       read.mockRestore();
+      readHash.mockRestore();
       catalog.mockRestore();
     }
   });

@@ -478,8 +478,9 @@ partition을 사용하지 않고 season/date/player/pitcher/batter/count/result 
 ## 10. API, Web, SQL 접속과 replay
 
 선수 기본 기록·구질·타자 특성·선구안·코스의 기간 비교는 공통 A/B 시즌·날짜 선택과 URL을 사용한다.
-기능별 strict 비교 API와 game-core의 명시적 계산을 유지하며, 원천 갱신은 A/B 조회 후 재검증해 거부한다.
-기존 코스의 단일 snapshot 비교와 투수 변화의 3/5등판 자동 비교는 유지한다.
+기능별 strict 비교 API와 game-core의 명시적 계산을 유지한다. 타자 특성과 코스는 A/B를 한
+snapshot에서 읽고, 기본 기록·구질·선구안은 A/B 조회 후 A의 원천 hash를 재검증한다.
+선구안 비교의 재검증은 원천 지문만 읽는다. 투수 변화는 3/5등판 자동 비교를 별도로 제공한다.
 세부 범위·분모·시즌 간 구질 제한은 [기간 비교](docs/analysis/period-comparison.md)에 정의한다.
 
 `/analysis/models`와 `/api/v2/analysis/models`, `/api/v2/analysis/model-jobs`,

@@ -9,7 +9,7 @@ import {
   analysisPeriodQueries,
 } from "@kbo/contracts";
 import { compareBatterProfilePeriods } from "@kbo/game-core";
-import { readAnalysisPeriodPair, periodSnapshot } from "../analysis-period-pair.js";
+import { periodSnapshot } from "../analysis-period-pair.js";
 import { BatterProfileRepository } from "@kbo/persistence";
 import type { RouteContext } from "./context.js";
 export const batterProfileRoutes: FastifyPluginAsyncTypebox<Pick<RouteContext, "pool">> = async (
@@ -29,10 +29,7 @@ export const batterProfileRoutes: FastifyPluginAsyncTypebox<Pick<RouteContext, "
     async (request) => {
       const { first, second } = analysisPeriodQueries(request.query);
       const playerId = request.params.batterId;
-      const pair = await readAnalysisPeriodPair(
-        () => repository.analyze(first, playerId),
-        () => repository.analyze(second, playerId),
-      );
+      const pair = await repository.compare(first, second, playerId);
       const snapshot = (d: typeof pair.first) =>
         periodSnapshot(
           d.query,

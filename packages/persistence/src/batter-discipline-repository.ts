@@ -1,5 +1,9 @@
 import { withAnalysisSnapshot } from "./analysis-snapshot.js";
-import { resolveAnalysisScope, type AnalysisScopeOptions } from "@kbo/contracts";
+import {
+  resolveAnalysisScope,
+  type AnalysisScope,
+  type AnalysisScopeOptions,
+} from "@kbo/contracts";
 import {
   ANALYSIS_GAME_WHERE,
   analysisScopeParameters,
@@ -14,13 +18,14 @@ import {
   PITCH_ANALYSIS_MODEL_VERSION,
   PITCH_REFERENCE_VERSION,
   type DisciplineCatalog,
+  type DisciplineQuery,
   type DisciplineSnapshot,
   type DisciplineRow,
 } from "@kbo/contracts";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { TypeCompiler } from "@sinclair/typebox/compiler";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { pitchEligibilitySql } from "./analysis-pitch-input.js";
 import type { PitchReferenceWorkspace } from "./pitch-reference-workspace.js";
 import {
@@ -89,28 +94,9 @@ export class BatterDisciplineRepository {
     knownHash?: string,
     options: AnalysisScopeOptions = {},
   ): Promise<DisciplineSnapshot> {
-    const selectedScope = resolveAnalysisScope({ season, ...options });
-    const scope = { ...selectedScope, dateFrom: null, dateTo: null };
+    const scope = disciplineSeasonScope(season, options);
     return withAnalysisSnapshot(this.pool, async (client, releaseSnapshot) => {
-      const referenceHash = await analysisSourceHash(client, scope);
-      // Hash effective frozen heights: supplement imports leave sealed game hashes unchanged.
-      const heights = await client.query<Record<string, unknown>>(
-        `
-        SELECT r.game_id AS "gameId",r.revision,h.player_id AS "playerId",h.height_cm AS "heightCm"
-        FROM analytics.current_analysis_games r
-        LEFT JOIN analytics.game_batter_heights h ON h.game_id=r.game_id AND h.revision=r.revision
-        WHERE ${ANALYSIS_GAME_WHERE} ORDER BY r.game_id COLLATE "C",h.player_id COLLATE "C"`,
-        analysisScopeParameters(scope),
-      );
-      const sourceHash = createHash("sha256")
-        .update(
-          canonicalStringify({
-            referenceHash,
-            zonePolicy: "frozen-player-height-effective-season-v4",
-            heights: Value.Decode(Type.Array(heightInputSchema), heights.rows),
-          }),
-        )
-        .digest("hex");
+      const { referenceHash, sourceHash } = await disciplineSourceHashes(client, scope);
       if (sourceHash === knownHash) {
         await releaseSnapshot();
         return { season, sourceHash, reference: null, rows: null };
@@ -159,4 +145,43 @@ export class BatterDisciplineRepository {
       return { season, sourceHash, reference, rows };
     });
   }
+
+  public async readSourceHash({
+    season,
+    competition,
+  }: Pick<DisciplineQuery, "season" | "competition">) {
+    const scope = disciplineSeasonScope(season, competition === undefined ? {} : { competition });
+    return withAnalysisSnapshot(
+      this.pool,
+      async (client) => (await disciplineSourceHashes(client, scope)).sourceHash,
+    );
+  }
+}
+
+function disciplineSeasonScope(season: number, options: AnalysisScopeOptions): AnalysisScope {
+  const selectedScope = resolveAnalysisScope({ season, ...options });
+  return { ...selectedScope, dateFrom: null, dateTo: null };
+}
+
+async function disciplineSourceHashes(client: PoolClient, scope: AnalysisScope) {
+  const referenceHash = await analysisSourceHash(client, scope);
+  // Supplement imports can change effective heights without changing a sealed game hash.
+  const heights = await client.query<Record<string, unknown>>(
+    `
+    SELECT r.game_id AS "gameId",r.revision,h.player_id AS "playerId",h.height_cm AS "heightCm"
+    FROM analytics.current_analysis_games r
+    LEFT JOIN analytics.game_batter_heights h ON h.game_id=r.game_id AND h.revision=r.revision
+    WHERE ${ANALYSIS_GAME_WHERE} ORDER BY r.game_id COLLATE "C",h.player_id COLLATE "C"`,
+    analysisScopeParameters(scope),
+  );
+  const sourceHash = createHash("sha256")
+    .update(
+      canonicalStringify({
+        referenceHash,
+        zonePolicy: "frozen-player-height-effective-season-v4",
+        heights: Value.Decode(Type.Array(heightInputSchema), heights.rows),
+      }),
+    )
+    .digest("hex");
+  return { referenceHash, sourceHash };
 }

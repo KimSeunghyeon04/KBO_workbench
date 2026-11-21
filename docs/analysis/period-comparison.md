@@ -47,10 +47,11 @@ URL을 먼저 확정한 뒤 한 비교 요청을 보낸다. 편집 중에는 기
 A는 `season/dateFrom/dateTo`, B는 `compareSeason/compareDateFrom/compareDateTo`이며 나머지는
 두 기간 공통 조건이다. 비교 지표의 산식은 game-core의 명시적 함수가 소유한다. 웹은 수치를 재계산하지 않는다.
 
-각 기존 reader는 자체 repeatable-read snapshot과 원천 hash를 유지한다. CPU·worker 실행 중
-DB 연결을 잡아 두지 않으며, A → B → A 원천 hash 재검증으로 조회 사이의 기록 갱신을 거부한다.
-시즌이 달라 정상적으로 다른 A/B hash를 같아야 한다고 요구하지 않는다. 코스 지도는 기존 단일
-snapshot의 두 기간 조회를 유지한다. 실패는 원래 오류와 명시적 재시도로 복구한다.
+타자 특성과 코스 지도는 한 repeatable-read snapshot에서 두 기간의 투구·타석 입력을 읽고,
+연결을 반환한 뒤 각각 계산한다. 기본 기록·구질·선구안은 기간별 snapshot을 읽은 뒤 A의
+원천 hash를 다시 확인해 조회 사이의 기록 갱신을 거부한다. 선구안은 이 확인에 투구 표본을
+다시 읽지 않는다. 선구안 비교가 같은 기간·선수·필터 결과를 재사용할 때도 매번 현재
+revision·경기 분류·유효 신장 지문을 확인한다. 실패는 원래 오류와 명시적 재시도로 복구한다.
 
 서버가 적용 query·선수·scope·원천 hash·지표와 표본을 반환하고 웹은 strict decode 및 요청/응답
 일치·중복 지표·차이·비율 분모를 검증한다. sealed 기록·projection·migration은 변경하지 않는다.
