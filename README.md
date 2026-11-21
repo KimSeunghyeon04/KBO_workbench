@@ -236,7 +236,8 @@ pnpm build
 
 기본 `pnpm test`는 DSN이 없으면 PostgreSQL 통합 테스트를 건너뛴다.
 통합·E2E는 고유한 임시 DB·워크스페이스를 사용하고 실제 Naver 호출 없이 fixture로 검증한다.
-E2E에서 빌드하는 앱 이미지는 실행별 태그로 관리하고 검사 후 정리한다.
+E2E에서 빌드하는 앱 이미지는 실행별 태그로 관리한다. Docker 자원 정리까지 성공하면 E2E가
+통과한다.
 PostgreSQL 통합 테스트의 DB 데이터는 1GiB tmpfs에 두어 디스크 동기화 지연을 피한다.
 fsync·동기 커밋 설정은 유지하며 운영 volume을 사용하지 않는다.
 기준과 세부 범위는 [테스트·성능](docs/testing-and-performance.md),

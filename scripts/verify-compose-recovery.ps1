@@ -358,6 +358,7 @@ foreach ($name in $environmentNames) {
 $null = New-Item -ItemType Directory -Path $testRoot
 $composeStarted = $false
 $testImages = @()
+$cleanupFailures = @()
 Push-Location $repositoryRoot
 try {
   $upArguments = @("up", "-d")
@@ -1329,7 +1330,6 @@ try {
   Write-Output "All six model workers, publication, idempotency and restart persistence passed."
   $page = Invoke-WebRequest -Uri "$baseUrl/replay" -UseBasicParsing
   if ($page.StatusCode -ne 200) { throw "replay web route를 열 수 없습니다." }
-  Write-Output "격리 Compose restart/backup/restore E2E 통과: $projectName"
 }
 catch {
   if ($composeStarted) {
@@ -1339,16 +1339,25 @@ catch {
 }
 finally {
   if ($composeStarted) {
-    & docker compose down -v --remove-orphans
+    try {
+      & docker compose down -v --remove-orphans
+      Assert-NativeSuccess "격리 Compose 자원 정리"
+    }
+    catch {
+      $cleanupFailures += $_.Exception.Message
+    }
   }
   foreach ($image in $testImages) {
-    $present = @(& docker image ls --quiet --filter "reference=$image")
-    if ($LASTEXITCODE -ne 0) {
-      Write-Warning "격리 E2E 이미지 존재 여부를 확인하지 못했습니다: $image"
+    try {
+      $present = @(& docker image ls --quiet --filter "reference=$image")
+      Assert-NativeSuccess "격리 E2E 이미지 존재 확인 ($image)"
+      if ($present.Count -gt 0) {
+        & docker image rm $image
+        Assert-NativeSuccess "격리 E2E 이미지 정리 ($image)"
+      }
     }
-    elseif ($present.Count -gt 0) {
-      & docker image rm $image
-      if ($LASTEXITCODE -ne 0) { Write-Warning "격리 E2E 이미지를 정리하지 못했습니다: $image" }
+    catch {
+      $cleanupFailures += $_.Exception.Message
     }
   }
   Pop-Location
@@ -1361,4 +1370,7 @@ finally {
   foreach ($name in $environmentNames) {
     [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name], "Process")
   }
+  foreach ($failure in $cleanupFailures) { Write-Warning $failure }
 }
+if ($cleanupFailures.Count -gt 0) { throw "격리 E2E Docker 자원 정리에 실패했습니다." }
+Write-Output "격리 Compose restart/backup/restore E2E 통과: $projectName"
