@@ -268,6 +268,37 @@ describe("원장 compiler의 PA lifecycle과 불연속", () => {
     );
   });
 
+  it.each([
+    ["e3", null],
+    ["missing", "dangling_review_reference"],
+    ["e4", "self_review_reference"],
+    ["e5", "future_review_reference"],
+    ["e1", "review_target_outside_play"],
+  ])("주자 이동 없는 타석에 연결된 검토 대상 %s를 검증한다", (reviewedEventId, code) => {
+    const replay = compileStagingGameDocumentV2(
+      makeDocument([
+        { kind: "half_inning_start", payload: {} },
+        { kind: "batter_start", payload: { batterId: "a1", pitcherId: "hp1" } },
+        { kind: "pitch", payload: { call: "in_play" } },
+        { kind: "plate_result", payload: { result: "single", batterId: "a1", pitcherId: "hp1" } },
+        { kind: "review", payload: { decision: "upheld", reviewedEventId } },
+        { kind: "administrative", payload: { code: "announcement" } },
+      ]),
+    );
+    expect(replay.findings.filter((finding) => finding.severity === "blocking")).toEqual(
+      code === null ? [] : [expect.objectContaining({ code, eventId: "e4" })],
+    );
+    expect(replay.plays[3]).toMatchObject({
+      relayEventIds: ["e3", "e4", "e5"],
+      applied: code === null,
+    });
+    expect(replay.finalState.bases).toEqual([
+      code === null ? { runnerId: "a1", responsiblePitcherId: "hp1" } : null,
+      null,
+      null,
+    ]);
+  });
+
   it("타석 결과 count와 연결 주자 전 단계 점수를 최종 play 상태에 잘못 비교하지 않는다", () => {
     const replay = compileStagingGameDocumentV2(
       makeDocument([

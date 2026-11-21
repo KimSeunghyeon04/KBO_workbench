@@ -2645,6 +2645,21 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     ).toBe(0);
   });
 
+  it("미래 원장 행을 가리키는 타석 검토는 DB에 봉인하지 않는다", async () => {
+    const document = await golden();
+    const blocked = parseStagingGameDocumentV2({
+      ...document,
+      events: document.events.map((event) =>
+        event.identity.eventId === "e7"
+          ? { ...event, kind: "review", payload: { decision: "upheld", reviewedEventId: "e8" } }
+          : event,
+      ),
+    });
+
+    await expect(store.importRevision(blocked)).rejects.toBeInstanceOf(BlockingImportError);
+    expect(await store.countStoredGames()).toBe(0);
+  });
+
   it("revision 1→2 전환, 과거 불변성, stale base 거부와 all/current view를 보장한다", async () => {
     const document = await golden();
     const first = await store.importRevision(document);

@@ -141,7 +141,6 @@ export function buildPlayIndex(document: StagingGameDocumentV2): PlayIndex {
     nonStateByResult,
     independentByLeader,
     nonStateByIndependentLeader,
-    invalidPlayLeaderIds,
     findingByEvent,
   );
   return {
@@ -193,7 +192,6 @@ function validateReviewReferences(
   nonStateByResult: ReadonlyMap<string, readonly StagingRelayEvent[]>,
   independentByLeader: ReadonlyMap<string, readonly RunnerAdvanceEvent[]>,
   nonStateByIndependentLeader: ReadonlyMap<string, readonly StagingRelayEvent[]>,
-  invalidPlayLeaderIds: Set<string>,
   findingByEvent: Map<string, Finding[]>,
 ): void {
   const eventsById = new Map(document.events.map((event) => [event.identity.eventId, event]));
@@ -203,8 +201,9 @@ function validateReviewReferences(
   }
   for (const [leader, runners] of linked) {
     for (const member of runners) leaderByEvent.set(member.identity.eventId, leader);
-    for (const member of nonStateByResult.get(leader) ?? [])
-      leaderByEvent.set(member.identity.eventId, leader);
+  }
+  for (const [leader, annotations] of nonStateByResult) {
+    for (const annotation of annotations) leaderByEvent.set(annotation.identity.eventId, leader);
   }
   for (const [leader, runners] of independentByLeader) {
     for (const member of runners) leaderByEvent.set(member.identity.eventId, leader);
@@ -238,9 +237,7 @@ function validateReviewReferences(
       }
     }
     if (code === null) continue;
-    const leader = leaderByEvent.get(review.identity.eventId);
-    const key = leader ?? review.identity.eventId;
-    if (leader !== undefined) invalidPlayLeaderIds.add(leader);
+    const key = leaderByEvent.get(review.identity.eventId) ?? review.identity.eventId;
     pushFinding(findingByEvent, key, finding(document, review, code, message));
   }
 }
