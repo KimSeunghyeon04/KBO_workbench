@@ -10,6 +10,7 @@ import {
   type RecordCorrectionNotice,
   type RecordCorrectionProposalChange,
   type StagingGameDocumentV2,
+  type StagingRelayEvent,
 } from "@kbo/contracts";
 import { compileStagingGameDocumentV2, type ReplayResult } from "@kbo/game-core";
 
@@ -31,6 +32,8 @@ export interface BuiltRecordCorrectionProposal {
 }
 
 type RecordCorrectionStatCode = RecordCorrectionNotice["statChanges"][number]["statCode"];
+type PlateResultPayload = Extract<StagingRelayEvent, { kind: "plate_result" }>["payload"];
+type PlateResultTarget = { readonly result: PlateResult; readonly destination: number };
 
 interface OfficialFieldDescriptor<Field extends PropertyKey> {
   readonly field: Field;
@@ -114,10 +117,7 @@ function buildProposal(
   const targetResult = targetPlateResult(document, notice, binding, event.payload.result, reasons);
   if (targetResult !== null) {
     const currentDecision = decisionForResult(event.payload.result);
-    const targetDecision = decisionForResult(targetResult.result);
-    if (currentDecision !== notice.decisionBefore && currentDecision !== notice.decisionAfter)
-      reasons.push("현재 플레이 판정이 KBO 정정 전·후 어느 값과도 일치하지 않습니다.");
-    else if (targetDecision === currentDecision && targetResult.result === event.payload.result)
+    if (matchesTargetResult(event.payload, targetResult))
       changes.push(
         change(
           "event",
@@ -128,6 +128,8 @@ function buildProposal(
           "already_applied",
         ),
       );
+    else if (currentDecision !== notice.decisionBefore && currentDecision !== notice.decisionAfter)
+      reasons.push("현재 플레이 판정이 KBO 정정 전·후 어느 값과도 일치하지 않습니다.");
     else if (
       effectiveDestination(event.payload.result, event.payload.batterDestination) !==
       targetResult.destination
@@ -152,7 +154,9 @@ function buildProposal(
           ...event.payload,
           result: targetResult.result,
           ...(creditedRbi === undefined ? {} : { creditedRbi }),
-          ...(targetResult.result === "sacrifice_bunt" ? { isBunt: true as const } : {}),
+          ...(targetResult.result === "sacrifice_bunt"
+            ? { isBunt: true as const, batterDestination: 1 as const }
+            : {}),
         },
       };
       commands.push({
@@ -348,7 +352,7 @@ function buildProposal(
     });
 
   if (commands.length === 0) {
-    verifyAfterState(document, replay, notice, binding, reasons);
+    verifyAfterState(document, replay, notice, binding, targetResult, reasons);
     return {
       eligible: false,
       reasons,
@@ -372,7 +376,7 @@ function buildProposal(
       .filter((finding) => !beforeBlocking.has(findingKey(finding)));
     if (newBlocking.length > 0)
       reasons.push(`제안 적용 시 새 blocking finding ${String(newBlocking.length)}건이 생깁니다.`);
-    verifyAfterState(result.document, result.replay, notice, binding, reasons);
+    verifyAfterState(result.document, result.replay, notice, binding, targetResult, reasons);
     return {
       eligible: reasons.length === 0,
       reasons,
@@ -391,12 +395,13 @@ function verifyAfterState(
   replay: ReturnType<typeof compileStagingGameDocumentV2>,
   notice: RecordCorrectionNotice,
   binding: RecordCorrectionProposalBinding,
+  target: PlateResultTarget | null,
   reasons: string[],
 ): void {
   const event = document.events.find((item) => item.identity.eventId === binding.eventId);
   if (
-    event?.kind !== "plate_result" ||
-    decisionForResult(event.payload.result) !== notice.decisionAfter
+    target !== null &&
+    (event?.kind !== "plate_result" || !matchesTargetResult(event.payload, target))
   )
     reasons.push("제안 적용 후 플레이가 KBO 정정 후 판정과 일치하지 않습니다.");
   for (const stat of notice.statChanges) {
@@ -463,19 +468,20 @@ function targetPlateResult(
   binding: RecordCorrectionProposalBinding,
   currentResult: PlateResult,
   reasons: string[],
-): { readonly result: PlateResult; readonly destination: number } | null {
-  if (notice.decisionAfter === "fielder_choice")
-    return { result: "fielder_choice", destination: 1 };
-  if (notice.decisionAfter === "error") {
-    const sacrifice = notice.statChanges.find(
+): PlateResultTarget | null {
+  if (notice.decisionAfter === "fielder_choice" || notice.decisionAfter === "error") {
+    const sacrifice = notice.statChanges.some(
       (stat) =>
+        stat.scope === "batter" &&
         stat.statCode === "sacrifice_bunts" &&
         stat.afterValue > stat.beforeValue &&
         participantPlayerId(binding, stat.participantIndex) === binding.batterPlayerId,
     );
-    return sacrifice === undefined
-      ? { result: "reached_on_error", destination: 1 }
-      : { result: "sacrifice_bunt", destination: 1 };
+    if (sacrifice) return { result: "sacrifice_bunt", destination: 1 };
+    return {
+      result: notice.decisionAfter === "error" ? "reached_on_error" : "fielder_choice",
+      destination: 1,
+    };
   }
   if (notice.decisionAfter === "hit") {
     if (["single", "double", "triple", "home_run"].includes(currentResult))
@@ -508,9 +514,17 @@ function targetPlateResult(
 
 function decisionForResult(result: PlateResult): RecordCorrectionNotice["decisionAfter"] {
   if (["single", "double", "triple", "home_run"].includes(result)) return "hit";
-  if (result === "reached_on_error" || result === "sacrifice_bunt") return "error";
+  if (result === "reached_on_error") return "error";
   if (result === "fielder_choice") return "fielder_choice";
   return "unknown";
+}
+
+function matchesTargetResult(payload: PlateResultPayload, target: PlateResultTarget): boolean {
+  // The ledger uses the same result for either safe sacrifice; the notice supplies the subtype.
+  return (
+    payload.result === target.result &&
+    (target.result !== "sacrifice_bunt" || payload.batterDestination === target.destination)
+  );
 }
 
 function effectiveDestination(result: PlateResult, explicit?: number): number {
