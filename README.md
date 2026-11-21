@@ -202,6 +202,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/backup.ps1
 백업은 writer를 멈춘 같은 시점의 DB와 파일을 함께 저장한다. 복원은 두 데이터를 교체하므로
 [백업·복원 절차](docs/backup-and-restore.md)의 대상·hash 확인을 따른다.
 교체나 DB 복원에 실패하면 파일을 이전 위치로 되돌린 뒤 중지했던 서비스를 다시 시작한다.
+DB가 실행 중이면 웹과 API를 중지한 상태에서도 복원할 수 있다.
 컨테이너 재생성 뒤 이전 hostname의 잠금이 남으면 [중단된 writer 잠금 복구](docs/backup-and-restore.md#중단된-writer-잠금-복구)를 따른다.
 업데이트와 실패 진단의 전체 순서는 [운영 배포](docs/deployment.md)에 있다.
 

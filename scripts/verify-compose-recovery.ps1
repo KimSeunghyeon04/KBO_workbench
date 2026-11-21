@@ -619,6 +619,7 @@ try {
   if (-not ([IO.Path]::GetFullPath($corruptBackupDirectory)).StartsWith(([IO.Path]::GetFullPath($backupRoot) + [IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase)) { throw "격리 backup 정리 범위를 벗어났습니다." }
   Remove-Item -LiteralPath $corruptBackupDirectory -Recurse -Force
 
+  Invoke-Compose -Arguments @("stop", "web")
   $originalFile = Join-Path $originalDirectory "golden-game-1.json"
   $originalBeforeFailedSwap = Get-Sha256Hex $originalFile
   & {
@@ -645,6 +646,12 @@ try {
   if ((Get-Sha256Hex $originalFile) -ne $originalBeforeFailedSwap) {
     throw "Restore did not put the original workspace back after promotion failed."
   }
+  $runningAfterFailedSwap = @(& docker compose ps --status running --services)
+  Assert-NativeSuccess "복원 실패 후 실행 서비스 확인"
+  if ($runningAfterFailedSwap -contains "web" -or $runningAfterFailedSwap -notcontains "api") {
+    throw "복원 실패 후 API만 원래 실행 상태로 돌아와야 합니다."
+  }
+  Invoke-Compose -Arguments @("start", "web")
   Wait-Ready
   $afterFailedSwap = Invoke-RestMethod -Uri `
     "$baseUrl/api/v2/games/golden-game-1/revisions/2/replay-manifest"
@@ -658,11 +665,15 @@ try {
     "exec", "-T", "db", "psql", "--username", "kbo_e2e", "--dbname", "kbo_e2e",
     "--set", "ON_ERROR_STOP=1", "--command", "DROP SCHEMA analytics CASCADE"
   )
-  Invoke-Compose -Arguments @("start", "api", "web")
-  Start-Sleep -Seconds 2
   & (Join-Path $PSScriptRoot "restore.ps1") `
     -BackupDirectory $backupDirectory.FullName `
     -ConfirmDataReplacement
+  $runningAfterOfflineRestore = @(& docker compose ps --status running --services)
+  Assert-NativeSuccess "오프라인 복원 후 실행 서비스 확인"
+  if ($runningAfterOfflineRestore -contains "api" -or $runningAfterOfflineRestore -contains "web") {
+    throw "오프라인 복원 후 이미 중지돼 있던 웹·API가 시작됐습니다."
+  }
+  Invoke-Compose -Arguments @("start", "api", "web")
   Wait-Ready
 
   if (-not (Test-Path -LiteralPath (Join-Path $originalDirectory "golden-game-1.json"))) {

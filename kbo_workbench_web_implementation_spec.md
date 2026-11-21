@@ -749,6 +749,7 @@ volume에서 migration과 테스트를 실행한다. fsync·동기 커밋은 유
 `make deploy`는 빌드 성공 후 writer를 정지하고 새 이미지의 migration 성공과 API/web readiness를
 기다린다. `make update`는 빌드와 배포 사이에 DB/workspace 쌍 백업을 실행하며 백업 실패 시 중단한다.
 일반 종료는 volume을 보존하고 데이터 초기화·복원은 자동화하지 않는다.
+명시적 복원은 실행 중인 DB를 대상으로 하며, 복원 전에 실행 중이던 웹·API만 다시 시작한다.
 app version 변경 전 백업과 실패 진단은 `docs/deployment.md`의 운영 절차를 따른다.
 
 분석의 읽기 전용 snapshot 수명은 persistence 내부 공통 helper가 소유하고 각 repository가

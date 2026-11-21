@@ -63,6 +63,7 @@ workspace ZIP에 함께 포함된다.
 
 복원은 현재 workspace와 PostgreSQL 내용을 backup 시점으로 교체한다. 경로만 전달해서 실수로
 실행할 수 없도록 `-ConfirmDataReplacement`가 필수다.
+DB가 실행 중이면 웹과 API가 둘 다 중지됐거나 둘 중 하나만 실행 중일 때도 복원할 수 있다.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/restore.ps1 `

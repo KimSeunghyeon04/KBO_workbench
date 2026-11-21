@@ -66,7 +66,7 @@ try {
 
   $runningServices = @(& docker compose ps --status running --services)
   Assert-NativeSuccess "docker compose ps"
-  $stoppedServices = @("web", "api") | Where-Object { $runningServices -contains $_ }
+  $stoppedServices = @(@("web", "api") | Where-Object { $runningServices -contains $_ })
   if ($stoppedServices.Count -gt 0) {
     Invoke-Compose -Arguments (@("stop") + $stoppedServices)
   }
