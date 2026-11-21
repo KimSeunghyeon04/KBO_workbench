@@ -117,8 +117,8 @@ export function AnalysisRefreshBoundary({ children }: PropsWithChildren) {
       );
   }, [preparationRows, client]);
   if (replay) return children;
-  const seasonsConfirmed = result.dataUpdatedAt > entry.unconfirmedAt;
-  const season = analysisSeason(requested, seasonsConfirmed ? result.data?.seasons[0] : undefined);
+  const seasonsConfirmed = result.data !== undefined && result.dataUpdatedAt > entry.unconfirmedAt;
+  const season = seasonsConfirmed ? analysisSeason(requested, result.data.seasons[0]) : undefined;
   if (season === undefined && result.error === null) {
     return seasonsConfirmed ? (
       <section className="panel analysis-empty-state" role="status">

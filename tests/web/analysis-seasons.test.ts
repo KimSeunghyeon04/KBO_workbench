@@ -8,6 +8,10 @@ import { resolveAnalysisScope, type AnalysisPreparation } from "@kbo/contracts";
 import { modelTrainingPeriod } from "@kbo/game-core";
 import { App } from "../../apps/web/src/app.js";
 
+const playerCatalogs = [
+  { role: "pitcher", endpoint: "pitch-shape", list: "pitchers", id: "pitcherId" },
+  { role: "batter", endpoint: "batter-discipline", list: "batters", id: "batterId" },
+];
 const clients: QueryClient[] = [];
 afterEach(() => {
   cleanup();
@@ -109,33 +113,51 @@ it("allows retrying the season list and shows the empty state without starting a
   ]);
 });
 
-it("keeps a completed analysis when the first season status arrives", async () => {
-  const seasons = Promise.withResolvers<Response>();
-  const catalog = vi.fn(() =>
-    Response.json({
-      season: 2025,
-      scope: resolveAnalysisScope({ season: 2025, competition: "regular" }),
-      pitchers: [{ pitcherId: "anonymous", name: "가상 투수", pitches: 100 }],
-    }),
-  );
-  vi.stubGlobal("fetch", (input: RequestInfo | URL) =>
-    String(input).includes("/analysis/seasons") ? seasons.promise : Promise.resolve(catalog()),
-  );
-  show("/analysis/players?season=2025");
-  await screen.findByRole("link", { name: "가상 투수 분석 보기" });
-  await act(async () => {
-    seasons.resolve(
-      Response.json({ sourceHash: "a".repeat(64), seasons: [2025, 2024], preparation: [] }),
-    );
-  });
-  await screen.findByRole("option", { name: "2024" });
-  expect(catalog).toHaveBeenCalledTimes(1);
-});
+it.each(playerCatalogs)(
+  "starts the $role catalog for an explicit season after the first status",
+  async (catalog) => {
+    const season = 2024;
+    const seasons = Promise.withResolvers<Response>();
+    const requestedSeasons: (string | null)[] = [];
+    let playerName = "적재 전 명단";
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/api/v2/analysis/seasons") return seasons.promise;
+      if (url.pathname !== `/api/v2/analysis/${catalog.endpoint}`) throw new Error(url.pathname);
+      requestedSeasons.push(url.searchParams.get("season"));
+      return Response.json({
+        season,
+        scope: resolveAnalysisScope({ season, competition: "regular" }),
+        [catalog.list]: [{ [catalog.id]: "anonymous", name: playerName, pitches: 100 }],
+      });
+    });
 
-it.each([
-  { role: "pitcher", endpoint: "pitch-shape", list: "pitchers", id: "pitcherId" },
-  { role: "batter", endpoint: "batter-discipline", list: "batters", id: "batterId" },
-])("refreshes the $role catalog for a season change and skips tab return", async (catalog) => {
+    show(`/analysis/players?season=${season}&role=${catalog.role}`);
+    await waitFor(() => {
+      expect(
+        screen.queryByText("적재 시즌을 확인하고 있습니다.") !== null ||
+          requestedSeasons.length > 0,
+      ).toBe(true);
+    });
+    expect(requestedSeasons).toEqual([]);
+
+    playerName = "적재 후 명단";
+    await act(async () => {
+      seasons.resolve(
+        Response.json({
+          sourceHash: "b".repeat(64),
+          seasons: [2025, season],
+          preparation: [prepared(2025, "a"), prepared(season, "b")],
+        }),
+      );
+    });
+    await screen.findByRole("link", { name: "적재 후 명단 분석 보기" });
+    expect(screen.getByRole("option", { name: "2024", selected: true })).toBeTruthy();
+    expect(requestedSeasons).toEqual(["2024"]);
+  },
+);
+
+it.each(playerCatalogs)("refreshes $role for season changes", async (catalog) => {
   const season = 2024;
   let current = prepared(season, "a");
   let playerName = "가상 선수";
