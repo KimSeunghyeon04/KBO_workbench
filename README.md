@@ -89,7 +89,8 @@ GNU Make가 있으면 설정 준비에 `make init`, 빌드·migration·준비 �
 
 **KBO 기록정정 검토**(`/record-corrections`)에서는 공식 공지와 경기·타석 후보를 확인하고
 보정 작업을 연다. 제안 적용은 작업 사본만 변경하므로 **현재 원장 저장 → DB 적재**를 마쳐야
-분석·재생에 반영된다. 이미 저장된 DB 기록은 새 revision을 추가해 교정한다.
+분석·재생에 반영된다. 적용 중 공지가 재평가되면 현재 제안을 다시 확인한다. 이미 저장된 DB
+기록은 새 revision을 추가해 교정한다.
 
 세부 절차는 [수집](docs/collection-and-staging.md), [보정·기록정정](docs/correction.md),
 [DB 적재](docs/postgresql-persistence.md)에 정리되어 있다.

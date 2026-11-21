@@ -10,6 +10,7 @@ import {
 } from "@kbo/contracts";
 import {
   StagingWorkspace,
+  RecordCorrectionStaleError,
   RevisionConflictError,
   type CurrentRevisionBase,
   type RecordCorrectionAssessmentInput,
@@ -284,7 +285,7 @@ describe("RecordCorrectionService 매칭", () => {
     ).rejects.toThrow(RecordCorrectionConflictError);
     expect(sessions.get(session.sessionId).sessionVersion).toBe(session.sessionVersion);
 
-    fixture.markProposalApplied.mockRejectedValueOnce(new Error("기록정정 승인 저장 실패"));
+    fixture.markProposalApplied.mockRejectedValueOnce(new RecordCorrectionStaleError("평가 변경"));
     await expect(
       service.applyProposal(
         session.sessionId,
@@ -292,7 +293,7 @@ describe("RecordCorrectionService 매칭", () => {
         session.sessionVersion,
         proposal.proposalHash,
       ),
-    ).rejects.toThrow("기록정정 승인 저장 실패");
+    ).rejects.toBeInstanceOf(RecordCorrectionStaleError);
     expect(sessions.get(session.sessionId)).toEqual(session);
 
     const applied = await service.applyProposal(
@@ -304,7 +305,10 @@ describe("RecordCorrectionService 매칭", () => {
     expect(applied.session.sessionVersion).toBe(session.sessionVersion + 1);
     expect(fixture.markProposalApplied).toHaveBeenCalledTimes(2);
     expect(fixture.markProposalApplied).toHaveBeenLastCalledWith(
-      expect.objectContaining({ documentHash: applied.session.draftDocumentHash }),
+      expect.objectContaining({
+        caseVersion: item.caseVersion,
+        documentHash: applied.session.draftDocumentHash,
+      }),
     );
     const undone = await sessions.undo(session.sessionId, applied.session.sessionVersion);
     expect(resultOf(undone.session, "e10")).toBe("single");

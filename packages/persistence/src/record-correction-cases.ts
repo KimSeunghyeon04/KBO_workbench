@@ -259,6 +259,17 @@ export class RecordCorrectionCases {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      const updated = await client.query(
+        `UPDATE record_correction.match_assessments
+         SET approved_document_hash=$3,reason_code='proposal_applied_to_draft',
+             reason_message='정정 제안을 correction session에 적용했습니다.',
+             assessed_at=CURRENT_TIMESTAMP
+         WHERE notice_id=$1 AND case_version=$2`,
+        [input.noticeId, input.caseVersion, input.documentHash],
+      );
+      if (updated.rowCount !== 1)
+        throw new RecordCorrectionStaleError("record correction case version이 변경되었습니다.");
+
       const actionSequence = await nextActionSequence(client, input.noticeId);
       await client.query(
         `INSERT INTO record_correction.review_actions
@@ -272,13 +283,6 @@ export class RecordCorrectionCases {
           input.proposalHash,
           input.documentHash,
         ],
-      );
-      await client.query(
-        `UPDATE record_correction.match_assessments
-         SET approved_document_hash=$2,reason_code='proposal_applied_to_draft',
-             reason_message='정정 제안을 correction session에 적용했습니다.',
-             assessed_at=CURRENT_TIMESTAMP WHERE notice_id=$1`,
-        [input.noticeId, input.documentHash],
       );
       await client.query("COMMIT");
     } catch (error: unknown) {

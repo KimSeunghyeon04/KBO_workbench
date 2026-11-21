@@ -56,6 +56,7 @@ import {
   PlayerHeightSupplementRepository,
   StagingWorkspace,
   RecordCorrectionRepository,
+  RecordCorrectionStaleError,
   RegistryRepository,
   RevisionConflictError,
   replaySemanticHash,
@@ -2374,20 +2375,100 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect((await store.revisions(first.gameId)).revisions).toHaveLength(2);
   });
 
+  it("재평가 전에 준비한 제안의 승인을 거부하고 현재 평가의 승인만 반영한다", async () => {
+    const repository = new RecordCorrectionRepository(pool, "0015_strike_zone_rule_fallback");
+    const importedGame = await store.importRevision(await golden());
+    const dataset = recordCorrectionSeasonFixture();
+    await repository.createJob(
+      "record-approval",
+      "manual",
+      "record-approval-idempotency",
+      [2024],
+      dataset.collectedAt,
+    );
+    await repository.importSeason("record-approval", dataset, "d".repeat(64));
+
+    const assessment = {
+      noticeId: "2024:0:1",
+      status: "action_required",
+      gameId: importedGame.gameId,
+      gameRevision: importedGame.revision,
+      documentHash: importedGame.documentHash,
+      eventId: "e20",
+      batterPlayerId: null,
+      pitcherPlayerId: null,
+      reasonCode: "integration_assessed",
+      reasonMessage: "제안 대상 확인",
+      proposalHash: null,
+      candidates: [],
+      assessedAt: "2026-08-31T00:00:04.000Z",
+    } as const;
+    const assessed = await repository.assess(assessment);
+    const draft = await store.loadCorrectionDraft(importedGame.gameId, importedGame.revision);
+    const revised = parseStagingGameDocumentV2({
+      ...draft,
+      events: draft.events.map((event) =>
+        event.identity.eventId === "e20" ? { ...event, relayText: "정정 반영 초안" } : event,
+      ),
+    });
+    const approval = {
+      noticeId: assessed.noticeId,
+      caseVersion: assessed.caseVersion,
+      sessionId: "record-approval-session",
+      proposalHash: "a".repeat(64),
+      documentHash: stagingDocumentHash(revised),
+    };
+    const newer = await repository.assess({
+      ...assessment,
+      status: "manual_review",
+      eventId: null,
+      reasonCode: "new_reassessment",
+      reasonMessage: "대상 재검토 필요",
+    });
+    expect(newer.caseVersion).toBe(assessed.caseVersion + 1);
+    await expect(repository.markProposalApplied(approval)).rejects.toBeInstanceOf(
+      RecordCorrectionStaleError,
+    );
+
+    const sealed = await store.importRevision(revised);
+    expect(sealed.documentHash).toBe(approval.documentHash);
+    await expect(
+      repository.markResolvedIfImported(sealed.gameId, sealed.revision, sealed.documentHash),
+    ).resolves.toEqual([]);
+    await expect(repository.case(assessment.noticeId)).resolves.toEqual(newer);
+
+    const current = await repository.assess(assessment);
+    await repository.markProposalApplied({
+      ...approval,
+      caseVersion: current.caseVersion,
+      proposalHash: "b".repeat(64),
+    });
+    await expect(
+      repository.markResolvedIfImported(sealed.gameId, sealed.revision, sealed.documentHash),
+    ).resolves.toEqual([assessment.noticeId]);
+    await expect(repository.case(assessment.noticeId)).resolves.toMatchObject({
+      status: "resolved",
+      appliedRevision: sealed.revision,
+    });
+    const actions = await pool.query(
+      `SELECT case_version,action_kind,proposal_hash FROM record_correction.review_actions
+       WHERE notice_id=$1 ORDER BY action_sequence`,
+      [assessment.noticeId],
+    );
+    expect(actions.rows).toEqual([
+      {
+        case_version: current.caseVersion,
+        action_kind: "proposal_applied",
+        proposal_hash: "b".repeat(64),
+      },
+      { case_version: current.caseVersion, action_kind: "resolved", proposal_hash: null },
+    ]);
+  });
+
   it("기록정정 source revision을 봉인하고 no-change와 append-only 검토 이력을 보장한다", async () => {
     const repository = new RecordCorrectionRepository(pool, "0015_strike_zone_rule_fallback");
     const importedGame = await store.importRevision(await golden());
-    const dataset = parseRecordCorrectionSeasonDataset({
-      season: 2024,
-      collectedAt: "2026-08-31T00:00:03.000Z",
-      sourcePages: [
-        recordCorrectionPage("landing", "landing:2024", "a", null, null, 0),
-        recordCorrectionPage("control", "control:years:2024", "b", null, null, 1),
-        recordCorrectionPage("control", "control:series:2024", "c", null, null, 1),
-        recordCorrectionPage("records", "records:2024:0:1", "d", 0, 1, 1),
-      ],
-      notices: [recordCorrectionNotice()],
-    });
+    const dataset = recordCorrectionSeasonFixture();
     await repository.createJob(
       "record-run-1",
       "manual",
@@ -3270,6 +3351,20 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     ]);
   });
 });
+
+function recordCorrectionSeasonFixture() {
+  return parseRecordCorrectionSeasonDataset({
+    season: 2024,
+    collectedAt: "2026-08-31T00:00:03.000Z",
+    sourcePages: [
+      recordCorrectionPage("landing", "landing:2024", "a", null, null, 0),
+      recordCorrectionPage("control", "control:years:2024", "b", null, null, 1),
+      recordCorrectionPage("control", "control:series:2024", "c", null, null, 1),
+      recordCorrectionPage("records", "records:2024:0:1", "d", 0, 1, 1),
+    ],
+    notices: [recordCorrectionNotice()],
+  });
+}
 
 function recordCorrectionPage(
   pageKind: "landing" | "control" | "records",
