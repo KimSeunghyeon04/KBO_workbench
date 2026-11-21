@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
+import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import {
   canonicalStringify,
   parseGameCompetitionDataset,
@@ -17,6 +18,13 @@ const gameSchema = Type.Object(
   { additionalProperties: false },
 );
 const hashSchema = Type.Object({ hash: Type.String() }, { additionalProperties: false });
+const pointerHashesSchema = Type.Object(
+  {
+    games: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+    competitions: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+  },
+  { additionalProperties: false },
+);
 const storedEntrySchema = Type.Object(
   { ...CompetitionEntrySchema.properties, gameId: Type.Union([Type.String(), Type.Null()]) },
   { additionalProperties: false },
@@ -30,8 +38,27 @@ export class CompetitionScheduleNoMatchesError extends Error {
 }
 
 export class GameCompetitionRepository {
+  private seasonCache?: {
+    pointerHash: string;
+    seasons: Awaited<ReturnType<GameCompetitionRepository["readSeasons"]>>;
+  };
+
   public constructor(private readonly pool: Pool) {}
+
   public async seasons() {
+    const cached = this.seasonCache;
+    if (cached !== undefined && cached.pointerHash === (await readPointerHash(this.pool))) {
+      return structuredClone(cached.seasons);
+    }
+    const snapshot = await withAnalysisSnapshot(this.pool, async (client) => ({
+      pointerHash: await readPointerHash(client),
+      seasons: await this.readSeasons(client),
+    }));
+    this.seasonCache = snapshot;
+    return structuredClone(snapshot.seasons);
+  }
+
+  private async readSeasons(client: PoolClient) {
     const rows = Value.Decode(
       Type.Array(
         Type.Object(
@@ -47,7 +74,7 @@ export class GameCompetitionRepository {
         ),
       ),
       (
-        await this.pool.query<Record<string, unknown>>(`
+        await client.query<Record<string, unknown>>(`
         SELECT season, game_id AS "gameId", revision, document_hash AS "documentHash",
           competition_dataset_hash AS "competitionHash", competition
         FROM analytics.current_analysis_games ORDER BY season, game_id COLLATE "C"`)
@@ -339,4 +366,23 @@ export class GameCompetitionRepository {
       client.release();
     }
   }
+}
+
+async function readPointerHash(client: Pick<Pool, "query"> | Pick<PoolClient, "query">) {
+  // Both targets are immutable after sealing. Their pointers detect external
+  // imports and schedule adoptions without joining the analytical view.
+  const result = await client.query<Record<string, unknown>>(`
+    SELECT
+      encode(sha256(convert_to(COALESCE((
+        SELECT string_agg(octet_length(game_id)::text || ':' || game_id || ':' || current_revision::text,
+          ',' ORDER BY game_id COLLATE "C")
+        FROM workbench.games WHERE current_revision IS NOT NULL
+      ), ''), 'UTF8')), 'hex') AS games,
+      encode(sha256(convert_to(COALESCE((
+        SELECT string_agg(season::text || ':' || dataset_hash, ',' ORDER BY season)
+        FROM reference.current_competition_datasets
+      ), ''), 'UTF8')), 'hex') AS competitions
+  `);
+  const hashes = Value.Decode(pointerHashesSchema, result.rows[0]);
+  return hashes.games + hashes.competitions;
 }

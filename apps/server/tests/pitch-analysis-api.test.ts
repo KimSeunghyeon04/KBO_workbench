@@ -64,6 +64,22 @@ describe("pitch analysis HTTP contracts", () => {
         ).toBe(400);
       }
       expect(catalog).toHaveBeenCalledWith(2024, {});
+
+      analyze.mockClear();
+      const recheck = vi
+        .spyOn(PitchAnalysisRepository.prototype, "readSourceHash")
+        .mockResolvedValue(response.sourceHash);
+      const comparison =
+        "/api/v2/analysis/pitch-shape/p1/comparison?season=2024&dateFrom=2024-04-01&compareSeason=2025";
+      const compared = await app.inject(comparison);
+      expect(compared.statusCode, compared.body).toBe(200);
+      expect(analyze.mock.calls).toEqual([
+        [2024, "p1", { dateFrom: "2024-04-01" }],
+        [2025, "p1", {}],
+      ]);
+      expect(recheck).toHaveBeenCalledExactlyOnceWith({ season: 2024, dateFrom: "2024-04-01" });
+      recheck.mockResolvedValueOnce("c".repeat(64));
+      expect((await app.inject(comparison)).statusCode).toBe(400);
     } finally {
       await app.close();
       await pool.end();

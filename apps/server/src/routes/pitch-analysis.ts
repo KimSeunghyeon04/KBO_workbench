@@ -62,6 +62,7 @@ export const pitchAnalysisRoutes: FastifyPluginAsyncTypebox<Options> = async (ap
       const pair = await readAnalysisPeriodPair(
         () => read(first),
         () => read(second),
+        () => repository.readSourceHash(first),
       );
       const snapshot = (q: typeof first, d: PitchAnalysisSample) =>
         periodSnapshot(q, d.sourceHash, [

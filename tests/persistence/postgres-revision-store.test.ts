@@ -831,6 +831,70 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(loaded.documentHash).toBe(stagingDocumentHash(source));
   });
 
+  it("reuses season summaries and detects newly sealed revisions and external schedule adoption", async () => {
+    const repository = new GameCompetitionRepository(pool);
+    expect(await repository.seasons()).toEqual([]);
+    const source = pitchAnalysisFixture(2024);
+    await store.importRevision(source);
+    const [initial] = await repository.seasons();
+    expect(initial).toMatchObject({ season: 2024, competitionHash: null, unclassified: 1 });
+    const query = vi.spyOn(pool, "query");
+    try {
+      expect(await repository.seasons()).toEqual([initial]);
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(query.mock.calls[0]?.[0]).toContain("FROM workbench.games");
+      expect(query.mock.calls[0]?.[0]).not.toContain("analytics.current_analysis_games");
+    } finally {
+      query.mockRestore();
+    }
+
+    const statistics = new PlayerStatisticsRepository(pool);
+    const pitch = new PitchAnalysisRepository(pool);
+    const empty = { season: 2024, dateTo: "2024-05-31" };
+    const emptyBefore = (await statistics.battingWithManifest(empty)).sourceHash;
+    expect(await statistics.readSourceHash(empty)).toBe(emptyBefore);
+    const adopt = await new GameCompetitionRepository(pool).adopt(
+      competitionFixture(2024, [
+        {
+          sourceGameId: source.source.sourceGameId,
+          gameDate: source.metadata.gameDate,
+          competition: "regular",
+        },
+      ]),
+    );
+    const [classified] = await repository.seasons();
+    expect(classified).toMatchObject({
+      season: 2024,
+      competitionHash: adopt.datasetHash,
+      unclassified: 0,
+    });
+    expect(classified?.sourceHash).toBe(initial?.sourceHash);
+    const batting = await statistics.battingWithManifest(empty);
+    expect(batting.response.rows).toEqual([]);
+    expect(batting.sourceHash).not.toBe(emptyBefore);
+    expect(await statistics.readSourceHash(empty)).toBe(batting.sourceHash);
+    const scoped = { season: 2024, competition: "regular", dateFrom: "2024-06-01" } as const;
+    const pitching = await statistics.pitchingWithManifest(scoped);
+    expect(pitching.response.rows).toMatchObject([{ battersFaced: 1 }]);
+    expect(await statistics.readSourceHash(scoped)).toBe(pitching.sourceHash);
+
+    const pitchBefore = await pitch.analyze(2024, "hp1", { dateTo: empty.dateTo });
+    expect(pitchBefore.actualPitchCount).toBe(0);
+    expect(await pitch.readSourceHash(empty)).toBe(pitchBefore.sourceHash);
+    const draft = await store.loadCorrectionDraft(source.metadata.gameId, 1);
+    await store.importRevision({
+      ...pitchAnalysisFixture(2024, "hp1", -150),
+      revisionBase: draft.revisionBase,
+    });
+    const [updated] = await repository.seasons();
+    expect(updated?.sourceHash).not.toBe(classified?.sourceHash);
+    expect(updated?.competitionHash).toBe(adopt.datasetHash);
+    const pitchAfter = await pitch.analyze(2024, "hp1", { dateTo: empty.dateTo });
+    expect(await pitch.readSourceHash(empty)).toBe(pitchAfter.sourceHash);
+    expect(pitchAfter.sourceHash).not.toBe(pitchBefore.sourceHash);
+    expect(pitchAfter.actualPitchCount).toBe(0);
+  });
+
   it("classifies a later import from sealed schedule evidence without changing manually corrected game facts", async () => {
     const original = pitchAnalysisFixture(2026);
     const source = parseStagingGameDocumentV2({

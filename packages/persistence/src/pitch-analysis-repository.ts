@@ -4,12 +4,14 @@ import {
   inAnalysisPeriod,
   type AnalysisScope,
   type AnalysisScopeOptions,
+  type AnalysisScopeQuery,
 } from "@kbo/contracts";
 import { summarizePitchProfile } from "@kbo/game-core";
 import {
   ANALYSIS_GAME_WHERE,
   analysisScopeParameters,
   analysisSourceHash,
+  recheckAnalysisSourceHash,
 } from "./analysis-scope.js";
 import { createHash } from "node:crypto";
 
@@ -125,6 +127,14 @@ const trajectoryColumns = ["x0", "y0", "z0", "vx0", "vy0", "vz0", "ax", "ay", "a
   )
   .join(",");
 
+function pitchAnalysisSourceHash(referenceHash: string, scope: AnalysisScope): string {
+  return createHash("sha256").update(canonicalStringify({ referenceHash, scope })).digest("hex");
+}
+
+function pitchReferenceScope(scope: AnalysisScope): AnalysisScope {
+  return { ...scope, dateFrom: null, dateTo: null };
+}
+
 export class PitchAnalysisRepository {
   public constructor(
     private readonly pool: Pool,
@@ -163,18 +173,22 @@ export class PitchAnalysisRepository {
     };
   }
 
+  public async readSourceHash(input: AnalysisScopeQuery) {
+    const scope = resolveAnalysisScope(input);
+    const referenceHash = await recheckAnalysisSourceHash(this.pool, pitchReferenceScope(scope));
+    return pitchAnalysisSourceHash(referenceHash, scope);
+  }
+
   public async analyze(
     season: number,
     pitcherId: string,
     options: AnalysisScopeOptions = {},
   ): Promise<PitchAnalysisSample> {
     const scope = resolveAnalysisScope({ season, ...options });
-    const referenceScope = { ...scope, dateFrom: null, dateTo: null };
+    const referenceScope = pitchReferenceScope(scope);
     return withAnalysisSnapshot(this.pool, async (client, releaseSnapshot) => {
       const referenceHash = await analysisSourceHash(client, referenceScope);
-      const sourceHash = createHash("sha256")
-        .update(canonicalStringify({ referenceHash, scope }))
-        .digest("hex");
+      const sourceHash = pitchAnalysisSourceHash(referenceHash, scope);
       const sampleKey = {
         modelVersion: PITCH_ANALYSIS_MODEL_VERSION,
         referenceVersion: PITCH_REFERENCE_VERSION,

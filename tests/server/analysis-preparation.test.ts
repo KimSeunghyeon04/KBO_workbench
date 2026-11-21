@@ -10,6 +10,38 @@ import { makeDocument } from "../helpers/game-document.js";
 
 const hash = "a".repeat(64),
   changedHash = "b".repeat(64);
+
+it("refreshes prepared status after writes and protects cached records from callers", async () => {
+  await using dir = await mkdtempDisposable(path.join(tmpdir(), "kbo-preparation-status-"));
+  const workspace = await StagingWorkspace.open(dir.path);
+  const store = workspace.analysisPreparation;
+  try {
+    expect(await store.read(2026)).toBeNull();
+    const row = {
+      version: 1,
+      season: 2026,
+      sourceHash: hash,
+      competitionHash: null,
+      unclassified: 1,
+      state: "models",
+      updatedAt: "2026-11-21T00:00:00Z",
+      error: null,
+    } as const;
+    await store.write(row);
+    const [loaded, other] = await Promise.all([store.read(2026), store.read(2026)]);
+    expect(loaded).toEqual(row);
+    if (loaded === null) throw new Error("Missing preparation state");
+    loaded.unclassified = 9;
+    expect(other).toEqual(row);
+    expect(await store.read(2026)).toEqual(row);
+    const ready = { ...row, state: "ready", updatedAt: "2026-11-21T00:00:01Z" } as const;
+    await store.write(ready);
+    expect(await store.read(2026)).toEqual(ready);
+  } finally {
+    await workspace.close();
+  }
+});
+
 it("keeps the source fingerprint stable while an unchanged import is waiting", async () => {
   await using dir = await mkdtempDisposable(path.join(tmpdir(), "kbo-preparation-hash-"));
   const workspace = await StagingWorkspace.open(dir.path);

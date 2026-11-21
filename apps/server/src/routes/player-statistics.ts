@@ -37,10 +37,12 @@ export const playerStatisticsRoutes: FastifyPluginAsyncTypebox<Pick<RouteContext
       const playerId = request.params.playerId;
       const common = { playerId, group: "player" as const, limit: 200, page: 1 };
       if (role === "batter") {
-        const pair = await readAnalysisPeriodPair(
-          () => repository.batting({ ...first, ...common }),
-          () => repository.batting({ ...second, ...common }),
+        const { first: a, second: b } = await readAnalysisPeriodPair(
+          () => repository.battingWithManifest({ ...first, ...common }),
+          () => repository.battingWithManifest({ ...second, ...common }),
+          () => repository.readSourceHash(first),
         );
+        const pair = { first: a.response, second: b.response };
         if (
           pair.first.total > pair.first.rows.length ||
           pair.second.total > pair.second.rows.length
@@ -67,10 +69,12 @@ export const playerStatisticsRoutes: FastifyPluginAsyncTypebox<Pick<RouteContext
           ],
         };
       }
-      const pair = await readAnalysisPeriodPair(
-        () => repository.pitching({ ...first, ...common }),
-        () => repository.pitching({ ...second, ...common }),
+      const { first: a, second: b } = await readAnalysisPeriodPair(
+        () => repository.pitchingWithManifest({ ...first, ...common }),
+        () => repository.pitchingWithManifest({ ...second, ...common }),
+        () => repository.readSourceHash(first),
       );
+      const pair = { first: a.response, second: b.response };
       if (pair.first.total > pair.first.rows.length || pair.second.total > pair.second.rows.length)
         throw new Error("기간 비교 기록이 잘렸습니다.");
       return {

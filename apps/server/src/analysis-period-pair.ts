@@ -31,7 +31,7 @@ export function periodSnapshot(
 export async function readAnalysisPeriodPair<T extends { sourceHash: string }>(
   first: () => Promise<T>,
   second: () => Promise<T>,
-  readFirstSourceHash = async () => (await first()).sourceHash,
+  readFirstSourceHash: () => Promise<string>,
 ): Promise<{ first: T; second: T }> {
   const a = await first();
   const b = await second();

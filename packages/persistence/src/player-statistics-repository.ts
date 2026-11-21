@@ -13,6 +13,7 @@ import {
   PitchingStatisticsTotalsSchema,
   BattingStatisticsResponseSchema,
   PitchingStatisticsResponseSchema,
+  type AnalysisScopeQuery,
   type BattingStatisticsQuery,
   type PitchingStatisticsQuery,
   type BattingStatisticsResponse,
@@ -23,6 +24,7 @@ import {
   ANALYSIS_GAME_WHERE,
   analysisScopeParameters,
   analysisSourceHash,
+  recheckAnalysisSourceHash,
 } from "./analysis-scope.js";
 
 // Team affiliation is the game snapshot. Player rows deliberately remain separated by that team.
@@ -64,6 +66,15 @@ const pitchingSql = `WITH selected AS (SELECT ${identity},f.* FROM analytics.cur
 export class PlayerStatisticsRepository {
   public constructor(private readonly pool: Pool) {}
   public async batting(input: BattingStatisticsQuery): Promise<BattingStatisticsResponse> {
+    return (await this.battingWithManifest(input)).response;
+  }
+  public async pitching(input: PitchingStatisticsQuery): Promise<PitchingStatisticsResponse> {
+    return (await this.pitchingWithManifest(input)).response;
+  }
+  public readSourceHash(input: AnalysisScopeQuery) {
+    return recheckAnalysisSourceHash(this.pool, resolveAnalysisScope(input, "regular"));
+  }
+  public async battingWithManifest(input: BattingStatisticsQuery) {
     const query = Value.Decode(BattingStatisticsQuerySchema, input);
     const {
       group = "player",
@@ -74,12 +85,12 @@ export class PlayerStatisticsRepository {
       playerId,
       ...scopeInput
     } = query;
-    const snapshot = await this.read(scopeInput, group, battingSql, playerId);
+    const { manifest, ...snapshot } = await this.read(scopeInput, group, battingSql, playerId);
     const rows = Value.Decode(Type.Array(BattingStatisticsTotalsSchema), snapshot.rows)
       .map(battingStatistics)
       .filter((r) => r.plateAppearances >= minPA);
     rows.sort((a, b) => compareMetric(a[sort], b[sort], false) || compareIdentity(a, b));
-    return Value.Decode(BattingStatisticsResponseSchema, {
+    const response = Value.Decode(BattingStatisticsResponseSchema, {
       kind: "batting",
       query,
       ...snapshot,
@@ -89,8 +100,9 @@ export class PlayerStatisticsRepository {
       page,
       limit,
     });
+    return { sourceHash: manifest, response };
   }
-  public async pitching(input: PitchingStatisticsQuery): Promise<PitchingStatisticsResponse> {
+  public async pitchingWithManifest(input: PitchingStatisticsQuery) {
     const query = Value.Decode(PitchingStatisticsQuerySchema, input);
     const {
       group = "player",
@@ -101,12 +113,12 @@ export class PlayerStatisticsRepository {
       playerId,
       ...scopeInput
     } = query;
-    const snapshot = await this.read(scopeInput, group, pitchingSql, playerId);
+    const { manifest, ...snapshot } = await this.read(scopeInput, group, pitchingSql, playerId);
     const rows = Value.Decode(Type.Array(PitchingStatisticsTotalsSchema), snapshot.rows)
       .map(pitchingStatistics)
       .filter((r) => r.battersFaced >= minBF);
     rows.sort((a, b) => compareMetric(a[sort], b[sort], sort === "era") || compareIdentity(a, b));
-    return Value.Decode(PitchingStatisticsResponseSchema, {
+    const response = Value.Decode(PitchingStatisticsResponseSchema, {
       kind: "pitching",
       query,
       ...snapshot,
@@ -116,6 +128,7 @@ export class PlayerStatisticsRepository {
       page,
       limit,
     });
+    return { sourceHash: manifest, response };
   }
   private async read(
     input: Parameters<typeof resolveAnalysisScope>[0],
@@ -145,7 +158,7 @@ export class PlayerStatisticsRepository {
         )
         .digest("hex");
       await release();
-      return { scope, sourceHash, rows: result.rows };
+      return { scope, sourceHash, rows: result.rows, manifest };
     });
   }
 }
