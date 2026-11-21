@@ -42,11 +42,15 @@ export function enrichCreditedRbi(
     const batterRun = event.payload.result === "home_run" ? 1 : 0;
     const runsScored = linked.length + batterRun;
     if (runsScored === 0) return event;
-    if (!creditableResults.has(event.payload.result)) return event;
-    const creditedRbi = Math.min(
-      runsScored,
-      linked.filter((runner) => !isNonRbiRunnerText(runner.relayText ?? null)).length + batterRun,
-    );
+    const creditableRuns =
+      linked.filter((runner) => !isNonRbiRunnerText(runner.relayText ?? null)).length + batterRun;
+    if (
+      !creditableResults.has(event.payload.result) &&
+      !(event.payload.result === "reached_on_error" && creditableRuns === 0)
+    ) {
+      return event;
+    }
+    const creditedRbi = Math.min(runsScored, creditableRuns);
     return { ...event, payload: { ...event.payload, creditedRbi } };
   });
 }

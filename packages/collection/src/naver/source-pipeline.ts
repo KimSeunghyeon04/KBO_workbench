@@ -45,12 +45,12 @@ export function decodeRelayRows(
     if (!Array.isArray(rawRows) || rawRows.some((row) => !isRecord(row))) {
       throw new NaverSourceFormatError(`${source.endpoint}.textOptions는 객체 배열이어야 합니다.`);
     }
-    return (rawRows as JsonRecord[])
-      .map((raw, rawIndex) => decodeRow(source, raw, rawIndex, inning, half))
-      .sort(
-        (left, right) =>
-          (left.sourceSequence ?? left.rawIndex) - (right.sourceSequence ?? right.rawIndex),
-      );
+    const rows = (rawRows as JsonRecord[]).map((raw, rawIndex) =>
+      decodeRow(source, raw, rawIndex, inning, half),
+    );
+    // A provider sequence and an array offset are different ordering scales.
+    if (rows.some((row) => row.sourceSequence === null)) return rows;
+    return rows.sort((left, right) => (left.sourceSequence ?? 0) - (right.sourceSequence ?? 0));
   });
 }
 

@@ -174,7 +174,8 @@ function applyBatterStart(
   }
   if (state.activePlateAppearance !== null) {
     if (
-      context.batterHeadersConfirmedBySubstitution.has(event.identity.eventId) &&
+      (context.batterHeadersConfirmedBySubstitution.has(event.identity.eventId) ||
+        context.batterHeadersAfterSubstitution.has(event.identity.eventId)) &&
       state.activePlateAppearance.currentBatterId === event.payload.batterId &&
       state.activePlateAppearance.currentPitcherId === event.payload.pitcherId
     )

@@ -262,6 +262,24 @@ function isNonState(event: StagingRelayEvent): boolean {
   return event.kind === "review" || event.kind === "administrative";
 }
 
+export function findBatterHeadersAfterSubstitution(
+  document: StagingGameDocumentV2,
+): ReadonlySet<string> {
+  const headers = new Set<string>();
+  let precedingSubstitution: StagingRelayEvent | undefined;
+  for (const event of document.events) {
+    if (
+      event.kind === "batter_start" &&
+      precedingSubstitution?.inning === event.inning &&
+      precedingSubstitution.half === event.half
+    )
+      headers.add(event.identity.eventId);
+    if (!isNonState(event))
+      precedingSubstitution = event.kind === "substitution" ? event : undefined;
+  }
+  return headers;
+}
+
 export function findBatterHeadersConfirmedBySubstitution(
   document: StagingGameDocumentV2,
 ): ReadonlySet<string> {

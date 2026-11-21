@@ -72,6 +72,7 @@ export function mapNaverGame(bundle: RawGameBundle): MappingResult {
     players,
     startingPitchers,
     closeTrailingHalf: status === "final",
+    ...(status === "final" ? { finalBoxscore: recordPayload } : {}),
   });
   const tracking = mapNaverTrackingCandidates(bundle.gameId, normalized);
   const { findings: recordFindings, ...officialRecords } = mapNaverOfficialRecords(recordPayload);

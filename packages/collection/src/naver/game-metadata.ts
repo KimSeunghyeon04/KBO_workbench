@@ -7,6 +7,7 @@ import {
   integer,
   optionalRecords,
   optionalText,
+  parseHalf,
   record,
   requireRecord,
   requireText,
@@ -29,14 +30,17 @@ export function decodeNaverGameMetadata(bundle: RawGameBundle): NaverGameMetadat
   const lineup = endpointPayload(bundle.payloads.lineup, "previewData", "lineup");
   const gameInfo = recordFromFirst(lineup, ["gameInfo", "game_info", "game"]);
   const gameDate = gameDateFrom(first(gameInfo, ["gdate", "gameDate"]), bundle.gameId);
+  const rawStatus = first(gameInfo, ["statusCode", "gameStatus"]);
+  const completedRecord = optionalText(rawStatus) === "2" && hasCompletedRecord(bundle, gameInfo);
   return {
     lineup,
     gameInfo,
     gameDate,
     scheduledAt: scheduledAtFrom(gameDate, first(gameInfo, ["gtime", "gameTime"])),
     status: mapStatus(
-      first(gameInfo, ["statusCode", "gameStatus"]),
-      hasFinalRelayEvidence(bundle.payloads.relay_summary),
+      rawStatus,
+      hasFinalRelayEvidence(bundle.payloads.relay_summary, completedRecord ? bundle.gameId : null),
+      completedRecord,
     ),
     awayTeamId: requireText(first(gameInfo, ["aCode", "awayTeamCode"]), "원정팀 ID"),
     homeTeamId: requireText(first(gameInfo, ["hCode", "homeTeamCode"]), "홈팀 ID"),
@@ -68,6 +72,7 @@ function recordFromFirst(recordValue: JsonRecord, keys: readonly string[]): Json
 function mapStatus(
   raw: unknown,
   hasTerminalRelayEvidence: boolean,
+  completedRecord: boolean,
 ): StagingGameDocumentV2["metadata"]["status"] {
   const value = optionalText(raw)?.toUpperCase();
   if (value === "CANCEL" || value === "CANCELLED") return "cancelled";
@@ -77,25 +82,58 @@ function mapStatus(
   if (value === "RESULT" || value === "FINAL" || value === "1") return "final";
   // Legacy numeric codes also occur on completed games. The code alone is not
   // sufficient: require the provider's explicit final footer and terminal outs.
-  if ((value === "0" || value === "4") && hasTerminalRelayEvidence) return "final";
+  if ((value === "0" || value === "4" || completedRecord) && hasTerminalRelayEvidence)
+    return "final";
   throw new NaverSourceFormatError(`알 수 없는 경기 상태입니다: ${value ?? "없음"}`);
 }
 
-function hasFinalRelayEvidence(raw: unknown): boolean {
+function hasCompletedRecord(bundle: RawGameBundle, preview: JsonRecord): boolean {
+  if (bundle.payloads.record === undefined || optionalText(preview.cancelFlag) === "Y")
+    return false;
+  const payload = endpointPayload(bundle.payloads.record, "recordData", "record");
+  const info = record(first(payload, ["gameInfo", "game_info", "game"]));
+  return optionalText(info.statusCode) === "4" && optionalText(info.cancelFlag) !== "Y";
+}
+
+function hasFinalRelayEvidence(raw: unknown, recordGameId: string | null): boolean {
   if (raw === undefined) return false;
   const summary = endpointPayload(raw, "textRelayData", "relay_summary");
+  if (recordGameId !== null && optionalText(summary.gameId) !== recordGameId) return false;
   const rows = optionalRecords(summary.textRelays).flatMap((block) =>
     optionalRecords(block.textOptions ?? block.events),
   );
   const terminalRows = rows.filter((row) => integer(row.type) === 99);
-  const hasFooter = terminalRows.some((row) =>
+  const footers = terminalRows.filter((row) =>
     /^(?:승리투수|무승부|경기종료)\s*:?/.test(optionalText(row.text) ?? ""),
   );
+  if (footers.length === 0) return false;
   const hasThreeOutState = terminalRows.some((row) => {
     const state = record(row.currentGameState ?? row.observed_state_after);
     return integer(first(state, ["out", "outs"])) === 3;
   });
-  return hasFooter && hasThreeOutState;
+  if (hasThreeOutState) return true;
+  if (
+    recordGameId === null ||
+    (integer(first(summary, ["inn", "inning"])) ?? 0) < 9 ||
+    parseHalf(first(summary, ["homeOrAway", "half"])) !== "bottom"
+  ) {
+    return false;
+  }
+  // A completed record and the winning footer corroborate a walk-off with fewer than three outs.
+  return footers.some((row) => {
+    const state = record(row.currentGameState ?? row.observed_state_after);
+    const outs = integer(first(state, ["out", "outs"]));
+    const homeScore = integer(state.homeScore);
+    const awayScore = integer(state.awayScore);
+    return (
+      outs !== null &&
+      outs >= 0 &&
+      outs < 3 &&
+      homeScore !== null &&
+      awayScore !== null &&
+      homeScore > awayScore
+    );
+  });
 }
 
 function gameDateFrom(raw: unknown, gameId: string): string {

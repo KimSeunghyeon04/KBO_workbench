@@ -196,6 +196,19 @@ export function resolveRunner(
     "context",
   );
   const play = context.basesTrusted[key] ? context.platePlay[key] : null;
+  // 중간 진루는 아직 떠나지 않은 선행주자와 점유가 겹쳐 투영되지 않을 수 있다.
+  // 같은 플레이에서 각 주자의 마지막 명시적 이동만 현재 위치의 근거로 쓴다.
+  const latestMovements = new Map(play?.movements.map((move) => [move.runnerId, move]));
+  for (const move of latestMovements.values()) {
+    if (move.outcome === "safe" && move.toBase === fromBase)
+      addIdentityCandidate(
+        candidates,
+        applicable(move.runnerId),
+        "runner.plate_play_movement",
+        575,
+        "context",
+      );
+  }
   const placement = play?.batterPlacement;
   if (placement !== undefined && placement !== null) {
     const lastMove = play?.movements.filter((move) => move.runnerId === placement.batterId).at(-1);

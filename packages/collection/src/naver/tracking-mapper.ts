@@ -94,7 +94,7 @@ export function mapNaverTrackingCandidates(
             : { kind: "pending" },
       });
     }
-    resolveBlockTrackingCandidates(blockCandidates, pitchEvents, findings);
+    resolveBlockTrackingCandidates(blockCandidates, pitchEvents, eventById, findings);
     candidates.push(...blockCandidates);
   }
 
@@ -173,6 +173,7 @@ function finiteNumber(value: unknown): number | null {
 function resolveBlockTrackingCandidates(
   candidates: TrackingCandidate[],
   pitchEventIdsBySourceId: ReadonlyMap<string, readonly string[]> | undefined,
+  eventById: ReadonlyMap<string, StagingGameDocumentV2["events"][number]>,
   findings: SourceFinding[],
 ): void {
   const indexesBySourcePitchId = new Map<string, number[]>();
@@ -204,14 +205,21 @@ function resolveBlockTrackingCandidates(
       const candidate = candidates[index];
       return candidate === undefined ? [] : [candidate];
     });
-    if (pitchEventIds.length === group.length && group.length > 0) {
-      for (const [occurrence, index] of indexes.entries()) {
-        const candidate = candidates[index];
-        const pitchEventId = pitchEventIds[occurrence];
-        if (candidate === undefined || pitchEventId === undefined) continue;
-        candidates[index] = linkTrackingCandidate(candidate, pitchEventId);
+    const equalCount = pitchEventIds.length === group.length;
+    if (equalCount) {
+      const matched =
+        pitchEventIds.length === 1
+          ? pitchEventIds
+          : matchDistinctPlayers(pitchEventIds, group, eventById);
+      if (matched !== null) {
+        for (const [occurrence, index] of indexes.entries()) {
+          const candidate = candidates[index];
+          const pitchEventId = matched[occurrence];
+          if (candidate === undefined || pitchEventId === undefined) continue;
+          candidates[index] = linkTrackingCandidate(candidate, pitchEventId);
+        }
+        continue;
       }
-      continue;
     }
     if (
       pitchEventIds.length === 1 &&
@@ -235,25 +243,26 @@ function resolveBlockTrackingCandidates(
       continue;
     }
 
-    const conflict =
-      pitchEventIds.length === 1 &&
-      group.length > 1 &&
-      new Set(group.map(trackingFactFingerprint)).size > 1;
+    let code = "source.tracking.cardinality_mismatch";
+    let message = `같은 block의 원천 투구 ${String(pitchEventIds.length)}개와 tracking ${String(group.length)}개의 개수가 다릅니다.`;
+    if (pitchEventIds.length === 0) {
+      code = "source.tracking.unlinked";
+      message = "tracking 관측값에 대응하는 원천 투구 행이 없습니다.";
+    } else if (pitchEventIds.length === 1) {
+      code = "source.tracking.conflicting_candidates";
+      message = "하나의 원천 투구 행에 서로 다른 tracking 관측값이 있습니다.";
+    } else if (equalCount) {
+      code = "source.tracking.ambiguous_pitch_id";
+      message =
+        "같은 block에서 재사용된 원천 투구 ID의 연결을 선수 문맥으로 유일하게 확인할 수 없습니다.";
+    }
     for (const candidate of group) {
       findings.push(
         sourceFinding(
-          conflict
-            ? "source.tracking.conflicting_candidates"
-            : pitchEventIds.length === 0
-              ? "source.tracking.unlinked"
-              : "source.tracking.cardinality_mismatch",
+          code,
           "blocking",
           "recomputed",
-          conflict
-            ? "하나의 원천 투구 행에 서로 다른 tracking 관측값이 있습니다."
-            : pitchEventIds.length === 0
-              ? "tracking 관측값에 대응하는 원천 투구 행이 없습니다."
-              : `같은 block의 원천 투구 ${String(pitchEventIds.length)}개와 tracking ${String(group.length)}개의 개수가 다릅니다.`,
+          message,
           candidate.source.endpoint,
           candidate.source.blockIndex,
           candidate.source.rowIndex,
@@ -261,6 +270,38 @@ function resolveBlockTrackingCandidates(
       );
     }
   }
+}
+
+function matchDistinctPlayers(
+  pitchEventIds: readonly string[],
+  candidates: readonly TrackingCandidate[],
+  eventById: ReadonlyMap<string, StagingGameDocumentV2["events"][number]>,
+): readonly string[] | null {
+  // Every pair must be confirmed by a unique batter/pitcher combination on both source arrays.
+  const byPlayers = new Map<string, string>();
+  for (const pitchEventId of pitchEventIds) {
+    const event = eventById.get(pitchEventId);
+    const key = event?.kind === "pitch" ? trackingPlayerKey(event.payload) : null;
+    if (key === null || byPlayers.has(key)) return null;
+    byPlayers.set(key, pitchEventId);
+  }
+  const matched: string[] = [];
+  for (const candidate of candidates) {
+    const key = trackingPlayerKey(candidate);
+    if (key === null) return null;
+    const pitchEventId = byPlayers.get(key);
+    if (pitchEventId === undefined) return null;
+    byPlayers.delete(key);
+    matched.push(pitchEventId);
+  }
+  return matched;
+}
+
+function trackingPlayerKey(
+  value: Pick<TrackingCandidate, "batterId" | "pitcherId">,
+): string | null {
+  if (value.batterId === undefined || value.pitcherId === undefined) return null;
+  return JSON.stringify([value.batterId, value.pitcherId]);
 }
 
 function linkTrackingCandidate(

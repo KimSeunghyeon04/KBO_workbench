@@ -1,0 +1,124 @@
+[
+  {
+    "kind": "half_inning_start",
+    "text": "1회초 원정 공격"
+  },
+  {
+    "batterId": "a3",
+    "pitcherId": "hp1",
+    "kind": "batter_start",
+    "text": "3번타자 앞선주자"
+  },
+  {
+    "result": "intentional_walk",
+    "batterId": "a3",
+    "pitcherId": "hp1",
+    "movements": [],
+    "kind": "plate_result"
+  },
+  {
+    "batterId": "a2",
+    "pitcherId": "hp1",
+    "kind": "batter_start",
+    "text": "2번타자 선행주자"
+  },
+  {
+    "result": "intentional_walk",
+    "batterId": "a2",
+    "pitcherId": "hp1",
+    "movements": [],
+    "kind": "plate_result"
+  },
+  {
+    "kind": "runner_advance",
+    "runnerId": "a3",
+    "fromBase": 1,
+    "toBase": 2,
+    "outcome": "safe",
+    "text": "1루주자 앞선주자 : 2루까지 진루"
+  },
+  {
+    "batterId": "a1",
+    "pitcherId": "hp1",
+    "kind": "batter_start",
+    "text": "1번타자 동명주자"
+  },
+  {
+    "result": "intentional_walk",
+    "batterId": "a1",
+    "pitcherId": "hp1",
+    "movements": [],
+    "kind": "plate_result"
+  },
+  {
+    "kind": "runner_advance",
+    "runnerId": "a2",
+    "fromBase": 1,
+    "toBase": 2,
+    "outcome": "safe",
+    "text": "1루주자 선행주자 : 2루까지 진루"
+  },
+  {
+    "kind": "runner_advance",
+    "runnerId": "a3",
+    "fromBase": 2,
+    "toBase": 3,
+    "outcome": "safe",
+    "text": "2루주자 앞선주자 : 3루까지 진루"
+  },
+  {
+    "kind": "batter_start",
+    "batterId": "a5",
+    "pitcherId": "hp1",
+    "text": "후속 타자"
+  },
+  {
+    "kind": "plate_result",
+    "result": "field_out",
+    "batterId": "a5",
+    "pitcherId": "hp1",
+    "text": "범타 아웃"
+  },
+  {
+    "kind": "batter_start",
+    "batterId": "a6",
+    "pitcherId": "hp1",
+    "text": "후속 타자"
+  },
+  {
+    "kind": "plate_result",
+    "result": "field_out",
+    "batterId": "a6",
+    "pitcherId": "hp1",
+    "text": "범타 아웃"
+  },
+  {
+    "kind": "batter_start",
+    "batterId": "a4",
+    "pitcherId": "hp1",
+    "text": "4번타자 타자"
+  },
+  {
+    "kind": "plate_result",
+    "result": "single",
+    "batterId": "a4",
+    "pitcherId": "hp1",
+    "text": "타자 : 우익수 앞 1루타"
+  },
+  {
+    "type": 24,
+    "text": "1루주자 동명주자 : 2루까지 진루"
+  },
+  {
+    "type": 24,
+    "text": "2루주자 동명주자 : 태그아웃 (우익수->유격수 태그아웃)"
+  },
+  {
+    "type": 24,
+    "text": "2루주자 선행주자 : 홈인"
+  },
+  {
+    "type": 24,
+    "text": "3루주자 앞선주자 : 홈인"
+  }
+]

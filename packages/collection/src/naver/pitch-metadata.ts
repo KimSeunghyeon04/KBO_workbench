@@ -28,7 +28,7 @@ export function parseNaverPitchMetadata(
       message: `투구 ${field} 원천값을 해석할 수 없습니다. immutable source의 해당 행을 확인하세요.`,
     });
   };
-  if (!missing(speed)) {
+  if (!missing(speed) && !((speed === "0" || speed === 0) && missing(stuff))) {
     const numeric =
       typeof speed === "number"
         ? speed

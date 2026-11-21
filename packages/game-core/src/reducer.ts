@@ -3,6 +3,7 @@ import { parseStagingGameDocumentV2, type StagingRelayEvent } from "@kbo/contrac
 import { findTerminalPitchForPlateResult } from "./rules.js";
 import {
   buildPlayIndex,
+  findBatterHeadersAfterSubstitution,
   findBatterHeadersConfirmedBySubstitution,
   type PlayIndex,
 } from "./compiler/play-index.js";
@@ -39,6 +40,7 @@ export function compileStagingGameDocumentV2(input: unknown): ReplayResult {
     batterLines: new Map(),
     pitcherLines: new Map(),
     batterHeadersConfirmedBySubstitution: findBatterHeadersConfirmedBySubstitution(document),
+    batterHeadersAfterSubstitution: findBatterHeadersAfterSubstitution(document),
     observationMismatchFields: new Set(),
     uncertainRbiBatterIds: new Set(),
   };
@@ -101,17 +103,16 @@ export function compileStagingGameDocumentV2(input: unknown): ReplayResult {
       links.independentByLeader.get(eventId) ?? [],
       links.nonStateByIndependentLeader.get(eventId) ?? [],
     );
-    const newFindings = local.findings.slice(context.findings.length);
-    const blocking = newFindings.some((finding) => finding.severity === "blocking");
+    const blocking = local.findings.some((finding) => finding.severity === "blocking");
     const resumableBoundary =
       event.kind === "half_inning_start" &&
-      newFindings
+      local.findings
         .filter((finding) => finding.severity === "blocking")
         .every((finding) => finding.code === "source_half_incomplete");
     const applied = !blocking || resumableBoundary;
     if (applied) {
       state = candidate;
-      context.plateAppearances = local.plateAppearances;
+      context.plateAppearances.push(...local.plateAppearances);
       context.batterLines = local.batterLines;
       context.pitcherLines = local.pitcherLines;
       if (event.kind === "plate_result") {
@@ -159,7 +160,7 @@ export function compileStagingGameDocumentV2(input: unknown): ReplayResult {
       context.observationMismatchFields = local.observationMismatchFields;
       context.uncertainRbiBatterIds = local.uncertainRbiBatterIds;
     }
-    context.findings = local.findings;
+    context.findings.push(...local.findings);
     const after = snapshot(state);
     const playId = `play:${eventId}`;
     const relayEventIds =

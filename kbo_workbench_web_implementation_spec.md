@@ -108,6 +108,8 @@ status·URL·본문, 일정 observer와 원문 보존, 기존 retry·rate·크�
 제공자 preview의 숫자 상태 `0`·`4`는 relay summary의 type 99 종료 footer와 3아웃 관측이
 함께 있을 때만 `final`로 해석한다. 코드만으로 종료를 추정하지 않으며, 원장·공식 기록·종료 조건은
 기존 compiler가 다시 검증한다. 실제 상태 `4` 응답의 비식별 fixture로 증거 누락 거부도 확인한다.
+preview에 `2`가 남아 있더라도 같은 경기 record가 `4`이고 relay summary에 종료 footer와
+3아웃 또는 9회 이후 말 공격에서 홈이 앞선 끝내기 관측이 함께 있으면 `final`로 정규화한다.
 
 수집한 endpoint payload는 canonical JSON 후 gzip으로 `.data/source/<season>/<gameId>/`에 불변
 저장한다. manifest에는 endpoint, 응답 hash와 최초 수집 시각을 기록한다. 같은 source bundle hash로
@@ -117,6 +119,7 @@ base로 하는 기록정정 draft를 만든다.
 모든 의미 있는 relay 행은 typed event, review/administrative 또는 `unresolved` 중 하나로 보존한다.
 알 수 없는 행을 버리거나 누락된 타석 시작·투구·결과·주자 이동을 만들지 않는다. provider 별칭,
 한국어 문장과 정규식은 collection에만 둔다.
+블록 내 행 번호가 모두 있으면 제공자 번호로 정렬하고, 번호가 일부 빠지면 원천 배열 순서를 사용한다.
 
 타석 결과 본문의 `실책으로 출루`는 일반 땅볼 출루보다 구체적인 근거다. 구조화 결과가 없거나
 `field_out`·`fielder_choice`인 경우에는 해당 문구의 결과 후보를 일반 출루와 같은 강도로 평가하고,
@@ -138,11 +141,13 @@ tracking candidate는 다음 typed 정보를 가진다.
 - `crossPlateX/crossPlateY`; 새 수집에서는 `topSz/bottomSz`를 폐기한다
 - `pending`, `linked(pitchEventId)`, `duplicateOf(trackingId)`, `excluded(reason)` resolution
 
-수집 매칭은 같은 endpoint/block와 non-unique sourcePitchId 안에서 원천 occurrence 순서를 사용한다.
-투구 N개와 tracking N개는 같은 순서로 1:1 연결하며 Naver ballcount는 연결에 사용하지 않는다. 한
-투구에 완전히 같은 tracking이 여러 번 오면 첫 source 위치를 canonical로 연결하고 나머지는
-`duplicate`로 자동 분류한다. metric 충돌, 투구·tracking 개수 불일치와 대응 투구 부재만 pending과
-blocking으로 남긴다. 실제 PA와 투구 순번은 compiler의 pitch fact만 계산한다.
+수집 매칭은 같은 endpoint/block와 sourcePitchId에서 대응 투구 하나와 관측 하나를 연결한다.
+투구가 여러 개면 같은 수의 관측 각각에 완전한 타자·투수 조합이 있고 각 조합이 단일 투구와
+일치할 때 전체를 연결한다. 배열 순서와 Naver ballcount는 연결 근거에서 제외한다. 짝을 확정할
+수 없는 관측은 `source.tracking.ambiguous_pitch_id`와 함께 pending으로 보존한다. 한 투구의 동일
+tracking 재전송은 첫 위치를 canonical로 연결하고 나머지를 `duplicate`로 분류한다. metric 충돌,
+개수 불일치와 대응 투구 부재도 pending과 blocking으로 남긴다. 실제 PA와 투구 순번은 compiler의
+pitch fact만 계산한다.
 
 같은 `sourcePitchId`가 경기 안에서 반복되면 `source.pitch_id.reused_within_game` warning과 모든 원천
 위치를 각 관련 투구에 표시한다. ID 반복만으로 병합하거나 차단하지 않는다. provider ballcount와 실제
@@ -223,8 +228,10 @@ compiler는 metadata를 pitch fact로 전달하며 기존 경기 계산 규칙�
 시간·플랫폼·실행 순서와 무관하게 같은 finding, projection, hash와 replay frame을 만든다.
 
 collection은 이닝별 기록지 약호를 모두 해석하고 명시적인 안타·홈런 합계와 일치하는 경우에만
-2루타·3루타 비교값을 보완한다. 해석 불가·불완전·상충 근거는 source warning으로 보존하며
-중계 결과를 자동으로 덮어쓰지 않는다. compiler는 제공된 공식 계수와 비교해 장타 차이를 차단하고,
+2루타·3루타 비교값을 보완한다. 해석 불가·불완전·상충 근거는 source warning으로 보존한다.
+완료 경기에서 타자·팀·이닝과 타석의 순서를 맞출 수 있을 때 `2실`, `유실` 등의 구체적인 약호로
+일반 `땅볼로 출루`를 실책 출루로 분류하고 원문·identity·주자 이동을 보존한다.
+compiler는 제공된 공식 계수와 비교해 장타 차이를 차단하고,
 양수 실적이 있는데 선수 ID에 해당하는 계산 행이 없으면 선수별 missing-record blocking을 남긴다.
 0뿐인 행과 자책점만 있는 행은 계산 행 생성을 요구하지 않는다. 미판정 타점은 기존 warning을 유지한다.
 
@@ -740,7 +747,11 @@ compiler를 실행하지 않는다. `StagingWorkspace`는 writer lock·경기별
 부재를 compiler가 검증한다. 야수선택 책임은 주자별 최종 이동으로 배정한다. 같은 베이스에 남은
 생존 주자도 포함하며 이동 검증 성공 뒤 최종 점유에 반영한다. 같은 베이스로의 안전 도착 뒤 진루·득점은
 연속 경로로 검증하고, 실제 중복 출발은 차단한다. 명시적 콜드 종료 뒤 실제 투구·결과·주자 이동 없이 남은
-이닝·타자·교체 표시는 원문을 가진 안내 행으로 보존한다. 쓰리번트 terminal pitch의
+이닝·타자·교체 표시와 중복 종료 선언은 원문을 가진 안내 행으로 보존하고 첫 종료 선언은 유지한다.
+교체 뒤 같은 타자·현재 투수의 머리글은 진행 중 타석의 투구·카운트를 이어간다. 동명이인 주자의
+연속 이동은 같은 플레이의 마지막 명시 이동까지 확인하되 모호하면 차단한다. 야수선택의 직접
+아웃·홈 포스아웃 책임 승계는 유지하고, 추가 베이스 진루 중 태그아웃의 책임은 소멸한다.
+쓰리번트 terminal pitch의
 관찰 strike=2는 확인된 삼진일 때만 warning으로 남긴다. projection/analytics 4/4와 기존 migration은 유지한다.
 
 preview 누락 로스터는 중계 해석 전에 같은 경기 record 박스스코어의 명시적 ID·이름·팀으로 보완한다.

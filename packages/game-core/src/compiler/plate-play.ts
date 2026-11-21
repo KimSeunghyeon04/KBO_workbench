@@ -251,9 +251,11 @@ function inheritFielderChoiceResponsibilities(
       (runner) =>
         runner.origin > 0 &&
         runner.last?.outcome === "out" &&
-        // 포스 병살도 선행 주자의 책임을 승계한다. 귀루 실패·도루 실패 등의
-        // 비포스 병살은 야수선택으로 대체된 주자로 간주하지 않는다.
-        (event.payload.result === "fielder_choice" || runner.last.outKind === "force") &&
+        // 9.16(g) 주2: 추가 베이스를 노리다 태그아웃된 주자의 책임은 소멸한다.
+        // 직접 선택수비로 잡힌 주자와 포스 병살의 책임 승계는 유지한다.
+        ((event.payload.result === "fielder_choice" &&
+          !(runner.last.outKind === "tag" && runner.last.toBase > runner.origin + 1)) ||
+          runner.last.outKind === "force") &&
         runner.responsiblePitcherId !== resultPitcherId,
     )
     .sort((left, right) => left.origin - right.origin);

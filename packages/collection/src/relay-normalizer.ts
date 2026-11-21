@@ -1,5 +1,6 @@
 import { parseStagingRelayEvent, type Side, type StagingRelayEvent } from "@kbo/contracts";
 
+import { reconcileBoxscorePlateResults } from "./naver/boxscore-plate-results.js";
 import { emitRelayRow } from "./naver/event-emitter.js";
 import { enrichHitByPitchCalls } from "./naver/hit-by-pitch-enrichment.js";
 import type {
@@ -12,6 +13,7 @@ import { createParseContext, updateNormalizationContext } from "./naver/normaliz
 import { createPlayerIndex } from "./naver/player-resolver.js";
 import { enrichCreditedRbi } from "./naver/rbi-enrichment.js";
 import { decodeRelayRows, prepareRelayBlocks } from "./naver/source-pipeline.js";
+import type { JsonRecord } from "./naver/source-values.js";
 import { classifyTerminalRelay } from "./naver/terminal-relay.js";
 
 export type {
@@ -27,6 +29,7 @@ export function normalizeNaverRelay(input: {
   readonly players: readonly RelayRosterPlayer[];
   readonly startingPitchers: Readonly<Record<Side, string | null>>;
   readonly closeTrailingHalf: boolean;
+  readonly finalBoxscore?: JsonRecord;
 }): RelayNormalizationResult {
   const blocks: readonly NormalizedRelayBlock[] = prepareRelayBlocks(input.blocks);
   const players = createPlayerIndex(input.players);
@@ -73,8 +76,13 @@ export function normalizeNaverRelay(input: {
     }
     updateNormalizationContext(row, event, context);
   }
+  // Both results place the batter on first by default, so the earlier row linkage is unchanged.
+  const reconciled =
+    input.finalBoxscore === undefined
+      ? events
+      : reconcileBoxscorePlateResults(events, rows, input.finalBoxscore);
   return {
-    events: enrichCreditedRbi(enrichHitByPitchCalls(events)),
+    events: enrichCreditedRbi(enrichHitByPitchCalls(reconciled)),
     findings,
     blocks,
     pitchEventIdsByBlock: context.pitchEventIdsByBlock,

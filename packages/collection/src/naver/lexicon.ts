@@ -167,6 +167,15 @@ export function plateResultDecision(row: CanonicalNaverRow): ParseDecision<Plate
   return decide(candidates, "result.unclassified", "타석 결과를 확정할 근거가 없습니다.");
 }
 
+export function isCoarseGroundBallReach(row: CanonicalNaverRow): boolean {
+  const text = compact(row.relayText);
+  return (
+    (row.resultCode === null || row.resultCode === "field_out") &&
+    /땅볼로출루/.test(text.replace(/\([^)]*\)/g, "")) &&
+    !/실책|야수선택|필더스초이스/.test(text)
+  );
+}
+
 export function pitchCallDecision(row: CanonicalNaverRow): ParseDecision<PitchCall> {
   const text = compact(row.relayText);
   const candidates: DecisionCandidate<PitchCall>[] = [];

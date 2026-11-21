@@ -69,7 +69,8 @@ import 직전에는 원장 읽기·전체 컴파일·hash와 expected target 일
 투구 payload는 선택적인 `speedKph`(유한 양수)와 `pitchType`(제공 구종명)을 가진다. collection은
 `textOptions` 투구 행의 `speed`와 `stuff`를 해석하며 `ptsOptions`, tracking 좌표와 pitch ID 유무에
 의존하지 않는다. 빈 값은 속성을 생략하고, 잘못된 값은 endpoint/block/row/event ID와 원문을 포함한
-`source.pitch_metadata.invalid_speed` 또는 `invalid_stuff` warning을 남긴다. 구종 재분류는 하지 않는다.
+`source.pitch_metadata.invalid_speed` 또는 `invalid_stuff` warning을 남긴다. 구종이 비어 있고 구속이
+`0`인 미계측 행은 구속을 생략한다. 구종 재분류는 하지 않는다.
 
 1. `경기 확인`이 격리된 Playwright context에서 완료·미취소 일정만 탐색한다. 저장된 조회가 있으면
    먼저 표시하고 명시적 새로 확인으로 갱신한다. 원문 page와 정규화 결과는 hash와 함께 보존한다.
@@ -81,11 +82,15 @@ import 직전에는 원장 읽기·전체 컴파일·hash와 expected target 일
 4. endpoint payload를 canonical JSON gzip과 manifest로 `.data/source`에 불변 저장한다. source
    경로의 season은 경기 ID 접두사가 아니라 preview의 실제 경기 날짜에서 정한다.
 5. normalizer가 `textRelays[]` 배열 위치가 아니라 provider block `no`를 기준으로 원천 순서를
-   복원하고 반복·정정 suffix를 포함한 모든 의미 행을 원천 위치별로 방출한다.
+   복원한다. 블록 내 행 번호가 모두 있으면 그 번호로 정렬하고 일부가 없으면 원본 배열 순서를
+   사용한다. 반복·정정 suffix를 포함한 모든 의미 행을 원천 위치별로 방출한다.
 6. mapper가 원천 행마다 결정적 event ID와 정확한 endpoint·block·행 위치를 부여한다.
 7. compiler가 strict 참조, 선수·타석 경계, 원자적 play, tracking, 상태·PA·기록과 원천 관측을
    검증한다.
 8. 차단 finding이 없으면 staging, 있으면 quarantine으로 저장한다.
+
+preview에 숫자 상태 `2`가 남은 경기는 record의 완료 상태 `4`와 같은 경기 relay summary를
+대조한다. 종료 footer와 3아웃, 또는 9회 이후 말 공격의 홈 리드가 함께 관측돼야 완료로 해석한다.
 
 공식 타자 기록의 `h2`·`h3`가 없을 때는 선수 ID가 있는 record 박스스코어의 `innX` 안타 약호를
 읽어 2루타·3루타를 보완한다. 같은 이닝의 `/` 구분 타석을 포함해 모든 비어 있지 않은 약호가
@@ -94,9 +99,10 @@ import 직전에는 원장 읽기·전체 컴파일·hash와 expected target 일
 record 배열 경로·선수 ID·원문 이닝 셀이 있는 source warning을 남긴다. 명시적인 `h2`·`h3`와
 충돌하면 기존 값을 보존하고 경고한다. 이름만 나열하는 `etcRecords`로 선수 ID를 추정하지 않는다.
 빈 이닝 셀만 있고 명시적인 `hit`·`hr`가 모두 0인 행은 보완 없이 정상 생략한다. 실제 원문 중계로
-확인한 번트 아웃·희생 실책·야수선택 약호와 두 수비 위치를 거친 안타(`2중안`, `1우2` 등)를
-구분한다. `/우안`처럼 비어 있는 타석 슬롯은 의미를 추정하지 않고 검토 경고를 유지한다.
-중계 원장 판정은 바꾸지 않으며, 보완한 공식 기록과 중계 계산값의 차이는 기존 compiler 검증에서
+확인한 번트 아웃·희생 실책·야수선택 약호와 두 수비 위치를 거친 안타(`2중안`, `1우2`, `투포안` 등)를
+구분한다. `/우안`처럼 앞에 한 번 붙는 `/`는 선행 빈 슬롯으로 해석한다. 안타·홈런 합계가
+일치해야 보완하며, 중간·끝의 빈 슬롯이나 중복 구분자는 검토 경고를 유지한다.
+장타 집계 보완 시 중계 원장 판정은 바꾸지 않으며, 공식 기록과 중계 계산값 차이는 기존 compiler 검증에서
 blocking으로 처리한다. 원문 bundle과 이미 봉인한 revision은 변경하지 않는다.
 
 preview의 숫자 상태 `0`·`4`만으로 종료를 추정하지 않는다. relay summary에 type 99의 명시적
@@ -106,7 +112,8 @@ compiler의 공식 기록·경기 종료 검증을 생략하지 않는다. 비�
 실제 완료 경기의 상태 `4`·종료 footer·3아웃 조합과, 증거가 빠지면 거부하는 회귀를 고정한다.
 
 종료 경기의 명시적 `called_game` 선언 뒤 이닝·타자·교체 표시만 남고 이후 투구·타석 결과·주자 이동이
-없으면 그 표시들을 원문·identity·소스 위치가 있는 안내 행으로 보존한다. 실제 진행 행이나 미해결 종류가
+없으면 그 표시들과 뒤따른 중복 종료 선언을 원문·identity·소스 위치가 있는 안내 행으로 보존한다.
+첫 종료 선언은 유지한다. 실제 진행 행이나 미해결 종류가
 뒤따르면 이 예외를 적용하지 않는다. 단순 종료 footer만으로 교체·반이닝 경계를 무효화하지 않는다.
 
 ## 브라우저 전송
@@ -220,6 +227,13 @@ writer lock·current CAS·journal 경로를 사용한다. 네트워크 요청 �
 구분하며 희생번트·희생플라이 우선순위와 구체적인 구조화 결과는 유지한다. 괄호 안 부연만으로 이
 우선순위를 올리지 않는다. `tests/fixtures/naver/reached-on-error.anonymized.json`과 relay normalizer
 회귀는 포구·송구·번트 실책 문구, coarse 결과, 원문·identity·주자 이동·PA/AB/H 보존을 검증한다.
+
+완료 경기의 `땅볼로 출루`에 구체적인 판정이 없으면 같은 팀·타자 ID·이닝의 `innX` 약호를 대조한다.
+정규화된 결과 행과 약호의 개수·순서가 일치하고 다른 타석 판정도 일치하는 경우 `2실`, `유실` 같은
+명시적 실책 약호로 `reached_on_error`를 확정한다. 주자 행의 실책 문구만으로는 타자 판정을 바꾸지
+않는다. 기존 결과 행의 원문과 ID 및 연결 주자 이동은 보존한다. 연결 득점이 모두 실책 등으로
+기록된 경우 타점 0을 채우며 그 외 실책 출루의 타점은 제공된 값으로 검증한다.
+
 정규화 수정으로 기존 sealed revision은 변경되지 않는다. 기존 경기에는 현재 원장 교정과 전체 compile,
 새 append-only revision 적재 절차를 적용해야 하며 같은 원천 재수집만으로 자동 교정하지 않는다.
 
@@ -249,10 +263,12 @@ non-unique인 출처 힌트일 뿐 event identity나 일반 dedupe key가 아니
 
 tracking은 같은 `sourcePitchId`여도 결정론적 `trackingId`별로 모두 보존한다. `sourcePitchOrdinal`은
 Naver `ballcount` 원천값으로 보존하지만 PTS 관측 누락·보크·타석 중 교체 때문에 실제 PA 투구
-순번과 다를 수 있다. 같은 endpoint/block와 sourcePitchId 안에서 투구와 tracking의 원천 occurrence
-순서가 1:1이면 그 순서로 연결하며 ballcount는 사용하지 않는다. 한 투구에 metric까지 완전히 같은
-tracking이 반복되면 첫 source 위치를 linked canonical로, 나머지를 duplicate로 자동 분류한다. 실제
-metric 충돌, 투구·tracking 개수 불일치와 대응 투구 부재만 pending과 blocking으로 남긴다.
+순번과 다를 수 있다. 같은 endpoint/block와 sourcePitchId에서 대응 투구 하나와 관측 하나는 연결한다.
+ID를 공유하는 투구가 여러 개면 모든 관측과 투구의 타자·투수 조합이 유일하게 대응할 때 연결하며,
+배열 순서와 ballcount는 연결 근거에서 제외한다. 짝을 확정할 수 없는 관측은 원천 위치를 가진
+차단 finding과 함께 pending으로 보존한다. 한 투구에 metric까지 완전히 같은 tracking이 반복되면
+첫 source 위치를 linked canonical로, 나머지를 duplicate로 자동 분류한다. metric 충돌, 투구·tracking
+개수 불일치와 대응 투구 부재도 pending과 blocking으로 남긴다.
 
 같은 `sourcePitchId`가 경기 안에서 여러 투구에 나타나면 각 투구에
 `source.pitch_id.reused_within_game` warning과 전체 원천 위치를 남긴다. ID 반복 자체는 blocking이
@@ -270,6 +286,9 @@ metric 충돌, 투구·tracking 개수 불일치와 대응 투구 부재만 pend
 교체는 들어오는 선수의 역할/수비 위치를 사용하며 수비 이동의 `shiftPlayer`를 해석한다. 연속 대타의
 나가는 선수는 현재 타자와 명시 이름을 함께 확인한다. 주자 행의 이름과 플레이 전체 관찰을 구분하며
 동명이인은 같은 플레이의 명시 타자 배치·후속 이동까지 확인하고 여전히 모호하면 unresolved로 남긴다.
+아직 이동하지 않은 선행주자와 점유가 겹쳐 중간 진루를 베이스 문맥에 투영하지 못해도, 같은 플레이의
+주자별 마지막 명시 이동이 안전 도착이면 후속 행의 출발 위치 근거로 사용한다. 아웃·득점한 주자의
+이전 안전 도착으로 되돌아가지 않으며, 명시 ID와 이름의 충돌이나 같은 강도의 후보 충돌은 유지한다.
 포수 피치클락 위반의 명시적 자동 볼은 카운트에 반영하지만 실제 투구 수에는 포함하지 않는다.
 
 ## 타석 결과와 주자 이동
@@ -318,6 +337,10 @@ ball에서 일어난 폭투 진루·추가 진루·태그 아웃·득점을 서�
 경로는 임시 위치에서 이어서 검증하고 최종 베이스·아웃·득점을 한 번에 반영한다.
 
 - `unresolved`, dangling link, roster 밖 선수, 잘못된 타석 경계는 차단한다.
+- 교체 뒤 같은 타자·현재 투수의 `batter_start`는 진행 중 타석을 이어가며 원문 행과 투구·카운트를
+  유지한다. 다른 타자·투수의 표시나 교체 없는 중복 표시는 이 예외로 통과시키지 않는다.
+- 야수선택·포스 병살은 전임투수 책임을 승계한다. 다만 플레이 전 위치보다 두 베이스 이상 앞에서
+  추가 진루 중 태그아웃된 주자의 책임은 9.16(g) 주2에 따라 소멸하며 생존 주자에게 넘기지 않는다.
 - 원천 관측 balls·strikes·outs·bases·score는 계산값을 덮어쓰지 않고 원천 행 시점에 맞춰 비교한다.
   투구 snapshot은 다음 플레이 상태가 먼저 반영되는 사례가 있어 count만 비교한다. 타석 결과의 count는
   결과 전 마지막 count이므로 PA 종료 뒤 0-0과 비교하지 않는다. 연결 주자 행이 있는 원자적 play와

@@ -25,6 +25,35 @@ const errorReachTexts = Value.Decode(
 );
 
 describe("Naver 평면 relay 원장 정규화", () => {
+  it("행 번호가 일부 빠진 블록은 타석 문맥과 원천 행 위치를 보존한다", () => {
+    const normalized = normalize([
+      row(100, "half_inning_start", "1회초 시작"),
+      row(101, "batter_start", "원정1 타석", { batterId: "a1", pitcherId: "hp1" }),
+      { kind: "pitch", text: "1구 타격", call: "in_play" },
+      row(103, "plate_result", "원정1 땅볼 아웃", {
+        result: "field_out",
+        batterId: "a1",
+        pitcherId: "hp1",
+      }),
+    ]);
+
+    expect(normalized.events.map((event) => event.kind)).toEqual([
+      "half_inning_start",
+      "batter_start",
+      "pitch",
+      "plate_result",
+    ]);
+    expect(normalized.events[2]).toMatchObject({
+      identity: { kind: "source", endpoint: "relay_001", blockIndex: 0, eventIndex: 2 },
+      relayText: "1구 타격",
+      sequence: 2,
+    });
+    const replay = compileStagingGameDocumentV2(documentFor(normalized.events));
+    expect(replay.findings.filter((finding) => finding.severity === "blocking")).toEqual([]);
+    expect(replay.finalState.outs).toBe(1);
+    expect(replay.pitchFacts).toMatchObject([{ batterId: "a1", pitcherId: "hp1", actual: true }]);
+  });
+
   it("볼넷 결과 앞의 정상적인 4구 볼은 사구로 바꾸지 않는다", () => {
     const normalized = normalize([
       row(0, "half_inning_start", "1회초 시작"),

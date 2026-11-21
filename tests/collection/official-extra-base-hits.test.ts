@@ -100,6 +100,14 @@ describe("Naver official extra-base hit evidence", () => {
     expect(mapped.document.officialRecords.batters[0]).toMatchObject({ doubles: 0, triples: 0 });
   });
 
+  it("대타의 선행 빈 슬롯과 투수 맞고 포수 내야안타를 합계로 확인한다", async () => {
+    const mapped = mapNaverGame(
+      await bundleWithRow({ hit: 2, hr: 0, inn1: "/우중2", inn2: "투포안" }),
+    );
+    expect(mapped.findings).toEqual([]);
+    expect(mapped.document.officialRecords.batters[0]).toMatchObject({ doubles: 1, triples: 0 });
+  });
+
   it.each([
     { hit: 2, hr: 0, inn1: "중안" },
     { hit: 1, hr: 1, inn1: "우중2" },
@@ -110,7 +118,9 @@ describe("Naver official extra-base hit evidence", () => {
     { hit: 1, hr: 0, inn1: 2 },
     { hit: 1, hr: 0, inn1: "" },
     { hit: 0, hr: 1, inn1: "" },
-    { hit: 1, hr: 0, inn1: "/우안" },
+    { hit: 2, hr: 0, inn1: "/우안" },
+    { hit: 1, hr: 0, inn1: "//우안" },
+    { hit: 1, hr: 0, inn1: "우안//삼진" },
     { hit: null, hr: 0, inn1: "중안" },
     { hit: 1, hr: null, inn1: "중안" },
   ])("preserves incomplete or ambiguous evidence %j without invented totals", async (row) => {

@@ -161,11 +161,10 @@ duplicate인 관측은 확인 정보만 보이고 조작 버튼을 만들지 않
 때만 해당 투구 안에서 연결·연결 해제·제외를 제공한다. 대응 투구가 전혀 없는 관측만 finding 선택 시
 같은 우측 상세에 `원천 tracking 예외`로 표시한다.
 
-같은 ID의 투구와 tracking이 같은 block에서 각각 N개면 원천 occurrence 순서로 이미 1:1 연결된다.
-한 투구의 완전히 같은 tracking 재전송도 첫 위치가 canonical이고 나머지는 duplicate로 자동 정리되므로
-사용자가 둘 중 하나를 대표로 고르지 않는다. metric 충돌, 개수 불일치, 대응 투구 부재만 사용자가
-실제 원장 행과 대조해 연결하거나 잘못된 관측을 제외한다. 공급자 PTS 순번은 제외 조건이 아니며
-compiler 실제 투구 순번과 다르면 warning으로만 표시한다.
+같은 block에서 반복 투구 ID를 타자·투수 문맥으로 유일하게 연결할 수 없으면 관측을 pending으로
+보존한다. 사용자는 해당 관측을 실제 원장 행과 대조해 연결하거나 제외할 수 있다. 한 투구의 완전히
+같은 tracking 재전송은 첫 위치를 canonical로 삼고 나머지를 duplicate로 정리한다. 공급자 PTS 순번과
+compiler 실제 투구 순번의 차이는 warning으로 표시한다.
 
 `원천 증거와 정규화 값`을 펼치면 정규화 payload와 별도로 immutable source의 선택 행 주변 canonical
 relay JSON, 같은 block·sourcePitchId의 PTS JSON을 확인할 수 있다. 이 응답은 증거 열람용이며 compiler

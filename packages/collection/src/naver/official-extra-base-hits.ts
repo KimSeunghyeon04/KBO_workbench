@@ -50,9 +50,8 @@ export function enrichNaverOfficialExtraBaseHits(
   for (const [, value] of innings) {
     if (typeof value !== "string") return unverified("이닝별 기록이 문자열이 아닙니다.");
     if (value.trim() === "") continue;
-    // Naver uses '/' for multiple plate appearances in the same inning.
-    for (const token of value.split("/")) {
-      const kind = hitKind(token.trim());
+    for (const token of splitNaverInningResults(value)) {
+      const kind = hitKind(token);
       if (kind === null) return unverified(`해석할 수 없는 이닝별 약호가 있습니다: ${token}`);
       counts[kind] += 1;
     }
@@ -89,9 +88,17 @@ export function enrichNaverOfficialExtraBaseHits(
   };
 }
 
-function hitKind(token: string): HitKind | null {
+export function splitNaverInningResults(cell: string): readonly string[] {
+  const trimmed = cell.trim();
+  // A substitute may have one leading empty lineup slot. Empty slots elsewhere stay invalid.
+  return (trimmed.startsWith("/") ? trimmed.slice(1) : trimmed)
+    .split("/")
+    .map((token) => token.trim());
+}
+
+export function hitKind(token: string): HitKind | null {
   // Two locations describe a deflection (e.g. 2중안), not another base-hit count.
-  const hit = /^(?:[1-9투포유좌중우]|좌중|우중|[123투포유][123유좌중우])(안|2|3|홈)$/.exec(
+  const hit = /^(?:[1-9투포유좌중우]|좌중|우중|투포|[123투포유][123유좌중우])(안|2|3|홈)$/.exec(
     token,
   )?.[1];
   if (hit === "안") return "single";

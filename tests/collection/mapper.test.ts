@@ -332,46 +332,141 @@ describe("Naver strict mapper", () => {
     expect(first.document.events[2]?.identity.eventId).toBe("20260715AABB0:relay_001:0:2");
   });
 
-  it("같은 block의 동일 ID 투구·tracking을 occurrence 순서로 1:1 연결한다", async () => {
-    const bundle = await mutableBundle();
-    const rows = relayRows(bundle);
-    const repeatedIdPitch = structuredClone(rows[2] ?? {});
-    repeatedIdPitch.text = "2구 스트라이크";
-    repeatedIdPitch.pitchResult = "S";
-    repeatedIdPitch.currentGameState = {
-      ...(repeatedIdPitch.currentGameState as Readonly<Record<string, unknown>>),
-      ball: "1",
-      strike: "1",
-    };
-    rows.splice(3, 0, repeatedIdPitch);
-    const blocks = (
-      bundle.payloads.relay_001 as {
-        result: {
-          textRelayData: {
-            textRelays: Array<{ ptsOptions?: Array<Record<string, unknown>> }>;
+  it.each([false, true])(
+    "같은 block에서 모호한 반복 ID의 관측을 보존하고 차단한다 (순번 제공: %s)",
+    async (withOrdinals) => {
+      const bundle = await mutableBundle();
+      const rows = relayRows(bundle);
+      const repeatedIdPitch = structuredClone(rows[2] ?? {});
+      repeatedIdPitch.text = "2구 스트라이크";
+      repeatedIdPitch.pitchResult = "S";
+      repeatedIdPitch.currentGameState = {
+        ...(repeatedIdPitch.currentGameState as Readonly<Record<string, unknown>>),
+        ball: "1",
+        strike: "1",
+      };
+      rows.splice(3, 0, repeatedIdPitch);
+      const blocks = (
+        bundle.payloads.relay_001 as {
+          result: {
+            textRelayData: {
+              textRelays: Array<{ ptsOptions?: Array<Record<string, unknown>> }>;
+            };
           };
-        };
-      }
-    ).result.textRelayData.textRelays;
-    const tracking = blocks[0]?.ptsOptions?.[0];
-    if (tracking === undefined) throw new Error("tracking fixture가 없습니다.");
-    blocks[0]?.ptsOptions?.push({ ...structuredClone(tracking), ballcount: 99 });
+        }
+      ).result.textRelayData.textRelays;
+      const tracking = blocks[0]?.ptsOptions?.[0];
+      if (tracking === undefined) throw new Error("tracking fixture가 없습니다.");
+      const block = blocks[0];
+      if (block === undefined) throw new Error("tracking block이 없습니다.");
+      block.ptsOptions = [
+        {
+          pitchId: tracking.pitchId,
+          batterId: "A1",
+          pitcherId: "HP",
+          crossPlateX: 0.65,
+          ...(withOrdinals ? { ballcount: 2 } : {}),
+        },
+        {
+          pitchId: tracking.pitchId,
+          batterId: "A1",
+          pitcherId: "HP",
+          crossPlateX: -0.7,
+          ...(withOrdinals ? { ballcount: 1 } : {}),
+        },
+      ];
+      const record = bundle.payloads.record as {
+        pitcher: { home: Array<Record<string, unknown>> };
+      };
+      Object.assign(record.pitcher.home[0], { pitches: 2 });
+
+      const mapped = mapNaverGame(bundle);
+      expect(mapped.document.events.filter((event) => event.kind === "pitch")).toHaveLength(2);
+      expect(mapped.document.trackingCandidates).toMatchObject([
+        { crossPlateX: 0.65, source: { rowIndex: 0 }, resolution: { kind: "pending" } },
+        { crossPlateX: -0.7, source: { rowIndex: 1 }, resolution: { kind: "pending" } },
+      ]);
+      expect(mapped.findings).toMatchObject([
+        {
+          code: "source.tracking.ambiguous_pitch_id",
+          severity: "blocking",
+          endpoint: "relay_001",
+          blockIndex: 0,
+          rowIndex: 0,
+        },
+        {
+          code: "source.tracking.ambiguous_pitch_id",
+          severity: "blocking",
+          endpoint: "relay_001",
+          blockIndex: 0,
+          rowIndex: 1,
+        },
+      ]);
+      const replay = compileStagingGameDocumentV2(mapped.document);
+      expect(
+        replay.findings.filter((finding) => finding.code === "source.pitch_id.reused_within_game"),
+      ).toHaveLength(2);
+      expect(replay.pitchFacts.map((pitch) => pitch.actualPitchNumber)).toEqual([1, 2]);
+      expect(replay.findings.filter((finding) => finding.severity === "blocking")).toHaveLength(2);
+    },
+  );
+
+  it("같은 block의 반복 ID라도 선수 문맥이 유일하면 PTS 순서와 무관하게 연결한다", async () => {
+    const bundle = await mutableBundle();
+    const { replacementPlayer, block } = JSON.parse(
+      await readFile("tests/fixtures/naver/tracking-pinch-hitter-context.anonymized.json", "utf8"),
+    ) as {
+      replacementPlayer: Record<string, unknown>;
+      block: {
+        textOptions: Array<Record<string, unknown>>;
+        ptsOptions: Array<Record<string, unknown>>;
+      };
+    };
+    const lineup = bundle.payloads.lineup as { away_bench?: Array<Record<string, unknown>> };
+    lineup.away_bench = [replacementPlayer];
+    const firstPitch = relayRows(bundle)[2];
+    const lastPitch = block.textOptions[4];
+    if (firstPitch === undefined || lastPitch === undefined)
+      throw new Error("투구 fixture가 없습니다.");
+    lastPitch.ptsPitchId = firstPitch.ptsPitchId;
+    lastPitch.currentGameState = {
+      ...(lastPitch.currentGameState as Record<string, unknown>),
+      ball: "1",
+    };
+    block.textOptions.splice(2, 0, firstPitch);
+    block.ptsOptions = [
+      { pitchId: firstPitch.ptsPitchId, batterId: "A2", pitcherId: "HP", crossPlateX: 0.65 },
+      { pitchId: firstPitch.ptsPitchId, batterId: "A1", pitcherId: "HP", crossPlateX: -0.7 },
+    ];
+    const relay = bundle.payloads.relay_001 as {
+      result: { textRelayData: { textRelays: Array<Record<string, unknown>> } };
+    };
+    relay.result.textRelayData.textRelays = [block];
 
     const mapped = mapNaverGame(bundle);
-    expect(mapped.document.events.filter((event) => event.kind === "pitch")).toHaveLength(2);
-    expect(mapped.document.trackingCandidates.map((candidate) => candidate.resolution)).toEqual([
-      { kind: "linked", pitchEventId: "20260715AABB0:relay_001:0:2" },
-      { kind: "linked", pitchEventId: "20260715AABB0:relay_001:0:3" },
+    expect(mapped.document.trackingCandidates).toMatchObject([
+      {
+        batterId: "A2",
+        resolution: { kind: "linked", pitchEventId: "20260715AABB0:relay_001:0:5" },
+      },
+      {
+        batterId: "A1",
+        resolution: { kind: "linked", pitchEventId: "20260715AABB0:relay_001:0:2" },
+      },
     ]);
-    const replay = compileStagingGameDocumentV2(mapped.document);
-    expect(
-      replay.findings.filter((finding) => finding.code === "source.pitch_id.reused_within_game"),
-    ).toHaveLength(2);
-    expect(
-      replay.findings.filter(
-        (finding) => finding.code === "source.tracking.ordinal_differs_from_actual_pitch",
-      ),
-    ).toHaveLength(1);
+    expect(mapped.findings).toEqual([]);
+    const firstObservation = block.ptsOptions[0];
+    if (firstObservation === undefined) throw new Error("tracking fixture가 없습니다.");
+    firstObservation.batterId = "A1";
+    const duplicate = mapNaverGame(bundle);
+    expect(duplicate.document.trackingCandidates.map((candidate) => candidate.resolution)).toEqual([
+      { kind: "pending" },
+      { kind: "pending" },
+    ]);
+    expect(duplicate.findings.map((finding) => finding.code)).toEqual([
+      "source.tracking.ambiguous_pitch_id",
+      "source.tracking.ambiguous_pitch_id",
+    ]);
   });
 
   it("같은 block의 동일 ID 투구·tracking 개수가 다르면 임의 연결하지 않는다", async () => {

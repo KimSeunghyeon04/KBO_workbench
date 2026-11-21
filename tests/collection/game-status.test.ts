@@ -130,3 +130,44 @@ it("does not generalize the legacy exception to arbitrary numeric statuses", asy
   const bundle = await withEvidence(evidence);
   expect(() => mapNaverGame(bundle)).toThrow("알 수 없는 경기 상태입니다: 42");
 });
+
+it.each([3, 1, 2])("상태 2가 남은 프리뷰는 기록과 종료 중계를 대조한다 (%i아웃)", async (outs) => {
+  const evidence = await sourceEvidence();
+  evidence.gameInfo.statusCode = "2";
+  const summary = evidence.relaySummary.result.textRelayData;
+  summary.homeOrAway = "1";
+  summary.inn = 9;
+  for (const block of summary.textRelays) {
+    for (const row of block.textOptions) {
+      row.currentGameState.out = String(outs);
+      row.currentGameState.homeScore = "3";
+      row.currentGameState.awayScore = "2";
+    }
+  }
+  const fixture = await withEvidence(evidence);
+  const bundle = {
+    ...fixture,
+    payloads: {
+      ...fixture.payloads,
+      record: { gameInfo: { statusCode: "4", cancelFlag: "N" } },
+      relay_summary: { ...summary, gameId: fixture.gameId },
+    },
+  };
+  expect(mapNaverGame(bundle).document.metadata.status).toBe("final");
+  expect(() => mapNaverGame(fixture)).toThrow("알 수 없는 경기 상태입니다: 2");
+  expect(() =>
+    mapNaverGame({
+      ...bundle,
+      payloads: { ...bundle.payloads, relay_summary: { ...summary, gameId: "other" } },
+    }),
+  ).toThrow("알 수 없는 경기 상태입니다: 2");
+  if (outs < 3) {
+    summary.homeOrAway = "0";
+    expect(() =>
+      mapNaverGame({
+        ...bundle,
+        payloads: { ...bundle.payloads, relay_summary: { ...summary, gameId: fixture.gameId } },
+      }),
+    ).toThrow("알 수 없는 경기 상태입니다: 2");
+  }
+});

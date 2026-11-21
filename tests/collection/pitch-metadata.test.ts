@@ -53,6 +53,9 @@ describe("원천 투구 구속·구종", () => {
       "source.pitch_metadata.invalid_stuff",
     );
   });
+  it.each(["0", 0])("구종도 미제공인 구속 %s는 미계측 값이다", (speed) => {
+    expect(parseNaverPitchMetadata(speed, "", source)).toEqual({ metadata: {}, findings: [] });
+  });
   it("좌표·pitch ID가 없어도 행 metadata를 compiler fact에 전달한다", async () => {
     const mapped = mapNaverGame(await metadataBundle());
     expect(mapped.document.trackingCandidates).toHaveLength(0);

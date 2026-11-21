@@ -1,7 +1,7 @@
 import { administrativeCode, kindDecision, pitchCallDecision } from "./lexicon.js";
 import type { CanonicalNaverRow } from "./model.js";
 
-/** 종료 선언 뒤의 완전히 일치하는 재전송만 분류한다. 행과 원문 위치는 삭제하지 않는다. */
+/** 종료 뒤 진행 없는 표시·재선언과 완전히 일치하는 재전송을 분류하며 원문 행을 유지한다. */
 export function classifyTerminalRelay(
   rows: readonly CanonicalNaverRow[],
 ): ReadonlyMap<CanonicalNaverRow, string> {
@@ -19,20 +19,25 @@ export function classifyTerminalRelay(
     const suffix = rows
       .slice(index + 1)
       .filter((row) => !["administrative", "review"].includes(kindOf(row)));
-    if (suffix.length === 0) continue;
     if (
       administrativeCode(marker) === "called_game" &&
       suffix.every((row) =>
         ["half_inning_start", "batter_start", "substitution"].includes(kindOf(row)),
       )
     ) {
-      for (const row of suffix)
-        result.set(
-          row,
-          "콜드게임 종료 선언 뒤 실제 투구·결과·주자 이동이 없는 이닝·타자·교체 표시를 안내 행으로 보존했습니다.",
-        );
+      for (const row of rows.slice(index + 1)) {
+        if (
+          ["half_inning_start", "batter_start", "substitution"].includes(kindOf(row)) ||
+          (kindOf(row) === "administrative" && administrativeCode(row) === "called_game")
+        )
+          result.set(
+            row,
+            "콜드게임 종료 선언 뒤 실제 투구·결과·주자 이동이 없는 이닝·타자·교체 표시와 중복 종료 선언을 안내 행으로 보존했습니다.",
+          );
+      }
       break;
     }
+    if (suffix.length === 0) continue;
     if (suffix.every((row) => kindOf(row) === "batter_start")) {
       for (const row of suffix)
         result.set(row, "종료 선언 뒤 실제 투구·결과가 없는 타자 표시를 안내 행으로 보존했습니다.");

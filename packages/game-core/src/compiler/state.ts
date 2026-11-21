@@ -53,8 +53,8 @@ function copyBase(base: GameState["bases"][number]): GameState["bases"][number] 
 export function cloneContext(context: CompileContext): CompileContext {
   return {
     ...context,
-    findings: [...context.findings],
-    plateAppearances: [...context.plateAppearances],
+    findings: [],
+    plateAppearances: [],
     batterLines: new Map([...context.batterLines].map(([key, value]) => [key, { ...value }])),
     pitcherLines: new Map([...context.pitcherLines].map(([key, value]) => [key, { ...value }])),
     observationMismatchFields: new Set(context.observationMismatchFields),

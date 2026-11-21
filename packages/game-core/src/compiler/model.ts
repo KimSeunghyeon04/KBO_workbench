@@ -70,6 +70,7 @@ export interface CompileContext {
   batterLines: Map<string, MutableBatterLine>;
   pitcherLines: Map<string, MutablePitcherLine>;
   readonly batterHeadersConfirmedBySubstitution: ReadonlySet<string>;
+  readonly batterHeadersAfterSubstitution: ReadonlySet<string>;
   observationMismatchFields: Set<string>;
   uncertainRbiBatterIds: Set<string>;
 }
