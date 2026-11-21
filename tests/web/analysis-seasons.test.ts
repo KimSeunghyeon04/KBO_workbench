@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { focusManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { act, cleanup, render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -11,14 +11,17 @@ import { App } from "../../apps/web/src/app.js";
 const clients: QueryClient[] = [];
 afterEach(() => {
   cleanup();
+  focusManager.setFocused(undefined);
   for (const client of clients) client.clear();
   clients.length = 0;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
-function show(url = "/analysis/players", options: { stale?: boolean } = {}) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function show(url = "/analysis/players", options: { stale?: boolean; staleTime?: number } = {}) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: options.staleTime ?? 0 } },
+  });
   clients.push(client);
   if (options.stale)
     client.setQueryData(
@@ -127,6 +130,55 @@ it("keeps a completed analysis when the first season status arrives", async () =
   });
   await screen.findByRole("option", { name: "2024" });
   expect(catalog).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  { role: "pitcher", endpoint: "pitch-shape", list: "pitchers", id: "pitcherId" },
+  { role: "batter", endpoint: "batter-discipline", list: "batters", id: "batterId" },
+])("refreshes the $role catalog for a season change and skips tab return", async (catalog) => {
+  const season = 2024;
+  let current = prepared(season, "a");
+  let playerName = "가상 선수";
+  const requestedSeasons: string[] = [];
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+    const url = new URL(String(input), "http://localhost");
+    if (url.pathname === "/api/v2/analysis/seasons") {
+      return Response.json({
+        sourceHash: current.sourceHash,
+        seasons: [2025, season],
+        preparation: [prepared(2025, "f"), current],
+      });
+    }
+    if (url.pathname !== `/api/v2/analysis/${catalog.endpoint}`) throw new Error(url.pathname);
+    requestedSeasons.push(url.searchParams.get("season") ?? "");
+    return Response.json({
+      season,
+      scope: resolveAnalysisScope({ season, competition: "regular" }),
+      [catalog.list]: [{ [catalog.id]: "anonymous", name: playerName, pitches: 100 }],
+    });
+  });
+
+  const client = show(`/analysis/players?season=${season}&role=${catalog.role}`, {
+    staleTime: 2_000,
+  });
+  await screen.findByRole("option", { name: "2025" });
+  await screen.findByRole("link", { name: "가상 선수 분석 보기" });
+  expect(requestedSeasons).toEqual(["2024"]);
+
+  const now = Date.now;
+  vi.spyOn(Date, "now").mockImplementation(() => now() + 2_500);
+  await act(async () => {
+    focusManager.setFocused(false);
+    focusManager.setFocused(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(requestedSeasons).toEqual(["2024"]);
+
+  current = prepared(season, "b");
+  playerName = "갱신된 가상 선수";
+  await refreshSeasons(client);
+  await screen.findByRole("link", { name: "갱신된 가상 선수 분석 보기" });
+  expect(requestedSeasons).toEqual(["2024", "2024"]);
 });
 
 it("rechecks a stale season list when navigating from an explicit season to a seasonless page", async () => {

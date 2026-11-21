@@ -3,21 +3,30 @@ import type { AnalysisScopeOptions } from "@kbo/contracts";
 import { getDisciplineCatalog } from "./batter-discipline-client";
 import { getPitchAnalysisCatalog } from "./pitch-analysis-client";
 
-function catalogScope(season: number, options: AnalysisScopeOptions) {
+function catalogQueryOptions<Role extends "pitchers" | "batters">(
+  role: Role,
+  season: number,
+  options: AnalysisScopeOptions,
+) {
   // Both catalog endpoints default to all games. Explicit and implicit defaults
   // identify the same catalog; each page still validates its URL before fetching.
-  return {
+  const scope = {
     season,
     competition: options.competition ?? "all",
     dateFrom: options.dateFrom ?? null,
     dateTo: options.dateTo ?? null,
   };
+  return {
+    queryKey: ["analysis-catalog", role, scope] as const,
+    meta: analysisQueryMeta(season),
+    // AnalysisRefreshBoundary invalidates the catalog when its season changes.
+    refetchOnWindowFocus: false,
+  };
 }
 
 export function pitcherCatalogQueryOptions(season: number, options: AnalysisScopeOptions) {
   return {
-    queryKey: ["analysis-catalog", "pitchers", catalogScope(season, options)] as const,
-    meta: analysisQueryMeta(season),
+    ...catalogQueryOptions("pitchers", season, options),
     queryFn: ({ signal }: { signal: AbortSignal }) =>
       getPitchAnalysisCatalog(season, signal, options),
   };
@@ -25,8 +34,7 @@ export function pitcherCatalogQueryOptions(season: number, options: AnalysisScop
 
 export function batterCatalogQueryOptions(season: number, options: AnalysisScopeOptions) {
   return {
-    queryKey: ["analysis-catalog", "batters", catalogScope(season, options)] as const,
-    meta: analysisQueryMeta(season),
+    ...catalogQueryOptions("batters", season, options),
     queryFn: ({ signal }: { signal: AbortSignal }) => getDisciplineCatalog(season, signal, options),
   };
 }
