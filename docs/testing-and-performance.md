@@ -74,7 +74,8 @@ PostgreSQL 데이터 경로는 해당 테스트 container의 1GiB tmpfs를 사�
 익명 data volume을 남기지 않는다. Node 24 의존성·빌드에는 별도의 고유 workspace volume을 사용하며
 종료 시 함께 제거한다. 운영 PostgreSQL volume과 파일 워크스페이스는 연결하지 않는다.
 
-`test:e2e`는 고유 Compose project와 임시 port·data·volume을 사용한다. 실제 Naver network는 호출하지
+`test:e2e`는 고유 Compose project, 임시 port·data·volume과 실행별 앱 이미지 태그를 사용한다.
+검사 뒤 해당 태그를 정리한다. `-SkipBuild`는 이미 있는 앱 이미지를 사용한다. 실제 Naver network는 호출하지
 않고 sanitized fixture로 수집 원장 저장, 보정, import, typed replay, backup/restore와 UI smoke를
 검증한다.
 

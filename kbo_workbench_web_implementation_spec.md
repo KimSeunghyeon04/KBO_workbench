@@ -819,6 +819,7 @@ writer lock·current token 검증·versioned transition 경로를 사용하고 �
 - lint, format, typecheck, unit, architecture, schema, build, integration, E2E, performance, Compose health
 
 테스트는 실제 Naver를 호출하지 않으며 고유 Compose project, 임시 workspace, 임시 volume을 사용한다.
+격리 Compose에서 앱 이미지를 빌드하면 실행별 태그로 관리하고 시험 종료 시 제거한다.
 모든 검증이 끝난 뒤에만 명시적으로 승인된 `.data`와 정확한 운영 PostgreSQL volume을 초기화하고
 2024-01-01부터 2024-12-31까지 다시 수집한다. blocking 경기는 quarantine에 남고 교정이 끝난
 경기만 revision 1로 적재한다.

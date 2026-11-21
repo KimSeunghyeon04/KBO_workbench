@@ -16,7 +16,8 @@ $webPort = Get-Random -Minimum 18080 -Maximum 19999
 $dbPort = Get-Random -Minimum 20000 -Maximum 21999
 $baseUrl = "http://127.0.0.1:$webPort"
 $environmentNames = @(
-  "COMPOSE_PROJECT_NAME", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB",
+  "COMPOSE_PROJECT_NAME", "COMPOSE_FILE", "COMPOSE_PATH_SEPARATOR",
+  "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB",
   "KBO_DATA_DIR", "KBO_WEB_PORT", "KBO_DB_PORT", "KBO_POSTGRES_VOLUME_NAME", "KBO_COLLECTION_CONCURRENCY",
   "KBO_NAVER_MAX_ATTEMPTS", "KBO_NAVER_REQUESTS_PER_SECOND", "KBO_NAVER_TIMEOUT_MS",
   "KBO_RECORD_CORRECTION_AUTO_SYNC", "KBO_ANALYSIS_AUTO_REFRESH"
@@ -356,12 +357,51 @@ foreach ($name in $environmentNames) {
 
 $null = New-Item -ItemType Directory -Path $testRoot
 $composeStarted = $false
+$testImages = @()
 Push-Location $repositoryRoot
 try {
   $upArguments = @("up", "-d")
-  if (-not $SkipBuild) { $upArguments += "--build" }
-  Invoke-Compose -Arguments $upArguments
+  $imageOverrides = @{
+    migrate = @{ pull_policy = "never" }
+    api = @{ pull_policy = "never" }
+    web = @{ pull_policy = "never" }
+  }
+  if ($SkipBuild) {
+    $upArguments += "--no-build"
+  }
+  else {
+    $apiImage = "${projectName}-api:local"
+    $webImage = "${projectName}-web:local"
+    $testImages = @($apiImage, $webImage)
+    $imageOverrides.migrate.image = $apiImage
+    $imageOverrides.api.image = $apiImage
+    $imageOverrides.web.image = $webImage
+    $upArguments += "--build"
+  }
+  $imageOverridePath = Join-Path $testRoot "compose.images.json"
+  Write-Utf8 $imageOverridePath (@{ services = $imageOverrides } | ConvertTo-Json -Depth 5)
+  $composeSeparator = [string][IO.Path]::PathSeparator
+  $composeFiles = @((Join-Path $repositoryRoot "compose.yaml"), $imageOverridePath)
+  [Environment]::SetEnvironmentVariable("COMPOSE_PATH_SEPARATOR", $composeSeparator, "Process")
+  [Environment]::SetEnvironmentVariable("COMPOSE_FILE", ($composeFiles -join $composeSeparator), "Process")
+
+  $resolvedCompose = & docker compose config --format json
+  Assert-NativeSuccess "격리 E2E 이미지 확인"
+  $configuration = ($resolvedCompose -join [Environment]::NewLine) | ConvertFrom-Json
+  if ($configuration.name -ne $projectName) {
+    throw "격리 E2E의 Compose project가 이 실행에 지정된 이름과 일치하지 않습니다."
+  }
+  if ($testImages.Count -gt 0) {
+    if ($configuration.services.api.image -ne $apiImage -or
+        $configuration.services.migrate.image -ne $apiImage -or
+        $configuration.services.web.image -ne $webImage) {
+      throw "격리 E2E의 앱 이미지가 이 실행에 지정된 태그와 일치하지 않습니다."
+    }
+    Write-Output "격리 E2E 이미지: $($testImages -join ', ')"
+  }
+
   $composeStarted = $true
+  Invoke-Compose -Arguments $upArguments
   Wait-Ready
 
   Invoke-Compose -Arguments @("stop", "web", "api")
@@ -1300,6 +1340,16 @@ catch {
 finally {
   if ($composeStarted) {
     & docker compose down -v --remove-orphans
+  }
+  foreach ($image in $testImages) {
+    $present = @(& docker image ls --quiet --filter "reference=$image")
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warning "격리 E2E 이미지 존재 여부를 확인하지 못했습니다: $image"
+    }
+    elseif ($present.Count -gt 0) {
+      & docker image rm $image
+      if ($LASTEXITCODE -ne 0) { Write-Warning "격리 E2E 이미지를 정리하지 못했습니다: $image" }
+    }
   }
   Pop-Location
   $resolvedTestRoot = [IO.Path]::GetFullPath($testRoot)
