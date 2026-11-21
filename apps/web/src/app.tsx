@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Outlet, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "./components/app-shell";
 import { PlayerAnalysisFrame } from "./analysis/player-analysis-frame";
@@ -83,15 +83,22 @@ const AnalysisCoveragePage = lazy(() =>
 export function App(): React.JSX.Element {
   return (
     <AppShell>
-      <AnalysisRefreshBoundary />
       <Suspense fallback={<div className="panel loading-panel">화면을 불러오는 중입니다.</div>}>
-        <PlayerAnalysisFrame>
-          <Routes>
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/collect" element={<CollectPage />} />
-            <Route path="/correct" element={<CorrectPage />} />
-            <Route path="/record-corrections" element={<RecordCorrectionsPage />} />
-            <Route path="/database" element={<DatabasePage />} />
+        <Routes>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/collect" element={<CollectPage />} />
+          <Route path="/correct" element={<CorrectPage />} />
+          <Route path="/record-corrections" element={<RecordCorrectionsPage />} />
+          <Route path="/database" element={<DatabasePage />} />
+          <Route
+            element={
+              <AnalysisRefreshBoundary>
+                <PlayerAnalysisFrame>
+                  <Outlet />
+                </PlayerAnalysisFrame>
+              </AnalysisRefreshBoundary>
+            }
+          >
             <Route path="/replay" element={<ReplayPage />} />
             <Route path="/analysis" element={<AnalysisPlayersPage />} />
             <Route path="/analysis/players" element={<AnalysisPlayersPage />} />
@@ -109,10 +116,10 @@ export function App(): React.JSX.Element {
             <Route path="/analysis/batter-profile" element={<PitchOutcomesPage role="batter" />} />
             <Route path="/analysis/statistics" element={<PlayerStatisticsPage />} />
             <Route path="/analysis/player-statistics" element={<PlayerBasicStatisticsPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="*" element={<NotFoundPage />} />
-          </Routes>
-        </PlayerAnalysisFrame>
+          </Route>
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
       </Suspense>
     </AppShell>
   );

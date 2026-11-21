@@ -1,5 +1,5 @@
 import type { AnalysisScopeOptions, DisciplineCatalog, PitchAnalysisCatalog } from "@kbo/contracts";
-import { analysisScopeSearch, scopeFromParams } from "./analysis-scope";
+import { analysisScopeParams, analysisScopeSearch, scopeFromParams } from "./analysis-scope";
 import { periodUrlKeys } from "./period-selection";
 
 export type PlayerAnalysisRole = "pitcher" | "batter";
@@ -33,14 +33,22 @@ export function playerRoleForPath(
   return null;
 }
 
-/** Legacy URLs keep their page's existing default. Cross-page links make that scope explicit. */
-export function playerNavigationScope(path: string, params: URLSearchParams, defaultSeason = 2025) {
-  const season = Number(params.get("season") ?? defaultSeason);
+function playerScopeParams(path: string, params: URLSearchParams) {
   const legacyShape = path === "/analysis/pitch-shape";
   const legacyDiscipline = path === "/analysis/batter-discipline";
   const selected = new URLSearchParams(params);
   if (!selected.has("competition"))
     selected.set("competition", legacyShape || legacyDiscipline ? "all" : "regular");
+  return selected;
+}
+
+export function playerNavigationScope(
+  path: string,
+  params: URLSearchParams,
+  defaultSeason?: number,
+) {
+  const season = Number(params.get("season") ?? defaultSeason);
+  const selected = playerScopeParams(path, params);
   if (path === "/analysis/pitcher-changes" && !selected.has("dateTo"))
     selected.set("dateTo", `${season}-12-31`);
   return { season, ...scopeFromParams(season, selected) };
@@ -73,6 +81,22 @@ export function playerDirectoryHref(
   const params = new URLSearchParams(analysisScopeSearch(season, options));
   params.set("role", role);
   return `/analysis/players?${params}`;
+}
+
+export function playerDirectoryForLocation(
+  path: string,
+  params: URLSearchParams,
+  role: PlayerAnalysisRole,
+): string {
+  if (params.has("season")) {
+    const scope = playerNavigationScope(path, params);
+    return scope.error === null
+      ? playerDirectoryHref(role, scope.season, scope.options)
+      : "/analysis/players";
+  }
+  const directory = analysisScopeParams(playerScopeParams(path, params));
+  directory.set("role", role);
+  return `/analysis/players?${directory}`;
 }
 
 export function analysisCatalogPlayers(catalog: PitchAnalysisCatalog | DisciplineCatalog) {

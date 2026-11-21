@@ -3,8 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 
 import {
   playerAnalysisSections,
-  playerDirectoryHref,
-  playerNavigationScope,
+  playerDirectoryForLocation,
   playerRoleForPath,
 } from "../analysis/player-analysis-navigation";
 
@@ -68,12 +67,11 @@ export function AppShell({ children }: PropsWithChildren): React.JSX.Element {
   const workspace = workspaceFor(location.pathname);
   const params = new URLSearchParams(location.search);
   const playerRole = playerRoleForPath(location.pathname, params);
-  const playerScope = playerNavigationScope(location.pathname, params);
   const playerDestination =
     location.pathname === "/analysis/players" || location.pathname === "/analysis"
       ? location.pathname + location.search
-      : playerRole && playerScope.error === null
-        ? playerDirectoryHref(playerRole, playerScope.season, playerScope.options)
+      : playerRole
+        ? playerDirectoryForLocation(location.pathname, params, playerRole)
         : "/analysis/players";
   const groups =
     workspace === "analysis"

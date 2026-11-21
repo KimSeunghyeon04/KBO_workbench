@@ -42,6 +42,9 @@ it("keeps player details out of the seven workspace destinations and closes the 
   expect(within(menu).getByRole("link", { name: "선수 분석" }).getAttribute("aria-current")).toBe(
     "page",
   );
+  expect(within(menu).getByRole("link", { name: "선수 분석" }).getAttribute("href")).toBe(
+    "/analysis/players?competition=all&role=pitcher",
+  );
   const button = screen.getByRole("button", { name: "메뉴" });
   await user.click(button);
   await user.click(within(menu).getByRole("link", { name: "선수 분석" }));

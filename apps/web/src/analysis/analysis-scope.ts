@@ -5,18 +5,22 @@ import {
 } from "@kbo/contracts";
 import { Value } from "@sinclair/typebox/value";
 
+export function analysisScopeParams(params: URLSearchParams): URLSearchParams {
+  const scope = new URLSearchParams();
+  for (const key of ["competition", "dateFrom", "dateTo"]) {
+    const value = params.get(key);
+    if (value !== null && (value !== "" || key === "competition")) scope.set(key, value);
+  }
+  return scope;
+}
+
 export function scopeFromParams(
   season: number,
   params: URLSearchParams,
 ): { options: AnalysisScopeOptions; error: string | null } {
   const candidate = {
     season,
-    ...Object.fromEntries(
-      ["competition", "dateFrom", "dateTo"].flatMap((key) => {
-        const value = params.get(key);
-        return value === null || (value === "" && key !== "competition") ? [] : [[key, value]];
-      }),
-    ),
+    ...Object.fromEntries(analysisScopeParams(params)),
   };
   if (!Value.Check(AnalysisScopeQuerySchema, candidate))
     return { options: {}, error: "분석 범위가 올바르지 않습니다." };
