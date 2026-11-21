@@ -22,6 +22,7 @@ try {
   & docker volume create $workspaceVolume
   Assert-NativeSuccess "integration workspace volume 생성"
   & docker run -d --name $containerName --network $networkName `
+    --tmpfs "/var/lib/postgresql/data:rw,size=1g" `
     -e POSTGRES_USER=kbo_test `
     -e POSTGRES_PASSWORD=kbo_integration_password `
     -e POSTGRES_DB=kbo_test `

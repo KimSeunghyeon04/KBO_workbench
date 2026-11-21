@@ -662,6 +662,14 @@ writer lock·원자 쓰기로 저장하여 기간 변경과 재시작에 재사�
 
 ## 11. 검증과 초기화
 
+저장소 품질 점검은 [KBO quality-sweep 프로필](docs/quality-sweep/kbo-workbench.md)과
+`.agents/skills/kbo-quality-sweep`을 사용한다. 기존 변경을 포함한 소스 snapshot에서 검사하며
+운영 환경·사용자 데이터는 제외한다. 도구 회귀는 `python -B -X utf8 scripts/quality-sweep.test.py`다.
+
+PostgreSQL integration은 전용 container의 1GiB tmpfs에 DB를 만들고 Node 24의 고유 workspace
+volume에서 migration과 테스트를 실행한다. fsync·동기 커밋은 유지하며, 종료 시 테스트 자원만
+제거한다. Docker Desktop의 디스크 동기화 지연을 피하고 운영 volume은 연결하지 않는다.
+
 운영 명령은 루트 `Makefile`에서 기존 `compose.yaml`과 백업 스크립트를 호출한다.
 `make deploy`는 빌드 성공 후 writer를 정지하고 새 이미지의 migration 성공과 API/web readiness를
 기다린다. `make update`는 빌드와 배포 사이에 DB/workspace 쌍 백업을 실행하며 백업 실패 시 중단한다.

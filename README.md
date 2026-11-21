@@ -201,6 +201,8 @@ pnpm build
 
 기본 `pnpm test`는 DSN이 없으면 PostgreSQL 통합 테스트를 건너뛴다.
 통합·E2E는 고유한 임시 DB·워크스페이스를 사용하고 실제 Naver 호출 없이 fixture로 검증한다.
+PostgreSQL 통합 테스트의 DB 데이터는 1GiB tmpfs에 두어 디스크 동기화 지연을 피한다.
+fsync·동기 커밋 설정은 유지하며 운영 volume을 사용하지 않는다.
 기준과 세부 범위는 [테스트·성능](docs/testing-and-performance.md),
 실자료의 격리 검증은 [분석 검증 절차](docs/analysis/real-data-validation.md)를 참고한다.
 
@@ -216,6 +218,8 @@ pnpm build
 코드 탐색은 Graft를 사용하고 최초 색인·큰 변경 뒤에는 `pnpm graft:build`로 갱신한다.
 UI 작업은 [설계 도구·작업 기준](docs/analysis/ui-design-workflow.md)과 [디자인 기준](DESIGN.md)을
 따르며 실제 브라우저에서 확인한다.
+품질 점검 프로필과 Codex 스킬은 [quality-sweep](docs/quality-sweep/kbo-workbench.md)을 참고한다.
+미커밋 변경을 포함한 별도 소스 snapshot에서 검사하며 운영 데이터와 환경은 복사하지 않는다.
 
 ## 문서 안내
 

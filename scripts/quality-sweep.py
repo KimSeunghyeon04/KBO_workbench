@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
+import re
 import shutil
 import stat
 import subprocess
@@ -13,7 +14,7 @@ import tempfile
 
 
 MARKER = ".quality-sweep-snapshot.json"
-SOURCE_DIRS = {".agents", "apps", "database", "docs", "packages", "schemas", "scripts", "tests"}
+SOURCE_DIRS = {".agents", "apps", "database", "docs", "infra", "packages", "schemas", "scripts", "tests"}
 EXCLUDED = {".git", ".data", ".backups", "node_modules", ".pnpm-store", "dist",
             "coverage", "test-results", "playwright-report", "__pycache__", ".vite"}
 CHECKS = {"lint", "format:check", "typecheck", "test", "test:architecture",
@@ -30,10 +31,11 @@ def digest(data):
 def source_name(name):
     """Reject sensitive paths before stat/read, including tracked or nested env files."""
     path = PurePosixPath(name)
-    if (not name or "\\" in name or ":" in name or path.is_absolute()
+    if (not name or "\\" in name or ":" in name or path.is_absolute() or path.as_posix() != name
             or any(part in {".", ".."} for part in name.split("/"))):
         return False
-    if any(part.lower() in EXCLUDED or part.lower().startswith(".env") for part in path.parts):
+    if any(part.lower() in EXCLUDED or part.lower().startswith(".env") and name != ".env.example"
+           for part in path.parts):
         return False
     return len(path.parts) == 1 or path.parts[0] in SOURCE_DIRS
 
@@ -56,22 +58,31 @@ def git(root, *args):
     return subprocess.check_output(["git", "-C", str(root), *args]).decode("utf-8")
 
 
-def prepare(source, parent):
-    source, parent = source.resolve(strict=True), parent.resolve(strict=True)
-    if Path(git(source, "rev-parse", "--show-toplevel").strip()).resolve() != source:
-        raise ValueError("Source must be the repository root")
-    if parent == source or parent.is_relative_to(source):
-        raise ValueError("Snapshot parent must be outside the source checkout")
+def source_files(source):
     names = sorted(set(git(source, "ls-files", "-c", "-o", "--exclude-standard", "-z").split("\0")))
-    sandbox = Path(tempfile.mkdtemp(prefix="kbo-quality-sweep-", dir=parent)).resolve()
     files = {}
     for name in names:
         if not source_name(name):
             continue
         try:
-            path = regular_file(source, name)
+            files[name] = regular_file(source, name)
         except FileNotFoundError:
-            continue  # Deleted tracked files stay absent in the snapshot.
+            continue
+    return files
+
+
+def prepare(source, parent):
+    source, parent = source.resolve(strict=True), parent.resolve(strict=True)
+    if any(part.lower() in {".data", ".backups"} for part in parent.parts):
+        raise ValueError("Snapshot parent cannot be a user data or backup directory")
+    if Path(git(source, "rev-parse", "--show-toplevel").strip()).resolve() != source:
+        raise ValueError("Source must be the repository root")
+    if parent == source or parent.is_relative_to(source):
+        raise ValueError("Snapshot parent must be outside the source checkout")
+    paths = source_files(source)
+    sandbox = Path(tempfile.mkdtemp(prefix="kbo-quality-sweep-", dir=parent)).resolve()
+    files = {}
+    for name, path in paths.items():
         content = path.read_bytes()
         target = sandbox / name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -108,23 +119,29 @@ def snapshot(sandbox):
 
 def verify(sandbox):
     _, source, record = snapshot(sandbox)
-    changed = []
+    current = source_files(source)
+    changed = set(record["files"]) ^ set(current)
     for name, checksum in record["files"].items():
+        path = current.get(name)
+        if path is None:
+            continue
         try:
-            if digest(regular_file(source, name).read_bytes()) != checksum:
-                changed.append(name)
+            if digest(path.read_bytes()) != checksum:
+                changed.add(name)
         except (FileNotFoundError, ValueError):
-            changed.append(name)
+            changed.add(name)
     if changed:
-        raise ValueError("Source changed since snapshot; preserve it and re-prepare: " + ", ".join(changed))
+        raise ValueError(
+            "Source changed since snapshot; preserve it and re-prepare: " + ", ".join(sorted(changed))
+        )
     return len(record["files"])
 
 
 def validate_command(command, mutation=False):
     if command[:4] == ["pnpm", "exec", "vitest", "run"] and len(command) > 4:
         paths = command[4:]
-        if all(source_name(p) and p.startswith(("tests/", "packages/", "apps/"))
-               and p.endswith(".test.ts") for p in paths):
+        if all(source_name(p) and re.fullmatch(r"(?:tests|packages|apps)/[A-Za-z0-9_./-]+\.test\.ts", p)
+               for p in paths):
             return
     if not mutation and (command == ["pnpm", "install", "--offline", "--frozen-lockfile"]
                          or len(command) == 2 and command[0] == "pnpm" and command[1] in CHECKS):
@@ -149,6 +166,10 @@ def run_check(sandbox, command, timeout=300):
     corepack = shutil.which("corepack")
     if corepack is None:
         raise ValueError("Corepack with cached pnpm 10.15.1 is required")
+    node = shutil.which("node")
+    if node is None or not subprocess.check_output([node, "--version"], env=check_environment(),
+                                                 text=True, timeout=10).strip().startswith("v24."):
+        raise ValueError("Node.js 24 is required")
     # Fixed, validated arguments; no shell expression or environment assignment is accepted.
     return subprocess.run([corepack, "pnpm@10.15.1", *command[1:]], cwd=sandbox,
                           env=check_environment(), timeout=timeout, check=False).returncode
@@ -166,11 +187,14 @@ def mutate(sandbox, name, old, new, command, timeout=300, executor=run_check):
         raise ValueError("OLD must occur once and differ from NEW")
     if executor(sandbox, command, timeout) != 0:
         raise ValueError("Unmodified test failed; this is not mutation evidence")
+    if regular_file(sandbox, name).read_bytes() != original:
+        raise ValueError("Unmodified test changed the mutation target")
     try:
         path.write_bytes(original.replace(old, new, 1))
         result = executor(sandbox, command, timeout)
     finally:
-        path.write_bytes(original)
+        # Tests may replace files. Never follow a new link while restoring snapshot bytes.
+        regular_file(sandbox, name).write_bytes(original)
         if path.read_bytes() != original:
             raise ValueError("Snapshot source bytes could not be restored")
     print("CAUGHT: inspect the failing assertion" if result else "MISSED: strengthen the test input")

@@ -1,7 +1,6 @@
 """Run with: python -B -X utf8 scripts/quality-sweep.test.py."""
 
 import importlib.util
-import json
 import os
 from pathlib import Path
 import subprocess
@@ -78,6 +77,11 @@ class IsolatedSnapshot(unittest.TestCase):
         (self.source / "packages/sample/src/value.ts").unlink()
         self.assertFalse((self.prepare() / "packages/sample/src/value.ts").exists())
 
+    def test_includes_nginx_config_required_by_the_compose_build(self):
+        nginx = self.write("infra/nginx.conf", "server { listen 80; }\n")
+        self.git("add", "infra/nginx.conf")
+        self.assertEqual((self.prepare() / "infra/nginx.conf").read_bytes(), nginx.read_bytes())
+
     def test_refuses_destination_inside_source(self):
         with self.assertRaisesRegex(ValueError, "outside"):
             SWEEP.prepare(self.source, self.source)
@@ -88,6 +92,41 @@ class IsolatedSnapshot(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Source changed"):
             SWEEP.verify(sandbox)
         self.assertEqual(changed.read_bytes(), b"new user edit\n")
+
+    def test_new_source_file_invalidates_the_snapshot(self):
+        sandbox = self.prepare()
+        added = self.write("tests/new-regression.test.ts", "// new user test\n")
+        with self.assertRaisesRegex(ValueError, "Source changed"):
+            SWEEP.verify(sandbox)
+        self.assertEqual(added.read_bytes(), b"// new user test\n")
+
+    def test_restored_tracked_file_invalidates_the_snapshot(self):
+        name = "packages/sample/src/value.ts"
+        (self.source / name).unlink()
+        sandbox = self.prepare()
+        self.write(name, "// user restored the file\n")
+        with self.assertRaisesRegex(ValueError, "Source changed"):
+            SWEEP.verify(sandbox)
+
+    def test_snapshot_cannot_be_written_into_user_data(self):
+        parent = self.parent / ".backups"
+        parent.mkdir()
+        with self.assertRaisesRegex(ValueError, "user data"):
+            SWEEP.prepare(self.source, parent)
+        self.assertEqual(list(parent.iterdir()), [])
+
+    def test_baseline_test_edit_is_preserved_instead_of_being_overwritten(self):
+        sandbox = self.prepare()
+        target = sandbox / "packages/sample/src/value.ts"
+
+        def executor(root, command, timeout):
+            target.write_bytes(b"new snapshot edit\n")
+            return 0
+
+        with self.assertRaisesRegex(ValueError, "changed the mutation target"):
+            SWEEP.mutate(sandbox, target.relative_to(sandbox).as_posix(), "value = 1", "value = 2",
+                         TEST_COMMAND, executor=executor)
+        self.assertEqual(target.read_bytes(), b"new snapshot edit\n")
 
     def test_mutations_restore_utf8_lf_crlf_bytes_on_assertion_and_timeout(self):
         sandbox = self.prepare()
@@ -149,6 +188,8 @@ class CommandBoundary(unittest.TestCase):
                     ["docker", "compose", "down", "-v"], ["make", "deploy"],
                     ["node", "apps/server/dist/migrate.js"], ["powershell", "scripts/restore.ps1"],
                     ["pnpm", "test", "--", "--config=outside.ts"],
+                    ["pnpm", "exec", "vitest", "run", "tests/x&whoami.test.ts"],
+                    ["pnpm", "exec", "vitest", "run", "tests/%TOKEN%.test.ts"],
                     [*TEST_COMMAND, "&&", "docker", "compose", "down", "-v"]]
         for command in commands:
             with self.subTest(command=command), self.assertRaises(ValueError):

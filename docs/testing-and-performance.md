@@ -68,6 +68,12 @@ seal/current pointer, catalog identity FK, tracking 단일 저장, registry snap
 검증한다. 종료 시
 자신이 만든 container와 network만 제거한다.
 
+PostgreSQL 데이터 경로는 해당 테스트 container의 1GiB tmpfs를 사용한다. Docker Desktop의
+디스크 fsync 지연으로 migration·TRUNCATE가 제한 시간을 넘는 일을 피하면서 `fsync`,
+`full_page_writes`, `synchronous_commit`은 기본 `on`을 유지한다. DB는 테스트 종료 시 폐기하고
+익명 data volume을 남기지 않는다. Node 24 의존성·빌드에는 별도의 고유 workspace volume을 사용하며
+종료 시 함께 제거한다. 운영 PostgreSQL volume과 파일 워크스페이스는 연결하지 않는다.
+
 `test:e2e`는 고유 Compose project와 임시 port·data·volume을 사용한다. 실제 Naver network는 호출하지
 않고 sanitized fixture로 수집 원장 저장, 보정, import, typed replay, backup/restore와 UI smoke를
 검증한다.
