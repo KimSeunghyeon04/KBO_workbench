@@ -5,6 +5,7 @@ import type {
   StagingGameDocumentV2,
   TrackingCandidate,
 } from "@kbo/contracts";
+import { resolveLinkedTrackingCandidate } from "@kbo/game-core";
 
 import { newCommandId } from "./event-editor-registry";
 import { pitchCallLabel } from "./event-presentation";
@@ -166,23 +167,13 @@ function relatedCandidates(
   }
   const event = document.events.find((item) => item.identity.eventId === pitchEventId);
   if (event?.kind !== "pitch") return [];
-  const linkedIds = new Set(
-    document.trackingCandidates.flatMap((candidate) =>
-      candidate.resolution.kind === "linked" && candidate.resolution.pitchEventId === pitchEventId
-        ? [candidate.trackingId]
-        : [],
-    ),
+  const candidatesById = new Map(
+    document.trackingCandidates.map((candidate) => [candidate.trackingId, candidate]),
   );
   return document.trackingCandidates.filter((candidate) => {
     if (
-      candidate.resolution.kind === "linked" &&
-      candidate.resolution.pitchEventId === pitchEventId
-    ) {
-      return true;
-    }
-    if (
-      candidate.resolution.kind === "duplicate" &&
-      linkedIds.has(candidate.resolution.canonicalTrackingId)
+      resolveLinkedTrackingCandidate(candidate, candidatesById)?.resolution.pitchEventId ===
+      pitchEventId
     ) {
       return true;
     }

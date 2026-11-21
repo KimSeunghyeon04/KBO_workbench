@@ -2,6 +2,7 @@ import type { StagingGameDocumentV2, StagingRelayEvent, TrackingCandidate } from
 import { canonicalStringify } from "@kbo/contracts";
 
 import { isActualPitch } from "../rules.js";
+import { resolveLinkedTrackingCandidate } from "../tracking-link.js";
 import type { CompiledPitchFact, FindingDetail } from "../types.js";
 import type { CompileContext } from "./model.js";
 
@@ -50,10 +51,9 @@ export function validateTracking(
     }
     if (candidate.resolution.kind === "excluded") continue;
     if (candidate.resolution.kind === "duplicate") {
-      const canonical = candidates.get(candidate.resolution.canonicalTrackingId);
+      const canonical = resolveLinkedTrackingCandidate(candidate, candidates);
       if (
         canonical === undefined ||
-        canonical.resolution.kind !== "linked" ||
         trackingFingerprint(canonical) !== trackingFingerprint(candidate)
       ) {
         trackingFinding(

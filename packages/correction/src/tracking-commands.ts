@@ -1,5 +1,9 @@
-import type { StagingGameDocumentV2, TrackingCandidate } from "@kbo/contracts";
-import { compileStagingGameDocumentV2, type ReplayResult } from "@kbo/game-core";
+import type { StagingGameDocumentV2 } from "@kbo/contracts";
+import {
+  compileStagingGameDocumentV2,
+  resolveLinkedTrackingCandidate,
+  type ReplayResult,
+} from "@kbo/game-core";
 
 export function updateTrackingResolution(
   document: StagingGameDocumentV2,
@@ -43,13 +47,14 @@ export function reconcileTrackingPlateAppearanceContexts(
   const trackingCandidates = document.trackingCandidates.map((candidate) => {
     if (
       candidate.plateAppearanceEventId === undefined ||
-      eventIds.has(candidate.plateAppearanceEventId) ||
-      !canReconcileCandidate(candidate, candidatesById)
+      eventIds.has(candidate.plateAppearanceEventId)
     ) {
       return candidate;
     }
-    const pitchEventId = resolvedPitchEventId(candidate, candidatesById);
-    const pitch = pitchEventId === null ? undefined : pitchFactsById.get(pitchEventId);
+    const linked = resolveLinkedTrackingCandidate(candidate, candidatesById);
+    if (linked === undefined || candidate.plateAppearanceEventId !== linked.plateAppearanceEventId)
+      return candidate;
+    const pitch = pitchFactsById.get(linked.resolution.pitchEventId);
     if (!pitch?.actual || pitch.plateAppearanceEventId === null) return candidate;
     repaired += 1;
     return { ...candidate, plateAppearanceEventId: pitch.plateAppearanceEventId };
@@ -58,19 +63,6 @@ export function reconcileTrackingPlateAppearanceContexts(
     throw new Error("복구할 삭제된 tracking PA 문맥이 없습니다.");
   }
   return { ...document, trackingCandidates };
-}
-
-function canReconcileCandidate(
-  candidate: TrackingCandidate,
-  candidatesById: ReadonlyMap<string, TrackingCandidate>,
-): boolean {
-  if (candidate.resolution.kind === "linked") return true;
-  if (candidate.resolution.kind !== "duplicate") return false;
-  const canonical = candidatesById.get(candidate.resolution.canonicalTrackingId);
-  return (
-    canonical?.resolution.kind === "linked" &&
-    candidate.plateAppearanceEventId === canonical.plateAppearanceEventId
-  );
 }
 
 export function followStableTrackingPlateAppearanceContexts(
@@ -91,9 +83,11 @@ export function followStableTrackingPlateAppearanceContexts(
   const trackingCandidates = afterDocument.trackingCandidates.map((candidate) => {
     const previous = beforeCandidates.get(candidate.trackingId);
     if (previous === undefined) return candidate;
-    const beforePitchId = resolvedPitchEventId(previous, beforeCandidates);
-    const afterPitchId = resolvedPitchEventId(candidate, afterCandidates);
-    if (beforePitchId === null || beforePitchId !== afterPitchId) return candidate;
+    const beforePitchId = resolveLinkedTrackingCandidate(previous, beforeCandidates)?.resolution
+      .pitchEventId;
+    const afterPitchId = resolveLinkedTrackingCandidate(candidate, afterCandidates)?.resolution
+      .pitchEventId;
+    if (beforePitchId === undefined || beforePitchId !== afterPitchId) return candidate;
     const beforePitch = beforePitches.get(beforePitchId);
     const afterPitch = afterPitches.get(afterPitchId);
     if (
@@ -113,35 +107,19 @@ export function followStableTrackingPlateAppearanceContexts(
   return changed ? { ...afterDocument, trackingCandidates } : afterDocument;
 }
 
-function resolvedPitchEventId(
-  candidate: TrackingCandidate,
-  candidatesById: ReadonlyMap<string, TrackingCandidate>,
-): string | null {
-  if (candidate.resolution.kind === "linked") return candidate.resolution.pitchEventId;
-  if (candidate.resolution.kind !== "duplicate") return null;
-  const canonical = candidatesById.get(candidate.resolution.canonicalTrackingId);
-  return canonical?.resolution.kind === "linked" ? canonical.resolution.pitchEventId : null;
-}
-
 export function excludeTrackingForPitch(
   document: StagingGameDocumentV2,
   pitchEventId: string,
   note: string,
 ): StagingGameDocumentV2 {
-  const directlyLinked = new Set(
-    document.trackingCandidates.flatMap((candidate) =>
-      candidate.resolution.kind === "linked" && candidate.resolution.pitchEventId === pitchEventId
-        ? [candidate.trackingId]
-        : [],
-    ),
+  const candidatesById = new Map(
+    document.trackingCandidates.map((candidate) => [candidate.trackingId, candidate]),
   );
   return {
     ...document,
     trackingCandidates: document.trackingCandidates.map((candidate) =>
-      (candidate.resolution.kind === "linked" &&
-        candidate.resolution.pitchEventId === pitchEventId) ||
-      (candidate.resolution.kind === "duplicate" &&
-        directlyLinked.has(candidate.resolution.canonicalTrackingId))
+      resolveLinkedTrackingCandidate(candidate, candidatesById)?.resolution.pitchEventId ===
+      pitchEventId
         ? {
             ...candidate,
             resolution: { kind: "excluded" as const, reason: "manual_other" as const, note },

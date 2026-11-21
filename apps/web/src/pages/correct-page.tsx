@@ -5,6 +5,7 @@ import type {
   CorrectionGameCatalogItem,
   StagingRelayEventKind,
 } from "@kbo/contracts";
+import { resolveLinkedTrackingCandidate } from "@kbo/game-core";
 import { useSearchParams } from "react-router-dom";
 
 import {
@@ -171,6 +172,12 @@ export function CorrectPage(): React.JSX.Element {
     busy,
     error: sessionError,
   } = useCorrectionSessionController(selectedGame);
+
+  const trackingCandidates = session?.draftDocument.trackingCandidates;
+  const trackingById = useMemo(
+    () => new Map(trackingCandidates?.map((candidate) => [candidate.trackingId, candidate])),
+    [trackingCandidates],
+  );
 
   useEffect(() => {
     workbenchStart.current?.focus({ preventScroll: true });
@@ -447,25 +454,17 @@ export function CorrectPage(): React.JSX.Element {
       setSelectedEventId(null);
       return;
     }
-    const candidate = session.draftDocument.trackingCandidates.find(
-      (item) => item.trackingId === trackingId,
-    );
+    const candidate = trackingById.get(trackingId);
     if (candidate === undefined) {
       setSelectedEventId(null);
       return;
     }
-    let pitchEventId: string | null = null;
-    if (candidate.resolution.kind === "linked") {
-      pitchEventId = candidate.resolution.pitchEventId;
-    } else if (candidate.resolution.kind === "duplicate") {
-      const canonicalTrackingId = candidate.resolution.canonicalTrackingId;
-      const canonical = session.draftDocument.trackingCandidates.find(
-        (item) => item.trackingId === canonicalTrackingId,
-      );
-      if (canonical?.resolution.kind === "linked") {
-        pitchEventId = canonical.resolution.pitchEventId;
-      }
-    } else if (candidate.sourcePitchId !== undefined) {
+    let pitchEventId =
+      resolveLinkedTrackingCandidate(candidate, trackingById)?.resolution.pitchEventId ?? null;
+    if (
+      (candidate.resolution.kind === "pending" || candidate.resolution.kind === "excluded") &&
+      candidate.sourcePitchId !== undefined
+    ) {
       const matches = session.draftDocument.events.filter(
         (event) =>
           event.kind === "pitch" &&

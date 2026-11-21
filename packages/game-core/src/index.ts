@@ -10,6 +10,7 @@ export {
   type PitchTrajectoryComparison,
 } from "./pitch-trajectory.js";
 export { compileStagingGameDocumentV2 } from "./reducer.js";
+export { resolveLinkedTrackingCandidate } from "./tracking-link.js";
 export {
   applyPitchCall,
   findTerminalPitchForPlateResult,

@@ -247,6 +247,11 @@ describe("Naver strict mapper", () => {
     expect(
       mapped.document.trackingCandidates.map((candidate) => candidate.resolution.kind),
     ).toEqual(["linked", "duplicate"]);
+    const pa = mapped.document.events[1];
+    if (pa?.kind !== "batter_start") throw new Error("타석 시작 fixture가 없습니다.");
+    expect(
+      mapped.document.trackingCandidates.map((candidate) => candidate.plateAppearanceEventId),
+    ).toEqual([pa.identity.eventId, pa.identity.eventId]);
     expect(mapped.findings.map((finding) => finding.code)).not.toContain(
       "source.tracking.duplicate_exact",
     );

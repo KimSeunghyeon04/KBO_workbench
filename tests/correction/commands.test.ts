@@ -296,6 +296,9 @@ describe("평면 원장 보정 명령", () => {
 
   it("삭제된 PA를 가리키는 저장 문맥만 명시적으로 복구하고 실제 불일치는 유지한다", async () => {
     const original = await paRebaseFixture();
+    const duplicate = original.trackingCandidates[1];
+    if (duplicate?.resolution.kind !== "duplicate")
+      throw new Error("중복 관측 fixture가 없습니다.");
     const stale = parseStagingGameDocumentV2({
       ...original,
       events: original.events
@@ -304,6 +307,16 @@ describe("평면 원장 보정 명령", () => {
             event.identity.eventId !== "anon-pa-old" && event.identity.eventId !== "anon-pitch-old",
         )
         .map((event, sequence) => ({ ...event, sequence })),
+      trackingCandidates: [
+        ...original.trackingCandidates,
+        {
+          ...duplicate,
+          trackingId: "anon-tracking-different-pa",
+          sequence: original.trackingCandidates.length,
+          source: { ...duplicate.source, rowIndex: duplicate.source.rowIndex + 1 },
+          plateAppearanceEventId: "anon-different-deleted-pa",
+        },
+      ],
     });
     const repaired = applyCorrectionCommand(stale, {
       commandId: "repair-stale-pa",
@@ -312,7 +325,7 @@ describe("평면 원장 보정 명령", () => {
 
     expect(
       repaired.document.trackingCandidates.map((candidate) => candidate.plateAppearanceEventId),
-    ).toEqual(["anon-pa-current", "anon-pa-current"]);
+    ).toEqual(["anon-pa-current", "anon-pa-current", "anon-different-deleted-pa"]);
     expect(
       repaired.replay.findings.filter(
         (finding) => finding.code === "domain.tracking.plate_appearance_mismatch",

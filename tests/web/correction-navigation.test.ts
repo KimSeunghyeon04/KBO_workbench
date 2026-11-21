@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { readFileSync } from "node:fs";
 import {
   parseStagingGameDocumentV2,
   type CorrectionGameCatalogItem,
   type CorrectionSession,
 } from "@kbo/contracts";
+import { compileStagingGameDocumentV2, stagingDocumentHash } from "@kbo/game-core";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createElement } from "react";
@@ -13,7 +15,9 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CorrectPage } from "../../apps/web/src/pages/correct-page.js";
+import { prepareCorrectionSnapshot } from "../../apps/server/src/correction-snapshot.js";
 import { makeDocument } from "../helpers/game-document.js";
+import { trackingLinkFixture } from "../helpers/tracking-link-fixture.js";
 
 afterEach(() => {
   cleanup();
@@ -22,6 +26,60 @@ afterEach(() => {
 });
 
 describe("보정 문제와 원장 탐색", () => {
+  it("tracking 문제를 선택하면 직접 연결된 대표 투구 상세를 열고 중복 연쇄는 예외로 남긴다", async () => {
+    const document = trackingLinkFixture(
+      parseStagingGameDocumentV2(
+        JSON.parse(
+          readFileSync("tests/fixtures/tracking-duplicate-review.anonymized.json", "utf8"),
+        ),
+      ),
+    );
+    const { client, view } = renderCorrection(
+      [catalogItem(document.metadata.gameId, "quarantine")],
+      {
+        sessionId: "tracking-link-session",
+        authority: "quarantine",
+        gameId: document.metadata.gameId,
+        baseDocumentHash: stagingDocumentHash(document),
+        sessionVersion: 0,
+        ...prepareCorrectionSnapshot(document, compileStagingGameDocumentV2(document), []),
+        canUndo: false,
+        canRedo: false,
+        dirty: false,
+      },
+      "/correct",
+    );
+    const user = userEvent.setup();
+    await waitFor(() =>
+      expect((screen.getByLabelText("경기") as HTMLSelectElement).value).toBe(
+        "quarantine:anonymous-tracking-review",
+      ),
+    );
+    await user.click(await screen.findByRole("button", { name: "작업 사본 열기" }));
+
+    await user.click(
+      await screen.findByRole("button", { name: /동일한 값의 linked 대표 후보.*row 2/u }),
+    );
+    const linked = await screen.findByRole("region", { name: "선택한 투구 트래킹 관측" });
+    expect(within(linked).getByRole("heading", { name: "연결된 트래킹 관측" })).toBeTruthy();
+    expect(within(linked).getByText("relay_005 · block 6 · row 1")).toBeTruthy();
+    expect(within(linked).getByText("relay_005 · block 6 · row 2")).toBeTruthy();
+    expect(within(linked).queryByText("relay_005 · block 6 · row 3")).toBeNull();
+    expect(
+      view.container.querySelector('#ledger-event-select-anon-pitch[aria-pressed="true"]'),
+    ).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: /동일한 값의 linked 대표 후보.*row 3/u }));
+    const unresolved = await screen.findByRole("region", { name: "선택한 투구 트래킹 관측" });
+    expect(
+      within(unresolved).getByRole("heading", { name: "연결되지 않은 트래킹 관측" }),
+    ).toBeTruthy();
+    expect(within(unresolved).getByText("relay_005 · block 6 · row 3")).toBeTruthy();
+    expect(view.container.querySelector('.event-row-select[aria-pressed="true"]')).toBeNull();
+    view.unmount();
+    client.clear();
+  });
+
   it("멀리 있는 문제 행을 드러내고 상세에서 같은 행과 문제 위치·필터·포커스로 돌아간다", async () => {
     const { client, fetchMock, view } = setup([catalogItem("test-game", "quarantine")]);
     const user = userEvent.setup();
@@ -186,12 +244,20 @@ function setup(games: readonly CorrectionGameCatalogItem[], entry = "/correct") 
     canRedo: false,
     dirty: false,
   };
+  return renderCorrection(games, opened, entry);
+}
+
+function renderCorrection(
+  games: readonly CorrectionGameCatalogItem[],
+  opened: CorrectionSession,
+  entry: string,
+) {
   const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const path = String(input);
     if (path === "/api/v2/correction-games") return Response.json({ games });
     if (path === "/api/v2/correction-sessions" && init?.method === "POST")
       return Response.json(opened, { status: 201 });
-    if (path.endsWith("/original")) return Response.json(gameDocument);
+    if (path.endsWith("/original")) return Response.json(opened.draftDocument);
     if (path.includes("/source-evidence/"))
       return Response.json({
         eventId: path.split("/").at(-1),

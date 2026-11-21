@@ -147,7 +147,8 @@ tracking candidate는 다음 typed 정보를 가진다.
 수 없는 관측은 `source.tracking.ambiguous_pitch_id`와 함께 pending으로 보존한다. 한 투구의 동일
 tracking 재전송은 첫 위치를 canonical로 연결하고 나머지를 `duplicate`로 분류한다. metric 충돌,
 개수 불일치와 대응 투구 부재도 pending과 blocking으로 남긴다. 실제 PA와 투구 순번은 compiler의
-pitch fact만 계산한다.
+pitch fact만 계산한다. 중복 관측의 투구 연결은 직접 연결된 대표 한 단계에서 해석한다.
+수집·교정·원장 검증·웹은 이 해석을 `game-core`에서 공유한다.
 
 같은 `sourcePitchId`가 경기 안에서 반복되면 `source.pitch_id.reused_within_game` warning과 모든 원천
 위치를 각 관련 투구에 표시한다. ID 반복만으로 병합하거나 차단하지 않는다. provider ballcount와 실제

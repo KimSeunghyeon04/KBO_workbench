@@ -4,7 +4,7 @@ import {
   type StagingGameDocumentV2,
   type TrackingCandidate,
 } from "@kbo/contracts";
-import { compileStagingGameDocumentV2 } from "@kbo/game-core";
+import { compileStagingGameDocumentV2, resolveLinkedTrackingCandidate } from "@kbo/game-core";
 
 import { NaverSourceFormatError } from "../errors.js";
 import type { NormalizedRelayBlock, RelayNormalizationResult } from "../relay-normalizer.js";
@@ -112,9 +112,9 @@ export function attachNaverTrackingPlateAppearanceContexts(
     document.trackingCandidates.map((candidate) => [candidate.trackingId, candidate]),
   );
   const trackingCandidates = document.trackingCandidates.map((candidate) => {
-    const pitchEventId = resolvedPitchEventId(candidate, candidatesById);
-    if (pitchEventId === null) return candidate;
-    const plateAppearanceEventId = plateAppearanceByPitchId.get(pitchEventId);
+    const linked = resolveLinkedTrackingCandidate(candidate, candidatesById);
+    if (linked === undefined) return candidate;
+    const plateAppearanceEventId = plateAppearanceByPitchId.get(linked.resolution.pitchEventId);
     return plateAppearanceEventId === undefined || plateAppearanceEventId === null
       ? candidate
       : { ...candidate, plateAppearanceEventId };
@@ -312,16 +312,6 @@ function linkTrackingCandidate(
     ...candidate,
     resolution: { kind: "linked", pitchEventId },
   };
-}
-
-function resolvedPitchEventId(
-  candidate: TrackingCandidate,
-  candidatesById: ReadonlyMap<string, TrackingCandidate>,
-): string | null {
-  if (candidate.resolution.kind === "linked") return candidate.resolution.pitchEventId;
-  if (candidate.resolution.kind !== "duplicate") return null;
-  const canonical = candidatesById.get(candidate.resolution.canonicalTrackingId);
-  return canonical?.resolution.kind === "linked" ? canonical.resolution.pitchEventId : null;
 }
 
 function trackingFactFingerprint(candidate: TrackingCandidate): string {

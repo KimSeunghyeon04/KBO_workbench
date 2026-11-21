@@ -9,12 +9,46 @@ import {
   type TrackingCandidate,
 } from "@kbo/contracts";
 import { applyCorrectionCommand } from "@kbo/correction";
-import { compileStagingGameDocumentV2 } from "@kbo/game-core";
+import { compileStagingGameDocumentV2, resolveLinkedTrackingCandidate } from "@kbo/game-core";
 
 import { makeDocument } from "../helpers/game-document.js";
 import { mixedPitchDocument } from "../helpers/mixed-pitch-document.js";
 
 describe("V2 tracking resolution", () => {
+  it("직접 연결과 대표 한 단계만 해석하고 미연결 대표·연쇄 참조를 연결하지 않는다", () => {
+    const tracking = [
+      candidate("linked", 0, "e2", 1, { kind: "linked", pitchEventId: "e2" }),
+      candidate("duplicate", 1, "e2", 1, { kind: "duplicate", canonicalTrackingId: "linked" }),
+      candidate("chain", 2, "e2", 1, { kind: "duplicate", canonicalTrackingId: "duplicate" }),
+      candidate("pending", 3, "e2", 1, { kind: "pending" }),
+      candidate("pending-rep", 4, "e2", 1, { kind: "duplicate", canonicalTrackingId: "pending" }),
+      candidate("excluded", 5, "e2", 1, { kind: "excluded", reason: "manual_other" }),
+      candidate("excluded-rep", 6, "e2", 1, { kind: "duplicate", canonicalTrackingId: "excluded" }),
+    ];
+    const missing = candidate("missing-rep", 7, "e2", 1, {
+      kind: "duplicate",
+      canonicalTrackingId: "absent",
+    });
+    const byId = new Map(tracking.map((row) => [row.trackingId, row]));
+    expect(
+      [...tracking, missing].map(
+        (row) => resolveLinkedTrackingCandidate(row, byId)?.resolution.pitchEventId ?? null,
+      ),
+    ).toEqual(["e2", "e2", null, null, null, null, null, null]);
+
+    const { findings } = compileStagingGameDocumentV2(withCandidates(tracking));
+    expect(
+      findings
+        .filter(({ code }) => code === "source.tracking.invalid_duplicate_resolution")
+        .map(({ recordIdentity, severity }) => [recordIdentity, severity])
+        .sort(),
+    ).toEqual([
+      ["chain", "blocking"],
+      ["excluded-rep", "blocking"],
+      ["pending-rep", "blocking"],
+    ]);
+  });
+
   it("retains all five real anomalous trajectories without a zone finding", async () => {
     const rows = Value.Decode(
       Type.Array(Type.Record(Type.String(), Type.Number())),
