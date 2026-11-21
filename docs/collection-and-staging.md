@@ -398,6 +398,8 @@ KBO 기록정정현황도 별도 source 권위다. 수집기는 landing HTML, �
 finding은 `StoredFindingEnvelopeV2`로 저장한다. `producer`와 `lifecycle`이 영구 보존,
 `unresolved`가 남아 있는 동안의 보존, compiler 재계산 대상을 명시하며 문자열 code prefix로 수명을
 추측하지 않는다. envelope에 finding이 하나 이상일 때만 sidecar를 만들고 비면 제거한다.
+최초 수집, 교정 재검증, 봉인본에서 초안을 여는 경로는 persistence의 공통 변환을 사용해
+컴파일러 결과를 `producer: "compiler"`, `lifecycle: "recomputed"`로 저장한다.
 
 typed `unresolved` 행의 차단 finding은 compiler가 한 번만 생성한다. mapper와 compiler가 같은
 문제를 중복 기록하지 않으며, 보정 session은 sidecar의 비재현 가능 source finding과 현재 전체

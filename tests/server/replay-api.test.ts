@@ -5,7 +5,7 @@ import path from "node:path";
 import { parseStagingGameDocumentV2, type StagingGameDocumentV2 } from "@kbo/contracts";
 import { compileStagingGameDocumentV2, stagingDocumentHash } from "@kbo/game-core";
 import type { ReplaySourceData } from "@kbo/replay";
-import { StagingWorkspace } from "@kbo/persistence";
+import { StagingWorkspace, storedCompilerFindings } from "@kbo/persistence";
 import { Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
 
@@ -13,7 +13,6 @@ import { createApp } from "../../apps/server/src/app.js";
 import type { AppConfig } from "../../apps/server/src/config.js";
 import { ComputationPool } from "../../apps/server/src/computation-pool.js";
 import { compileDocument } from "../../apps/server/src/computation.js";
-import { storedCompilerFindings } from "../../apps/server/src/source-projection.js";
 
 describe("replay HTTP API", () => {
   it("명시한 DB revision의 manifest와 cursor frame page를 strict 응답으로 제공한다", async () => {

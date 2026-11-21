@@ -7,6 +7,8 @@ import {
   type StoredFinding,
 } from "@kbo/contracts";
 import { stagingDocumentHash, type GameState, type ReplayResult } from "@kbo/game-core";
+import { storedCompilerFindings } from "@kbo/persistence";
+
 export type PreparedCorrectionSnapshot = Pick<
   CorrectionSession,
   | "draftDocumentHash"
@@ -109,20 +111,7 @@ export function mergePersistentSourceFindings(
 ): StoredFinding[] {
   const findings: StoredFinding[] = [
     ...stored.filter((finding) => shouldRetainStoredFinding(finding, document)),
-    ...current.map((finding) => ({
-      producer: "compiler" as const,
-      lifecycle: "recomputed" as const,
-      code: finding.code,
-      category: finding.category,
-      severity: finding.severity,
-      message: finding.message,
-      ...(finding.eventId === undefined ? {} : { eventId: finding.eventId }),
-      ...(finding.eventSequence === undefined ? {} : { eventSequence: finding.eventSequence }),
-      ...(finding.recordIdentity === undefined ? {} : { recordIdentity: finding.recordIdentity }),
-      ...(finding.details.length === 0
-        ? {}
-        : { details: finding.details.map((detail) => ({ ...detail })) }),
-    })),
+    ...storedCompilerFindings(current),
   ];
   const seen = new Set<string>();
   return findings.filter((finding) => {

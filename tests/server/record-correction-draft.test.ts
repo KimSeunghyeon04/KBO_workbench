@@ -25,6 +25,40 @@ import {
 } from "../../apps/server/src/record-correction-service.js";
 
 describe("기록정정 초안의 current revision과 작업본 보존", () => {
+  it("봉인본에서 기록정정 초안을 만들 때 컴파일러 검증 결과를 저장한다", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-notice-findings-"));
+    const fixture = await setup(temporary.path);
+    const trackingCandidates = fixture.document.trackingCandidates.map((candidate) =>
+      candidate.sequence === 0 ? { ...candidate, sourcePitchOrdinal: 7 } : candidate,
+    );
+    const document = { ...fixture.document, trackingCandidates };
+    // A stale assessment reloads the revision while assessing, then again when opening the draft.
+    fixture.loadCorrectionDraft.mockResolvedValue(document);
+    try {
+      await fixture.service.createDraft(fixture.notice.noticeId);
+      const saved = await fixture.workspace.readCurrentDocumentSnapshot(document.metadata.gameId);
+      expect(saved?.authority).toBe("staging");
+      expect(saved?.findings).toStrictEqual([
+        {
+          producer: "compiler",
+          lifecycle: "recomputed",
+          code: "source.tracking.ordinal_differs_from_actual_pitch",
+          category: "source",
+          severity: "warning",
+          message:
+            "PTS 투구 순번이 compiler의 실제 투구 순번과 다릅니다. 분석에는 compiler 순번을 사용합니다.",
+          eventId: "anonymous-revision-source:relay_001:10:1",
+          eventSequence: 2,
+          recordIdentity: "anonymous-revision-source:relay_001:10:0",
+          details: [{ field: "sourcePitchOrdinal", expected: 1, actual: 7 }],
+        },
+      ]);
+    } finally {
+      fixture.sessions.close();
+      await fixture.workspace.close();
+    }
+  });
+
   it("여러 공지가 같은 작업본을 참조해도 요청당 한 번 읽고 다음 조회에서 재검증한다", async () => {
     await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-notice-shared-read-"));
     const fixture = await setup(temporary.path, 8);

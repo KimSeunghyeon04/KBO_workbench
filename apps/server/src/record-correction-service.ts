@@ -20,7 +20,7 @@ import {
   type BuiltRecordCorrectionProposal,
 } from "@kbo/correction";
 import { stagingDocumentHash } from "@kbo/game-core";
-import { RevisionConflictError } from "@kbo/persistence";
+import { RevisionConflictError, storedCompilerFindings } from "@kbo/persistence";
 import type {
   GameRevisionStore,
   RecordCorrectionGameCandidate,
@@ -30,7 +30,6 @@ import type {
 
 import type { CorrectionSessionManager } from "./correction-session-manager.js";
 import { mergePersistentSourceFindings } from "./correction-session-manager.js";
-import { storedCompilerFindings } from "./source-projection.js";
 import { BoundedReadCache } from "./bounded-read-cache.js";
 import { compileDocument, inlineComputation, type ComputationRunner } from "./computation.js";
 

@@ -10,7 +10,12 @@ import { readImmutableSourceBundle } from "./source-bundle-reader.js";
 import { saveImmutableSourceBundle, type ImmutableSourceBundle } from "./source-bundle-store.js";
 import { WorkspaceCurrentStore, snapshotContentHash } from "./workspace-current-store.js";
 import { StaleStagingDocumentError, WorkspacePersistenceBlockedError } from "./workspace-errors.js";
-import { findingEnvelope, readFindingEnvelope, readFindings } from "./workspace-findings.js";
+import {
+  findingEnvelope,
+  readFindingEnvelope,
+  readFindings,
+  storedCompilerFindings,
+} from "./workspace-findings.js";
 import { assertNoUnmigratedCurrentFiles, assertWorkspaceIntegrity } from "./workspace-integrity.js";
 import { WorkspaceJournalStore } from "./workspace-journal-store.js";
 import { WorkspaceOriginalStore } from "./workspace-original-store.js";
@@ -250,20 +255,7 @@ export class StagingWorkspace {
   public async saveCorrectionDraft(document: StagingGameDocumentV2): Promise<void> {
     const parsed = parseStagingGameDocumentV2(document);
     const compiled = await this.compile(parsed);
-    const findings = parseStoredFindings(
-      compiled.findings.map((finding) => ({
-        producer: "compiler",
-        lifecycle: "recomputed",
-        code: finding.code,
-        category: finding.category,
-        severity: finding.severity,
-        message: finding.message,
-        ...(finding.eventId === undefined ? {} : { eventId: finding.eventId }),
-        ...(finding.eventSequence === undefined ? {} : { eventSequence: finding.eventSequence }),
-        ...(finding.recordIdentity === undefined ? {} : { recordIdentity: finding.recordIdentity }),
-        ...(finding.details.length === 0 ? {} : { details: finding.details }),
-      })),
-    );
+    const findings = parseStoredFindings(storedCompilerFindings(compiled.findings));
     const authority = findings.some((finding) => finding.severity === "blocking")
       ? "quarantine"
       : "staging";

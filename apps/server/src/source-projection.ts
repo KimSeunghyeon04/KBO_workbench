@@ -1,7 +1,11 @@
 import { mapNaverGame, type RawGameBundle, type SourceFinding } from "@kbo/collection";
 import { canonicalStringify, type StagingGameDocumentV2 } from "@kbo/contracts";
 import { compileStagingGameDocumentV2 } from "@kbo/game-core";
-import type { CurrentRevisionBase, StoredFinding } from "@kbo/persistence";
+import {
+  storedCompilerFindings,
+  type CurrentRevisionBase,
+  type StoredFinding,
+} from "@kbo/persistence";
 
 export interface SourceProjection {
   readonly document: StagingGameDocumentV2;
@@ -31,20 +35,7 @@ export function projectNaverSourceBundle(
     findings: deduplicateStoredFindings([
       ...providerFindings.map(storedSourceFinding),
       ...mapped.findings.map(storedSourceFinding),
-      ...replay.findings.map((finding) => ({
-        producer: "compiler" as const,
-        lifecycle: "recomputed" as const,
-        code: finding.code,
-        category: finding.category,
-        severity: finding.severity,
-        message: finding.message,
-        ...(finding.eventId === undefined ? {} : { eventId: finding.eventId }),
-        ...(finding.eventSequence === undefined ? {} : { eventSequence: finding.eventSequence }),
-        ...(finding.recordIdentity === undefined ? {} : { recordIdentity: finding.recordIdentity }),
-        ...(finding.details.length === 0
-          ? {}
-          : { details: finding.details.map((detail) => ({ ...detail })) }),
-      })),
+      ...storedCompilerFindings(replay.findings),
     ]),
   };
 }
@@ -75,25 +66,6 @@ export function storedSourceFinding(finding: SourceFinding): StoredFinding {
     ...(finding.endpoint === null ? {} : { endpoint: finding.endpoint }),
     ...(details.length === 0 ? {} : { details }),
   };
-}
-
-export function storedCompilerFindings(
-  findings: ReturnType<typeof compileStagingGameDocumentV2>["findings"],
-): StoredFinding[] {
-  return findings.map((finding) => ({
-    producer: "compiler",
-    lifecycle: "recomputed",
-    code: finding.code,
-    category: finding.category,
-    severity: finding.severity,
-    message: finding.message,
-    ...(finding.eventId === undefined ? {} : { eventId: finding.eventId }),
-    ...(finding.eventSequence === undefined ? {} : { eventSequence: finding.eventSequence }),
-    ...(finding.recordIdentity === undefined ? {} : { recordIdentity: finding.recordIdentity }),
-    ...(finding.details.length === 0
-      ? {}
-      : { details: finding.details.map((detail) => ({ ...detail })) }),
-  }));
 }
 
 function deduplicateStoredFindings(findings: readonly StoredFinding[]): StoredFinding[] {
