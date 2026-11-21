@@ -1,10 +1,11 @@
 import { modelValidationSeasons } from "./model-training-period.js";
-import type {
-  AnalysisPlay,
-  CountRunModel,
-  CountRunObservation,
-  RunObservation,
-  RunTrainingGame,
+import {
+  COUNT_RUN_CELL_COUNT,
+  type AnalysisPlay,
+  type CountRunModel,
+  type CountRunObservation,
+  type RunObservation,
+  type RunTrainingGame,
 } from "@kbo/contracts";
 import {
   baseMask,
@@ -13,6 +14,7 @@ import {
   trainRunExpectancy,
 } from "./run-expectancy.js";
 import { attackScore, countValueTransitions, validCountState } from "./count-run-value.js";
+import { countRunCellAt, countRunCellIndex } from "./count-run-state.js";
 import { gameLossInterval } from "./game-bootstrap.js";
 export function collectCountRunObservations(
   game: RunTrainingGame,
@@ -60,28 +62,25 @@ export function collectCountRunObservations(
   }
   return rows;
 }
-const index = (r: CountRunObservation) => (r.outs * 8 + r.bases) * 12 + r.balls * 3 + r.strikes;
 function fit(
   rows: readonly CountRunObservation[],
   prior: ReturnType<typeof trainRunExpectancy>["cells"],
   through: number,
   weight: 20 | 100,
 ): CountRunModel["cells"] {
-  const groups = Array.from({ length: 288 }, () => ({ samples: 0, sum: 0 }));
+  const groups = Array.from({ length: COUNT_RUN_CELL_COUNT }, () => ({ samples: 0, sum: 0 }));
   for (const r of rows) {
     if (r.season > through || r.season < 2020) continue;
-    const group = groups[index(r)];
+    const group = groups[countRunCellIndex(r)];
     if (group === undefined) throw new Error("Invalid count state");
     group.samples++;
     group.sum += r.remainingRuns;
   }
   return groups.map((g, i) => {
-    const re = prior[Math.floor(i / 12)]?.mean;
+    const { re24Index, ...state } = countRunCellAt(i);
+    const re = prior[re24Index]?.mean;
     return {
-      outs: Math.floor(i / 96),
-      bases: Math.floor(i / 12) % 8,
-      balls: Math.floor((i % 12) / 3),
-      strikes: i % 3,
+      ...state,
       samples: g.samples,
       mean:
         re == null
@@ -104,7 +103,7 @@ function evaluate(
     error = 0;
   for (const r of rows) {
     if (r.season !== season) continue;
-    const estimate = cells[index(r)]?.mean;
+    const estimate = cells[countRunCellIndex(r)]?.mean;
     if (estimate == null) {
       unsupported++;
       continue;
@@ -139,7 +138,7 @@ export function trainCountRunExpectancy(
             ? 1
             : a.revision - b.revision ||
               a.inning - b.inning ||
-              index(a) - index(b) ||
+              countRunCellIndex(a) - countRunCellIndex(b) ||
               a.remainingRuns - b.remainingRuns,
       ),
     years = modelValidationSeasons(through);
@@ -166,8 +165,9 @@ export function trainCountRunExpectancy(
         base = shrinkage === 100 ? candidate : fitAt(season - 1, 100);
       for (const r of rows) {
         if (r.season !== season) continue;
-        const a = candidate[index(r)]?.mean,
-          b = base[index(r)]?.mean;
+        const cellIndex = countRunCellIndex(r);
+        const a = candidate[cellIndex]?.mean,
+          b = base[cellIndex]?.mean;
         if (a == null || b == null) continue;
         const key = JSON.stringify([r.gameId, r.revision]),
           game = games.get(key) ?? { sum: 0, samples: 0 };

@@ -7,8 +7,8 @@ import type {
 } from "@kbo/contracts";
 import { baseMask, completeAnalysisHalf, groupAnalysisHalves } from "./run-expectancy.js";
 import { hasTerminalPitch } from "./pitch-outcomes.js";
-export const countStateIndex = (s: Pick<AnalysisState, "outs" | "bases" | "balls" | "strikes">) =>
-  (s.outs * 8 + baseMask(s)) * 12 + s.balls * 3 + s.strikes;
+import { countRunCellIndex } from "./count-run-state.js";
+
 export const attackScore = (state: AnalysisState, half: AnalysisPlay["half"]) =>
   half === "top" ? state.awayScore : state.homeScore;
 export function validCountState(state: AnalysisState) {
@@ -88,12 +88,13 @@ export function evaluateCountRunValues(
   modelHash: string | null,
 ): CountRunValueResponse {
   const available = model?.status === "ready" && game.season === model.trainedThrough + 1;
-  const value = (state: AnalysisState) =>
-    state.outs === 3
-      ? 0
-      : available && validCountState(state)
-        ? (model.cells[countStateIndex(state)]?.mean ?? null)
-        : null;
+  const value = (state: AnalysisState) => {
+    if (state.outs === 3) return 0;
+    if (!available || !validCountState(state)) return null;
+    const { outs, balls, strikes } = state;
+    const index = countRunCellIndex({ outs, bases: baseMask(state), balls, strikes });
+    return model.cells[index]?.mean ?? null;
+  };
   const halves: CountRunValueResponse["halves"] = [],
     transitions: CountRunValueResponse["transitions"] = [];
   for (const half of groupAnalysisHalves(plays)) {

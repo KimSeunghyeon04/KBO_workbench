@@ -94,6 +94,7 @@ export {
   evaluateRunValues,
 } from "./run-expectancy.js";
 export { collectCountRunObservations, trainCountRunExpectancy } from "./count-run-expectancy.js";
+export { countRunCellAt } from "./count-run-state.js";
 export { countValueTransitions, evaluateCountRunValues } from "./count-run-value.js";
 export { collectWinObservations } from "./win-probability-input.js";
 export { winInningLimit } from "./win-probability-rules.js";

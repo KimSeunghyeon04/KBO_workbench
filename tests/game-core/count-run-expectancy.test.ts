@@ -28,6 +28,116 @@ const game: RunTrainingGame = {
   normalEnd: true,
   documentHash: "a".repeat(64),
 };
+
+it("places count observations and their RE24 priors in the persisted cell order", () => {
+  const prior: RunObservation = {
+    gameId: "old",
+    revision: 1,
+    season: 2024,
+    gameDate: "2024-06-01",
+    inning: 1,
+    half: "top",
+    outs: 1,
+    bases: 5,
+    remainingRuns: 2,
+  };
+  const target = { ...prior, balls: 2, strikes: 1 };
+  const fitted = trainCountRunExpectancy(
+    [
+      { ...target, remainingRuns: 103 },
+      { ...target, outs: 0, bases: 0, balls: 0, strikes: 0, remainingRuns: 1 },
+      { ...target, outs: 2, bases: 7, balls: 3, strikes: 2, remainingRuns: 5 },
+      { ...target, season: 2025, remainingRuns: 4 },
+    ],
+    [prior],
+    "a".repeat(64),
+  );
+
+  expect(fitted.cells).toHaveLength(288);
+  expect(fitted.cells[0]).toEqual({ outs: 0, bases: 0, balls: 0, strikes: 0, samples: 1, mean: 1 });
+  expect(fitted.cells[163]).toEqual({
+    outs: 1,
+    bases: 5,
+    balls: 2,
+    strikes: 1,
+    samples: 1,
+    mean: 3,
+  });
+  expect(fitted.cells[164]).toEqual({
+    outs: 1,
+    bases: 5,
+    balls: 2,
+    strikes: 2,
+    samples: 0,
+    mean: 2,
+  });
+  expect(fitted.cells[287]).toEqual({
+    outs: 2,
+    bases: 7,
+    balls: 3,
+    strikes: 2,
+    samples: 1,
+    mean: 5,
+  });
+  expect(fitted.evaluation).toEqual({
+    season: 2025,
+    samples: 1,
+    unsupported: 0,
+    mae: 1,
+    rmse: 1,
+    bias: -1,
+  });
+});
+
+it("reads the expected adjacent cells for a strike with runners on first and third", () => {
+  const fitted = model();
+  const table = {
+    ...fitted,
+    cells: fitted.cells.map((cell, index) => ({
+      ...cell,
+      mean: index === 163 ? 3 : index === 164 ? 2 : null,
+    })),
+  };
+  const before = state({
+    outs: 1,
+    bases: [{ runnerId: "r1", pitcherId: "p" }, null, { runnerId: "r3", pitcherId: "p" }],
+    balls: 2,
+    strikes: 1,
+  });
+  const after = { ...before, strikes: 2 };
+  const result = evaluateCountRunValues(
+    game,
+    [
+      play({ playId: "start", kind: "half_inning_start", before: state(), after: state() }),
+      play({
+        playId: "strike",
+        sequence: 1,
+        kind: "pitch",
+        before,
+        after,
+        pitch: { id: "strike", call: "called_strike", actual: true, inPlay: false },
+      }),
+      play({
+        playId: "end",
+        sequence: 2,
+        kind: "runner_advance",
+        before: after,
+        after: state({ outs: 3 }),
+      }),
+    ],
+    table,
+    null,
+  );
+
+  expect(result.transitions[1]).toMatchObject({
+    playIds: ["strike"],
+    beforeRE: 3,
+    afterRE: 2,
+    value: -1,
+    status: "supported",
+  });
+});
+
 function model() {
   const pas: RunObservation[] = Array.from({ length: 24 }, (_, i) => ({
     gameId: "old",

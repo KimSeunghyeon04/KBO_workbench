@@ -1,5 +1,10 @@
 import { Type, type TSchema, type Static } from "@sinclair/typebox";
-import { winInningLimit, modelTrainingPeriod, validModelEvaluationSeasons } from "@kbo/game-core";
+import {
+  countRunCellAt,
+  winInningLimit,
+  modelTrainingPeriod,
+  validModelEvaluationSeasons,
+} from "@kbo/game-core";
 import {
   RunExpectancyModelSchema,
   CountRunModelSchema,
@@ -190,13 +195,15 @@ function validCount(model: CountRunModel, manifest: Manifest) {
     (model.evaluation === null || model.evaluation.season === model.trainedThrough + 1) &&
     model.sourceHash === runTrainingHash(manifest) &&
     model.trainedThrough === manifest.through &&
-    model.cells.every(
-      (c, i) =>
-        c.outs === Math.floor(i / 96) &&
-        c.bases === Math.floor(i / 12) % 8 &&
-        c.balls === Math.floor((i % 12) / 3) &&
-        c.strikes === i % 3 &&
-        (c.mean === null || c.mean >= 0),
-    )
+    model.cells.every((c, i) => {
+      const { outs, bases, balls, strikes } = countRunCellAt(i);
+      return (
+        c.outs === outs &&
+        c.bases === bases &&
+        c.balls === balls &&
+        c.strikes === strikes &&
+        (c.mean === null || c.mean >= 0)
+      );
+    })
   );
 }

@@ -1,5 +1,8 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { RunObservationSchema } from "./run-expectancy.js";
+
+export const COUNT_RUN_CELL_COUNT = 288;
+
 const strict = { additionalProperties: false } as const,
   count = Type.Integer({ minimum: 0 }),
   nullable = Type.Union([Type.Number(), Type.Null()]);
@@ -36,7 +39,7 @@ export const CountRunModelSchema = Type.Object(
     trainingSamples: count,
     trainingGames: count,
     shrinkage: Type.Union([Type.Literal(20), Type.Literal(100)]),
-    cells: Type.Array(cell, { minItems: 288, maxItems: 288 }),
+    cells: Type.Array(cell, { minItems: COUNT_RUN_CELL_COUNT, maxItems: COUNT_RUN_CELL_COUNT }),
     validation: Type.Array(
       Type.Object(
         {

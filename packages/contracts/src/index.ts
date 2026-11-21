@@ -677,6 +677,7 @@ export {
   type RunValueResponse,
 } from "./run-expectancy.js";
 export {
+  COUNT_RUN_CELL_COUNT,
   CountRunObservationSchema,
   CountRunModelSchema,
   CountRunValueResponseSchema,
