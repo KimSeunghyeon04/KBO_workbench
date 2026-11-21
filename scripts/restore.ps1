@@ -88,6 +88,7 @@ Push-Location $repositoryRoot
 $containerDump = "/tmp/kbo-workbench-restore-$PID.dump"
 $replacementPath = ""
 $rollbackPath = ""
+$previousWorkspaceMoved = $false
 $workspaceSwapped = $false
 $restoreSucceeded = $false
 $stoppedServices = @()
@@ -113,6 +114,7 @@ try {
 
   if (Test-Path -LiteralPath $workspacePath) {
     Move-Item -LiteralPath $workspacePath -Destination $rollbackPath
+    $previousWorkspaceMoved = $true
   }
   Move-Item -LiteralPath $replacementPath -Destination $workspacePath
   $workspaceSwapped = $true
@@ -134,13 +136,14 @@ try {
   Write-Output "복원이 완료됐습니다: $BackupDirectory"
 }
 catch {
-  if ($workspaceSwapped -and -not $restoreSucceeded) {
-    $configurationForRollback = Get-ComposeConfiguration
-    $workspaceForRollback = Get-WorkspacePath $configurationForRollback
-    $parentForRollback = [IO.Path]::GetDirectoryName($workspaceForRollback)
-    Remove-SafeDirectory -Target $workspaceForRollback -ExpectedParent $parentForRollback
-    if (Test-Path -LiteralPath $rollbackPath) {
-      Move-Item -LiteralPath $rollbackPath -Destination $workspaceForRollback
+  if (-not $restoreSucceeded) {
+    if ($workspaceSwapped) {
+      Remove-SafeDirectory -Target $workspacePath -ExpectedParent $workspaceParent
+      $workspaceSwapped = $false
+    }
+    if ($previousWorkspaceMoved) {
+      Move-Item -LiteralPath $rollbackPath -Destination $workspacePath
+      $previousWorkspaceMoved = $false
     }
   }
   throw
@@ -150,7 +153,7 @@ finally {
   if (-not [string]::IsNullOrWhiteSpace($replacementPath) -and (Test-Path -LiteralPath $replacementPath)) {
     Remove-SafeDirectory -Target $replacementPath -ExpectedParent ([IO.Path]::GetDirectoryName($replacementPath))
   }
-  if ($stoppedServices.Count -gt 0) {
+  if ($stoppedServices.Count -gt 0 -and ($restoreSucceeded -or (-not $workspaceSwapped -and -not $previousWorkspaceMoved))) {
     Invoke-Compose -Arguments (@("start") + $stoppedServices)
   }
   Pop-Location

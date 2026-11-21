@@ -152,6 +152,8 @@ docker compose -f compose.v2-legacy.yaml up -d db-v2
 - dump/ZIP hash가 다르면 서비스를 멈추기 전에 거부한다.
 - filesystem root를 workspace로 해석하면 backup과 restore를 거부한다.
 - restore 도중 생성하는 경로는 workspace의 sibling으로 제한한다.
+- 새 workspace를 제자리에 옮기거나 DB를 복원하는 데 실패하면 이전 workspace를 원래 위치에
+  되돌린다. 파일 복구까지 실패하면 이전 파일을 보관한 채 writer를 중지 상태로 유지한다.
 - 일반 종료에 `docker compose down -v`를 사용하지 않는다. 이 명령은 backup이 아니라 DB volume
   삭제다.
 
@@ -161,8 +163,8 @@ backup은 애플리케이션과 같은 디스크 하나에만 두지 말고 주�
 ## 자동 복구 검증
 
 다음 명령은 고유 project name, 임시 workspace, 임시 PostgreSQL volume과 localhost 임시 port를
-사용한다. golden staging 경기 적재, 중단 journal 복구, replay, backup, 의도적 staging 삭제와 DB
-schema 제거, restore, API restart 후 hash 일치를 검증한 뒤 자신이 만든 자원만 삭제한다.
+사용한다. golden staging 경기 적재, 중단 journal 복구, replay, backup, 파일 교체 실패 시 rollback,
+의도적 staging 삭제와 DB schema 제거 뒤 restore, API restart 후 hash 일치를 검증한다.
 
 ```powershell
 pnpm test:e2e

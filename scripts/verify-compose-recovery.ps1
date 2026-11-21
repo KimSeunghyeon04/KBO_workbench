@@ -618,6 +618,39 @@ try {
   if (-not ([IO.Path]::GetFullPath($corruptBackupDirectory)).StartsWith(([IO.Path]::GetFullPath($backupRoot) + [IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase)) { throw "격리 backup 정리 범위를 벗어났습니다." }
   Remove-Item -LiteralPath $corruptBackupDirectory -Recurse -Force
 
+  $originalFile = Join-Path $originalDirectory "golden-game-1.json"
+  $originalBeforeFailedSwap = Get-Sha256Hex $originalFile
+  & {
+    function Move-Item([string]$LiteralPath, [string]$Destination) {
+      $prefix = [IO.Path]::GetFullPath($testRoot) + [IO.Path]::DirectorySeparatorChar
+      foreach ($candidate in @($LiteralPath, $Destination)) {
+        if (-not [IO.Path]::GetFullPath($candidate).StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+          throw "Restore move escaped the E2E workspace."
+        }
+      }
+      if ([IO.Path]::GetFileName($LiteralPath).StartsWith(".kbo-restore-")) {
+        throw "Injected workspace promotion failure."
+      }
+      Microsoft.PowerShell.Management\Move-Item -LiteralPath $LiteralPath -Destination $Destination
+    }
+    try {
+      & (Join-Path $PSScriptRoot "restore.ps1") -BackupDirectory $backupDirectory.FullName -ConfirmDataReplacement
+      throw "Restore did not detect the injected workspace promotion failure."
+    }
+    catch {
+      if ($_.Exception.Message -ne "Injected workspace promotion failure.") { throw }
+    }
+  }
+  if ((Get-Sha256Hex $originalFile) -ne $originalBeforeFailedSwap) {
+    throw "Restore did not put the original workspace back after promotion failed."
+  }
+  Wait-Ready
+  $afterFailedSwap = Invoke-RestMethod -Uri `
+    "$baseUrl/api/v2/games/golden-game-1/revisions/2/replay-manifest"
+  if ($afterFailedSwap.frameHash -ne $manifest.frameHash) {
+    throw "Replay changed after workspace promotion failed."
+  }
+
   Invoke-Compose -Arguments @("stop", "web", "api")
   Remove-Item -LiteralPath (Join-Path $originalDirectory "golden-game-1.json") -Force
   Invoke-Compose -Arguments @(
