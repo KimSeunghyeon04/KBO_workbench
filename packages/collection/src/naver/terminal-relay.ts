@@ -1,3 +1,5 @@
+import { isActualPitch } from "@kbo/game-core";
+
 import { administrativeCode, kindDecision, pitchCallDecision } from "./lexicon.js";
 import type { CanonicalNaverRow } from "./model.js";
 
@@ -52,10 +54,7 @@ export function classifyTerminalRelay(
     const pitches = suffix.filter((row) => {
       if (kindOf(row) !== "pitch") return false;
       const call = pitchCallDecision(row);
-      return (
-        call.status !== "matched" ||
-        !["no_pitch", "automatic_ball", "automatic_strike"].includes(call.value)
-      );
+      return call.status !== "matched" || isActualPitch(call.value);
     });
     if (
       pitches.length === 0 ||

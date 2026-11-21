@@ -7,32 +7,35 @@ export interface CountTransition {
   readonly isPitchingStrike: boolean;
 }
 
+export function isActualPitch(call: PitchCall): boolean {
+  return call !== "automatic_ball" && call !== "automatic_strike" && call !== "no_pitch";
+}
+
 export function applyPitchCall(balls: number, strikes: number, call: PitchCall): CountTransition {
+  const actual = isActualPitch(call);
   switch (call) {
     case "no_pitch":
-      return { balls, strikes, isActualPitch: false, isPitchingStrike: false };
-    case "automatic_ball":
-      return { balls: balls + 1, strikes, isActualPitch: false, isPitchingStrike: false };
-    case "automatic_strike":
-      return { balls, strikes: strikes + 1, isActualPitch: false, isPitchingStrike: false };
-    case "ball":
-      return { balls: balls + 1, strikes, isActualPitch: true, isPitchingStrike: false };
     case "hit_by_pitch":
-      return { balls, strikes, isActualPitch: true, isPitchingStrike: false };
+      return { balls, strikes, isActualPitch: actual, isPitchingStrike: false };
+    case "automatic_ball":
+    case "ball":
+      return { balls: balls + 1, strikes, isActualPitch: actual, isPitchingStrike: false };
+    case "automatic_strike":
+      return { balls, strikes: strikes + 1, isActualPitch: actual, isPitchingStrike: false };
     case "foul":
       return {
         balls,
         strikes: strikes < 2 ? strikes + 1 : strikes,
-        isActualPitch: true,
+        isActualPitch: actual,
         isPitchingStrike: true,
       };
     case "called_strike":
     case "swinging_strike":
     case "foul_bunt":
     case "foul_tip":
-      return { balls, strikes: strikes + 1, isActualPitch: true, isPitchingStrike: true };
+      return { balls, strikes: strikes + 1, isActualPitch: actual, isPitchingStrike: true };
     case "in_play":
-      return { balls, strikes, isActualPitch: true, isPitchingStrike: true };
+      return { balls, strikes, isActualPitch: actual, isPitchingStrike: true };
   }
 }
 

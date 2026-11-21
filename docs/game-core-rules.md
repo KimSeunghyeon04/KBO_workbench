@@ -41,7 +41,8 @@ finding으로 남긴다. 같은 주자의 다단계 경로는 직전 임시 위�
 - 이닝·타순·`N구 후` 또는 `초구 전`이 붙은 피치클락 경고는 공지 행이며, 뒤의 번호 있는 투구를
   자동 판정으로 바꾸지 않는다. 원천이 볼·스트라이크 위반을 직접 기록했거나, 투구 위치가 없는
   단독 경고 뒤 ID 없는 동일 판정 행이 이어진 경우만 자동 판정 후보다.
-- `no_pitch`도 실제 투구 수에 포함하지 않는다.
+- `no_pitch`는 카운트를 유지한다. 투수·타석의 투구 수, 투구 fact의 실제 순번, 트래킹 누락 검사는
+  `game-core`의 `isActualPitch`를 공유하며 자동 볼·자동 스트라이크·`no_pitch`를 실제 투구에서 제외한다.
 - `sourcePitchId`는 Naver가 제공한 경우에만 있고 고유키가 아니다. tracking은 `trackingId`로 식별한다.
 - tracking의 `sourcePitchOrdinal`은 Naver PTS `ballcount` 증거 값이며 실제 PA 투구 순번과 다를 수
   있다. compiler는 이를 count 권위나 link ordinal 검증에 사용하지 않고 실제 순번을 PA lifecycle에서

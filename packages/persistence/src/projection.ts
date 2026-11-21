@@ -5,7 +5,7 @@ import {
   type StagingGameDocumentV2,
   type StagingRelayEvent,
 } from "@kbo/contracts";
-import { applyPitchCall, type GameState, type ReplayResult } from "@kbo/game-core";
+import { isActualPitch, type GameState, type ReplayResult } from "@kbo/game-core";
 
 export type ProjectionScalar = string | number | boolean | null;
 export type ProjectionRow = Readonly<Record<string, ProjectionScalar>>;
@@ -307,9 +307,8 @@ export function buildRelationalProjection(
     pa.eventIds.forEach((eventId, eventNumber) => {
       const pitch = pitchEvents.get(eventId);
       if (pitch !== undefined) pitchEventNumber += 1;
-      const isActualPitch =
-        pitch !== undefined && applyPitchCall(0, 0, pitch.payload.call).isActualPitch;
-      if (isActualPitch) pitchNumber += 1;
+      const actual = pitch !== undefined && isActualPitch(pitch.payload.call);
+      if (actual) pitchNumber += 1;
       plateEvents.push({
         game_id: gameId,
         revision,
@@ -318,7 +317,7 @@ export function buildRelationalProjection(
         event_id: eventId,
         event_sequence: eventSequence.get(eventId) ?? -1,
         pitch_event_number: pitch === undefined ? null : pitchEventNumber,
-        pitch_number: isActualPitch ? pitchNumber : null,
+        pitch_number: actual ? pitchNumber : null,
       });
     });
   });

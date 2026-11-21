@@ -10,6 +10,7 @@ import {
   hashProjectionTables,
   PROJECTION_TABLE_COLUMNS,
 } from "@kbo/persistence";
+import { mixedPitchDocument } from "../helpers/mixed-pitch-document.js";
 
 describe("원장 + compiled fact 관계형 projection", () => {
   it("모든 원장 행을 header와 정확히 한 kind subtype에 1:1 보존한다", async () => {
@@ -268,6 +269,35 @@ describe("원장 + compiled fact 관계형 projection", () => {
       ["e5", 3],
       ["e6", null],
       ["e7", null],
+    ]);
+  });
+
+  it.each([3, 4] as const)("V%s PA bridge는 실제 투구에만 저장 순번을 부여한다", (version) => {
+    const document = mixedPitchDocument();
+    const projection = buildRelationalProjection(
+      document,
+      compileStagingGameDocumentV2(document),
+      1,
+      version,
+    );
+    expect(
+      projection.tables.plate_appearance_events.map((row) => [
+        row.event_id,
+        row.pitch_event_number,
+        row.pitch_number,
+      ]),
+    ).toEqual([
+      ["e1", null, null],
+      ["e2", 1, null],
+      ["e3", 2, 1],
+      ["e4", 3, null],
+      ["e5", 4, null],
+      ["e6", 5, 2],
+      ["e7", 6, 3],
+      ["e8", null, null],
+      ["e9", null, null],
+      ["e10", 1, 1],
+      ["e11", null, null],
     ]);
   });
 

@@ -1,6 +1,7 @@
 import type { StagingGameDocumentV2, StagingRelayEvent, TrackingCandidate } from "@kbo/contracts";
 import { canonicalStringify } from "@kbo/contracts";
 
+import { isActualPitch } from "../rules.js";
 import type { CompiledPitchFact, FindingDetail } from "../types.js";
 import type { CompileContext } from "./model.js";
 
@@ -238,7 +239,7 @@ export function validateTracking(
     for (const event of document.events) {
       if (
         event.kind !== "pitch" ||
-        !isActualPitchCall(event.payload.call) ||
+        !isActualPitch(event.payload.call) ||
         linkedByPitch.has(event.identity.eventId)
       ) {
         continue;
@@ -331,10 +332,6 @@ function trackingFingerprint(candidate: TrackingCandidate): string {
     ),
   );
   return canonicalStringify(fact);
-}
-
-function isActualPitchCall(call: string): boolean {
-  return call !== "automatic_ball" && call !== "automatic_strike" && call !== "no_pitch";
 }
 
 function hasFinding(context: CompileContext, code: string, trackingId: string): boolean {

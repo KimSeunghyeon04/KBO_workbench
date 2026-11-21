@@ -13,6 +13,7 @@ export { compileStagingGameDocumentV2 } from "./reducer.js";
 export {
   applyPitchCall,
   findTerminalPitchForPlateResult,
+  isActualPitch,
   isAtBat,
   isHit,
   isWalkTransferredToPreviousPitcher,

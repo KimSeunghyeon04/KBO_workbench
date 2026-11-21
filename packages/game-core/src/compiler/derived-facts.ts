@@ -1,5 +1,6 @@
 import type { Side, StagingRelayEvent } from "@kbo/contracts";
 
+import { isActualPitch } from "../rules.js";
 import type {
   BaserunnerLine,
   CompiledPitchFact,
@@ -123,8 +124,4 @@ export function compileBaserunnerLines(
     });
   }
   return [...lines.values()].sort(comparePlayerLine);
-}
-
-function isActualPitch(call: string): boolean {
-  return call !== "automatic_ball" && call !== "automatic_strike" && call !== "no_pitch";
 }

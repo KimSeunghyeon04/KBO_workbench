@@ -223,6 +223,9 @@ compiler는 metadata를 pitch fact로 전달하며 기존 경기 계산 규칙�
 6. 공식 기록과 신뢰 가능한 observed state 비교
 7. source/domain/persistence finding을 결정론적으로 정렬
 
+실제 투구 여부는 `game-core`의 `isActualPitch`로 판단한다. 카운트 전이, 투구 fact와 실제 순번,
+트래킹 누락 검사, 저장용 타석 이벤트 순번은 이 판정을 사용한다.
+
 제3아웃, walk-off, called game, partial PA, 책임 투수·대타, force/time/appeal 득점 규칙을 보존한다.
 이벤트는 복제 state에서 검증하고 새 blocking finding이 없을 때만 반영한다. 같은 normalized 문서는
 시간·플랫폼·실행 순서와 무관하게 같은 finding, projection, hash와 replay frame을 만든다.

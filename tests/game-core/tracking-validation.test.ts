@@ -12,6 +12,7 @@ import { applyCorrectionCommand } from "@kbo/correction";
 import { compileStagingGameDocumentV2 } from "@kbo/game-core";
 
 import { makeDocument } from "../helpers/game-document.js";
+import { mixedPitchDocument } from "../helpers/mixed-pitch-document.js";
 
 describe("V2 tracking resolution", () => {
   it("retains all five real anomalous trajectories without a zone finding", async () => {
@@ -185,15 +186,12 @@ describe("V2 tracking resolution", () => {
   });
 
   it("tracking이 있는 경기의 실제 투구 누락만 warning으로 보고 비실제 투구는 제외한다", () => {
-    const document = withCandidates([
-      candidate("t1", 0, "e2", 1, { kind: "linked", pitchEventId: "e2" }),
+    const { findings } = compileStagingGameDocumentV2(mixedPitchDocument());
+    expect(findings.map(({ code, eventId, severity }) => [code, eventId, severity])).toEqual([
+      ["source.tracking.missing_for_pitch", "e6", "warning"],
+      ["source.tracking.missing_for_pitch", "e7", "warning"],
+      ["source.tracking.missing_for_pitch", "e10", "warning"],
     ]);
-    const missing = compileStagingGameDocumentV2(document).findings.filter(
-      (finding) => finding.code === "source.tracking.missing_for_pitch",
-    );
-
-    expect(missing.every((finding) => finding.severity === "warning")).toBe(true);
-    expect(missing.map((finding) => finding.eventId)).toEqual(["e3", "e6"]);
   });
 
   it("중복 그룹 batch 교정 후 실제 투구당 canonical tracking 0..1을 만족한다", () => {

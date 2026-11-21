@@ -96,17 +96,24 @@ describe("보유 시즌 원문 유형 회귀", () => {
     });
     expect(tracking.findings).toEqual([]);
   });
+  it.each([
+    ["투수 투수판 이탈", "no_pitch"],
+    ["피치클락 투수 위반 볼", "automatic_ball"],
+    ["피치클락 타자 위반 스트라이크", "automatic_strike"],
+  ])("종료 뒤 재전송의 실제 투구 ID 요건에서 %s 판정을 제외한다", (text, call) => {
+    const play = [lastPlay[0] ?? {}, { type: 7, text }, ...lastPlay.slice(1)];
+    const result = terminalRelay([...play, { type: 7, text: "경기 종료" }, ...play]);
+
+    expect(result.events[1]).toMatchObject({ kind: "pitch", payload: { call } });
+    expect(result.events.slice(5).map((event) => event.kind)).toEqual([
+      "administrative",
+      "administrative",
+      "administrative",
+      "administrative",
+    ]);
+  });
+
   it("투구 ID 누락·변경된 내용·종료 근거 없는 반복은 자동 분류하지 않는다", () => {
-    const withNoPitch = [
-      lastPlay[0] ?? {},
-      { type: 7, text: "투수 투수판 이탈" },
-      ...lastPlay.slice(1),
-    ];
-    expect(
-      terminalRelay([...withNoPitch, { type: 7, text: "경기 종료" }, ...withNoPitch])
-        .events.slice(5)
-        .every((event) => event.kind === "administrative"),
-    ).toBe(true);
     for (const rows of [
       [...lastPlay, ...lastPlay],
       [
