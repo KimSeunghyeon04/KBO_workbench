@@ -506,11 +506,13 @@ workspace 저장 경계에서 보존하며, 적용할 때의 session version/has
 proposal hash는 평가 버전, session ID/version, base와 draft document hash, notice source hash와
 batch를 묶는다. apply 요청 때 서버가 제안을 다시 만들어 hash가 다르면 `409`로 거부한다. 전체
 compile 뒤 새 blocking finding이 없고 지원 필드가 정정 후 값과 맞을 때만 적용할 수 있다. 승인
-저장 트랜잭션에서도 평가 버전을 확인해, 평가가 바뀌었으면 `409`로 거부하고 현재 제안을 다시
-받도록 한다. 승인과 이력 저장이 성공하면 session version을 한 번 증가시키고 전체 변경을 하나의
-undo/redo 단위로 반영한다. 저장 실패 때는 교정 session을 보존한다. 저장과 DB import는 별도
-수행한다. import 후 승인 document hash가 current revision으로 seal되고 정정 후 상태를 만족할
-때만 `해결됨`과 적용 revision을 기록한다.
+저장 트랜잭션에서도 평가 버전을 확인한다. 재평가, 후보 선택, 무시, 재검토는 새 평가 버전을
+만든다. 평가 결과는 계산에 사용한 공지 hash가 현재 공지와 일치할 때 저장한다. 제안 적용 중
+버전이 바뀌면 `409`로 거부하고 현재 제안을 다시 받도록 한다. 승인 이력 저장이
+성공하면 session version을 한 번 증가시키고 전체 변경을 하나의 undo/redo 단위로 반영한다.
+저장 실패 때는 교정 session을 보존한다. 저장과 DB import는 별도 수행한다. 현재 봉인본의 hash가
+현재 평가 버전의 최신 승인 이력과 일치하면 `해결됨`과 완료 이력을 함께 기록한다. 수동 교정은
+현재 봉인본을 다시 평가해 정정 후 상태를 확인한다.
 
 변경 명령이 없는 경우에도 지원 통계의 공식값과 compiler 계산값이 모두 공지의 정정 후 값인지
 검증한다. 공식값만 맞고 원장의 RBI·장타 등 계산값이 다르면 이미 반영으로 처리하지 않는다.

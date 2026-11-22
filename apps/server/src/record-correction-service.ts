@@ -105,8 +105,7 @@ export class RecordCorrectionService {
   public async assessNotice(notice: RecordCorrectionNotice): Promise<RecordCorrectionCase> {
     notice = normalizeKboRecordCorrectionNotice(notice);
     if (!hasActionableCorrection(notice))
-      return this.assessCase({
-        noticeId: notice.noticeId,
+      return this.assessCase(notice, {
         status: "out_of_scope",
         gameId: null,
         gameRevision: null,
@@ -123,8 +122,7 @@ export class RecordCorrectionService {
       });
     const exactGameCandidates = await this.repository.gameCandidates(notice);
     if (exactGameCandidates.length === 0)
-      return this.assessCase({
-        noticeId: notice.noticeId,
+      return this.assessCase(notice, {
         status: "unmatched",
         gameId: null,
         gameRevision: null,
@@ -159,8 +157,7 @@ export class RecordCorrectionService {
       candidates.push(...result.value);
     }
     if (gameIdentityAmbiguous || candidates.length !== 1) {
-      return this.assessCase({
-        noticeId: notice.noticeId,
+      return this.assessCase(notice, {
         status: "manual_review",
         gameId: null,
         gameRevision: null,
@@ -207,8 +204,7 @@ export class RecordCorrectionService {
         : hasChange
           ? "action_required"
           : "already_applied";
-    return this.assessCase({
-      noticeId: notice.noticeId,
+    return this.assessCase(notice, {
       status,
       gameId: candidate.gameId,
       gameRevision: candidate.revision,
@@ -488,9 +484,16 @@ export class RecordCorrectionService {
   }
 
   private async assessCase(
-    input: Parameters<RecordCorrectionRepository["assess"]>[0],
+    notice: RecordCorrectionNotice,
+    input: Omit<Parameters<RecordCorrectionRepository["assess"]>[0], "noticeId" | "noticeHash">,
   ): Promise<RecordCorrectionCase> {
-    return normalizeCase(await this.repository.assess(input));
+    return normalizeCase(
+      await this.repository.assess({
+        ...input,
+        noticeId: notice.noticeId,
+        noticeHash: notice.noticeHash,
+      }),
+    );
   }
 }
 

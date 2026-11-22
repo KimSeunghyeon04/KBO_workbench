@@ -75,7 +75,7 @@ PostgreSQL 데이터 경로는 해당 테스트 container의 1GiB tmpfs를 사�
 종료 시 함께 제거한다. 운영 PostgreSQL volume과 파일 워크스페이스는 연결하지 않는다.
 
 `test:e2e`는 고유 Compose project, 임시 port·data·volume과 실행별 앱 이미지 태그를 사용한다.
-검사 뒤 해당 project와 태그를 정리한다. Docker 자원 정리에 실패하면 남은 정리를 시도한 뒤
+검사 뒤 해당 project와 태그, 임시 작업 폴더를 정리한다. 정리에 실패하면 남은 정리를 시도한 뒤
 실패를 보고한다. 검사 자체도 실패했다면 최초 오류를 보존한다. `-SkipBuild`는 이미 있는 앱
 이미지를 사용한다. 실제 Naver network는 호출하지 않고 sanitized fixture로 수집 원장 저장,
 보정, import, typed replay, backup/restore와 UI smoke를 검증한다.

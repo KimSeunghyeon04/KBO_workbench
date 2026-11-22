@@ -591,8 +591,9 @@ history replace로 갱신한다. 공통 `PlayerAnalysisFrame`은 같은 catalog 
 observer로 관찰하므로 추가 목록 요청이나 다른 분석의 선행 계산을 만들지 않는다. 기존 페이지가
 query·선수 결정·입력 검증을 계속 소유한다. 브라우저 탭 복귀 시 열린 화면의 선수 목록을 재사용하며,
 조회 시즌의 원천 지문이 바뀌면 목록을 갱신한다. 공통 진입점은 첫 분석 조회 전에 비교 기준으로
-삼을 시즌 상태가 있는지 확인한다. 시즌을 생략한 주소는 오래된 시즌 목록을 재확인한 뒤 최신 적재
-시즌을 조회한다. 사이드바의 선수 탐색 링크는 현재 주소에서 시즌이 생략된 상태를 보존한다.
+삼을 시즌 상태가 있는지 확인한다. 상태 확인에 실패하면 지정한 시즌의 분석을 열고, 상태가 복구되면
+그동안 기준 없이 조회한 분석을 갱신한다. 시즌을 생략한 주소는 오래된 시즌 목록을 재확인한 뒤 최신
+적재 시즌을 조회한다. 사이드바의 선수 탐색 링크는 현재 주소에서 시즌이 생략된 상태를 보존한다.
 
 `PitcherScopeFields`는 `AnalysisFilterBar`를 사용하며, 선수 리포트의 반복되는 시즌·투수·범위
 입력은 `조회 조건 변경` native details로 묶어 기본 접는다. 매치업의 타자처럼 `primary` 입력이
@@ -722,9 +723,11 @@ limit은 1000이다.
 기록정정 API는 job 생성·조회·취소, 상태 summary/list/detail, append-only review action, correction
 draft 생성, session proposal preview/apply를 제공한다. `/record-corrections`는 상태·시즌·팀·선수로
 필터링하고 실행 중 job만 polling한다. proposal apply는 session lock 안에서 컴파일하고, 제안의
-평가 버전과 DB의 현재 평가 버전이 일치할 때만 같은 트랜잭션에서 승인과 이력을 저장한다.
-평가 버전이 바뀌면 `409`를 반환한다. 승인 트랜잭션이 성공한 뒤 작업 사본과 session version을
-갱신한다. 현재 원장과 봉인본은 commit/import API로 갱신한다.
+평가 버전과 DB의 현재 평가 버전이 일치할 때 승인 이력을 저장한다. 후보 선택과 검토 상태 변경도
+새 평가 버전을 만들며 적용 중 버전이 바뀌면 `409`를 반환한다. 승인 트랜잭션이 성공한 뒤 작업
+사본과 session version을 갱신한다. 평가 결과는 계산에 사용한 공지 hash와 현재 공지를 대조해
+저장한다. 현재 원장과 봉인본은 commit/import API로 갱신한다. 적재 후에는
+현재 평가 버전의 최신 승인 이력과 봉인 문서 hash를 대조하고 완료 상태와 이력을 함께 저장한다.
 
 공지의 경기 연결은 날짜·원정/홈 팀을 기준으로 current sealed revision에서 찾는다. 구장명은
 연결 조건이 아니며 표기 차이나 미제공을 허용한다. 복수 대진은 DH 번호로 구분하고, 명시된 DH
@@ -821,8 +824,8 @@ writer lock·current token 검증·versioned transition 경로를 사용하고 �
 - lint, format, typecheck, unit, architecture, schema, build, integration, E2E, performance, Compose health
 
 테스트는 실제 Naver를 호출하지 않으며 고유 Compose project, 임시 workspace, 임시 volume을 사용한다.
-격리 Compose에서 앱 이미지를 빌드하면 실행별 태그로 관리한다. 격리 project와 이미지의 정리
-오류를 E2E 실패로 보고하고 검사 중 발생한 최초 오류를 보존한다.
+격리 Compose에서 앱 이미지를 빌드하면 실행별 태그로 관리한다. 격리 project, 이미지, 임시
+작업 폴더의 정리 오류를 E2E 실패로 보고하고 검사 중 발생한 최초 오류를 보존한다.
 모든 검증이 끝난 뒤에만 명시적으로 승인된 `.data`와 정확한 운영 PostgreSQL volume을 초기화하고
 2024-01-01부터 2024-12-31까지 다시 수집한다. blocking 경기는 quarantine에 남고 교정이 끝난
 경기만 revision 1로 적재한다.

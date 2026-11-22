@@ -1333,7 +1333,12 @@ try {
 }
 catch {
   if ($composeStarted) {
-    & docker compose logs --no-color api migrate
+    try {
+      & docker compose logs --no-color api migrate
+    }
+    catch {
+      Write-Warning "격리 E2E 진단 로그 수집 실패: $($_.Exception.Message)"
+    }
   }
   throw
 }
@@ -1365,12 +1370,17 @@ finally {
   $resolvedTempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
   if ($resolvedTestRoot.StartsWith($resolvedTempRoot, [StringComparison]::OrdinalIgnoreCase) -and
       [IO.Path]::GetFileName($resolvedTestRoot).StartsWith("kbo-stage6-")) {
-    Remove-Item -LiteralPath $resolvedTestRoot -Recurse -Force -ErrorAction SilentlyContinue
+    try {
+      Remove-Item -LiteralPath $resolvedTestRoot -Recurse -Force -ErrorAction Stop
+    }
+    catch {
+      $cleanupFailures += "격리 E2E 임시 폴더 정리 실패: $($_.Exception.Message)"
+    }
   }
   foreach ($name in $environmentNames) {
     [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name], "Process")
   }
   foreach ($failure in $cleanupFailures) { Write-Warning $failure }
 }
-if ($cleanupFailures.Count -gt 0) { throw "격리 E2E Docker 자원 정리에 실패했습니다." }
+if ($cleanupFailures.Count -gt 0) { throw "격리 E2E 자원 정리에 실패했습니다." }
 Write-Output "격리 Compose restart/backup/restore E2E 통과: $projectName"

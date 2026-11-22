@@ -26,6 +26,7 @@ export interface RecordCorrectionResumableJob {
 
 export interface RecordCorrectionAssessmentInput {
   readonly noticeId: string;
+  readonly noticeHash: string;
   readonly status: RecordCorrectionCaseStatus;
   readonly gameId: string | null;
   readonly gameRevision: number | null;

@@ -5,7 +5,7 @@ import { Value } from "@sinclair/typebox/value";
 import { AnalysisSeasonsSchema, type AnalysisPreparation } from "@kbo/contracts";
 import { requestJson } from "../api/transport";
 
-export function useAnalysisSeasons(enabled = true) {
+function useAnalysisSeasonsQuery(enabled: boolean) {
   return useQuery({
     queryKey: ["analysis-seasons"],
     queryFn: async ({ signal }) =>
@@ -18,11 +18,14 @@ export function useAnalysisSeasons(enabled = true) {
     enabled,
   });
 }
+export function useAnalysisSeasons() {
+  return useAnalysisSeasonsQuery(false);
+}
 function analysisSeason(requested: string | null, latest: number | undefined) {
   return requested === null ? latest : Number(requested);
 }
 export function useAnalysisSeason(requested: string | null) {
-  const seasons = useAnalysisSeasons(requested === null);
+  const seasons = useAnalysisSeasons();
   const season = analysisSeason(requested, seasons.data?.seasons[0]);
   if (season === undefined) throw new Error("분석 화면을 열기 전에 시즌을 확정해야 합니다.");
   return season;
@@ -49,12 +52,14 @@ export function AnalysisSeasonOptions({
   );
 }
 export function AnalysisRefreshBoundary({ children }: PropsWithChildren) {
-  const result = useAnalysisSeasons();
+  const result = useAnalysisSeasonsQuery(true);
   const client = useQueryClient();
   const [params] = useSearchParams();
   const replay = useMatch("/replay") !== null;
   const requested = params.get("season");
   const needsLatest = !replay && requested === null;
+  const usingSeasonWithoutStatus =
+    !replay && requested !== null && result.data === undefined && result.errorUpdateCount > 0;
   // Revalidate a stale list on entry. Later background refreshes keep the open page mounted.
   const captureEntry = () => ({
     needsLatest,
@@ -68,17 +73,24 @@ export function AnalysisRefreshBoundary({ children }: PropsWithChildren) {
   }, [entry, refetch]);
   const preparationRows = result.data?.preparation;
   const previous = useRef<Map<number, AnalysisPreparation> | undefined>(undefined);
+  const queriedWithoutStatus = useRef(false);
   useEffect(() => {
+    if (usingSeasonWithoutStatus) queriedWithoutStatus.current = true;
     if (preparationRows === undefined) return;
     const next = new Map(preparationRows.map((row) => [row.season, row]));
     const prior = previous.current;
     previous.current = next;
-    if (prior === undefined) return;
+    // Queries started during the outage have no known source fingerprint to compare.
+    const refreshUnconfirmed = queriedWithoutStatus.current;
+    queriedWithoutStatus.current = false;
+    if (prior === undefined && !refreshUnconfirmed) return;
 
-    const sourcesChanged = new Set([...prior.keys()].filter((season) => !next.has(season)));
+    const sourcesChanged = new Set(
+      [...(prior?.keys() ?? [])].filter((season) => !next.has(season)),
+    );
     const modelsSettled = new Set<number>();
     for (const row of preparationRows) {
-      const before = prior.get(row.season);
+      const before = prior?.get(row.season);
       if (before?.sourceHash !== row.sourceHash || before.competitionHash !== row.competitionHash) {
         sourcesChanged.add(row.season);
       }
@@ -91,13 +103,16 @@ export function AnalysisRefreshBoundary({ children }: PropsWithChildren) {
         modelsSettled.add(row.season);
       }
     }
-    if (sourcesChanged.size === 0 && modelsSettled.size === 0) return;
+    if (!refreshUnconfirmed && sourcesChanged.size === 0 && modelsSettled.size === 0) return;
     const matchesChangedSeason = (query: Query) => {
       const scope = query.meta?.analysis;
       return (
-        scope?.seasons.some(
-          (season) => sourcesChanged.has(season) || (scope.usesModels && modelsSettled.has(season)),
-        ) ?? false
+        scope !== undefined &&
+        (refreshUnconfirmed ||
+          scope.seasons.some(
+            (season) =>
+              sourcesChanged.has(season) || (scope.usesModels && modelsSettled.has(season)),
+          ))
       );
     };
     // Invalidation alone reuses an in-flight first fetch when there is no cached data.
@@ -115,10 +130,13 @@ export function AnalysisRefreshBoundary({ children }: PropsWithChildren) {
             (query.state.data !== undefined || query.isActive()) && matchesChangedSeason(query),
         }),
       );
-  }, [preparationRows, client]);
+  }, [preparationRows, usingSeasonWithoutStatus, client]);
   if (replay) return children;
   const seasonsConfirmed = result.data !== undefined && result.dataUpdatedAt > entry.unconfirmedAt;
-  const season = seasonsConfirmed ? analysisSeason(requested, result.data.seasons[0]) : undefined;
+  const season = analysisSeason(
+    seasonsConfirmed || usingSeasonWithoutStatus ? requested : null,
+    seasonsConfirmed ? result.data.seasons[0] : undefined,
+  );
   if (season === undefined && result.error === null) {
     return seasonsConfirmed ? (
       <section className="panel analysis-empty-state" role="status">

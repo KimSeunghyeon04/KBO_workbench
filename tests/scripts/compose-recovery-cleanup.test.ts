@@ -22,6 +22,7 @@ function docker {
   Write-Host "fixture Docker $operation $image"
   $global:LASTEXITCODE = 0
   if ($env:KBO_CLEANUP_TEST_FAILURE -eq $operation -and $image -ne "web") {
+    if ($operation -eq "compose logs") { throw "fixture diagnostic failure" }
     $global:LASTEXITCODE = 7
     return
   }
@@ -32,6 +33,10 @@ $body = @'
 {
   $composeStarted = $true
   $testImages = @(("$projectName" + "-api:local"), ("$projectName" + "-web:local"))
+  if ($env:KBO_CLEANUP_TEST_FAILURE -eq "workspace-lock") {
+    $global:fixtureLockPath = Join-Path $testRoot "fixture-locked.tmp"
+    $global:fixtureHandle = [IO.File]::Open($global:fixtureLockPath, "CreateNew", "ReadWrite", "None")
+  }
   if ($env:KBO_CLEANUP_TEST_MAIN_FAILURE -eq "1") { throw "fixture main failure" }
 }
 '@
@@ -39,7 +44,16 @@ $source = [IO.File]::ReadAllText($scriptPath)
 $start = $testRun.Body.Extent.StartOffset
 $end = $testRun.Body.Extent.EndOffset
 $source = $source.Substring(0, $start) + $body + $source.Substring($end)
-& ([ScriptBlock]::Create($source.Replace('$PSScriptRoot', '$fixtureScriptsRoot')))
+try {
+  & ([ScriptBlock]::Create($source.Replace('$PSScriptRoot', '$fixtureScriptsRoot')))
+}
+finally {
+  if ($env:KBO_CLEANUP_TEST_FAILURE -eq "workspace-lock" -and $null -ne $global:fixtureHandle) {
+    $global:fixtureHandle.Dispose()
+    [IO.File]::Delete($global:fixtureLockPath)
+    [IO.Directory]::Delete((Split-Path -Parent $global:fixtureLockPath), $false)
+  }
+}
 `;
 
 function runCleanup(failedOperation = "", mainFailed = false) {
@@ -87,6 +101,21 @@ describe.skipIf(process.platform !== "win32")("isolated Compose recovery cleanup
     expect(result.exitCode).toBe(1);
     expect(result.output).toContain("fixture main failure");
     expect(result.output).toContain("exit 7");
+    expect(result.output).toContain("fixture Docker image rm web");
+  });
+
+  it("fails the run when a locked file prevents workspace cleanup", () => {
+    const result = runCleanup("workspace-lock");
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain("임시 폴더 정리 실패");
+    expect(result.output).not.toContain("E2E 통과");
+  });
+
+  it("preserves the original check failure if collecting diagnostics throws", () => {
+    const result = runCleanup("compose logs", true);
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain("fixture main failure");
+    expect(result.output).toContain("fixture diagnostic failure");
     expect(result.output).toContain("fixture Docker image rm web");
   });
 });

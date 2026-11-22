@@ -79,9 +79,6 @@ export class RecordCorrectionCases {
   }
 
   public async assess(input: RecordCorrectionAssessmentInput): Promise<RecordCorrectionCase> {
-    const location = await this.sources.noticeLocation(input.noticeId);
-    if (location === null)
-      throw new Error(`record correction notice가 없습니다: ${input.noticeId}`);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -95,6 +92,10 @@ export class RecordCorrectionCases {
         [input.noticeId],
       );
       const old = current.rows[0];
+      // Source imports also update this case under its row lock.
+      const location = await this.sources.noticeLocation(input.noticeId, client);
+      if (location?.noticeHash !== input.noticeHash)
+        throw new RecordCorrectionStaleError("평가 중 기록정정 공지가 변경되었습니다.");
       const preserveDecision =
         old?.source_revision === location.sourceRevision &&
         (old.status === "dismissed" || old.status === "resolved");
@@ -237,6 +238,20 @@ export class RecordCorrectionCases {
           ],
         );
       }
+      const nextVersion = request.caseVersion + 1;
+      await client.query(
+        `INSERT INTO record_correction.match_candidates
+           (notice_id,case_version,candidate_id,candidate_order,game_id,game_revision,
+            document_hash,event_id,batter_player_id,pitcher_player_id,label,confidence_reason)
+         SELECT notice_id,$3,candidate_id,candidate_order,game_id,game_revision,
+                document_hash,event_id,batter_player_id,pitcher_player_id,label,confidence_reason
+         FROM record_correction.match_candidates WHERE notice_id=$1 AND case_version=$2`,
+        [noticeId, request.caseVersion, nextVersion],
+      );
+      await client.query(
+        "UPDATE record_correction.match_assessments SET case_version=$2 WHERE notice_id=$1",
+        [noticeId, nextVersion],
+      );
       await client.query("COMMIT");
     } catch (error: unknown) {
       await client.query("ROLLBACK").catch(() => undefined);
@@ -261,11 +276,11 @@ export class RecordCorrectionCases {
       await client.query("BEGIN");
       const updated = await client.query(
         `UPDATE record_correction.match_assessments
-         SET approved_document_hash=$3,reason_code='proposal_applied_to_draft',
+         SET reason_code='proposal_applied_to_draft',
              reason_message='정정 제안을 correction session에 적용했습니다.',
              assessed_at=CURRENT_TIMESTAMP
          WHERE notice_id=$1 AND case_version=$2`,
-        [input.noticeId, input.caseVersion, input.documentHash],
+        [input.noticeId, input.caseVersion],
       );
       if (updated.rowCount !== 1)
         throw new RecordCorrectionStaleError("record correction case version이 변경되었습니다.");
@@ -298,46 +313,63 @@ export class RecordCorrectionCases {
     revision: number,
     documentHash: string,
   ): Promise<string[]> {
-    const result = await this.pool.query<{ readonly notice_id: string }>(
-      `UPDATE record_correction.match_assessments SET
-         status='resolved',applied_revision=$2,reason_code='sealed_revision_matches_approval',
-         reason_message='승인된 문서가 새 current revision으로 봉인되었습니다.',
-         assessed_at=CURRENT_TIMESTAMP
-       WHERE game_id=$1 AND approved_document_hash=$3 AND status <> 'dismissed'
-       RETURNING notice_id`,
-      [gameId, revision, documentHash],
-    );
-    for (const notice of result.rows) {
-      const client = await this.pool.connect();
-      try {
-        await client.query("BEGIN");
-        const assessment = await client.query<{ readonly case_version: number }>(
-          "SELECT case_version FROM record_correction.match_assessments WHERE notice_id=$1",
-          [notice.notice_id],
-        );
-        const caseVersion = assessment.rows[0]?.case_version;
-        if (caseVersion !== undefined)
-          await client.query(
-            `INSERT INTO record_correction.review_actions
-               (notice_id,action_sequence,case_version,action_kind,document_hash,applied_revision)
-             VALUES ($1,$2,$3,'resolved',$4,$5)`,
-            [
-              notice.notice_id,
-              await nextActionSequence(client, notice.notice_id),
-              caseVersion,
-              documentHash,
-              revision,
-            ],
-          );
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      if (!(await isCurrentSealedRevision(client, gameId, revision, documentHash))) {
         await client.query("COMMIT");
-      } catch (error: unknown) {
-        await client.query("ROLLBACK").catch(() => undefined);
-        throw error;
-      } finally {
-        client.release();
+        return [];
       }
+      // Wait for concurrent review writes before reading the approval in a new statement.
+      const matching = await client.query<{ readonly notice_id: string }>(
+        `SELECT notice_id FROM record_correction.match_assessments
+         WHERE game_id=$1 AND status NOT IN ('dismissed','resolved')
+         ORDER BY notice_id FOR UPDATE`,
+        [gameId],
+      );
+      const resolved = await client.query<{
+        readonly notice_id: string;
+        readonly case_version: number;
+      }>(
+        `UPDATE record_correction.match_assessments AS assessment SET
+           status='resolved',applied_revision=$2,reason_code='sealed_revision_matches_approval',
+           reason_message='승인된 문서가 새 current revision으로 봉인되었습니다.',
+           assessed_at=CURRENT_TIMESTAMP
+         WHERE assessment.notice_id = ANY($1::text[])
+           AND EXISTS (
+             SELECT 1 FROM (
+               SELECT case_version,action_kind,document_hash
+               FROM record_correction.review_actions
+               WHERE notice_id=assessment.notice_id
+               ORDER BY action_sequence DESC LIMIT 1
+             ) AS latest
+             WHERE latest.case_version=assessment.case_version
+               AND latest.action_kind='proposal_applied' AND latest.document_hash=$3
+           )
+         RETURNING assessment.notice_id,assessment.case_version`,
+        [matching.rows.map((row) => row.notice_id), revision, documentHash],
+      );
+      for (const notice of resolved.rows)
+        await client.query(
+          `INSERT INTO record_correction.review_actions
+             (notice_id,action_sequence,case_version,action_kind,document_hash,applied_revision)
+           VALUES ($1,$2,$3,'resolved',$4,$5)`,
+          [
+            notice.notice_id,
+            await nextActionSequence(client, notice.notice_id),
+            notice.case_version,
+            documentHash,
+            revision,
+          ],
+        );
+      await client.query("COMMIT");
+      return resolved.rows.map((row) => row.notice_id);
+    } catch (error: unknown) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
     }
-    return result.rows.map((row) => row.notice_id);
   }
 
   public async markResolvedAfterReassessment(input: {
@@ -350,6 +382,12 @@ export class RecordCorrectionCases {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      if (
+        !(await isCurrentSealedRevision(client, input.gameId, input.revision, input.documentHash))
+      ) {
+        await client.query("COMMIT");
+        return false;
+      }
       const updated = await client.query<{ readonly case_version: number }>(
         `UPDATE record_correction.match_assessments SET
            status='resolved',applied_revision=$4,
@@ -605,6 +643,22 @@ export class RecordCorrectionCases {
     };
   }
 }
+async function isCurrentSealedRevision(
+  client: PoolClient,
+  gameId: string,
+  revision: number,
+  documentHash: string,
+): Promise<boolean> {
+  const result = await client.query(
+    `SELECT 1 FROM workbench.games g
+     JOIN workbench.game_revisions r ON r.game_id=g.game_id AND r.revision=g.current_revision
+     WHERE g.game_id=$1 AND g.current_revision=$2 AND r.sealed AND r.document_hash=$3
+     FOR SHARE OF g`,
+    [gameId, revision, documentHash],
+  );
+  return result.rows.length === 1;
+}
+
 async function nextActionSequence(client: PoolClient, noticeId: string): Promise<number> {
   const result = await client.query<{ readonly next: number }>(
     `SELECT COALESCE(MAX(action_sequence),0)+1 next

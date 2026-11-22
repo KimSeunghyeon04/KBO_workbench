@@ -146,8 +146,11 @@ export class RecordCorrectionSources {
     if (location === null) return null;
     return loadNotice(this.pool, location.season, location.sourceRevision, location.noticeSequence);
   }
-  public async noticeLocation(noticeId: string): Promise<NoticeLocation | null> {
-    const result = await this.pool.query<{
+  public async noticeLocation(
+    noticeId: string,
+    reader: Pick<Pool, "query"> = this.pool,
+  ): Promise<NoticeLocation | null> {
+    const result = await reader.query<{
       readonly season: number;
       readonly source_revision: number;
       readonly notice_sequence: number;
@@ -336,7 +339,6 @@ async function initializeAssessments(
          reason_message=CASE WHEN $6 THEN 'KBO 공지 내용이 변경되어 재검토가 필요합니다.'
                              ELSE record_correction.match_assessments.reason_message END,
          proposal_hash=CASE WHEN $6 THEN NULL ELSE record_correction.match_assessments.proposal_hash END,
-         approved_document_hash=CASE WHEN $6 THEN NULL ELSE record_correction.match_assessments.approved_document_hash END,
          applied_revision=CASE WHEN $6 THEN NULL ELSE record_correction.match_assessments.applied_revision END,
          assessed_at=CASE WHEN $6 THEN EXCLUDED.assessed_at
                           ELSE record_correction.match_assessments.assessed_at END`,

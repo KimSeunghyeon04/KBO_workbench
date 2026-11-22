@@ -157,6 +157,61 @@ it.each(playerCatalogs)(
   },
 );
 
+it.each(playerCatalogs)("keeps $role usable when the first season check fails", async (catalog) => {
+  const recovered = Promise.withResolvers<undefined>();
+  const releaseOld = Promise.withResolvers<undefined>();
+  const holdOld = catalog.role === "batter";
+  const requestedSeasons: (string | null)[] = [];
+  let statusCalls = 0;
+  let oldSignal: AbortSignal | null | undefined;
+
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input), "http://localhost");
+    if (url.pathname === "/api/v2/analysis/seasons") {
+      if (++statusCalls === 1) return Response.json(null, { status: 503 });
+      await recovered.promise;
+      return Response.json({ sourceHash: "b".repeat(64), seasons: [2025, 2024], preparation: [] });
+    }
+    if (url.pathname !== `/api/v2/analysis/${catalog.endpoint}`) throw new Error(url.pathname);
+    requestedSeasons.push(url.searchParams.get("season"));
+    const first = requestedSeasons.length === 1;
+    if (first && holdOld) {
+      oldSignal = init?.signal;
+      await releaseOld.promise;
+    }
+    return Response.json({
+      season: 2024,
+      scope: resolveAnalysisScope({ season: 2024, competition: "regular" }),
+      [catalog.list]: [
+        { [catalog.id]: "anonymous", name: first ? "장애 중 명단" : "복구 후 명단", pitches: 100 },
+      ],
+    });
+  });
+
+  try {
+    const client = show(`/analysis/players?season=2024&role=${catalog.role}`);
+    await screen.findByText(/적재 시즌과 자동 반영 상태를 확인하지 못했습니다/u);
+    await waitFor(() => expect(requestedSeasons).toEqual(["2024"]));
+    if (!holdOld) await screen.findByRole("link", { name: "장애 중 명단 분석 보기" });
+
+    fireEvent.click(screen.getByRole("button", { name: "다시 확인" }));
+    await waitFor(() => expect(statusCalls).toBe(2));
+    if (!holdOld) expect(screen.getByRole("link", { name: "장애 중 명단 분석 보기" })).toBeTruthy();
+    expect(requestedSeasons).toEqual(["2024"]);
+
+    await act(async () => recovered.resolve(undefined));
+    await screen.findByRole("link", { name: "복구 후 명단 분석 보기" });
+    if (holdOld) expect(oldSignal?.aborted).toBe(true);
+    await act(async () => releaseOld.resolve(undefined));
+    await refreshSeasons(client);
+    expect(screen.queryByRole("link", { name: "장애 중 명단 분석 보기" })).toBeNull();
+    expect(requestedSeasons).toEqual(["2024", "2024"]);
+  } finally {
+    recovered.resolve(undefined);
+    releaseOld.resolve(undefined);
+  }
+});
+
 it.each(playerCatalogs)("refreshes $role for season changes", async (catalog) => {
   const season = 2024;
   let current = prepared(season, "a");
