@@ -4,7 +4,7 @@ import {
   AnalysisScopeSchema,
   resolveAnalysisScope,
 } from "./analysis-scope.js";
-import { PitchOutcomeQuerySchema } from "./pitch-outcomes.js";
+import { BatterProfileQuerySchema } from "./pitch-outcomes.js";
 import { DisciplineQuerySchema } from "./batter-discipline.js";
 
 const strict = { additionalProperties: false } as const;
@@ -28,7 +28,7 @@ export const StatisticsPeriodQuerySchema = Type.Object(
 export const PitchProfilePeriodQuerySchema = AnalysisPeriodQuerySchema;
 export const BatterPeriodQuerySchema = Type.Object(
   {
-    ...PitchOutcomeQuerySchema.properties,
+    ...BatterProfileQuerySchema.properties,
     ...AnalysisPeriodQuerySchema.properties,
   },
   strict,

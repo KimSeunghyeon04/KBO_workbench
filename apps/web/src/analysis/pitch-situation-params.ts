@@ -1,5 +1,5 @@
 const sharedKeys = ["pitchType", "stance", "balls", "strikes"] as const;
-export const pitchSituationKeys = [...sharedKeys, "cohort"] as const;
+export const pitchSituationKeys = [...sharedKeys, "cohort", "pitcherHand"] as const;
 export type PitchSituationKey = (typeof pitchSituationKeys)[number];
 
 /** Only conditions accepted by both pitch outcomes and batter discipline travel together. */
@@ -17,7 +17,10 @@ export function pitchSituationConditions(
 ): { key: PitchSituationKey; label: string }[] {
   const active: { key: PitchSituationKey; label: string }[] = [];
   const pitchType = params.get("pitchType");
-  if (pitchType !== null) active.push({ key: "pitchType", label: `구종: ${pitchType}` });
+  if (pitchType !== null) active.push({ key: "pitchType", label: `구종: ${pitchType || "미상"}` });
+  const hand = params.get("pitcherHand");
+  if (hand === "L" || hand === "R")
+    active.push({ key: "pitcherHand", label: hand === "L" ? "좌완 상대" : "우완 상대" });
   const stance = params.get("stance");
   if (stance !== null)
     active.push({

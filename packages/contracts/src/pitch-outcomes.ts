@@ -6,7 +6,11 @@ import {
 } from "./analysis-scope.js";
 import { DisciplineRowSchema } from "./batter-discipline.js";
 import { PitchCallSchema, PlateResultSchema } from "./game-document/events.js";
-import { PitchArsenalGroupSchema, PitchCountFlowGroupSchema } from "./pitch-arsenal.js";
+import {
+  BatterCountFlowGroupSchema,
+  PitchArsenalGroupSchema,
+  PitchCountFlowGroupSchema,
+} from "./pitch-arsenal.js";
 const strict = { additionalProperties: false } as const;
 const text = Type.String({ minLength: 1 }),
   textOrNull = Type.Union([text, Type.Null()]);
@@ -17,12 +21,20 @@ export const PitchOutcomeQuerySchema = Type.Object(
     ...AnalysisScopeQuerySchema.properties,
     balls: Type.Optional(Type.Integer({ minimum: 0, maximum: 3 })),
     strikes: Type.Optional(Type.Integer({ minimum: 0, maximum: 2 })),
-    pitchType: Type.Optional(text),
+    // An explicit empty string selects unclassified pitches. Omit it to select every pitch type.
+    pitchType: Type.Optional(Type.String()),
     stance: Type.Optional(Type.Union([Type.Literal("L"), Type.Literal("R"), Type.Literal("S")])),
     cohort: Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("discipline")])),
   },
   strict,
 );
+export const PitcherHandSchema = Type.Union([Type.Literal("L"), Type.Literal("R")]);
+export type PitcherHand = Static<typeof PitcherHandSchema>;
+export const BatterProfileQuerySchema = Type.Object(
+  { ...PitchOutcomeQuerySchema.properties, pitcherHand: Type.Optional(PitcherHandSchema) },
+  strict,
+);
+export type BatterProfileQuery = Static<typeof BatterProfileQuerySchema>;
 export const PitchOutcomeRowSchema = Type.Object(
   {
     ...DisciplineRowSchema.properties,
@@ -164,6 +176,10 @@ export const PitchCountFlowQuerySchema = Type.Object(
   },
   strict,
 );
+export const BatterCountFlowQuerySchema = Type.Object(
+  { ...PitchCountFlowQuerySchema.properties, split: Type.Optional(Type.Literal("pitcher-hand")) },
+  strict,
+);
 export const PitchCountFlowRowSchema = Type.Object(
   {
     gameId: text,
@@ -182,21 +198,54 @@ export const PitchCountFlowRowSchema = Type.Object(
   },
   strict,
 );
+export const BatterCountFlowRowSchema = Type.Object(
+  {
+    ...PitchCountFlowRowSchema.properties,
+    swing: Type.Boolean(),
+    pitcherHand: Type.Optional(Type.Union([PitcherHandSchema, Type.Null()])),
+  },
+  strict,
+);
+const countFlowResponse = {
+  scope: AnalysisScopeSchema,
+  sourceHash: PitchLocationResponseSchema.properties.sourceHash,
+  scopePitches: count,
+  excludedSituations: count,
+};
 export const PitchCountFlowResponseSchema = Type.Object(
   {
     query: PitchCountFlowQuerySchema,
     pitcherId: text,
-    scope: AnalysisScopeSchema,
-    sourceHash: PitchLocationResponseSchema.properties.sourceHash,
-    scopePitches: count,
-    excludedSituations: count,
+    ...countFlowResponse,
     groups: Type.Array(PitchCountFlowGroupSchema, { maxItems: 36 }),
+  },
+  strict,
+);
+export const BatterCountFlowResponseSchema = Type.Object(
+  {
+    query: BatterCountFlowQuerySchema,
+    batterId: text,
+    ...countFlowResponse,
+    groups: Type.Array(BatterCountFlowGroupSchema, { maxItems: 12 }),
+    byPitcherHand: Type.Optional(
+      Type.Object(
+        {
+          left: Type.Array(BatterCountFlowGroupSchema, { maxItems: 12 }),
+          right: Type.Array(BatterCountFlowGroupSchema, { maxItems: 12 }),
+          unknownPitches: count,
+        },
+        strict,
+      ),
+    ),
   },
   strict,
 );
 export type PitchCountFlowQuery = Static<typeof PitchCountFlowQuerySchema>;
 export type PitchCountFlowRow = Static<typeof PitchCountFlowRowSchema>;
 export type PitchCountFlowResponse = Static<typeof PitchCountFlowResponseSchema>;
+export type BatterCountFlowQuery = Static<typeof BatterCountFlowQuerySchema>;
+export type BatterCountFlowRow = Static<typeof BatterCountFlowRowSchema>;
+export type BatterCountFlowResponse = Static<typeof BatterCountFlowResponseSchema>;
 
 export function pitchOutcomeScope({ season, competition, dateFrom, dateTo }: PitchOutcomeQuery) {
   return resolveAnalysisScope(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analyzePitchCountFlow } from "@kbo/game-core";
+import { analyzeBatterCountFlow, analyzePitchCountFlow } from "@kbo/game-core";
 import { pitchOutcomeScope, type PitchCountFlowRow } from "@kbo/contracts";
 import { countFlowRow } from "../helpers/pitch-outcomes.js";
 
@@ -12,6 +12,82 @@ const counts = (row: ReturnType<typeof split>[number] | undefined) =>
   Object.fromEntries(row?.transitions.map((step) => [step.outcome, step.pitches]) ?? []);
 
 describe("count transitions from physical pitches", () => {
+  it("pools the batter's pitches and computes swings for the matching count, pitch and cohort", () => {
+    const count = { balls: 2, strikes: 2 };
+    const rows = [
+      {
+        ...countFlowRow({
+          ...count,
+          pitchId: "l",
+          stance: "L",
+          terminalResult: "strikeout",
+          pitchCall: "swinging_strike",
+        }),
+        swing: true,
+      },
+      {
+        ...countFlowRow({
+          ...count,
+          pitchId: "r",
+          stance: "R",
+          pitchCall: "called_strike",
+          terminalResult: "strikeout",
+        }),
+        swing: false,
+      },
+      {
+        ...countFlowRow({
+          ...count,
+          pitchId: "u",
+          stance: null,
+          pitchType: "슬라이더",
+          pitchCall: "foul",
+          afterStrikes: 2,
+        }),
+        swing: true,
+      },
+      {
+        ...countFlowRow({
+          ...count,
+          pitchId: "h",
+          pitchType: "슬라이더",
+          terminalResult: "hit_by_pitch",
+          eligible: false,
+        }),
+        swing: false,
+      },
+    ];
+    const detailed = { ...query, include: "terminal-details" } as const;
+    const data = analyzeBatterCountFlow(detailed, "b1", scope, source, rows);
+    expect(data.groups).toHaveLength(1);
+    const group = data.groups[0];
+    expect(group).toMatchObject({ stance: "all", pitches: 4, swings: 2, swingRate: 0.5 });
+    expect(group?.types.find((g) => g.pitchType === "슬라이더")).toMatchObject({
+      pitches: 2,
+      swings: 1,
+      swingRate: 0.5,
+      transitions: expect.arrayContaining([{ outcome: "foul", pitches: 1, rate: 0.5 }]),
+    });
+    expect(group?.terminalDetails).toEqual([
+      { outcome: "lookingStrikeout", pitches: 1, rate: 0.25 },
+      { outcome: "swingingStrikeout", pitches: 1, rate: 0.25 },
+    ]);
+    const discipline = analyzeBatterCountFlow(
+      { ...detailed, cohort: "discipline" },
+      "b1",
+      scope,
+      source,
+      rows,
+    );
+    expect(discipline.excludedSituations).toBe(1);
+    expect(discipline.groups[0]).toMatchObject({ pitches: 3, swings: 2, swingRate: 2 / 3 });
+    expect(discipline.groups[0]?.types.find((g) => g.pitchType === "슬라이더")).toMatchObject({
+      pitches: 1,
+      swings: 1,
+      swingRate: 1,
+    });
+  });
+
   it("pools unknown and switch sides and preserves independent count, pitch and side denominators", () => {
     const rows = [
       countFlowRow({

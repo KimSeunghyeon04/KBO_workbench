@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
 export const EXPECTED_POSTGRES_MAJOR_VERSION = 16;
-export const EXPECTED_MIGRATION_VERSION = "0019_regular_model_competition";
+export const EXPECTED_MIGRATION_VERSION = "0020_official_pitcher_hands";
 
 export interface AppConfig {
   readonly analysisAutoRefresh: boolean;

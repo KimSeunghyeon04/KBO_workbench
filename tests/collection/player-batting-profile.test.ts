@@ -1,10 +1,23 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { extractNaverPlayerBattingProfiles } from "@kbo/collection";
+import { extractNaverPlayerBattingProfiles, resolveNaverPitcherHand } from "@kbo/collection";
 import { parseGamePlayerBattingProfileDataset } from "@kbo/contracts";
 
 const context = { gameId: "anonymous-batting", season: 2026, sourceBundleHash: "a".repeat(64) };
 describe("Naver player batting profiles", () => {
+  it.each([
+    { declarations: ["우타", "좌투 우타", "좌사좌타"], hand: "L" },
+    { declarations: ["우언좌타", "우투", "좌타"], hand: "R" },
+    { declarations: ["좌투우타", "우투좌타"], hand: null },
+    { declarations: ["좌타", "양타", "불명"], hand: null },
+  ])(
+    "resolves throwing hand from explicit declarations $declarations",
+    ({ declarations, hand }) => {
+      expect(resolveNaverPitcherHand(declarations)).toBe(hand);
+      expect(resolveNaverPitcherHand([...declarations].reverse())).toBe(hand);
+    },
+  );
+
   it("retains declared sides and provenance without any tracking", async () => {
     const payloads: Record<string, unknown> = JSON.parse(
       await readFile("tests/fixtures/naver/player-batting-profile.anonymized.json", "utf8"),

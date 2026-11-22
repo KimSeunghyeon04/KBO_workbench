@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
-import type { PitchCountFlowGroup, PitchCountOutcome } from "@kbo/contracts";
+import type { BatterCountFlowGroup, PitchCountFlowGroup, PitchCountOutcome } from "@kbo/contracts";
 import { outcomePercent } from "./pitch-outcome-presentation";
 
 const width = 382;
@@ -13,7 +13,11 @@ export type PitchCount = (typeof pitchCounts)[number];
 export type PitchType = string | null;
 export type PitchSelection = PitchType | undefined;
 type TypeGroup = PitchCountFlowGroup["types"][number];
-type Summary = Pick<PitchCountFlowGroup, "pitches" | "transitions" | "terminalDetails">;
+export type CountFlowSample = Pick<
+  PitchCountFlowGroup,
+  "pitches" | "transitions" | "terminalDetails"
+> &
+  Partial<Pick<BatterCountFlowGroup, "swings" | "swingRate">>;
 const markers = ["ball", "strike", "foul"] as const;
 const endings = {
   walk: { x: 27, y: 429, label: "볼넷", kind: "ball" },
@@ -27,7 +31,7 @@ export function countText(count: PitchCount) {
 export function countFlowSample(
   group: PitchCountFlowGroup | undefined,
   selectedPitch: PitchSelection,
-): Summary | undefined {
+): CountFlowSample | undefined {
   return selectedPitch === undefined
     ? group
     : group?.types.find((type) => type.pitchType === selectedPitch);

@@ -35,7 +35,11 @@ export async function readPitchOutcomeSources(client: PoolClient, scope: Analysi
         SELECT jsonb_agg(jsonb_build_array(c.player_id,c.height_cm) ORDER BY c.player_id COLLATE "C")
         FROM registry.game_player_height_choices c
         WHERE c.game_id=r.game_id AND c.source_bundle_hash=r.source_bundle_hash
-      ) AS height_choices
+      ) AS height_choices, (
+        SELECT jsonb_agg(jsonb_build_array(h.pitcher_id,h.evidence_hash) ORDER BY h.pitcher_id COLLATE "C")
+        FROM registry.official_pitcher_hands h
+        WHERE h.game_id=r.game_id AND h.source_bundle_hash=r.source_bundle_hash
+      ) AS official_pitcher_hands
       FROM selected_games r LEFT JOIN registry.game_batting_profile_bundles profile
         ON profile.game_id=r.game_id AND profile.source_bundle_hash=r.source_bundle_hash
         AND profile.season=r.season AND profile.sealed

@@ -7,10 +7,12 @@ import {
   pitchLocationComparisonQueries,
   PitchLocationComparisonResponseSchema,
   pitchOutcomeScope,
+  BatterCountFlowResponseSchema,
   PitchCountFlowResponseSchema,
 } from "@kbo/contracts";
 import { Value } from "@sinclair/typebox/value";
 import {
+  analyzeBatterCountFlow,
   analyzePitchCountFlow,
   analyzePitchLocation,
   analyzeBatterProfile,
@@ -20,6 +22,59 @@ import { countFlowRow, outcomeRow, terminalPa } from "../../../tests/helpers/pit
 import { pitchLocationRoutes } from "../src/routes/pitch-location.js";
 import { batterProfileRoutes } from "../src/routes/batter-profile.js";
 import { installHttpErrorHandler } from "../src/http-error-handler.js";
+
+it("returns batter count flow separately with one pooled swing summary per count", async () => {
+  const flow = vi
+    .spyOn(BatterProfileRepository.prototype, "countFlow")
+    .mockImplementation(async (query, id) =>
+      analyzeBatterCountFlow(query, id, pitchOutcomeScope(query), "a".repeat(64), [
+        { ...countFlowRow({ pitchId: "l", stance: "R" }), swing: false, pitcherHand: "L" },
+        {
+          ...countFlowRow({ pitchId: "r", stance: "L", pitchCall: "foul" }),
+          swing: true,
+          pitcherHand: "R",
+        },
+      ]),
+    );
+  const app = Fastify();
+  const pool = new Pool();
+  installHttpErrorHandler(app);
+  await app.register(batterProfileRoutes, { pool });
+  const path = "/api/v2/analysis/batter-profile/b1/count-flow";
+  try {
+    const response = await app.inject(`${path}?season=2024&include=terminal-details`);
+    expect(response.statusCode).toBe(200);
+    expect(flow).toHaveBeenCalledWith({ season: 2024, include: "terminal-details" }, "b1");
+    const result = Value.Decode(BatterCountFlowResponseSchema, response.json());
+    expect(result.batterId).toBe("b1");
+    expect(result.byPitcherHand).toBeUndefined();
+    expect(result.groups).toHaveLength(1);
+    expect(result.groups[0]).toMatchObject({
+      stance: "all",
+      pitches: 2,
+      swings: 1,
+      swingRate: 0.5,
+      terminalDetails: [],
+      types: [{ pitchType: "직구", pitches: 2, swings: 1, swingRate: 0.5 }],
+    });
+    const split = await app.inject(
+      `${path}?season=2024&include=terminal-details&split=pitcher-hand`,
+    );
+    expect(split.statusCode).toBe(200);
+    const sides = Value.Decode(BatterCountFlowResponseSchema, split.json()).byPitcherHand;
+    expect(sides).toMatchObject({
+      left: [{ pitches: 1, swings: 0, swingRate: 0 }],
+      right: [{ pitches: 1, swings: 1, swingRate: 1 }],
+      unknownPitches: 0,
+    });
+    expect((await app.inject(`${path}?season=2024&split=bad`)).statusCode).toBe(400);
+    expect((await app.inject(`${path}?season=2024&include=unknown`)).statusCode).toBe(400);
+  } finally {
+    await app.close();
+    await pool.end();
+    vi.restoreAllMocks();
+  }
+});
 
 it("serves count flow separately while retaining the old location response keys", async () => {
   const source = "a".repeat(64);

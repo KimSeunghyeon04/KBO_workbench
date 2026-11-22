@@ -3,6 +3,7 @@ import {
   PitchLocationResponseSchema,
   BatterProfileResponseSchema,
   type PitchOutcomeQuery,
+  type BatterProfileQuery,
   type PitchLocationResponse,
   type BatterProfileResponse,
 } from "@kbo/contracts";
@@ -45,7 +46,7 @@ export async function getPitchLocation(query: PitchOutcomeQuery, id: string, sig
     throw new Error("구종 배합의 표본 합계가 다릅니다.");
   return result;
 }
-export async function getBatterProfile(query: PitchOutcomeQuery, id: string, signal: AbortSignal) {
+export async function getBatterProfile(query: BatterProfileQuery, id: string, signal: AbortSignal) {
   const params = new URLSearchParams(Object.entries(query).map(([k, v]) => [k, String(v)]));
   const result = Value.Decode(
     BatterProfileResponseSchema,

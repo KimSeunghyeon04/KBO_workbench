@@ -1,7 +1,10 @@
 export { inspectPlaywrightBrowser } from "./browser-status.js";
 export { NaverGameCollector } from "./collector.js";
 export { extractNaverPlayerHeights } from "./naver/player-height.js";
-export { extractNaverPlayerBattingProfiles } from "./naver/player-batting-profile.js";
+export {
+  extractNaverPlayerBattingProfiles,
+  resolveNaverPitcherHand,
+} from "./naver/player-batting-profile.js";
 export { NaverEndpoints, type Endpoint } from "./endpoints.js";
 export {
   CollectionCancelledError,

@@ -7,15 +7,23 @@ import { cleanup, render, screen, within, fireEvent, waitFor } from "@testing-li
 import { afterEach, expect, it, vi } from "vitest";
 import { Value } from "@sinclair/typebox/value";
 import {
+  BatterCountFlowQuerySchema,
+  BatterProfileQuerySchema,
   PitchOutcomeQuerySchema,
   PitchCountFlowQuerySchema,
   pitchOutcomeScope,
   resolveAnalysisScope,
   inAnalysisPeriod,
   type PitchOutcomeRow,
+  type PitcherHand,
   type TerminalPaRow,
 } from "@kbo/contracts";
-import { analyzeBatterProfile, analyzePitchCountFlow, analyzePitchLocation } from "@kbo/game-core";
+import {
+  analyzeBatterCountFlow,
+  analyzeBatterProfile,
+  analyzePitchCountFlow,
+  analyzePitchLocation,
+} from "@kbo/game-core";
 import { getPitchCountFlow } from "../../apps/web/src/api/pitch-count-flow-client.js";
 import { PitchOutcomesPage } from "../../apps/web/src/pages/pitch-outcomes-page.js";
 import { countFlowRow, outcomeRow, terminalPa } from "../helpers/pitch-outcomes.js";
@@ -28,15 +36,16 @@ afterEach(() => {
 });
 
 function mockOutcomes(
-  rows: PitchOutcomeRow[] = [outcomeRow()],
+  rows: (PitchOutcomeRow & { pitcherHand?: PitcherHand | null })[] = [outcomeRow()],
   pas: TerminalPaRow[] = [terminalPa()],
   flowResponse?: () => Response | undefined,
 ) {
   const fetch = vi.fn(async (input: RequestInfo | URL) => {
     const u = new URL(String(input), "http://localhost");
     if (u.pathname.endsWith("/comparison")) return Response.json(null, { status: 400 });
-    const { include, ...raw } = Object.fromEntries(u.searchParams);
-    const query = Value.Decode(PitchOutcomeQuerySchema, {
+    const { include, split, ...raw } = Object.fromEntries(u.searchParams);
+    const batterPath = u.pathname.includes("batter-profile");
+    const query = Value.Decode(batterPath ? BatterProfileQuerySchema : PitchOutcomeQuerySchema, {
       ...raw,
       season: Number(raw.season),
       ...(raw.balls === undefined ? {} : { balls: Number(raw.balls) }),
@@ -67,29 +76,36 @@ function mockOutcomes(
       (pa) => pa.gameDate.startsWith(`${scope.season}-`) && inAnalysisPeriod(pa.gameDate, scope),
     );
     if (u.pathname.endsWith("/count-flow")) {
-      return (
-        flowResponse?.() ??
-        Response.json(
-          analyzePitchCountFlow(
-            Value.Decode(PitchCountFlowQuerySchema, {
-              ...query,
-              ...(include === undefined ? {} : { include }),
-            }),
-            "hp1",
-            scope,
-            "f".repeat(64),
-            scopedRows.map((row) =>
-              countFlowRow({
-                pitchId: row.pitchId,
-                stance: row.stance,
-                pitchType: row.pitchType,
-                balls: row.balls,
-                strikes: row.strikes,
-                eligible: row.eligible,
-              }),
-            ),
-          ),
-        )
+      const override = flowResponse?.();
+      if (override !== undefined) return override;
+      const flowQuery = Value.Decode(
+        batterPath ? BatterCountFlowQuerySchema : PitchCountFlowQuerySchema,
+        {
+          ...query,
+          ...(include === undefined ? {} : { include }),
+          ...(split === undefined ? {} : { split }),
+        },
+      );
+      const samples = scopedRows.map((row) => ({
+        ...countFlowRow({
+          pitchId: row.pitchId,
+          stance: row.stance,
+          pitchType: row.pitchType,
+          balls: row.balls,
+          strikes: row.strikes,
+          pitchCall: row.pitchCall,
+          eligible: row.eligible,
+          ...(row.pitchCall === "ball"
+            ? { afterBalls: row.balls + 1, afterStrikes: row.strikes }
+            : {}),
+        }),
+        swing: row.swing,
+        pitcherHand: row.pitcherHand ?? null,
+      }));
+      return Response.json(
+        u.pathname.includes("batter-profile")
+          ? analyzeBatterCountFlow(flowQuery, "b1", scope, "f".repeat(64), samples)
+          : analyzePitchCountFlow(flowQuery, "hp1", scope, "f".repeat(64), samples),
       );
     }
     return Response.json(
@@ -213,6 +229,158 @@ it("loads a direct count-tree link independently of old location filters", async
     "/api/v2/analysis/pitch-shape",
   ]);
   expect(paths.every((url) => !url.searchParams.has("balls"))).toBe(true);
+});
+
+it("pools opponents, changes all batter arrows and swings, and carries the exact selection to the map", async () => {
+  const swing = { pitchType: "슬라이더", swing: true, pitchCall: "swinging_strike" } as const;
+  const fetch = mockOutcomes([
+    outcomeRow({ ...swing, pitchId: "left", stance: "L", pitcherId: "hp1" }),
+    outcomeRow({ ...swing, pitchId: "right", stance: "R", pitcherId: "hp2" }),
+    outcomeRow({ pitchId: "unknown", pitchType: null, stance: null, pitchCall: "ball" }),
+    outcomeRow({ pitchId: "fast", pitchCall: "ball" }),
+    outcomeRow({ pitchId: "slider-ball", strikes: 1, pitchType: "슬라이더", pitchCall: "ball" }),
+    outcomeRow({ pitchId: "fast-strike", strikes: 1 }),
+  ]);
+  show(
+    "batter",
+    "season=2024&competition=unknown&batter=b1&dateFrom=2024-06-01&dateTo=2024-06-30&stance=L&balls=1&locationCell=12",
+  );
+  await screen.findByRole("group", { name: "실제 코스 지도" });
+  expect(fetch.mock.calls.some(([input]) => String(input).includes("/count-flow"))).toBe(false);
+  fireEvent.click(screen.getByRole("tab", { name: "카운트별 대응" }));
+  const tree = await screen.findByRole("figure", { name: "상대 투수 전체" });
+  expect(screen.getAllByRole("figure")).toHaveLength(1);
+  expect(screen.queryByRole("button", { name: "좌·우 비교" })).toBeNull();
+  const flowRequests = () =>
+    fetch.mock.calls
+      .map(([input]) => new URL(String(input), "http://localhost"))
+      .filter((path) => path.pathname.endsWith("/count-flow"));
+  expect(flowRequests().map((path) => path.pathname)).toEqual([
+    "/api/v2/analysis/batter-profile/b1/count-flow",
+  ]);
+  expect(Object.fromEntries(flowRequests()[0]?.searchParams ?? [])).toEqual({
+    season: "2024",
+    competition: "unknown",
+    cohort: "all",
+    dateFrom: "2024-06-01",
+    dateTo: "2024-06-30",
+    include: "terminal-details",
+    split: "pitcher-hand",
+  });
+  const rate = (count: string, outcome: string) =>
+    tree.querySelector(`[data-from="${count}"][data-outcome="${outcome}"] .pitch-flow-rate`)
+      ?.textContent;
+  expect(rate("0–0", "strike")).toBe("50.0%");
+  expect(rate("0–1", "ball")).toBe("50.0%");
+  expect(screen.getByRole("row", { name: /스윙률/ }).textContent).toContain("2회 (50.0%)");
+  fireEvent.click(
+    within(tree).getByRole("button", { name: "상대 투수 전체 0볼 0스트라이크 구종 비중" }),
+  );
+  fireEvent.click(within(tree).getByRole("button", { name: /슬라이더 50.0%/ }));
+  expect(rate("0–0", "strike")).toBe("100.0%");
+  expect(rate("0–1", "ball")).toBe("100.0%");
+  expect(screen.getByRole("row", { name: /스윙률/ }).textContent).toContain("2회 (100.0%)");
+  expect(flowRequests()).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "같은 조건으로 코스 보기" }));
+  await screen.findByRole("group", { name: "실제 코스 지도" });
+  const url = () => new URLSearchParams(screen.getByLabelText("현재 주소").textContent ?? "");
+  expect(Object.fromEntries(url())).toMatchObject({
+    batter: "b1",
+    season: "2024",
+    competition: "unknown",
+    dateFrom: "2024-06-01",
+    dateTo: "2024-06-30",
+    balls: "0",
+    strikes: "0",
+    pitchType: "슬라이더",
+    outcomeView: "overview",
+  });
+  expect(url().has("locationCell")).toBe(false);
+  expect(url().has("stance")).toBe(false);
+  expect(screen.getByRole("button", { name: "구종: 슬라이더 조건 해제" })).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "이전 주소" }));
+  const restored = await screen.findByRole("figure", { name: "상대 투수 전체" });
+  const opener = within(restored).getByRole("button", {
+    name: "상대 투수 전체 0볼 0스트라이크 구종 비중",
+  });
+  fireEvent.click(opener);
+  fireEvent.click(within(restored).getByRole("button", { name: /구종 미상 25.0%/ }));
+  fireEvent.click(screen.getByRole("button", { name: "같은 조건으로 코스 보기" }));
+  await screen.findByRole("group", { name: "실제 코스 지도" });
+  expect(url().get("pitchType")).toBe("");
+  expect(screen.getByRole("button", { name: "구종: 미상 조건 해제" })).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "이전 주소" }));
+  const all = await screen.findByRole("figure", { name: "상대 투수 전체" });
+  fireEvent.click(
+    within(all).getByRole("button", { name: "상대 투수 전체 0볼 0스트라이크 전체 구종 상세" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "같은 조건으로 코스 보기" }));
+  await screen.findByRole("group", { name: "실제 코스 지도" });
+  expect(url().has("pitchType")).toBe(false);
+  expect(url().get("balls")).toBe("0");
+  expect(url().get("strikes")).toBe("0");
+});
+
+it("filters both opponent trees by one pitch and keeps the hand in the map drill", async () => {
+  const fetch = mockOutcomes([
+    {
+      ...outcomeRow({ pitchId: "l-slider", pitchType: "슬라이더", stance: "R", swing: true }),
+      pitcherHand: "L",
+    },
+    { ...outcomeRow({ pitchId: "l-fast", pitchCall: "ball", stance: "R" }), pitcherHand: "L" },
+    {
+      ...outcomeRow({ pitchId: "r-slider", pitchType: "슬라이더", pitchCall: "ball", stance: "L" }),
+      pitcherHand: "R",
+    },
+    { ...outcomeRow({ pitchId: "r-fast", swing: true, stance: "L" }), pitcherHand: "R" },
+    outcomeRow({ pitchId: "unknown", stance: "L", pitchCall: "ball" }),
+  ]);
+  show("batter", "season=2024&competition=unknown&batter=b1&outcomeView=count-response");
+  const tree = await screen.findByRole("figure", { name: "상대 투수 전체" });
+  expect(
+    within(tree).getByRole("button", { name: "상대 투수 전체 0볼 0스트라이크 전체 구종 상세" }),
+  ).toBeTruthy();
+  expect(screen.getByText(/좌완 2구 · 우완 2구 · 투구 손 미확인 1구/)).toBeTruthy();
+  expect(screen.getByRole("row", { name: /스윙률/ }).textContent).toContain("2회 (40.0%)");
+  fireEvent.click(screen.getByRole("button", { name: "좌완·우완 비교" }));
+  const left = screen.getByRole("figure", { name: "좌완 상대" });
+  const right = screen.getByRole("figure", { name: "우완 상대" });
+  const rate = (figure: HTMLElement) =>
+    figure.querySelector('[data-from="0–0"][data-outcome="ball"] .pitch-flow-rate')?.textContent;
+  expect([rate(left), rate(right)]).toEqual(["50.0%", "50.0%"]);
+  fireEvent.click(
+    within(left).getByRole("button", { name: "좌완 상대 0볼 0스트라이크 구종 비중" }),
+  );
+  fireEvent.click(within(left).getByRole("button", { name: /슬라이더 50.0%/ }));
+  expect([rate(left), rate(right)]).toEqual(["0.0%", "100.0%"]);
+  expect(screen.getByRole("row", { name: /스윙률/ }).textContent).toContain(
+    "1회 (100.0%)0회 (0.0%)",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "우완 상대 코스 보기" }));
+  await screen.findByRole("group", { name: "실제 코스 지도" });
+  const request = new URL(String(fetch.mock.calls.at(-1)?.[0]), "http://localhost");
+  expect(Object.fromEntries(request.searchParams)).toMatchObject({
+    pitcherHand: "R",
+    balls: "0",
+    strikes: "0",
+    pitchType: "슬라이더",
+  });
+  expect(request.searchParams.has("stance")).toBe(false);
+  expect(screen.getByRole("button", { name: "우완 상대 조건 해제" })).toBeTruthy();
+});
+
+it("keeps unknown-hand pitches in the pooled view when there are no confirmed opponents", async () => {
+  mockOutcomes();
+  show("batter", "season=2024&competition=unknown&batter=b1&outcomeView=count-response");
+  await screen.findByRole("figure", { name: "상대 투수 전체" });
+  fireEvent.click(screen.getByRole("button", { name: "좌완·우완 비교" }));
+  expect(screen.getByText("이 범위에는 투구 손이 확인된 상대 투구가 없습니다.")).toBeTruthy();
+  expect(screen.queryByRole("figure")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "전체", exact: true }));
+  expect(screen.getByRole("figure", { name: "상대 투수 전체" })).toBeTruthy();
+  expect(screen.getByRole("columnheader", { name: /상대 투수 전체\s*1구/ })).toBeTruthy();
 });
 
 it("shows result counts even when an earlier count-flow API omits terminal details", async () => {

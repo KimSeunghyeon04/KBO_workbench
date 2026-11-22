@@ -12,15 +12,14 @@ import {
 import { parseStagingGameDocumentV2 } from "@kbo/contracts";
 import { compileStagingGameDocumentV2, stagingDocumentHash } from "@kbo/game-core";
 import { Pool } from "pg";
-
-const V3_MIGRATION = "0019_regular_model_competition";
+import { EXPECTED_MIGRATION_VERSION } from "../config.js";
 
 async function main(): Promise<void> {
   const options = parseOptions(process.argv.slice(2));
   const transfer = new V3TransferWorkspace(options.inputDirectory);
   const manifest = await transfer.readManifest();
   const pool = new Pool({ connectionString: options.targetDsn, max: 4 });
-  const store = new GameRevisionStore(pool, V3_MIGRATION);
+  const store = new GameRevisionStore(pool, EXPECTED_MIGRATION_VERSION);
   try {
     await assertTargetScope(
       pool,

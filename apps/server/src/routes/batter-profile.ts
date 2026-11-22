@@ -1,20 +1,38 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import {
   ApiErrorSchema,
-  PitchOutcomeQuerySchema,
+  BatterProfileQuerySchema,
   BatterProfileResponseSchema,
+  BatterCountFlowResponseSchema,
+  BatterCountFlowQuerySchema,
   DisciplineParamsSchema,
   BatterPeriodQuerySchema,
   BatterPeriodResponseSchema,
   analysisPeriodQueries,
 } from "@kbo/contracts";
+import { resolveNaverPitcherHand } from "@kbo/collection";
 import { compareBatterProfilePeriods } from "@kbo/game-core";
 import { periodSnapshot } from "../analysis-period-pair.js";
 import { BatterProfileRepository, type PitchOutcomeCache } from "@kbo/persistence";
 import type { RouteContext } from "./context.js";
 type Options = Pick<RouteContext, "pool"> & { outcomeSamples?: PitchOutcomeCache };
 export const batterProfileRoutes: FastifyPluginAsyncTypebox<Options> = async (app, context) => {
-  const repository = new BatterProfileRepository(context.pool, context.outcomeSamples);
+  const repository = new BatterProfileRepository(
+    context.pool,
+    context.outcomeSamples,
+    resolveNaverPitcherHand,
+  );
+  app.get(
+    "/api/v2/analysis/batter-profile/:batterId/count-flow",
+    {
+      schema: {
+        params: DisciplineParamsSchema,
+        querystring: BatterCountFlowQuerySchema,
+        response: { 200: BatterCountFlowResponseSchema, 400: ApiErrorSchema, 500: ApiErrorSchema },
+      },
+    },
+    (request) => repository.countFlow(request.query, request.params.batterId),
+  );
   app.get(
     "/api/v2/analysis/batter-profile/:batterId/comparison",
     {
@@ -53,7 +71,7 @@ export const batterProfileRoutes: FastifyPluginAsyncTypebox<Options> = async (ap
     {
       schema: {
         params: DisciplineParamsSchema,
-        querystring: PitchOutcomeQuerySchema,
+        querystring: BatterProfileQuerySchema,
         response: { 200: BatterProfileResponseSchema, 400: ApiErrorSchema, 500: ApiErrorSchema },
       },
     },

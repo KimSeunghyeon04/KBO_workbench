@@ -81,7 +81,7 @@ GET 요청이나 새 서비스로 전체 학습을 옮기지 않는다. 코드 h
 
 ## 운영 반영
 
-migration head는 `0019_regular_model_competition`이다. sealed facts/analytics contract 4는 그대로다.
+migration head는 `0020_official_pitcher_hands`이다. sealed facts/analytics contract 4는 그대로다.
 공식 일정은 시즌별 12개월 × 3종류 응답과 올스타전·순위 결정전의 일별 증거를 검증한다. collection에서 두 제공자의 경기 ID를
 실제 날짜·팀 코드·더블헤더 순번으로 유일하게 연결하고 두 원본 ID를 별도로 보존한다.
 취소 등 링크 없는 행은 원문에 보존하며 전체 일정 확보율로 과장하지 않는다. 일부 실패·충돌·

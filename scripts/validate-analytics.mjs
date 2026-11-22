@@ -146,7 +146,7 @@ if (options["--cleanup"]) {
     PGPASSWORD: password,
     PGDATABASE: "kbo_validation",
     KBO_DATA_DIR: path.join(directory, "workspace"),
-    EXPECTED_MIGRATION_VERSION: "0019_regular_model_competition",
+    EXPECTED_MIGRATION_VERSION: "0020_official_pitcher_hands",
     MIGRATIONS_DIR: path.join(root, "database", "v3"),
     KBO_ANALYST_USER: "",
     KBO_ANALYST_PASSWORD: "",

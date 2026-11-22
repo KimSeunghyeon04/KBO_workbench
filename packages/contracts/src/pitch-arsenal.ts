@@ -102,3 +102,24 @@ export const PitchCountFlowGroupSchema = Type.Object(
   strict,
 );
 export type PitchCountFlowGroup = Static<typeof PitchCountFlowGroupSchema>;
+
+const swingSummary = {
+  swings: Type.Integer({ minimum: 0 }),
+  swingRate: Type.Number({ minimum: 0, maximum: 1 }),
+};
+export const BatterCountFlowGroupSchema = Type.Object(
+  {
+    ...PitchCountFlowGroupSchema.properties,
+    ...swingSummary,
+    stance: Type.Literal("all"),
+    types: Type.Array(
+      Type.Object(
+        { ...PitchCountFlowGroupSchema.properties.types.items.properties, ...swingSummary },
+        strict,
+      ),
+      { minItems: 1 },
+    ),
+  },
+  strict,
+);
+export type BatterCountFlowGroup = Static<typeof BatterCountFlowGroupSchema>;

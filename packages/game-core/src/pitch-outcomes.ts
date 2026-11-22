@@ -46,7 +46,8 @@ export function matchesPitchOutcome(
   return (
     (query.balls === undefined || query.balls === row.balls) &&
     (query.strikes === undefined || query.strikes === row.strikes) &&
-    (query.pitchType === undefined || query.pitchType === row.pitchType) &&
+    (query.pitchType === undefined ||
+      (query.pitchType === "" ? null : query.pitchType) === row.pitchType) &&
     (query.stance === undefined || query.stance === row.stance)
   );
 }

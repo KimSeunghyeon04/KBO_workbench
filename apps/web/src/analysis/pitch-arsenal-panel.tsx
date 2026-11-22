@@ -1,5 +1,9 @@
 import { useState } from "react";
-import { compareCanonicalStrings, type PitchCountFlowGroup } from "@kbo/contracts";
+import {
+  compareCanonicalStrings,
+  type BatterCountFlowResponse,
+  type PitchCountFlowGroup,
+} from "@kbo/contracts";
 import { PitchCountResultsTable } from "./pitch-count-results-table";
 import {
   countFlowSample,
@@ -42,14 +46,23 @@ function legendColors(groups: readonly PitchCountFlowGroup[]) {
 export function PitchArsenalPanel({
   groups,
   onSelect,
+  role = "pitcher",
+  byPitcherHand,
 }: {
   groups: readonly PitchCountFlowGroup[];
-  onSelect: (count: Drill, pitch: string) => void;
+  onSelect: (count: Drill, pitch: PitchSelection) => void;
+  role?: "pitcher" | "batter";
+  byPitcherHand?: BatterCountFlowResponse["byPitcherHand"];
 }) {
-  const [mode, setMode] = useState<"all" | "split">("split");
+  const [mode, setMode] = useState<"all" | "split">(role === "batter" ? "all" : "split");
   const [inspected, setInspected] = useState(0);
   const [filter, setFilter] = useState<PitchSelection>();
-  const sides: Side[] = mode === "all" ? ["all"] : ["L", "R"];
+  const isBatter = role === "batter";
+  const canCompare = !isBatter || byPitcherHand !== undefined;
+  const split = canCompare && mode === "split";
+  const sides: Side[] = split ? ["L", "R"] : ["all"];
+  const batterLabels = { all: "상대 투수 전체", L: "좌완 상대", R: "우완 상대" } as const;
+  const sideLabel = (side: Side) => (isBatter ? batterLabels[side] : sideLabels[side]);
   const colors = legendColors(groups);
   const selectedPitch = filter !== undefined && colors.has(filter) ? filter : undefined;
   const countsBySide: Record<Side, Map<number, PitchCountFlowGroup>> = {
@@ -59,6 +72,13 @@ export function PitchArsenalPanel({
   };
   for (const group of groups)
     countsBySide[group.stance].set(group.strikes * 4 + group.balls, group);
+  if (byPitcherHand !== undefined) {
+    for (const group of byPitcherHand.left)
+      countsBySide.L.set(group.strikes * 4 + group.balls, group);
+    for (const group of byPitcherHand.right)
+      countsBySide.R.set(group.strikes * 4 + group.balls, group);
+  }
+  const noSplitSamples = countsBySide.L.size === 0 && countsBySide.R.size === 0;
   const count = pitchCounts[inspected];
   if (count === undefined) return null;
   const samples = sides.map((stance) => ({
@@ -67,40 +87,63 @@ export function PitchArsenalPanel({
   }));
   return (
     <section className="panel outcome-arsenal" aria-labelledby="outcome-arsenal-heading">
-      <h2 id="outcome-arsenal-heading">카운트별 구종과 전이</h2>
-      <div className="pitch-flow-toolbar">
-        <div className="analysis-segments" role="group" aria-label="타자 구분">
-          <button type="button" aria-pressed={mode === "all"} onClick={() => setMode("all")}>
-            전체
-          </button>
-          <button type="button" aria-pressed={mode === "split"} onClick={() => setMode("split")}>
-            좌·우 비교
-          </button>
+      <h2 id="outcome-arsenal-heading">{isBatter ? "카운트별 대응" : "카운트별 구종과 전이"}</h2>
+      {(canCompare || selectedPitch !== undefined) && (
+        <div className="pitch-flow-toolbar">
+          {canCompare && (
+            <div
+              className="analysis-segments"
+              role="group"
+              aria-label={isBatter ? "상대 투수 구분" : "타자 구분"}
+            >
+              <button type="button" aria-pressed={mode === "all"} onClick={() => setMode("all")}>
+                전체
+              </button>
+              <button
+                type="button"
+                aria-pressed={mode === "split"}
+                onClick={() => setMode("split")}
+              >
+                {isBatter ? "좌완·우완 비교" : "좌·우 비교"}
+              </button>
+            </div>
+          )}
+          {selectedPitch !== undefined && (
+            <button type="button" className="secondary-button" onClick={() => setFilter(undefined)}>
+              전체 구종으로
+            </button>
+          )}
         </div>
-        {selectedPitch !== undefined && (
-          <button type="button" className="secondary-button" onClick={() => setFilter(undefined)}>
-            전체 구종으로
-          </button>
-        )}
-      </div>
+      )}
       <p className="analysis-caption" aria-live="polite">
         모든 화살표 · {selectedPitch === undefined ? "전체 구종" : (selectedPitch ?? "구종 미상")} ·
         — 해당 조건의 투구 없음
       </p>
+      {byPitcherHand !== undefined && (
+        <p className="analysis-caption">
+          좌완{" "}
+          {byPitcherHand.left.reduce((total, group) => total + group.pitches, 0).toLocaleString()}구
+          · 우완{" "}
+          {byPitcherHand.right.reduce((total, group) => total + group.pitches, 0).toLocaleString()}
+          구 · 투구 손 미확인 {byPitcherHand.unknownPitches.toLocaleString()}구
+        </p>
+      )}
       {groups.length === 0 ? (
         <p role="status">선택한 범위에 실제 투구가 없습니다.</p>
+      ) : isBatter && split && noSplitSamples ? (
+        <p role="status">이 범위에는 투구 손이 확인된 상대 투구가 없습니다.</p>
       ) : (
         <>
-          {mode === "split" && countsBySide.L.size === 0 && countsBySide.R.size === 0 && (
+          {split && noSplitSamples && (
             <p role="status">
               좌·우 방향이 확인된 기록이 없습니다. 전체 보기에서 확인할 수 있습니다.
             </p>
           )}
-          <div className={`pitch-flow-charts${mode === "split" ? " pitch-flow-split" : ""}`}>
+          <div className={`pitch-flow-charts${split ? " pitch-flow-split" : ""}`}>
             {sides.map((stance) => (
               <PitchCountTree
                 key={stance}
-                label={sideLabels[stance]}
+                label={sideLabel(stance)}
                 groups={countsBySide[stance]}
                 colors={colors}
                 selectedPitch={selectedPitch}
@@ -159,35 +202,42 @@ export function PitchArsenalPanel({
             <PitchCountResultsTable
               balls={count.balls}
               strikes={count.strikes}
-              columns={samples.map(({ stance, sample }) => ({ label: sideLabels[stance], sample }))}
+              columns={samples.map(({ stance, sample }) => ({ label: sideLabel(stance), sample }))}
+              showSwingRate={isBatter}
             />
-            {typeof selectedPitch === "string" && (
-              <div className="pitch-flow-toolbar pitch-flow-evidence">
-                {samples
-                  .filter(({ sample }) => sample !== undefined)
-                  .map(({ stance }) => (
-                    <button
-                      key={stance}
-                      type="button"
-                      className="secondary-button"
-                      onClick={() =>
-                        onSelect(
-                          { balls: count.balls, strikes: count.strikes, stance },
-                          selectedPitch,
-                        )
-                      }
-                    >
-                      {sideLabels[stance]} 코스 보기
-                    </button>
-                  ))}
-              </div>
-            )}
+            {(isBatter || typeof selectedPitch === "string") &&
+              samples.some(({ sample }) => sample !== undefined) && (
+                <div className="pitch-flow-toolbar pitch-flow-evidence">
+                  {samples
+                    .filter(({ sample }) => sample !== undefined)
+                    .map(({ stance }) => (
+                      <button
+                        key={stance}
+                        type="button"
+                        className="secondary-button"
+                        onClick={() =>
+                          onSelect(
+                            { balls: count.balls, strikes: count.strikes, stance },
+                            selectedPitch,
+                          )
+                        }
+                      >
+                        {isBatter && stance === "all"
+                          ? "같은 조건으로 코스 보기"
+                          : `${sideLabel(stance)} 코스 보기`}
+                      </button>
+                    ))}
+                </div>
+              )}
           </div>
         </>
       )}
       <p className="analysis-caption">
         원 가운데를 누르면 해당 카운트의 전체 구종 상세를 봅니다. 바깥 조각에서 구종을 고르면 모든
-        화살표가 그 구종의 관측 전이율로 바뀝니다. 전체에는 양타석과 방향 미확인 기록도 포함합니다.
+        화살표가 그 구종의 관측 전이율로 바뀝니다.{" "}
+        {isBatter
+          ? "원은 받은 구종의 비중을, 스윙률은 선택 조건의 실제 투구 중 스윙한 비율을 표시합니다."
+          : "전체에는 양타석과 방향 미확인 기록도 포함합니다."}{" "}
         인플레이·사구·미확인은 상세 표에서 봅니다.
       </p>
     </section>

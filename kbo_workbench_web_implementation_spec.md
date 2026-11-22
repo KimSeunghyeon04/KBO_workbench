@@ -351,7 +351,7 @@ typed 행으로 교체하거나 명시적으로 삭제한 행의 finding은 immu
 ## 8. PostgreSQL V3
 
 활성 DB는 PostgreSQL 16에 `database/v3/0001_v3_initial.sql`을 적용하고 migration head
-`database/v3/0019_regular_model_competition.sql`까지 올린다.
+`database/v3/0020_official_pitcher_hands.sql`까지 올린다.
 analytics/projection/registry/record correction contract는 `4/4/1/2`이다. V2 SQL은
 `database/migrations`에 복구용 legacy로
 보존하며 V2 DB에 V3 DDL을 적용하지 않는다. JSON, JSONB, ARRAY와 tracking EAV 컬럼은 사용하지 않는다.
@@ -419,7 +419,7 @@ collection은 `batsThrows`/`hitType`의 원문과 정규화 방향을 별도 typ
 읽기 전용 snapshot에서 A/B fact와 manifest를 읽은 뒤 연결을 반환하고 기존 코스 집계를 적용한다.
 사용 비중은 기간별 위치 확인 투구가 분모이며 Whiff·CSW·종결 인플레이 안타 비율은 기존
 셀별 분모를 유지한다. 응답의 차이 B−A는 서버에서 계산하고 null·소표본·존 규칙 차이를 표시한다.
-웹은 분석 하위 탭과 A/B 기간을 URL에 보존한다. 코스·반응, 구종 배합(타자는 종결 성적),
+웹은 분석 하위 탭과 A/B 기간을 URL에 보존한다. 코스·반응, 구종 배합(타자는 카운트별 대응과 종결 성적),
 기간 비교, 표본 기준을 각각 상단 탭에서 연다. 기간 비교 탭에는 A/B 조건이 바로 보이고,
 최초 적용 또는 적용한 주소의 복원 시 비교 결과를 조회한다. 투수·타자 기간 비교 탭에서는
 단일 기간 분석의 조회·재시도를 비활성화한다. 선택 구역에서 투구 근거로 이동한다.
@@ -437,6 +437,13 @@ compiler의 투구 전후 카운트와 정확히 연결된 종결 PA로 한 공 
 상세 표는 선택한 카운트·구종의 결과별 투구 수와 비율을 표시한다. `include=terminal-details`로 받은
 삼진 및 인플레이 세부 결과를 펼쳐 확인하며, 세부 비율에도 같은 실제 투구 분모를 사용한다.
 상세의 코스 이동에는 선택한 카운트·구종·타석 방향을 전달한다.
+
+타자의 카운트별 대응 탭은 `GET /api/v2/analysis/batter-profile/:batterId/count-flow`를
+조회한다. 상대 투수 전체 또는 확인된 좌완·우완의 구종 비중과 전이를 표시하고, 전체에는 투구 손
+미확인 투구도 포함한다. 상세에는 같은 실제 투구를 분모로 스윙률을 표시한다. 코스 이동에는
+선택한 카운트·구종·상대 투수의 투구 손을 전달한다.
+투구 손은 경기의 Naver 프로필을 우선하며, 표기가 없을 때 경기·원문 해시·투수 신원이 일치하는
+검토된 KBO 공식 프로필을 사용한다. 공식 근거는 경기 원장과 별도의 보조자료로 등록한다.
 
 A10/A11/A14 학습은 고정 snapshot을 읽고 연결을 반환한 뒤 별도 maintenance worker에서 실행한다.
 시간 분할에서 전처리도 과거 자료만 적합한다. 결과는 기능별 strict schema와 manifest를 가진

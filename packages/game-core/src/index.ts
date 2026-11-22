@@ -75,7 +75,7 @@ export {
   pitchOutcomeSummarizer,
   analyzePitchLocation,
 } from "./pitch-outcomes.js";
-export { analyzePitchCountFlow } from "./pitch-count-flow.js";
+export { analyzeBatterCountFlow, analyzePitchCountFlow } from "./pitch-count-flow.js";
 export { analyzeBatterProfile } from "./batter-profile.js";
 export { analyzePitcherChanges } from "./pitcher-changes.js";
 export { analyzePitchSequences, pitchPositionAtPlane } from "./pitch-sequence.js";

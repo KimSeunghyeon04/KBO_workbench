@@ -22,6 +22,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { Pool } from "pg";
 import { Value } from "@sinclair/typebox/value";
 import { applyCorrectionCommand } from "@kbo/correction";
+import { resolveNaverPitcherHand } from "@kbo/collection";
 
 import {
   RecordCorrectionNoticeSchema,
@@ -67,6 +68,7 @@ import {
   BatterStrikeZoneRepository,
   PlayerHeightRepository,
   PlayerBattingProfileRepository,
+  OfficialPitcherHandRepository,
   PlayerHeightSupplementRepository,
   StagingWorkspace,
   RecordCorrectionRepository,
@@ -88,6 +90,7 @@ import { disciplineEligibilityFixture } from "../helpers/discipline-eligibility-
 import { competitionFixture } from "../helpers/game-competition.js";
 import { recheckAnalysisSourceHash } from "../../packages/persistence/src/analysis-scope.js";
 import { AnalysisPreparationManager } from "../../apps/server/src/jobs/analysis-preparation-manager.js";
+import { EXPECTED_MIGRATION_VERSION } from "../../apps/server/src/config.js";
 import { BoundedReadCache } from "../../apps/server/src/bounded-read-cache.js";
 import { ComputationPool } from "../../apps/server/src/computation-pool.js";
 import { CorrectionSessionManager } from "../../apps/server/src/correction-session-manager.js";
@@ -359,7 +362,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     });
     const importer = new GameRevisionStore(
       pool,
-      "0019_regular_model_competition",
+      EXPECTED_MIGRATION_VERSION,
       undefined,
       undefined,
       async () => ({ ...batterHeightDataset(target), observations: [] }),
@@ -389,7 +392,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     const dataset = batterHeightDataset(document, 180);
     const importer = new GameRevisionStore(
       pool,
-      "0019_regular_model_competition",
+      EXPECTED_MIGRATION_VERSION,
       undefined,
       undefined,
       async () => dataset,
@@ -454,7 +457,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     if (sample === undefined) throw new Error("fixture");
     const wrong = new GameRevisionStore(
       pool,
-      "0019_regular_model_competition",
+      EXPECTED_MIGRATION_VERSION,
       undefined,
       undefined,
       async () => ({ ...dataset, gameId: "wrong" }),
@@ -614,7 +617,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       const document = pitchAnalysisFixture(2024);
       let projects = 0;
       try {
-        const failing = new GameRevisionStore(pool, "0019_regular_model_competition", undefined, {
+        const failing = new GameRevisionStore(pool, EXPECTED_MIGRATION_VERSION, undefined, {
           async project(...args) {
             projects += 1;
             if (
@@ -661,7 +664,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
 
   beforeAll(() => {
     pool = new Pool({ connectionString: dsn });
-    store = new GameRevisionStore(pool, "0019_regular_model_competition");
+    store = new GameRevisionStore(pool, EXPECTED_MIGRATION_VERSION);
   });
   beforeEach(async () => {
     await pool.query(
@@ -1455,7 +1458,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     };
     const withProfiles = new GameRevisionStore(
       pool,
-      "0019_regular_model_competition",
+      EXPECTED_MIGRATION_VERSION,
       undefined,
       undefined,
       undefined,
@@ -1469,7 +1472,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     ).toBe(0);
     const wrongSource = new GameRevisionStore(
       pool,
-      "0019_regular_model_competition",
+      EXPECTED_MIGRATION_VERSION,
       undefined,
       undefined,
       undefined,
@@ -1655,6 +1658,194 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(next.total).toEqual(pitch.total);
     expect(next.sourceHash).not.toBe(pitch.sourceHash);
     expect((await location.analyze({ season: 2024 }, "hp1")).total.pitches).toBe(0);
+
+    const otherPitcher = pitchAnalysisFixture(2024, "hp2");
+    const firstPitch = otherPitcher.events[2];
+    if (firstPitch?.kind !== "pitch") throw new Error("Expected a physical pitch");
+    const { pitchType, ...withoutType } = firstPitch.payload;
+    expect(pitchType).toBe("직구");
+    await store.importRevision(
+      parseStagingGameDocumentV2({
+        ...otherPitcher,
+        events: otherPitcher.events.map((event) =>
+          event === firstPitch
+            ? { ...firstPitch, payload: { ...withoutType, call: "called_strike" } }
+            : event,
+        ),
+      }),
+    );
+    const received = await batters.countFlow({ ...query, include: "terminal-details" }, "a1");
+    expect(received.scopePitches).toBe(8);
+    expect(received.groups.every((group) => group.stance === "all")).toBe(true);
+    const first = received.groups.find((group) => group.balls === 0 && group.strikes === 0);
+    expect(first).toMatchObject({ pitches: 2, swings: 1, swingRate: 0.5 });
+    expect(first?.types.find((type) => type.pitchType === null)).toMatchObject({
+      pitches: 1,
+      swings: 0,
+      swingRate: 0,
+    });
+    const unknown = await batters.analyze({ ...query, balls: 0, strikes: 0, pitchType: "" }, "a1");
+    expect(unknown.total).toMatchObject({ pitches: 1, swings: 0, swingRate: 0 });
+    expect(received.groups.find((group) => group.balls === 1 && group.strikes === 2)).toMatchObject(
+      {
+        pitches: 2,
+        swings: 2,
+        terminalDetails: [{ outcome: "swingingStrikeout", pitches: 2, rate: 1 }],
+      },
+    );
+    const conflict = parseStagingGameDocumentV2({
+      ...source,
+      metadata: { ...source.metadata, gameId: "analysis-2024-conflict" },
+    });
+    await store.importRevision(conflict);
+    const withHands = new BatterProfileRepository(pool, samples, resolveNaverPitcherHand);
+    const splitQuery = { ...query, split: "pitcher-hand", include: "terminal-details" } as const;
+    const rightQuery = { ...query, pitcherHand: "R", balls: 0, strikes: 0, pitchType: "" } as const;
+    expect((await withHands.countFlow(splitQuery, "a1")).byPitcherHand).toEqual({
+      left: [],
+      right: [],
+      unknownPitches: 12,
+    });
+    const beforeProfiles = await withHands.analyze(rightQuery, "a1");
+    expect(beforeProfiles.total.pitches).toBe(0);
+    const profiles = new PlayerBattingProfileRepository(pool);
+    for (const [game, pitcherId, labels] of [
+      [source, "hp1", ["좌투우타", "우타"]],
+      [otherPitcher, "hp2", ["우언좌타"]],
+      [conflict, "hp1", ["좌투우타", "우투우타"]],
+    ] as const) {
+      await profiles.importDataset({
+        gameId: game.metadata.gameId,
+        season: game.metadata.season,
+        sourceBundleHash: game.source.sourceBundleHash,
+        observations: labels.map((rawValue, index) => ({
+          playerId: pitcherId,
+          rawValue,
+          battingSide: null,
+          endpoint: "lineup",
+          sourcePath: `profile[${index}]`,
+        })),
+      });
+    }
+    const split = await withHands.countFlow(splitQuery, "a1");
+    const pitchCount = (groups: typeof split.groups | undefined) =>
+      groups?.reduce((total, group) => total + group.pitches, 0);
+    expect([
+      pitchCount(split.groups),
+      pitchCount(split.byPitcherHand?.left),
+      pitchCount(split.byPitcherHand?.right),
+      split.byPitcherHand?.unknownPitches,
+    ]).toEqual([12, 4, 4, 4]);
+    const right = await withHands.analyze(rightQuery, "a1");
+    expect(right.total).toMatchObject({ pitches: 1, swings: 0, swingRate: 0 });
+    expect(right.coverage.scopePitches).toBe(12);
+    expect(right.sourceHash).not.toBe(beforeProfiles.sourceHash);
+    expect(right.plateAppearances.total.pa).toBe(1);
+    expect((await withHands.analyze({ ...query, pitcherHand: "L" }, "a1")).total.pitches).toBe(4);
+  });
+
+  it("registers reviewed official pitcher hands only for the confirmed game source", async () => {
+    const pitcherId = "10001";
+    const pitcherName = "공식 근거 투수";
+    const fixture = pitchAnalysisFixture(2024, pitcherId);
+    const source = parseStagingGameDocumentV2({
+      ...fixture,
+      rosters: {
+        ...fixture.rosters,
+        home: {
+          ...fixture.rosters.home,
+          players: fixture.rosters.home.players.map((player) =>
+            player.playerId === "hp1"
+              ? { ...player, playerId: pitcherId, name: pitcherName }
+              : player,
+          ),
+        },
+      },
+    });
+    const gameId = source.metadata.gameId;
+    const sourceBundleHash = source.source.sourceBundleHash;
+    const otherGameId = "analysis-2024-official-hand-conflict";
+    await store.importRevision(source);
+    await store.importRevision(
+      parseStagingGameDocumentV2({
+        ...source,
+        metadata: { ...source.metadata, gameId: otherGameId },
+      }),
+    );
+    const profile = {
+      gameId,
+      sourceBundleHash,
+      pitcherId,
+      pitcherName,
+      reportedHand: "좌투좌타",
+      sourceUrl:
+        "https://www.koreabaseball.com/Record/Player/PitcherDetail/Total.aspx?playerId=10001",
+      checkedOn: "2026-11-22",
+    };
+    const repository = new OfficialPitcherHandRepository(pool, resolveNaverPitcherHand);
+    const batter = new BatterProfileRepository(
+      pool,
+      new BoundedReadCache<PitchOutcomeSnapshot>(1024 * 1024, 8, 60_000),
+      resolveNaverPitcherHand,
+    );
+    const query = { season: 2024, competition: "unknown" } as const;
+    const leftQuery = { ...query, pitcherHand: "L" } as const;
+    const before = await batter.analyze(leftQuery, "a1");
+    expect(before.total.pitches).toBe(0);
+    await expect(
+      repository.importProfile({ ...profile, sourceBundleHash: "a".repeat(64) }),
+    ).rejects.toThrow("일치하는 투구가 없습니다");
+    await expect(
+      repository.importProfile({ ...profile, pitcherName: "다른 선수" }),
+    ).rejects.toThrow("일치하는 투구가 없습니다");
+    await expect(
+      repository.importProfile({
+        ...profile,
+        sourceUrl: profile.sourceUrl.replace("10001", "10002"),
+      }),
+    ).rejects.toThrow("선수 ID와 대상 투수 ID가 다릅니다");
+    await expect(repository.importProfile(profile, true)).resolves.toEqual({
+      pitcherHand: "L",
+      pitches: 4,
+      added: false,
+    });
+    expect(await batter.analyze(leftQuery, "a1")).toEqual(before);
+    await expect(repository.importProfile(profile)).resolves.toEqual({
+      pitcherHand: "L",
+      pitches: 4,
+      added: true,
+    });
+    expect((await repository.importProfile(profile)).added).toBe(false);
+    await expect(
+      repository.importProfile({ ...profile, reportedHand: "우투좌타" }),
+    ).rejects.toThrow("이미 등록한 공식 투구 손의 근거가 다릅니다");
+
+    const after = await batter.analyze(leftQuery, "a1");
+    expect(after.total.pitches).toBe(4);
+    expect(after.sourceHash).not.toBe(before.sourceHash);
+
+    const raw = new PlayerBattingProfileRepository(pool);
+    const importRaw = (id: string, labels: string[]) =>
+      raw.importDataset({
+        gameId: id,
+        season: 2024,
+        sourceBundleHash,
+        observations: labels.map((rawValue, index) => ({
+          playerId: pitcherId,
+          rawValue,
+          battingSide: null,
+          endpoint: "lineup",
+          sourcePath: `profile[${index}]`,
+        })),
+      });
+    await importRaw(gameId, ["우타"]);
+    await importRaw(otherGameId, ["좌투우타", "우투우타"]);
+    await repository.importProfile({ ...profile, gameId: otherGameId });
+    const flow = await batter.countFlow({ ...query, split: "pitcher-hand" }, "a1");
+    expect(flow.scopePitches).toBe(8);
+    expect(flow.byPitcherHand?.left.map(({ pitches }) => pitches)).toEqual([1, 1, 1, 1]);
+    expect(flow.byPitcherHand?.right).toEqual([]);
+    expect(flow.byPitcherHand?.unknownPitches).toBe(4);
   });
 
   it("preserves full sequence before pair filtering and does not skip missing tracking", async () => {
@@ -2503,15 +2694,11 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     let calls = 0;
     const document = pitchAnalysisFixture(2024);
     try {
-      const failing = new GameRevisionStore(
-        pool,
-        "0019_regular_model_competition",
-        async (input) => {
-          calls += 1;
-          if (calls === 2) throw new Error("worker unavailable during verification");
-          return compileDocument(workers, input);
-        },
-      );
+      const failing = new GameRevisionStore(pool, EXPECTED_MIGRATION_VERSION, async (input) => {
+        calls += 1;
+        if (calls === 2) throw new Error("worker unavailable during verification");
+        return compileDocument(workers, input);
+      });
       await expect(failing.importRevision(document)).rejects.toThrow("worker unavailable");
       expect(calls).toBe(2);
       expect(
@@ -2523,7 +2710,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       ).toBe(0);
       const workerStore = new GameRevisionStore(
         pool,
-        "0019_regular_model_competition",
+        EXPECTED_MIGRATION_VERSION,
         (input) => compileDocument(workers, input),
         createRevisionProjectionComputation(workers),
       );
@@ -2788,7 +2975,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
 
   it("기록정정 경기는 구장 표기·미제공과 무관하게 날짜·원정/홈 팀으로 찾고 DH 후보를 보존한다", async () => {
     const { document, notice } = await recordCorrectionVenueFixture();
-    const repository = new RecordCorrectionRepository(pool, "0019_regular_model_competition");
+    const repository = new RecordCorrectionRepository(pool, EXPECTED_MIGRATION_VERSION);
     const first = await store.importRevision(document);
     expect(await repository.gameCandidates(notice)).toEqual([
       expect.objectContaining({ gameId: first.gameId, revision: 1, stadium: "대전(신)" }),
@@ -2843,7 +3030,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
         sourceRowIndex: notice.sourceRowIndex + 3,
         awayTeamName: "다른 원정팀",
       };
-      const repository = new RecordCorrectionRepository(pool, "0019_regular_model_competition");
+      const repository = new RecordCorrectionRepository(pool, EXPECTED_MIGRATION_VERSION);
       await seedVenueCorrectionNotice(repository, notice, specified, manual, unrelated);
       const unrelatedBefore = await repository.case(unrelated.noticeId);
       expect(unrelatedBefore).toMatchObject({ reasonCode: "awaiting_assessment" });
@@ -2989,11 +3176,8 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
 
   it("locks the current game through assessment save and rejects a late older assessment", async () => {
     const { document, notice } = await recordCorrectionVenueFixture();
-    const repository = new RecordCorrectionRepository(pool, "0019_regular_model_competition");
-    const earlierRepository = new RecordCorrectionRepository(
-      pool,
-      "0019_regular_model_competition",
-    );
+    const repository = new RecordCorrectionRepository(pool, EXPECTED_MIGRATION_VERSION);
+    const earlierRepository = new RecordCorrectionRepository(pool, EXPECTED_MIGRATION_VERSION);
     const first = await store.importRevision(document);
     await seedVenueCorrectionNotice(repository, notice);
 
@@ -3090,11 +3274,8 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     "rejects an empty candidate set after first import (already reassessed: %s)",
     async (reassessFirst) => {
       const { document, notice } = await recordCorrectionVenueFixture();
-      const repository = new RecordCorrectionRepository(pool, "0019_regular_model_competition");
-      const earlierRepository = new RecordCorrectionRepository(
-        pool,
-        "0019_regular_model_competition",
-      );
+      const repository = new RecordCorrectionRepository(pool, EXPECTED_MIGRATION_VERSION);
+      const earlierRepository = new RecordCorrectionRepository(pool, EXPECTED_MIGRATION_VERSION);
       await seedVenueCorrectionNotice(repository, notice);
 
       await using root = await mkdtempDisposable(path.join(tmpdir(), "kbo-first-matchup-"));
@@ -3146,7 +3327,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
 
   it("lets other same-day matchups publish while the assessed matchup waits to save", async () => {
     const { document, notice } = await recordCorrectionVenueFixture();
-    const repository = new RecordCorrectionRepository(pool, "0019_regular_model_competition");
+    const repository = new RecordCorrectionRepository(pool, EXPECTED_MIGRATION_VERSION);
     await seedVenueCorrectionNotice(repository, notice);
     // Commit shared catalogue rows for this season before opening the competing imports.
     await store.importRevision({
@@ -3160,7 +3341,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     const service = new RecordCorrectionService(repository, store, workspace, sessions);
     const gate = await pool.connect();
     const otherPool = new Pool({ connectionString: dsn, options: "-c lock_timeout=1500" });
-    const otherStore = new GameRevisionStore(otherPool, "0019_regular_model_competition");
+    const otherStore = new GameRevisionStore(otherPool, EXPECTED_MIGRATION_VERSION);
     let pending: Promise<RecordCorrectionCase> | undefined;
     let importing: ReturnType<GameRevisionStore["importRevision"]> | undefined;
     try {
@@ -3242,7 +3423,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
         sourceRowIndex: 2,
         doubleheaderNumber: 1,
       };
-      const repository = new RecordCorrectionRepository(pool, "0019_regular_model_competition");
+      const repository = new RecordCorrectionRepository(pool, EXPECTED_MIGRATION_VERSION);
       await seedVenueCorrectionNotice(repository, notice, manual, explicit);
       const first = await store.importRevision({
         ...document,
@@ -3340,7 +3521,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
 
   it("retries the stale post-publication assessment against a concurrent selection", async () => {
     const { document, notice } = await recordCorrectionLifecycleFixture();
-    const repository = new RecordCorrectionRepository(pool, "0019_regular_model_competition");
+    const repository = new RecordCorrectionRepository(pool, EXPECTED_MIGRATION_VERSION);
     await seedVenueCorrectionNotice(repository, notice);
     const first = await store.importRevision({
       ...document,
@@ -3396,7 +3577,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
   ) {
     await using root = await mkdtempDisposable(path.join(tmpdir(), "kbo-record-proof-"));
     const workspace = await StagingWorkspace.open(root.path);
-    const repository = new RecordCorrectionRepository(pool, "0019_regular_model_competition");
+    const repository = new RecordCorrectionRepository(pool, EXPECTED_MIGRATION_VERSION);
     const sessions = new CorrectionSessionManager(workspace);
     const service = new RecordCorrectionService(repository, store, workspace, sessions);
     try {
@@ -3915,7 +4096,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       connectionString: dsn,
       application_name: "draft-file-guard-test",
     });
-    const guardedStore = new GameRevisionStore(guardPool, "0019_regular_model_competition");
+    const guardedStore = new GameRevisionStore(guardPool, EXPECTED_MIGRATION_VERSION);
     const opened = Promise.withResolvers<undefined>();
     const release = Promise.withResolvers<undefined>();
     const publishing = guardedStore.withCurrentRevisionBase(first.gameId, original, async () => {
@@ -4502,7 +4683,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     "rechecks %s approval after archived workspace restoration and a restarted importer",
     async (mode) => {
       const { document, notice } = await recordCorrectionLifecycleFixture();
-      const repository = new RecordCorrectionRepository(pool, "0019_regular_model_competition");
+      const repository = new RecordCorrectionRepository(pool, EXPECTED_MIGRATION_VERSION);
       await seedVenueCorrectionNotice(repository, notice);
       const first = await store.importRevision({
         ...document,
@@ -4684,7 +4865,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
           await workspace.close();
           workspace = await StagingWorkspace.open(root.path);
           sessions = new CorrectionSessionManager(workspace);
-          const restarted = new RecordCorrectionRepository(pool, "0019_regular_model_competition");
+          const restarted = new RecordCorrectionRepository(pool, EXPECTED_MIGRATION_VERSION);
           service = new RecordCorrectionService(restarted, store, workspace, sessions);
           const errors: unknown[] = [];
           service.startPendingReconciliation((error) => errors.push(error));
@@ -4755,7 +4936,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
   );
 
   it("기록정정 source revision을 봉인하고 no-change와 append-only 검토 이력을 보장한다", async () => {
-    const repository = new RecordCorrectionRepository(pool, "0019_regular_model_competition");
+    const repository = new RecordCorrectionRepository(pool, EXPECTED_MIGRATION_VERSION);
     const importedGame = await store.importRevision(await recordCorrectionGolden());
     const dataset = recordCorrectionSeasonFixture();
     await repository.createJob(
@@ -5458,7 +5639,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
   it("registry는 공식 KBO identity, snapshot 공백, 비소속 event와 모호성을 보존한다", async () => {
     const document = await golden();
     await store.importRevision(document);
-    const repository = new RegistryRepository(pool, "0019_regular_model_competition");
+    const repository = new RegistryRepository(pool, EXPECTED_MIGRATION_VERSION);
     expect(await repository.seasonDateRange(2026)).toEqual({
       dateFrom: document.metadata.gameDate,
       dateTo: document.metadata.gameDate,
@@ -5585,7 +5766,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
   });
 
   it("구조적으로 완전한 개막 전 빈 등록 snapshot을 season revision으로 seal한다", async () => {
-    const repository = new RegistryRepository(pool, "0019_regular_model_competition");
+    const repository = new RegistryRepository(pool, EXPECTED_MIGRATION_VERSION);
     const dataset = parseRegistrySeasonDataset({
       season: 2024,
       dateFrom: "2024-03-09",
@@ -5832,15 +6013,16 @@ async function exitAfterSealing(root: string, gameId: string, documentHash: stri
       `
       import { Pool } from "pg";
       import { GameRevisionStore, RecordCorrectionRepository, StagingWorkspace } from "./packages/persistence/dist/index.js";
+      import { EXPECTED_MIGRATION_VERSION } from "./apps/server/dist/config.js";
       import { ImportJobManager } from "./apps/server/dist/jobs/import-job-manager.js";
       import { CorrectionSessionManager } from "./apps/server/dist/correction-session-manager.js";
       import { RecordCorrectionService } from "./apps/server/dist/record-correction-service.js";
       const [root, gameId, expectedDocumentHash] = process.argv.slice(1);
       const pool = new Pool({ connectionString: process.env.KBO_TEST_POSTGRES_DSN });
-      const store = new GameRevisionStore(pool, "0019_regular_model_competition");
+      const store = new GameRevisionStore(pool, EXPECTED_MIGRATION_VERSION);
       const workspace = await StagingWorkspace.open(root);
       const service = new RecordCorrectionService(
-        new RecordCorrectionRepository(pool, "0019_regular_model_competition"),
+        new RecordCorrectionRepository(pool, EXPECTED_MIGRATION_VERSION),
         store, workspace, new CorrectionSessionManager(workspace),
       );
       const job = new ImportJobManager(workspace, {

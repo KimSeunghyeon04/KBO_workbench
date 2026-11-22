@@ -32,6 +32,7 @@
     "registry:sync": "pnpm build:server && node apps/server/dist/maintenance/registry-sync.js",
     "maintenance:import-player-heights": "pnpm build:server && node apps/server/dist/maintenance/import-player-heights.js",
     "maintenance:import-player-batting-profiles": "pnpm build:server && node apps/server/dist/maintenance/import-player-batting-profiles.js",
+    "maintenance:import-official-pitcher-hand": "pnpm build:server && node apps/server/dist/maintenance/import-official-pitcher-hand.js",
     "analysis:train-pitch-quality": "pnpm build:server && node apps/server/dist/maintenance/train-pitch-quality.js",
     "analysis:train-matchup": "pnpm build:server && node apps/server/dist/maintenance/train-matchup.js",
     "analysis:train-park-environment": "pnpm build:server && node apps/server/dist/maintenance/train-park-environment.js",

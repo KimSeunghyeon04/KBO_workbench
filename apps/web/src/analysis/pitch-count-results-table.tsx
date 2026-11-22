@@ -1,13 +1,12 @@
 import { Fragment, useState } from "react";
 import {
   pitchCountTerminalOutcomes,
-  type PitchCountFlowGroup,
   type PitchCountOutcome,
   type PitchCountTerminalOutcome,
 } from "@kbo/contracts";
 import { outcomePercent } from "./pitch-outcome-presentation";
+import type { CountFlowSample } from "./pitch-count-tree";
 
-type Summary = Pick<PitchCountFlowGroup, "pitches" | "transitions" | "terminalDetails">;
 type TerminalParent = keyof typeof pitchCountTerminalOutcomes;
 const terminalLabels: Record<PitchCountTerminalOutcome, string> = {
   lookingStrikeout: "루킹 삼진",
@@ -25,13 +24,19 @@ const terminalLabels: Record<PitchCountTerminalOutcome, string> = {
 };
 const zero = { pitches: 0, rate: 0 };
 
-function Measurement({ value }: { value: { pitches: number; rate: number } | undefined }) {
+function Measurement({
+  value,
+  unit = "구",
+}: {
+  value: { pitches: number; rate: number } | undefined;
+  unit?: "구" | "회";
+}) {
   return value === undefined ? (
     "—"
   ) : (
     <>
-      {value.pitches.toLocaleString()}구{" "}
-      <span className="pitch-flow-result-rate">({outcomePercent(value.rate)})</span>
+      {value.pitches.toLocaleString()}
+      {unit} <span className="pitch-flow-result-rate">({outcomePercent(value.rate)})</span>
     </>
   );
 }
@@ -40,10 +45,12 @@ export function PitchCountResultsTable({
   balls,
   strikes,
   columns,
+  showSwingRate,
 }: {
   balls: number;
   strikes: number;
-  columns: readonly { label: string; sample: Summary | undefined }[];
+  columns: readonly { label: string; sample: CountFlowSample | undefined }[];
+  showSwingRate: boolean;
 }) {
   const [expanded, setExpanded] = useState<Record<TerminalParent, boolean>>({
     strikeout: false,
@@ -72,6 +79,23 @@ export function PitchCountResultsTable({
         </tr>
       </thead>
       <tbody>
+        {showSwingRate && (
+          <tr>
+            <th scope="row">스윙률</th>
+            {columns.map(({ label, sample }) => (
+              <td key={label}>
+                <Measurement
+                  unit="회"
+                  value={
+                    sample?.swings === undefined || sample.swingRate === undefined
+                      ? undefined
+                      : { pitches: sample.swings, rate: sample.swingRate }
+                  }
+                />
+              </td>
+            ))}
+          </tr>
+        )}
         {rows.map(({ kind, label }) => {
           const parent = kind === "strikeout" || kind === "inPlay" ? kind : undefined;
           const details =

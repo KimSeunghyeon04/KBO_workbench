@@ -587,6 +587,11 @@ export {
   PitchCountFlowQuerySchema,
   PitchCountFlowRowSchema,
   PitchCountFlowResponseSchema,
+  BatterCountFlowResponseSchema,
+  BatterCountFlowQuerySchema,
+  BatterCountFlowRowSchema,
+  BatterProfileQuerySchema,
+  PitcherHandSchema,
   PitchOutcomeRowSchema,
   TerminalPaRowSchema,
   PitchRateGroupSchema,
@@ -597,12 +602,18 @@ export {
   type PitchCountFlowQuery,
   type PitchCountFlowRow,
   type PitchCountFlowResponse,
+  type BatterCountFlowResponse,
+  type BatterCountFlowQuery,
+  type BatterCountFlowRow,
+  type BatterProfileQuery,
+  type PitcherHand,
   type PitchOutcomeRow,
   type TerminalPaRow,
   type PitchRateGroup,
   type PitchLocationPoint,
   type PitchLocationResponse,
 } from "./pitch-outcomes.js";
+export { parseOfficialPitcherHandProfile } from "./official-pitcher-hand.js";
 export {
   PitchArsenalGroupSchema,
   PitchCountFlowGroupSchema,
@@ -610,6 +621,7 @@ export {
   pitchCountTerminalOutcomes,
   type PitchArsenalGroup,
   type PitchCountFlowGroup,
+  type BatterCountFlowGroup,
   type PitchCountOutcome,
   type PitchCountTerminalOutcome,
 } from "./pitch-arsenal.js";

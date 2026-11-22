@@ -3,6 +3,9 @@ import {
   pitchCountOutcomes,
   pitchCountTerminalOutcomes,
   type AnalysisScope,
+  type BatterCountFlowQuery,
+  type BatterCountFlowResponse,
+  type BatterCountFlowRow,
   type PitchCountOutcome,
   type PitchCountFlowGroup,
   type PitchCountFlowQuery,
@@ -28,6 +31,7 @@ function emptyCounts(detailed: boolean) {
   return {
     transitions,
     details: detailed ? new Map<PitchCountTerminalOutcome, number>() : undefined,
+    swings: 0,
   };
 }
 type SampleCounts = ReturnType<typeof emptyCounts>;
@@ -90,8 +94,10 @@ function record(
   counts: SampleCounts,
   result: PitchCountOutcome,
   detail: PitchCountTerminalOutcome | undefined,
+  swing: boolean,
 ) {
   counts.transitions[result]++;
+  counts.swings += Number(swing);
   if (detail !== undefined) counts.details?.set(detail, (counts.details.get(detail) ?? 0) + 1);
 }
 
@@ -122,38 +128,90 @@ export function analyzePitchCountFlow(
   sourceHash: string,
   rows: readonly PitchCountFlowRow[],
 ): PitchCountFlowResponse {
-  const selected = query.cohort === "discipline" ? rows.filter((row) => row.eligible) : rows;
   return {
     query,
     pitcherId,
     scope,
     sourceHash,
-    scopePitches: rows.length,
-    excludedSituations: rows.length - selected.length,
-    groups: summarizePitchCountFlow(selected, query.include === "terminal-details"),
+    ...countFlowSamples(
+      query,
+      rows,
+      ({ stance }): Stance[] => (stance === "L" || stance === "R" ? ["all", stance] : ["all"]),
+      summary,
+    ),
   };
 }
 
-function summarizePitchCountFlow(
-  rows: readonly PitchCountFlowRow[],
-  detailed: boolean,
-): PitchCountFlowGroup[] {
+export function analyzeBatterCountFlow(
+  query: BatterCountFlowQuery,
+  batterId: string,
+  scope: AnalysisScope,
+  sourceHash: string,
+  rows: readonly BatterCountFlowRow[],
+): BatterCountFlowResponse {
+  const { groups, ...counts } = countFlowSamples(
+    query,
+    rows,
+    ({ pitcherHand }): Stance[] =>
+      query.split !== undefined && pitcherHand != null ? ["all", pitcherHand] : ["all"],
+    (counts) => {
+      const total = summary(counts);
+      return { ...total, swings: counts.swings, swingRate: counts.swings / total.pitches };
+    },
+  );
+  const forSide = (side: Stance) =>
+    groups
+      .filter((group) => group.stance === side)
+      .map((group) => ({ ...group, stance: "all" as const }));
+  const response = {
+    query,
+    batterId,
+    scope,
+    sourceHash,
+    ...counts,
+    groups: forSide("all"),
+  };
+  if (query.split === undefined) return response;
+  const left = forSide("L");
+  const right = forSide("R");
+  const knownPitches = [...left, ...right].reduce((total, group) => total + group.pitches, 0);
+  return {
+    ...response,
+    byPitcherHand: {
+      left,
+      right,
+      unknownPitches: counts.scopePitches - counts.excludedSituations - knownPitches,
+    },
+  };
+}
+
+function countFlowSamples<
+  Row extends PitchCountFlowRow,
+  S extends Stance,
+  Summary extends ReturnType<typeof summary>,
+>(
+  query: PitchCountFlowQuery,
+  rows: readonly Row[],
+  stancesFor: (row: Row) => readonly S[],
+  summarize: (counts: SampleCounts) => Summary,
+) {
+  const selected = query.cohort === "discipline" ? rows.filter((row) => row.eligible) : rows;
+  const detailed = query.include === "terminal-details";
   const groups = new Map<
     string,
     {
-      stance: Stance;
+      stance: S;
       balls: number;
       strikes: number;
       counts: SampleCounts;
       types: Map<string | null, SampleCounts>;
     }
   >();
-  for (const row of rows) {
+  for (const row of selected) {
     const result = outcome(row);
     const detail = detailed ? terminalOutcome(result, row) : undefined;
-    const stances: Stance[] =
-      row.stance === "L" || row.stance === "R" ? ["all", row.stance] : ["all"];
-    for (const stance of stances) {
+    const swing = "swing" in row && row.swing === true;
+    for (const stance of stancesFor(row)) {
       const key = JSON.stringify([stance, row.balls, row.strikes]);
       let group = groups.get(key);
       if (!group) {
@@ -166,31 +224,36 @@ function summarizePitchCountFlow(
         };
         groups.set(key, group);
       }
-      record(group.counts, result, detail);
+      record(group.counts, result, detail, swing);
       let counts = group.types.get(row.pitchType);
       if (!counts) {
         counts = emptyCounts(detailed);
         group.types.set(row.pitchType, counts);
       }
-      record(counts, result, detail);
+      record(counts, result, detail, swing);
     }
   }
-  return [...groups.values()]
+  const summaries = [...groups.values()]
     .sort(
       (a, b) =>
         compareCanonicalStrings(a.stance, b.stance) || a.strikes - b.strikes || a.balls - b.balls,
     )
     .map(({ counts, types, ...group }) => {
-      const total = summary(counts);
+      const total = summarize(counts);
       return {
         ...group,
         ...total,
         types: [...types]
           .sort(([a], [b]) => (a === null ? 1 : b === null ? -1 : compareCanonicalStrings(a, b)))
           .map(([pitchType, counts]) => {
-            const type = summary(counts);
+            const type = summarize(counts);
             return { pitchType, ...type, usageRate: type.pitches / total.pitches };
           }),
       };
     });
+  return {
+    scopePitches: rows.length,
+    excludedSituations: rows.length - selected.length,
+    groups: summaries,
+  };
 }

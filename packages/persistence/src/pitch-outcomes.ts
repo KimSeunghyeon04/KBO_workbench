@@ -8,6 +8,7 @@ import {
   PitchOutcomeRowSchema,
   TerminalPaRowSchema,
   type AnalysisScope,
+  type PitcherHand,
   type PitchOutcomeRow,
   type TerminalPaRow,
 } from "@kbo/contracts";
@@ -25,12 +26,15 @@ import {
   lastPitchesCteSql,
 } from "./analysis-pitch-input.js";
 import { readPitchOutcomeSources } from "./pitch-outcome-sources.js";
+import { readGamePitcherHands, type ResolvePitcherHand } from "./pitcher-hands.js";
+
+type WithPitcherHand<T> = T & { readonly pitcherHand?: PitcherHand | null };
 
 export interface PitchOutcomeSnapshot {
   readonly scope: AnalysisScope;
   readonly sourceHash: string;
-  readonly rows: readonly PitchOutcomeRow[];
-  readonly plateAppearances: readonly TerminalPaRow[];
+  readonly rows: readonly WithPitcherHand<PitchOutcomeRow>[];
+  readonly plateAppearances: readonly WithPitcherHand<TerminalPaRow>[];
 }
 
 export interface PitchOutcomeCache {
@@ -45,9 +49,10 @@ export async function readPitchOutcomes(
   actorId: string,
   role: "pitcher" | "batter",
   cache?: PitchOutcomeCache,
+  resolveHand?: ResolvePitcherHand,
 ) {
   const input = await withAnalysisSnapshot(pool, (client) =>
-    readPitchOutcomeInput(client, scope, actorId, role, cache),
+    readPitchOutcomeInput(client, scope, actorId, role, cache, resolveHand),
   );
   return finishPitchOutcomeInput(input, role, actorId, cache);
 }
@@ -59,13 +64,14 @@ export async function readPitchOutcomePair(
   actorId: string,
   role: "pitcher" | "batter",
   cache?: PitchOutcomeCache,
+  resolveHand?: ResolvePitcherHand,
 ) {
   const [first, second] = await withAnalysisSnapshot(
     pool,
     async (client) =>
       [
-        await readPitchOutcomeInput(client, firstScope, actorId, role, cache),
-        await readPitchOutcomeInput(client, secondScope, actorId, role, cache),
+        await readPitchOutcomeInput(client, firstScope, actorId, role, cache, resolveHand),
+        await readPitchOutcomeInput(client, secondScope, actorId, role, cache, resolveHand),
       ] as const,
   );
   return {
@@ -80,19 +86,52 @@ async function readPitchOutcomeInput(
   actorId: string,
   role: "pitcher" | "batter",
   cache?: PitchOutcomeCache,
+  resolveHand?: ResolvePitcherHand,
 ) {
   const source = cache === undefined ? undefined : await readPitchOutcomeSources(client, scope);
   const key =
     source === undefined
       ? undefined
-      : canonicalStringify([role, actorId, source.manifest, source.supplements]);
+      : canonicalStringify([
+          role,
+          actorId,
+          source.manifest,
+          source.supplements,
+          ...(resolveHand === undefined ? [] : ["pitcher-hands"]),
+        ]);
   const cached = key === undefined ? undefined : cache?.get(key);
   if (cached !== undefined) return { cached };
+  const outcomes = await readPitchOutcomeRows(client, scope, actorId, role);
   return {
     scope,
     manifest: source?.manifest ?? (await analysisSourceHash(client, scope)),
     key,
-    ...(await readPitchOutcomeRows(client, scope, actorId, role)),
+    ...(resolveHand === undefined
+      ? outcomes
+      : await withPitcherHands(client, outcomes, resolveHand)),
+  };
+}
+
+async function withPitcherHands(
+  client: PoolClient,
+  { rows, plateAppearances }: Awaited<ReturnType<typeof readPitchOutcomeRows>>,
+  resolve: ResolvePitcherHand,
+) {
+  const opponent = (pa: TerminalPaRow) => ({
+    ...pa,
+    pitcherId: pa.terminalPitcherId ?? pa.pitcherId,
+  });
+  const handFor = await readGamePitcherHands(
+    client,
+    [...rows, ...plateAppearances.map(opponent)],
+    resolve,
+  );
+  return {
+    rows: rows.map((row) => ({ ...row, pitcherHand: handFor(row) })),
+    plateAppearances: plateAppearances.map((row) => ({
+      ...row,
+      pitcherHand: handFor(opponent(row)),
+    })),
   };
 }
 

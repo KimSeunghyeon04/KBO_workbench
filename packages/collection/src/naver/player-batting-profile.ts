@@ -3,6 +3,7 @@ import {
   compareCanonicalStrings,
   parseGamePlayerBattingProfileDataset,
   type GamePlayerBattingProfileDataset,
+  type PitcherHand,
   type PlayerBattingProfileObservation,
 } from "@kbo/contracts";
 import { first, optionalText, record } from "./source-values.js";
@@ -80,4 +81,16 @@ export function extractNaverPlayerBattingProfiles(input: {
     sourceBundleHash: input.sourceBundleHash,
     observations: [...observations.values()],
   });
+}
+/** Resolve declarations for one pitcher in one game. Batting-only labels carry no throwing hand. */
+export function resolveNaverPitcherHand(declarations: readonly string[]): PitcherHand | null {
+  let hand: PitcherHand | null = null;
+  for (const raw of declarations) {
+    const declared = /^([좌우])(?:투|언|사)(?:[좌우양]타)?$/u.exec(raw.replace(/\s+/gu, ""))?.[1];
+    if (declared === undefined) continue;
+    const observed = declared === "좌" ? "L" : "R";
+    if (hand !== null && hand !== observed) return null;
+    hand = observed;
+  }
+  return hand;
 }

@@ -1,16 +1,20 @@
 import { createHash } from "node:crypto";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import {
+  BatterCountFlowResponseSchema,
+  BatterCountFlowQuerySchema,
+  BatterCountFlowRowSchema,
   canonicalStringify,
   PitchCountFlowQuerySchema,
   PitchCountFlowResponseSchema,
   PitchCountFlowRowSchema,
   pitchOutcomeScope,
   type PitchCountFlowQuery,
+  type BatterCountFlowQuery,
 } from "@kbo/contracts";
-import { analyzePitchCountFlow } from "@kbo/game-core";
+import { analyzeBatterCountFlow, analyzePitchCountFlow } from "@kbo/game-core";
 import {
   effectiveBattingSideSql,
   gameBattingProfileJoinSql,
@@ -18,6 +22,7 @@ import {
   pitchEligibilitySql,
 } from "./analysis-pitch-input.js";
 import { withAnalysisSnapshot } from "./analysis-snapshot.js";
+import { readGamePitcherHands, type ResolvePitcherHand } from "./pitcher-hands.js";
 import {
   ANALYSIS_GAME_WHERE,
   analysisScopeParameters,
@@ -31,17 +36,79 @@ export async function readPitchCountFlow(
 ) {
   const query = Value.Decode(PitchCountFlowQuerySchema, input);
   const scope = pitchOutcomeScope(query);
+  const sample = await withAnalysisSnapshot(pool, (client) =>
+    readCountFlowInput(client, scope, pitcherId, "pitcher"),
+  );
+  const rows = Value.Decode(Type.Array(PitchCountFlowRowSchema), sample.rows);
+  const sourceHash = hashCountFlow({ version: 1, manifest: sample.manifest, pitcherId, rows });
+  return Value.Decode(
+    PitchCountFlowResponseSchema,
+    analyzePitchCountFlow(query, pitcherId, scope, sourceHash, rows),
+  );
+}
+
+export async function readBatterCountFlow(
+  pool: Pool,
+  input: BatterCountFlowQuery,
+  batterId: string,
+  resolveHand?: ResolvePitcherHand,
+) {
+  const query = Value.Decode(BatterCountFlowQuerySchema, input);
+  const scope = pitchOutcomeScope(query);
   const { rows, manifest } = await withAnalysisSnapshot(pool, async (client) => {
-    const result = await client.query(
-      `WITH selected_games AS MATERIALIZED (
+    const sample = await readCountFlowInput(client, scope, batterId, "batter");
+    const targets = Value.Decode(batterPitchInputSchema, sample.rows);
+    const handFor =
+      query.split !== undefined && resolveHand !== undefined
+        ? await readGamePitcherHands(client, targets, resolveHand)
+        : undefined;
+    return {
+      rows: targets.map(({ pitcherId, ...row }) => ({
+        ...row,
+        ...(handFor === undefined ? {} : { pitcherHand: handFor({ ...row, pitcherId }) }),
+      })),
+      manifest: sample.manifest,
+    };
+  });
+  const sourceHash = hashCountFlow({ version: 1, manifest, batterId, rows });
+  return Value.Decode(
+    BatterCountFlowResponseSchema,
+    analyzeBatterCountFlow(query, batterId, scope, sourceHash, rows),
+  );
+}
+
+const batterPitchInputSchema = Type.Array(
+  Type.Object(
+    {
+      ...BatterCountFlowRowSchema.properties,
+      pitcherId: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
+    },
+    { additionalProperties: false },
+  ),
+);
+
+function hashCountFlow(input: Parameters<typeof canonicalStringify>[0]) {
+  return createHash("sha256").update(canonicalStringify(input)).digest("hex");
+}
+
+async function readCountFlowInput(
+  client: PoolClient,
+  scope: ReturnType<typeof pitchOutcomeScope>,
+  actorId: string,
+  role: "pitcher" | "batter",
+) {
+  const actorColumn = role === "pitcher" ? "pitcher_id" : "batter_id";
+  const result = await client.query(
+    `WITH selected_games AS MATERIALIZED (
         SELECT r.game_id,r.revision FROM analytics.current_analysis_games r WHERE ${ANALYSIS_GAME_WHERE}
       ), selected_pitches AS MATERIALIZED (
         SELECT p.game_id,p.revision,p.pitch_id,p.pitch_sequence,p.plate_appearance_event_id,
           p.inning,p.half,p.batter_id,p.pitcher_id,p.pitch_call,p.pitch_type,p.in_play,
           p.before_balls,p.before_strikes,p.after_balls,p.after_strikes,p.tracking_id
+          ${role === "batter" ? ",p.swing" : ""}
         FROM selected_games r CROSS JOIN LATERAL (
           SELECT p.* FROM analytics.current_pitches p
-          WHERE p.game_id=r.game_id AND p.revision=r.revision AND p.actual AND p.pitcher_id=$5 OFFSET 0
+          WHERE p.game_id=r.game_id AND p.revision=r.revision AND p.actual AND p.${actorColumn}=$5 OFFSET 0
         ) p
       ), selected_pas AS (
         SELECT DISTINCT game_id,revision,plate_appearance_event_id AS pa_id
@@ -66,6 +133,7 @@ export async function readPitchCountFlow(
         ${effectiveBattingSideSql} AS stance,p.before_balls AS balls,p.before_strikes AS strikes,
         p.after_balls AS "afterBalls",p.after_strikes AS "afterStrikes",p.pitch_call AS "pitchCall",
         p.in_play AS "inPlay",${pitchEligibilitySql} AS eligible,
+        ${role === "batter" ? 'p.swing,p.pitcher_id AS "pitcherId",' : ""}
         CASE WHEN pa.completed THEN
           CASE WHEN pa.result='hit_by_pitch' THEN
             CASE WHEN hbp.event_id=p.pitch_id AND p.inning=pa.inning AND p.half=pa.half
@@ -84,18 +152,10 @@ export async function readPitchCountFlow(
         ON t.game_id=p.game_id AND t.revision=p.revision AND t.tracking_id=p.tracking_id
       ${gameBattingProfileJoinSql("p")}
       ORDER BY p.game_id COLLATE "C",p.pitch_sequence`,
-      [...analysisScopeParameters(scope), pitcherId],
-    );
-    return {
-      rows: Value.Decode(Type.Array(PitchCountFlowRowSchema), result.rows),
-      manifest: await analysisSourceHash(client, scope),
-    };
-  });
-  const sourceHash = createHash("sha256")
-    .update(canonicalStringify({ version: 1, manifest, pitcherId, rows }))
-    .digest("hex");
-  return Value.Decode(
-    PitchCountFlowResponseSchema,
-    analyzePitchCountFlow(query, pitcherId, scope, sourceHash, rows),
+    [...analysisScopeParameters(scope), actorId],
   );
+  return {
+    rows: result.rows,
+    manifest: await analysisSourceHash(client, scope),
+  };
 }

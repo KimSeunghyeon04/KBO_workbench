@@ -1,10 +1,11 @@
 import type {
   AnalysisScope,
-  PitchOutcomeQuery,
+  BatterProfileQuery,
   PitchOutcomeRow,
   TerminalPaRow,
   TerminalBattingGroup,
   BatterProfileResponse,
+  PitcherHand,
 } from "@kbo/contracts";
 import {
   analyzePitchLocation,
@@ -47,33 +48,41 @@ function batting(key: string, rows: readonly TerminalPaRow[]): TerminalBattingGr
   };
 }
 export function analyzeBatterProfile(
-  query: PitchOutcomeQuery,
+  query: BatterProfileQuery,
   batterId: string,
   scope: AnalysisScope,
   sourceHash: string,
-  rows: readonly PitchOutcomeRow[],
-  pas: readonly TerminalPaRow[],
+  rows: readonly (PitchOutcomeRow & { pitcherHand?: PitcherHand | null })[],
+  pas: readonly (TerminalPaRow & { pitcherHand?: PitcherHand | null })[],
 ): BatterProfileResponse {
+  const { pitcherHand, ...pitchQuery } = query;
+  const pitches =
+    pitcherHand === undefined ? rows : rows.filter((row) => row.pitcherHand === pitcherHand);
+  const appearances =
+    pitcherHand === undefined ? pas : pas.filter((row) => row.pitcherHand === pitcherHand);
   const { pitcherId, arsenal, ...location } = analyzePitchLocation(
-    query,
+    pitchQuery,
     "",
     scope,
     sourceHash,
-    rows,
-    pas,
+    pitches,
+    appearances,
   );
   void pitcherId;
   void arsenal;
-  const own = pas.filter((p) => p.batterId === batterId),
+  const own = appearances.filter((p) => p.batterId === batterId),
     complete = own.filter((p) => p.completed && p.countsAsPa);
   // Official attribution follows the compiler's PA owner. A replacement batter's final pitch does not transfer its type.
-  const details = complete.map((pa) => ({
-    ...pa,
-    terminalType:
-      hasTerminalPitch(pa) && pa.terminalActual === true && pa.terminalBatterId === batterId
-        ? (pa.pitchType ?? "구종 미상")
-        : "미귀속",
-  }));
+  const details = complete.map(({ pitcherHand: observed, ...pa }) => {
+    void observed;
+    return {
+      ...pa,
+      terminalType:
+        hasTerminalPitch(pa) && pa.terminalActual === true && pa.terminalBatterId === batterId
+          ? (pa.pitchType ?? "구종 미상")
+          : "미귀속",
+    };
+  });
   const types = new Map<string, TerminalPaRow[]>();
   for (const pa of details) {
     const group = types.get(pa.terminalType) ?? [];
@@ -81,7 +90,7 @@ export function analyzeBatterProfile(
     types.set(pa.terminalType, group);
   }
   const speed = new Map<string, PitchOutcomeRow[]>();
-  for (const row of rows) {
+  for (const row of pitches) {
     if (!matchesPitchOutcome(row, query) || (query.cohort === "discipline" && !row.eligible))
       continue;
     const key =
@@ -92,12 +101,14 @@ export function analyzeBatterProfile(
     group.push(row);
     speed.set(key, group);
   }
-  const summarize = pitchOutcomeSummarizer(pas);
+  const summarize = pitchOutcomeSummarizer(appearances);
   return {
     ...location,
+    query,
     batterId,
     coverage: {
       ...location.coverage,
+      scopePitches: rows.length,
       automaticStrikeouts: own.filter(
         (p) => hasTerminalPitch(p) && p.terminalActual === false && p.result === "strikeout",
       ).length,

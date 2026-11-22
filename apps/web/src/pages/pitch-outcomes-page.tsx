@@ -6,10 +6,15 @@ import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import { Link } from "react-router-dom";
 import { Value } from "@sinclair/typebox/value";
 import {
+  BatterCountFlowQuerySchema,
+  BatterProfileQuerySchema,
   PitchOutcomeQuerySchema,
   PitchCountFlowQuerySchema,
+  type BatterCountFlowResponse,
+  type BatterProfileResponse,
   type PitchAnalysisCatalog,
   type PitchCountFlowResponse,
+  type PitchLocationResponse,
   type DisciplineCatalog,
 } from "@kbo/contracts";
 import { AnalysisScopeFields, analysisScopeSummary } from "../analysis/analysis-scope-fields";
@@ -32,7 +37,11 @@ import {
   batterCatalogQueryOptions,
 } from "../api/analysis-catalog-query-options";
 import { getPitchLocation, getBatterProfile } from "../api/pitch-outcomes-client";
-import { getPitchCountFlow, isCountFlowUnavailable } from "../api/pitch-count-flow-client";
+import {
+  getBatterCountFlow,
+  getPitchCountFlow,
+  isCountFlowUnavailable,
+} from "../api/pitch-count-flow-client";
 import { retryQuery } from "../api/query-retry";
 import "../styles/pitch-analysis.css";
 import "../styles/analysis-workspace.css";
@@ -53,7 +62,8 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
     { id: "overview", label: "코스·반응" },
     role === "pitcher"
       ? { id: "arsenal", label: "구종 배합" }
-      : { id: "terminal", label: "종결 성적" },
+      : { id: "count-response", label: "카운트별 대응" },
+    ...(role === "batter" ? ([{ id: "terminal", label: "종결 성적" }] as const) : []),
     { id: "period", label: "기간 비교" },
     { id: "sample", label: "표본 기준" },
   ] as const;
@@ -90,15 +100,24 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
     ...scope.options,
     cohort: params.get("cohort") ?? "all",
   };
-  const flowCandidate = { ...commonCandidate, include: "terminal-details" as const };
+  const flowSchema = role === "batter" ? BatterCountFlowQuerySchema : PitchCountFlowQuerySchema;
+  const outcomeSchema = role === "batter" ? BatterProfileQuerySchema : PitchOutcomeQuerySchema;
+  const flowCandidate = {
+    ...commonCandidate,
+    include: "terminal-details" as const,
+    ...(role === "batter" ? { split: "pitcher-hand" as const } : {}),
+  };
   const candidate = {
     ...commonCandidate,
     ...(params.has("balls") ? { balls: Number(params.get("balls")) } : {}),
     ...(params.has("strikes") ? { strikes: Number(params.get("strikes")) } : {}),
     ...(params.has("pitchType") ? { pitchType: params.get("pitchType") } : {}),
     ...(params.has("stance") ? { stance: params.get("stance") } : {}),
+    ...(role === "batter" && params.has("pitcherHand")
+      ? { pitcherHand: params.get("pitcherHand") }
+      : {}),
   };
-  const valid = scope.error === null && Value.Check(PitchOutcomeQuerySchema, candidate);
+  const valid = scope.error === null && Value.Check(outcomeSchema, candidate);
   const catalog = useQuery<
     PitchAnalysisCatalog | DisciplineCatalog,
     Error,
@@ -114,39 +133,41 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
   const id = params.get(role) ?? players?.[0]?.id ?? "";
   const canAnalyze = valid && id !== "";
   const isComparisonTab = activeTab === "period";
-  const isArsenalTab = activeTab === "arsenal";
-  const isOutcomeTab = !isComparisonTab && !isArsenalTab;
-  const flowValid = scope.error === null && Value.Check(PitchCountFlowQuerySchema, flowCandidate);
-  const activeValid = isArsenalTab ? flowValid : valid;
-  const analysis = useQuery({
+  const isFlowTab = activeTab === "arsenal" || activeTab === "count-response";
+  const isOutcomeTab = !isComparisonTab && !isFlowTab;
+  const flowTabLabel = role === "pitcher" ? "구종 배합" : "카운트별 대응";
+  const linksToDiscipline =
+    role === "batter" && !isFlowTab && params.get("pitchType") !== "" && !params.has("pitcherHand");
+  const flowValid = scope.error === null && Value.Check(flowSchema, flowCandidate);
+  const activeValid = isFlowTab ? flowValid : valid;
+  const analysis = useQuery<PitchLocationResponse | BatterProfileResponse>({
     queryKey: ["pitch-outcomes", role, id, candidate],
     meta: analysisQueryMeta(candidate),
     enabled: canAnalyze && isOutcomeTab,
     subscribed: isOutcomeTab,
-    queryFn: async ({ signal }) => {
-      if (!Value.Check(PitchOutcomeQuerySchema, candidate)) throw new Error("잘못된 투구 조건");
-      return role === "pitcher"
-        ? getPitchLocation(candidate, id, signal)
-        : getBatterProfile(candidate, id, signal);
-    },
+    queryFn: ({ signal }) =>
+      role === "pitcher"
+        ? getPitchLocation(Value.Decode(PitchOutcomeQuerySchema, candidate), id, signal)
+        : getBatterProfile(Value.Decode(BatterProfileQuerySchema, candidate), id, signal),
   });
-  const flow = useQuery<PitchCountFlowResponse>({
-    queryKey: ["pitch-count-flow", id, flowCandidate],
+  const flow = useQuery<PitchCountFlowResponse | BatterCountFlowResponse>({
+    queryKey: ["pitch-count-flow", role, id, flowCandidate],
     meta: analysisQueryMeta(flowCandidate),
-    enabled: isArsenalTab && flowValid && id !== "",
-    subscribed: isArsenalTab,
+    enabled: isFlowTab && flowValid && id !== "",
+    subscribed: isFlowTab,
     retry: (failures, error) => !isCountFlowUnavailable(error) && retryQuery(failures, error),
     refetchOnWindowFocus: (query) => !isCountFlowUnavailable(query.state.error),
     refetchOnReconnect: (query) => !isCountFlowUnavailable(query.state.error),
     queryFn: ({ signal }) => {
-      if (!Value.Check(PitchCountFlowQuerySchema, flowCandidate))
-        throw new Error("잘못된 구종 배합 조건");
-      return getPitchCountFlow(flowCandidate, id, signal);
+      if (!Value.Check(flowSchema, flowCandidate)) throw new Error("잘못된 카운트 전이 조건");
+      return role === "pitcher"
+        ? getPitchCountFlow(flowCandidate, id, signal)
+        : getBatterCountFlow(flowCandidate, id, signal);
     },
   });
-  const flowUnavailable = isArsenalTab && isCountFlowUnavailable(flow.error);
+  const flowUnavailable = isFlowTab && isCountFlowUnavailable(flow.error);
   const flowData = flowUnavailable ? undefined : flow.data;
-  const activeQueries = isArsenalTab
+  const activeQueries = isFlowTab
     ? flowUnavailable
       ? [catalog]
       : [flow, catalog]
@@ -156,12 +177,13 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
   const data = analysis.data;
   const conditions = [
     analysisScopeSummary(selected),
-    ...(activeTab !== "arsenal" && params.has("balls") ? [`${params.get("balls")}볼`] : []),
-    ...(activeTab !== "arsenal" && params.has("strikes")
-      ? [`${params.get("strikes")}스트라이크`]
+    ...(!isFlowTab && params.has("balls") ? [`${params.get("balls")}볼`] : []),
+    ...(!isFlowTab && params.has("strikes") ? [`${params.get("strikes")}스트라이크`] : []),
+    ...(!isFlowTab && params.has("pitchType") ? [params.get("pitchType") || "구종 미상"] : []),
+    ...(!isFlowTab && params.has("stance") ? [params.get("stance")] : []),
+    ...(!isFlowTab && role === "batter" && params.has("pitcherHand")
+      ? [params.get("pitcherHand") === "L" ? "좌완 상대" : "우완 상대"]
       : []),
-    ...(activeTab !== "arsenal" && params.has("pitchType") ? [params.get("pitchType")] : []),
-    ...(activeTab !== "arsenal" && params.has("stance") ? [params.get("stance")] : []),
     ...(params.get("cohort") === "discipline" ? ["선구안과 동일 상황"] : []),
   ].join(" · ");
   return (
@@ -179,7 +201,7 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
         advanced={
           <>
             <AnalysisScopeFields params={selected} onChange={change} />
-            {activeTab !== "arsenal" && (
+            {!isFlowTab && (
               <>
                 <label>
                   볼
@@ -210,7 +232,7 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
                   <input
                     value={params.get("pitchType") ?? ""}
                     onChange={(e) => change("pitchType", e.target.value)}
-                    placeholder="전체"
+                    placeholder={params.has("pitchType") ? "구종 미상" : "전체"}
                   />
                 </label>
                 <label>
@@ -225,6 +247,19 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
                     ))}
                   </select>
                 </label>
+                {role === "batter" && (
+                  <label>
+                    상대 투수
+                    <select
+                      value={params.get("pitcherHand") ?? ""}
+                      onChange={(e) => change("pitcherHand", e.target.value)}
+                    >
+                      <option value="">전체</option>
+                      <option value="L">좌완 상대</option>
+                      <option value="R">우완 상대</option>
+                    </select>
+                  </label>
+                )}
               </>
             )}
             <label>
@@ -274,13 +309,11 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
             onChange={(tab) => switchTab(tab)}
           />
         </div>
-        {activeTab !== "arsenal" && (
-          <PitchOutcomeQuickFilters params={params} onChange={setParams} />
-        )}
+        {!isFlowTab && <PitchOutcomeQuickFilters params={params} onChange={setParams} />}
         {!activeValid && <p role="alert">{scope.error ?? "투구 조건이 올바르지 않습니다."}</p>}
         <AnalysisQueryError queries={activeQueries} enabled={activeValid} />
         {catalog.isLoading ||
-        (isArsenalTab ? flow.isFetching : isOutcomeTab && analysis.isFetching) ? (
+        (isFlowTab ? flow.isFetching : isOutcomeTab && analysis.isFetching) ? (
           <p role="status">분석 자료를 읽고 있습니다.</p>
         ) : null}
         {scope.error === null && players?.length === 0 && (
@@ -362,7 +395,7 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
                 </div>
               </>
             )}
-            {activeTab === tab.id && tab.id === "arsenal" && flowUnavailable && (
+            {activeTab === tab.id && isFlowTab && flowUnavailable && (
               <div className="panel" role="alert">
                 <p>이 서버에서 구종 전이 자료를 사용할 수 없습니다.</p>
                 <button
@@ -371,18 +404,24 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
                   disabled={!flowValid || flow.isFetching}
                   onClick={() => void flow.refetch()}
                 >
-                  구종 배합 다시 시도
+                  {flowTabLabel} 다시 시도
                 </button>
               </div>
             )}
-            {activeTab === tab.id && tab.id === "arsenal" && flowData && (
+            {activeTab === tab.id && isFlowTab && flowData && (
               <PitchArsenalPanel
+                role={role}
                 groups={flowData.groups}
+                byPitcherHand={"byPitcherHand" in flowData ? flowData.byPitcherHand : undefined}
                 onSelect={(group, pitchType) => {
                   const next = new URLSearchParams(params);
-                  next.set("pitchType", pitchType);
-                  if (group.stance === "all") next.delete("stance");
-                  else next.set("stance", group.stance);
+                  next.set(role, id);
+                  if (pitchType === undefined) next.delete("pitchType");
+                  else next.set("pitchType", pitchType ?? "");
+                  const sideKey = role === "batter" ? "pitcherHand" : "stance";
+                  if (role === "batter") next.delete("stance");
+                  if (group.stance === "all") next.delete(sideKey);
+                  else next.set(sideKey, group.stance);
                   next.set("balls", String(group.balls));
                   next.set("strikes", String(group.strikes));
                   next.delete("locationCell");
@@ -454,23 +493,24 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
             )}
           </div>
         ))}
-        {((isArsenalTab ? flowData : data) || (isComparisonTab && canAnalyze)) && (
-          <>
-            <Link
-              className="outcome-related-link"
-              to={`/analysis/${role === "pitcher" ? "pitch-shape" : "batter-discipline"}?${new URLSearchParams({ season: String(season), ...scope.options, [role]: id, ...(role === "batter" ? sharedPitchSituationParams(params) : {}) })}`}
-            >
-              {role === "pitcher" ? "같은 범위 구질 보기" : "조건 일치 선구안 비교"}{" "}
-              <span aria-hidden="true">↗</span>
-            </Link>
-            {role === "batter" && (
-              <p className="analysis-caption">
-                구종·카운트·타석 좌우 조건을 유지합니다. 선구안은 자체 상황 제외 기준을 적용하므로
-                실제 투구 전체 표본과 분모가 다를 수 있습니다.
-              </p>
-            )}
-          </>
-        )}
+        {(role === "pitcher" || linksToDiscipline) &&
+          ((isFlowTab ? flowData : data) || (isComparisonTab && canAnalyze)) && (
+            <>
+              <Link
+                className="outcome-related-link"
+                to={`/analysis/${role === "pitcher" ? "pitch-shape" : "batter-discipline"}?${new URLSearchParams({ season: String(season), ...scope.options, [role]: id, ...(role === "batter" ? sharedPitchSituationParams(params) : {}) })}`}
+              >
+                {role === "pitcher" ? "같은 범위 구질 보기" : "조건 일치 선구안 비교"}{" "}
+                <span aria-hidden="true">↗</span>
+              </Link>
+              {role === "batter" && (
+                <p className="analysis-caption">
+                  구종·카운트·타석 좌우 조건을 유지합니다. 선구안은 자체 상황 제외 기준을 적용하므로
+                  실제 투구 전체 표본과 분모가 다를 수 있습니다.
+                </p>
+              )}
+            </>
+          )}
       </div>
     </div>
   );
