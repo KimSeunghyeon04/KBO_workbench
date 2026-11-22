@@ -11,6 +11,7 @@ import {
   parseStoredFindingEnvelopeV2,
   type CurrentWorkspaceEntry,
   type ImportTarget,
+  type StoredFindingEnvelopeV2,
   type StagingGameDocumentV2,
   type StoredFinding,
 } from "@kbo/contracts";
@@ -43,13 +44,23 @@ export type WorkspaceValidation = Static<typeof WorkspaceValidationSchema>;
 export function verifiedImportTarget(
   current: CurrentWorkspaceEntry,
   document: StagingGameDocumentV2,
+  envelope: StoredFindingEnvelopeV2,
 ): ImportTarget {
   if (current.documentHash === null) throw new Error("원장 document hash가 없습니다.");
   return {
     gameId: current.gameId,
     season: document.metadata.season,
     documentHash: current.documentHash,
+    artifact: { generation: current.generation, contentHash: current.contentHash },
     revision: document.revisionBase.kind === "new_game" ? 1 : document.revisionBase.revision + 1,
+    ...(envelope.recordCorrectionApprovals?.length || envelope.fromSealedDraft
+      ? {
+          recordCorrection: {
+            approvals: [...(envelope.recordCorrectionApprovals ?? [])],
+            ...(envelope.fromSealedDraft ? { fromSealedDraft: true as const } : {}),
+          },
+        }
+      : {}),
   };
 }
 
@@ -80,11 +91,11 @@ export async function readVerifiedDocument(
   return document;
 }
 
-export async function readVerifiedFindings(
+export async function readVerifiedDocumentEnvelope(
   root: string,
   current: CurrentWorkspaceEntry,
   document: StagingGameDocumentV2,
-): Promise<readonly StoredFinding[]> {
+): Promise<StoredFindingEnvelopeV2> {
   if (current.authority === "source_failure")
     throw new Error(`source failure에는 원장 finding이 없습니다: ${current.gameId}`);
   let envelope;
@@ -104,7 +115,7 @@ export async function readVerifiedFindings(
   if (hash(canonicalStringify({ document, findingEnvelope: envelope })) !== current.contentHash) {
     throw new Error(`current 원장 content hash 검증에 실패했습니다: ${current.gameId}`);
   }
-  return envelope.findings;
+  return envelope;
 }
 
 export async function validateWorkspaceEntry(
@@ -129,8 +140,9 @@ export async function validateWorkspaceEntry(
     findings = record.findingEnvelope.findings;
   } else {
     const document = await readVerifiedDocument(root, current);
-    findings = await readVerifiedFindings(root, current, document);
-    target = verifiedImportTarget(current, document);
+    const envelope = await readVerifiedDocumentEnvelope(root, current, document);
+    findings = envelope.findings;
+    target = verifiedImportTarget(current, document, envelope);
   }
   return {
     blockingFindings: findings.filter((finding) => finding.severity === "blocking").length,

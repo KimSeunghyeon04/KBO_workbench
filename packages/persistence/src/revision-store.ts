@@ -1,12 +1,18 @@
+import { createHash } from "node:crypto";
 import type {
   DatabaseGamesQuery,
   GameCatalogItem,
   GamePlayerHeightDataset,
   GamePlayerBattingProfileDataset,
+  ImportTarget,
   RevisionCatalog,
   StagingGameDocumentV2,
 } from "@kbo/contracts";
-import { compareCanonicalStrings, parseStagingGameDocumentV2 } from "@kbo/contracts";
+import {
+  canonicalStringify,
+  compareCanonicalStrings,
+  parseStagingGameDocumentV2,
+} from "@kbo/contracts";
 import {
   compileStagingGameDocumentV2,
   stagingDocumentHash,
@@ -20,6 +26,8 @@ import { resolvePlayerHeights } from "./player-height-supplement-repository.js";
 import { hydrateProjectionLedger } from "./projection-ledger.js";
 import { replayFromProjection, replaySourceFromProjection } from "./projection-replay.js";
 import { readProjection, writeProjection } from "./projection-repository.js";
+import { advanceMatchupGenerations, lockMatchupPublication } from "./record-correction-matchups.js";
+import { validateCorrectionPublication } from "./record-correction-publication.js";
 import { text } from "./projection-values.js";
 import {
   buildRelationalProjection,
@@ -103,8 +111,32 @@ export class GameRevisionStore {
       throw new PersistenceIntegrityError("선수 키 원문이 경기 문서의 출처와 다릅니다.");
     const client = await this.pool.connect();
     try {
-      await client.query("BEGIN");
+      await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
       await assertDatabaseContract(client, this.expectedMigrationVersion);
+      const publication = options.publication;
+      if (publication !== undefined) {
+        const target = publication.target;
+        if (
+          target.artifact === undefined ||
+          target.gameId !== document.metadata.gameId ||
+          target.documentHash !== documentHash ||
+          target.season !== document.metadata.season ||
+          target.revision !==
+            (document.revisionBase.kind === "new_game" ? 1 : document.revisionBase.revision + 1) ||
+          canonicalStringify(target.recordCorrection?.approvals ?? []) !==
+            canonicalStringify(options.recordCorrectionApprovals ?? []) ||
+          (target.recordCorrection?.fromSealedDraft === true) !==
+            (options.fromIndependentSealedDraft === true)
+        ) {
+          throw new RevisionConflictError("적재 요청과 봉인할 작업본이 다릅니다.");
+        }
+        await lockImportPublication(client, publication.jobId);
+        const committed = await readImportPublication(client, publication.jobId, target);
+        if (committed !== null) {
+          await client.query("COMMIT");
+          return committed;
+        }
+      }
       if (heights !== undefined) await writeGamePlayerHeights(client, heights);
       if (battingProfiles !== undefined)
         await writeGamePlayerBattingProfiles(client, battingProfiles);
@@ -165,10 +197,39 @@ export class GameRevisionStore {
         "UPDATE workbench.game_revisions SET sealed=TRUE, sealed_at=CURRENT_TIMESTAMP WHERE game_id=$1 AND revision=$2",
         [document.metadata.gameId, revision],
       );
+      const matchups = await lockMatchupPublication(
+        client,
+        document.metadata.gameId,
+        currentRevision,
+        revision,
+      );
+      await validateCorrectionPublication(
+        client,
+        document.metadata.gameId,
+        currentRevision,
+        documentHash,
+        matchups,
+        options.recordCorrectionApprovals ?? [],
+        options.fromIndependentSealedDraft === true,
+        options.verifiedMatchupGeneration,
+      );
+      await advanceMatchupGenerations(client, matchups);
       await client.query("UPDATE workbench.games SET current_revision=$2 WHERE game_id=$1", [
         document.metadata.gameId,
         revision,
       ]);
+      if (publication !== undefined) {
+        await client.query(
+          `INSERT INTO workbench.import_publications (job_id, game_id, revision, target_hash)
+           VALUES ($1,$2,$3,$4)`,
+          [
+            publication.jobId,
+            document.metadata.gameId,
+            revision,
+            importTargetHash(publication.target),
+          ],
+        );
+      }
       if (heights !== undefined)
         await resolvePlayerHeights(client, document.metadata.season, document.metadata.gameId);
       await client.query("COMMIT");
@@ -178,6 +239,27 @@ export class GameRevisionStore {
         documentHash,
         projectionHash: projection.projectionHash,
       };
+    } catch (error: unknown) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  public async importPublication(
+    jobId: string,
+    target: ImportTarget,
+  ): Promise<ImportedRevision | null> {
+    if (target.artifact === undefined) return null;
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+      await lockImportPublication(client, jobId);
+      // A prior owner may have committed while we waited. Read in a fresh statement.
+      const committed = await readImportPublication(client, jobId, target);
+      await client.query("COMMIT");
+      return committed;
     } catch (error: unknown) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
@@ -505,3 +587,54 @@ export type {
   StoredReplayRosterPlayer,
   StoredReplaySource,
 } from "./revision-types.js";
+
+function importTargetHash(target: ImportTarget): string {
+  return createHash("sha256").update(canonicalStringify(target)).digest("hex");
+}
+
+async function lockImportPublication(client: PoolClient, jobId: string): Promise<void> {
+  // The two-int advisory key space is separate from the matchup locks.
+  const key = createHash("sha256")
+    .update("import-publication:" + jobId)
+    .digest();
+  await client.query("SELECT pg_advisory_xact_lock($1::integer,$2::integer)", [
+    key.readInt32BE(0),
+    key.readInt32BE(4),
+  ]);
+}
+
+async function readImportPublication(
+  client: PoolClient,
+  jobId: string,
+  target: ImportTarget,
+): Promise<ImportedRevision | null> {
+  const rows = await client.query<{
+    game_id: string;
+    revision: number;
+    document_hash: string;
+    projection_hash: string;
+    target_hash: string;
+  }>(
+    `SELECT p.game_id,p.revision,p.target_hash,r.document_hash,r.projection_hash
+     FROM workbench.import_publications p
+     JOIN workbench.game_revisions r USING (game_id,revision)
+     WHERE p.job_id=$1 AND r.sealed`,
+    [jobId],
+  );
+  const row = rows.rows[0];
+  if (row === undefined) return null;
+  if (
+    row.target_hash !== importTargetHash(target) ||
+    row.game_id !== target.gameId ||
+    row.document_hash !== target.documentHash ||
+    row.revision !== target.revision
+  ) {
+    throw new RevisionConflictError("적재 작업이 이미 다른 작업본의 봉인과 연결됐습니다.");
+  }
+  return {
+    gameId: row.game_id,
+    revision: row.revision,
+    documentHash: row.document_hash,
+    projectionHash: row.projection_hash,
+  };
+}

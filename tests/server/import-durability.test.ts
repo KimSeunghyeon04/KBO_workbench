@@ -46,6 +46,61 @@ describe("적재 의도와 결과의 영속성", () => {
     expect(manager.history({}).activeJobs).toEqual([]);
     await manager.close();
   });
+  it("rejects a queued import when the same document carries a different approval", async () => {
+    const starting = Promise.withResolvers<undefined>();
+    const resume = Promise.withResolvers<undefined>();
+    const first = {
+      gameId: imported.gameId,
+      documentHash: imported.documentHash,
+      revision: 1,
+      season: document.metadata.season,
+      recordCorrection: {
+        generation: 1,
+        contentHash: "a".repeat(64),
+        approvals: [{ noticeId: "2025:0:1", actionSequence: 1 }],
+      },
+    };
+    const importer = vi.fn(async () => imported);
+    let target = first;
+    const manager = new ImportJobManager(
+      {
+        catalog: async () => {
+          starting.resolve(undefined);
+          await resume.promise;
+          return { games: [catalogItem(imported.gameId)] };
+        },
+        readImportTarget: async () => target,
+        readDocument: async () => document,
+      },
+      { importRevision: importer },
+    );
+    try {
+      const job = await manager.create({
+        gameId: imported.gameId,
+        idempotencyKey: "record-stage",
+        expectedDocumentHash: imported.documentHash,
+      });
+      await starting.promise;
+      target = {
+        ...first,
+        recordCorrection: {
+          generation: 2,
+          contentHash: "b".repeat(64),
+          approvals: [{ noticeId: "2025:0:1", actionSequence: 2 }],
+        },
+      };
+      resume.resolve(undefined);
+      expect(await manager.waitForTerminal(job.jobId)).toMatchObject({
+        status: "cancelled",
+        errorCategory: "domain",
+      });
+      expect(importer).not.toHaveBeenCalled();
+    } finally {
+      resume.resolve(undefined);
+      await manager.close();
+    }
+  });
+
   it("업그레이드 전에 보존한 실제 완료 이력은 재시작 후 조회하되 요청 키를 추측하지 않는다", async () => {
     await using directory = await mkdtempDisposable(path.join(tmpdir(), "kbo-import-retained-"));
     const storage = new ImportWorkspace(directory.path, async () => undefined);

@@ -232,10 +232,11 @@ export async function createRuntime(config: AppConfig, pool: Pool): Promise<AppR
     undefined,
     undefined,
     2,
-    async (gameId, revision, documentHash) => {
+    async (gameId, revision) => {
       if (config.analysisAutoRefresh) analysisPreparation.wake();
-      await recordCorrectionService.afterImport(gameId, revision, documentHash);
+      await recordCorrectionService.afterImport(gameId, revision);
     },
+    (document, target) => recordCorrectionService.verifyPublication(document, target),
   );
   await importJobs.restore();
   if (config.analysisAutoRefresh) analysisPreparation.start();
@@ -257,6 +258,15 @@ export async function createRuntime(config: AppConfig, pool: Pool): Promise<AppR
     },
   );
   await recordCorrectionJobs.start();
+  recordCorrectionService.startPendingReconciliation((error) =>
+    process.stderr.write(
+      JSON.stringify({
+        level: "error",
+        event: "record_correction_reconciliation_failed",
+        message: error instanceof Error ? error.message : "Unknown reconciliation error",
+      }) + "\n",
+    ),
+  );
   return {
     workspace,
     collectionJobs,
@@ -277,7 +287,7 @@ export async function createRuntime(config: AppConfig, pool: Pool): Promise<AppR
       await collectionJobs.close();
       await collectionOperations.close();
       await client.close();
-      recordCorrectionService.close();
+      await recordCorrectionService.close();
       await computation.close();
       await workspace.close();
     },

@@ -3,6 +3,11 @@ import { Value } from "@sinclair/typebox/value";
 
 import { StagingGameDocumentV2Schema, type StagingGameDocumentV2 } from "./game-document.js";
 
+import {
+  RecordCorrectionApprovalReferenceSchema,
+  type RecordCorrectionApprovalReference,
+} from "./record-correction.js";
+
 const strict = { additionalProperties: false } as const;
 const GameIdSchema = Type.String({ pattern: "^[A-Za-z0-9_-]+$", minLength: 1, maxLength: 100 });
 const HashSchema = Type.String({ pattern: "^[0-9a-f]{64}$" });
@@ -84,6 +89,11 @@ export const StoredFindingEnvelopeV2Schema = Type.Object(
   {
     schemaVersion: Type.Literal(2),
     findings: StoredFindingsSchema,
+    fromSealedDraft: Type.Optional(Type.Literal(true)),
+    independentRecordCorrection: Type.Optional(Type.Literal(true)),
+    recordCorrectionApprovals: Type.Optional(
+      Type.Array(RecordCorrectionApprovalReferenceSchema, { maxItems: 100 }),
+    ),
   },
   strict,
 );
@@ -235,6 +245,7 @@ export const StagingCorrectionCommitSchema = Type.Union([
   Type.Object(
     {
       baseAuthority: AuthoritySchema,
+      baseCurrentContentHash: Type.Optional(HashSchema),
       ...CorrectionCommitFields,
     },
     strict,
@@ -256,6 +267,15 @@ export const StagingCorrectionCommitSchema = Type.Union([
 const CorrectionJournalFields = {
   ...CorrectionCommitFields,
   journalId: Type.Optional(Type.String({ minLength: 1 })),
+  transition: Type.Optional(
+    Type.Object(
+      {
+        previous: Type.Union([CurrentWorkspaceEntrySchema, Type.Null()]),
+        target: CurrentWorkspaceEntrySchema,
+      },
+      strict,
+    ),
+  ),
   beforeDocument: StagingGameDocumentV2Schema,
   createdAt: DateTimeSchema,
 } as const;
@@ -264,6 +284,7 @@ export const CorrectionJournalSchema = Type.Union([
   Type.Object(
     {
       baseAuthority: AuthoritySchema,
+      baseCurrentContentHash: Type.Optional(HashSchema),
       ...CorrectionJournalFields,
     },
     strict,
@@ -304,6 +325,9 @@ export interface StoredFinding {
 }
 
 export interface StoredFindingEnvelopeV2 {
+  readonly independentRecordCorrection?: true;
+  readonly fromSealedDraft?: true;
+  readonly recordCorrectionApprovals?: readonly RecordCorrectionApprovalReference[];
   readonly schemaVersion: 2;
   readonly findings: readonly StoredFinding[];
 }
@@ -333,7 +357,7 @@ interface StagingCorrectionCommitFields {
 
 export type StagingCorrectionCommit = StagingCorrectionCommitFields &
   (
-    | { readonly baseAuthority: "staging" | "quarantine" }
+    | { readonly baseAuthority: "staging" | "quarantine"; readonly baseCurrentContentHash?: string }
     | {
         readonly baseAuthority: "superseded";
         readonly baseSnapshotId: string;
@@ -343,6 +367,10 @@ export type StagingCorrectionCommit = StagingCorrectionCommitFields &
 
 export type CorrectionJournal = StagingCorrectionCommit & {
   readonly journalId?: string;
+  readonly transition?: {
+    readonly previous: CurrentWorkspaceEntry | null;
+    readonly target: CurrentWorkspaceEntry;
+  };
   readonly beforeDocument: StagingGameDocumentV2;
   readonly createdAt: string;
 };

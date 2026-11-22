@@ -1,4 +1,5 @@
 import type {
+  RecordCorrectionApprovalReference,
   RecordCorrectionCase,
   RecordCorrectionCaseStatus,
   RecordCorrectionJob,
@@ -13,14 +14,22 @@ import { RecordCorrectionCases } from "./record-correction-cases.js";
 import { RecordCorrectionJobs } from "./record-correction-jobs.js";
 import { RecordCorrectionSources } from "./record-correction-sources.js";
 import type {
+  RecordCorrectionApprovalInput,
+  RecordCorrectionApprovalEvidence,
+  RecordCorrectionMatchup,
+  RecordCorrectionMatchupContext,
   RecordCorrectionAssessmentInput,
+  RecordCorrectionAssessmentBasis,
   RecordCorrectionGameCandidate,
   RecordCorrectionImportedSeason,
   RecordCorrectionResumableJob,
 } from "./record-correction-types.js";
 export {
   RecordCorrectionStaleError,
+  type RecordCorrectionApprovalEvidence,
+  type RecordCorrectionMatchupContext,
   type RecordCorrectionAssessmentInput,
+  type RecordCorrectionAssessmentBasis,
   type RecordCorrectionGameCandidate,
   type RecordCorrectionImportedSeason,
   type RecordCorrectionResumableJob,
@@ -32,7 +41,7 @@ export class RecordCorrectionRepository {
   public constructor(pool: Pool, expectedMigrationVersion: string) {
     this.jobsStore = new RecordCorrectionJobs(pool, expectedMigrationVersion);
     this.sources = new RecordCorrectionSources(pool, expectedMigrationVersion);
-    this.cases = new RecordCorrectionCases(pool, this.sources);
+    this.cases = new RecordCorrectionCases(pool);
   }
   public async seasonsWithSealedGames(): Promise<number[]> {
     return this.jobsStore.seasonsWithSealedGames();
@@ -96,6 +105,16 @@ export class RecordCorrectionRepository {
     return this.sources.currentNotice(noticeId);
   }
 
+  public async assessmentBasis(
+    notice: RecordCorrectionNotice,
+  ): Promise<RecordCorrectionAssessmentBasis> {
+    return this.cases.assessmentBasis(notice);
+  }
+
+  public async pendingNoticeIds(after: string, limit: number, season?: number): Promise<string[]> {
+    return this.cases.pendingNoticeIds(after, limit, season);
+  }
+
   public async seasonHasPendingAssessments(season: number): Promise<boolean> {
     return this.cases.seasonHasPendingAssessments(season);
   }
@@ -111,32 +130,28 @@ export class RecordCorrectionRepository {
     return this.cases.reviewAction(noticeId, request);
   }
 
-  public async markProposalApplied(input: {
-    readonly noticeId: string;
-    readonly caseVersion: number;
-    readonly sessionId: string;
-    readonly proposalHash: string;
-    readonly documentHash: string;
-  }): Promise<void> {
+  public async matchupContext(
+    notice: RecordCorrectionMatchup,
+  ): Promise<RecordCorrectionMatchupContext> {
+    return this.cases.matchupContext(notice);
+  }
+
+  public async approvalEvidence(
+    references: readonly RecordCorrectionApprovalReference[],
+  ): Promise<RecordCorrectionApprovalEvidence[]> {
+    return this.cases.approvalEvidence(references);
+  }
+
+  public async markProposalApplied(
+    input: RecordCorrectionApprovalInput,
+  ): Promise<RecordCorrectionApprovalReference> {
     return this.cases.markProposalApplied(input);
   }
 
-  public async markResolvedIfImported(
-    gameId: string,
-    revision: number,
-    documentHash: string,
-  ): Promise<string[]> {
-    return this.cases.markResolvedIfImported(gameId, revision, documentHash);
-  }
-
-  public async markResolvedAfterReassessment(input: {
-    readonly noticeId: string;
-    readonly caseVersion: number;
-    readonly gameId: string;
-    readonly revision: number;
-    readonly documentHash: string;
-  }): Promise<boolean> {
-    return this.cases.markResolvedAfterReassessment(input);
+  public async markProposalBundle(
+    input: RecordCorrectionApprovalInput,
+  ): Promise<RecordCorrectionApprovalReference[]> {
+    return this.cases.markProposalBundle(input);
   }
 
   public async summary(nextScheduledAt: string | null): Promise<RecordCorrectionSummary> {
@@ -151,6 +166,13 @@ export class RecordCorrectionRepository {
     } = {},
   ): Promise<RecordCorrectionCase[]> {
     return this.cases.listCases(filters);
+  }
+
+  public async listCasesForImport(
+    gameId: string,
+    revision: number,
+  ): Promise<RecordCorrectionCase[]> {
+    return this.cases.listCasesForImport(gameId, revision);
   }
 
   public async listCaseSummaries(
@@ -176,3 +198,5 @@ export class RecordCorrectionRepository {
     return this.jobsStore.jobs();
   }
 }
+
+export { matchesRecordCorrectionDoubleheader } from "./record-correction-matchups.js";

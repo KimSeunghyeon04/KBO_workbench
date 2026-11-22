@@ -120,7 +120,7 @@ export class WorkspaceCurrentStore {
     return current;
   }
 
-  private assertCurrentEntryContext(current: CurrentWorkspaceEntry, gameId: string): void {
+  public assertCurrentEntryContext(current: CurrentWorkspaceEntry, gameId: string): void {
     if (current.gameId !== gameId) {
       throw new Error(`current manifest gameId가 파일 문맥과 다릅니다: ${gameId}`);
     }
@@ -144,6 +144,7 @@ export class WorkspaceCurrentStore {
   public async performCurrentTransition(
     previous: CurrentWorkspaceEntry | null,
     target: CurrentWorkspaceEntry | null,
+    transitionId: string = randomUUID(),
   ): Promise<void> {
     await this.verifyLock();
     const gameId = target?.gameId ?? previous?.gameId;
@@ -156,7 +157,6 @@ export class WorkspaceCurrentStore {
       this.assertCurrentEntryContext(target, gameId);
       await this.readCurrentFindings(target);
     }
-    const transitionId = randomUUID();
     const journal: WorkspaceTransitionJournal = {
       schemaVersion: 1,
       transitionId,
@@ -173,11 +173,21 @@ export class WorkspaceCurrentStore {
 
   private async rollForwardWorkspaceTransition(journal: WorkspaceTransitionJournal): Promise<void> {
     this.assertWorkspaceTransitionContext(journal);
-    if (journal.target !== null) await this.readCurrentFindings(journal.target);
-    await this.writeCurrentEntry(journal.gameId, journal.target);
+    const actual = await this.readCurrentEntry(journal.gameId);
+    if (sameCurrentEntry(actual, journal.previous)) {
+      if (journal.target !== null) await this.readCurrentFindings(journal.target);
+      await this.writeCurrentEntry(journal.gameId, journal.target);
+    } else if (!sameCurrentEntry(actual, journal.target) && journal.target !== null) {
+      throw new WorkspacePersistenceBlockedError(
+        `저널의 이전·목표 작업본과 현재 작업본이 다릅니다: ${journal.gameId}`,
+      );
+    }
+    // A delayed cleanup can archive its own former artifact, never a later current.
     if (
       journal.previous !== null &&
-      journal.previous.artifactPath !== journal.target?.artifactPath
+      journal.previous.artifactPath !== journal.target?.artifactPath &&
+      (sameCurrentEntry(actual, journal.previous) ||
+        journal.previous.artifactPath !== actual?.artifactPath)
     ) {
       await this.archiveCurrentArtifact(journal.previous);
     }
@@ -219,19 +229,25 @@ export class WorkspaceCurrentStore {
     await removeEmptyDirectory(path.dirname(source));
   }
 
-  public async recoverWorkspaceTransitions(): Promise<void> {
+  public async recoverWorkspaceTransitions(gameId?: string): Promise<void> {
     const directory = path.join(this.root, "journals");
     const entries = (await readdir(directory, { withFileTypes: true }))
       .filter(
         (entry) =>
-          entry.isFile() && entry.name.startsWith("workspace-") && entry.name.endsWith(".json"),
+          entry.isFile() &&
+          entry.name.startsWith(gameId === undefined ? "workspace-" : `workspace-${gameId}-`) &&
+          entry.name.endsWith(".json"),
       )
       .sort((left, right) => compareCanonicalStrings(left.name, right.name));
     for (const entry of entries) {
       const journalPath = path.join(directory, entry.name);
-      const journal = parseWorkspaceTransitionJournal(
-        JSON.parse(await readFile(journalPath, "utf8")) as unknown,
-      );
+      const contents = await readFile(journalPath, "utf8").catch((error: unknown) => {
+        if (gameId !== undefined && isMissing(error)) return null;
+        throw error;
+      });
+      if (contents === null) continue;
+      const journal = parseWorkspaceTransitionJournal(JSON.parse(contents) as unknown);
+      if (gameId !== undefined && journal.gameId !== gameId) continue;
       await this.rollForwardWorkspaceTransition(journal);
       await unlink(journalPath);
     }
@@ -304,7 +320,7 @@ export class WorkspaceCurrentStore {
   }
 }
 
-function sameCurrentEntry(
+export function sameCurrentEntry(
   left: CurrentWorkspaceEntry | null,
   right: CurrentWorkspaceEntry | null,
 ): boolean {

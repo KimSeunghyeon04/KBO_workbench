@@ -30,6 +30,7 @@ import type {
 import type {
   CorrectionResult,
   BuiltRecordCorrectionProposal,
+  RecordCorrectionAfterFact,
   RecordCorrectionProposalBinding,
 } from "@kbo/correction";
 import type { ReplayResult } from "@kbo/game-core";
@@ -119,6 +120,14 @@ export type Computation =
     }
   | { kind: "projection_hash"; tables: ProjectionTables; version: ProjectionVersion }
   | {
+      kind: "record_correction_facts";
+      document: StagingGameDocumentV2;
+      targets: readonly {
+        notice: RecordCorrectionNotice;
+        binding: RecordCorrectionProposalBinding;
+      }[];
+    }
+  | {
       kind: "proposal";
       document: StagingGameDocumentV2;
       notice: RecordCorrectionNotice;
@@ -170,6 +179,7 @@ export type ComputationResult =
   | { kind: "projection_hash"; value: string }
   | { kind: "record_correction_match"; value: RecordCorrectionMatchCandidate[] }
   | { kind: "proposal"; value: BuiltRecordCorrectionProposal }
+  | { kind: "record_correction_facts"; value: RecordCorrectionAfterFact[][] }
   | { kind: "source"; value: SourceProjection }
   | { kind: "pitch_reference"; value: PitchReference["reference"] }
   | { kind: "pitch_calibration"; value: PitchCalibrationSeason }

@@ -173,6 +173,7 @@ export class KboRecordCorrectionCollector {
     const dataset = parseRecordCorrectionSeasonDataset({
       season: options.season,
       collectedAt: latestCollectedAt(sourcePages),
+      expectedSeriesIds: seriesOptions.map(({ value }) => Number(value)),
       sourcePages: sourcePages.sort((left, right) =>
         compareCanonicalStrings(left.requestKey, right.requestKey),
       ),

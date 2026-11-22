@@ -153,11 +153,22 @@ export const RecordCorrectionSeasonDatasetSchema = Type.Object(
   {
     season: Type.Integer({ minimum: 1982, maximum: 9999 }),
     collectedAt: DateTimeSchema,
+    expectedSeriesIds: Type.Optional(
+      Type.Array(Type.Integer({ minimum: 0 }), { minItems: 1, uniqueItems: true }),
+    ),
     sourcePages: Type.Array(RecordCorrectionSourcePageSchema, { minItems: 1 }),
     notices: Type.Array(RecordCorrectionNoticeSchema),
   },
   strict,
 );
+
+export const RecordCorrectionApprovalReferenceSchema = Type.Object(
+  { noticeId: IdSchema, actionSequence: Type.Integer({ minimum: 1 }) },
+  strict,
+);
+export type RecordCorrectionApprovalReference = Static<
+  typeof RecordCorrectionApprovalReferenceSchema
+>;
 
 export const RecordCorrectionCaseStatusSchema = Type.Union([
   Type.Literal("action_required"),

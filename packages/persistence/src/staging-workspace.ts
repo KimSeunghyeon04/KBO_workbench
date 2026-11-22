@@ -8,7 +8,11 @@ import { AnalysisModelJobWorkspace } from "./analysis-model-job-workspace.js";
 import { AnalysisPreparationWorkspace } from "./analysis-preparation-workspace.js";
 import { readImmutableSourceBundle } from "./source-bundle-reader.js";
 import { saveImmutableSourceBundle, type ImmutableSourceBundle } from "./source-bundle-store.js";
-import { WorkspaceCurrentStore, snapshotContentHash } from "./workspace-current-store.js";
+import {
+  WorkspaceCurrentStore,
+  sameCurrentEntry,
+  snapshotContentHash,
+} from "./workspace-current-store.js";
 import { workspaceDisplaySummary } from "./workspace-display-summary.js";
 import { StaleStagingDocumentError, WorkspacePersistenceBlockedError } from "./workspace-errors.js";
 import {
@@ -40,6 +44,8 @@ import {
   type GameCatalog,
   type GameCatalogItem,
   type ImportTarget,
+  type RecordCorrectionApprovalReference,
+  type StoredFindingEnvelopeV2,
   type StagingCorrectionCommit,
   type StagingGameDocumentV2,
   type StoredFinding,
@@ -73,7 +79,7 @@ import { recoverWorkspaceTemporaryFiles } from "./workspace-temporary-files.js";
 import { assertGameId, assertSeason } from "./workspace-path-policy.js";
 import {
   readVerifiedDocument,
-  readVerifiedFindings,
+  readVerifiedDocumentEnvelope,
   verifiedImportTarget,
 } from "./workspace-validation.js";
 
@@ -83,14 +89,20 @@ export interface SupersededDocumentSnapshot {
   readonly snapshotId: string;
   readonly document: StagingGameDocumentV2;
   readonly findings: readonly StoredFinding[];
+  readonly recordCorrectionApprovals?: readonly RecordCorrectionApprovalReference[];
+  readonly independentRecordCorrection?: true;
   readonly currentContentHash: string | null;
+  readonly fromSealedDraft?: true;
 }
 
 export interface CurrentDocumentSnapshot {
+  readonly contentHash?: string;
   readonly authority: "staging" | "quarantine";
   readonly season: number;
   readonly document: StagingGameDocumentV2;
   readonly findings: readonly StoredFinding[];
+  readonly recordCorrectionApprovals?: readonly RecordCorrectionApprovalReference[];
+  readonly independentRecordCorrection?: true;
 }
 
 export class StagingWorkspace {
@@ -220,6 +232,10 @@ export class StagingWorkspace {
     document: StagingGameDocumentV2,
     findings: readonly StoredFinding[],
     expectedToken?: string | null,
+    provenance?: Pick<
+      StoredFindingEnvelopeV2,
+      "recordCorrectionApprovals" | "fromSealedDraft" | "independentRecordCorrection"
+    >,
   ): Promise<void> {
     const parsed = parseStagingGameDocumentV2(document);
     const storedFindings = parseStoredFindings(findings);
@@ -231,13 +247,24 @@ export class StagingWorkspace {
       throw new Error("staging에는 차단 finding이 있는 문서를 저장할 수 없습니다.");
     }
     await this.saveOriginalIfAbsent(parsed, storedFindings);
-    await this.transitionDocument("staging", parsed, storedFindings, false, expectedToken);
+    await this.transitionDocument(
+      "staging",
+      parsed,
+      storedFindings,
+      false,
+      expectedToken,
+      provenance,
+    );
   }
 
   public async saveQuarantine(
     document: StagingGameDocumentV2,
     findings: readonly StoredFinding[],
     expectedToken?: string | null,
+    provenance?: Pick<
+      StoredFindingEnvelopeV2,
+      "recordCorrectionApprovals" | "fromSealedDraft" | "independentRecordCorrection"
+    >,
   ): Promise<void> {
     const parsed = parseStagingGameDocumentV2(document);
     const storedFindings = parseStoredFindings(findings);
@@ -249,7 +276,14 @@ export class StagingWorkspace {
       throw new Error("quarantine에는 차단 finding이 최소 하나 필요합니다.");
     }
     await this.saveOriginalIfAbsent(parsed, storedFindings);
-    await this.transitionDocument("quarantine", parsed, storedFindings, false, expectedToken);
+    await this.transitionDocument(
+      "quarantine",
+      parsed,
+      storedFindings,
+      false,
+      expectedToken,
+      provenance,
+    );
   }
 
   /** Compile once before publishing a reopened sealed revision as a correction draft. */
@@ -261,7 +295,16 @@ export class StagingWorkspace {
       ? "quarantine"
       : "staging";
     await this.saveOriginalIfAbsent(parsed, findings);
-    await this.transitionDocument(authority, parsed, findings);
+    await this.transitionDocument(
+      authority,
+      parsed,
+      findings,
+      false,
+      undefined,
+      parsed.revisionBase.kind === "sealed_revision"
+        ? { fromSealedDraft: true, independentRecordCorrection: true }
+        : undefined,
+    );
   }
 
   /** Resume a saved correction without replacing its edits, findings or sealed base. */
@@ -280,7 +323,16 @@ export class StagingWorkspace {
       ? "quarantine"
       : "staging";
     await this.saveOriginalIfAbsent(parsed, storedFindings);
-    await this.transitionDocument(authority, parsed, storedFindings, true);
+    await this.transitionDocument(
+      authority,
+      parsed,
+      storedFindings,
+      true,
+      undefined,
+      parsed.revisionBase.kind === "sealed_revision"
+        ? { fromSealedDraft: true, independentRecordCorrection: true }
+        : undefined,
+    );
     const current = await this.readCurrentDocumentSnapshot(parsed.metadata.gameId);
     if (current === null)
       throw new StaleStagingDocumentError("교정 초안을 여는 동안 current 원장이 변경되었습니다.");
@@ -297,6 +349,7 @@ export class StagingWorkspace {
     assertGameId(gameId);
     if (season !== null) assertSeason(season);
     await this.verifyLock();
+    await this.recoverGameTransitions(gameId);
     const previous = await this.currentStorage.readCurrentEntry(gameId);
     this.assertCollectionToken(previous, expectedToken);
     const generation = await this.currentStorage.nextGeneration(gameId, previous);
@@ -407,12 +460,14 @@ export class StagingWorkspace {
       throw new Error(`원장 current manifest에 season이 없습니다: ${gameId}`);
     }
     const document = await this.readCurrentDocument(current);
-    const findings = await this.readDocumentFindings(current, document);
+    const envelope = await this.readDocumentEnvelope(current, document);
     return {
+      ...approvalMetadata(envelope),
+      contentHash: current.contentHash,
       authority: current.authority === "ready" ? "staging" : "quarantine",
       season: current.season,
       document,
-      findings,
+      findings: envelope.findings,
     };
   }
 
@@ -434,31 +489,37 @@ export class StagingWorkspace {
     return document;
   }
 
-  /** Capture target identities from live manifests; import still verifies the complete document. */
+  /** Capture a target identity from the live manifest; import still verifies the document. */
+  public async readImportTarget(gameId: string): Promise<ImportTarget | null> {
+    this.assertOpen();
+    assertGameId(gameId);
+    await this.currentTransitions.get(gameId)?.catch(() => undefined);
+    const current = await this.currentStorage.readCurrentEntry(gameId);
+    if (current?.authority !== "ready" || current.season === null) return null;
+    let verified = this.verifiedTargets.get(gameId);
+    const manifest = canonicalStringify(current);
+    if (verified?.manifest !== manifest) {
+      await this.readCurrentFindings(current);
+      verified = this.verifiedTargets.get(gameId);
+    }
+    if (verified?.manifest !== manifest)
+      throw new StaleStagingDocumentError(`대상 확정 중 문서가 변경되었습니다: ${gameId}`);
+    return structuredClone(verified.target);
+  }
+
   public async readImportTargets(gameIds: readonly string[]): Promise<ImportTarget[]> {
     this.assertOpen();
     const targets: ImportTarget[] = [];
     for (let offset = 0; offset < gameIds.length; offset += 16) {
       const results = await Promise.allSettled(
         gameIds.slice(offset, offset + 16).map(async (gameId) => {
-          assertGameId(gameId);
-          await this.currentTransitions.get(gameId)?.catch(() => undefined);
-          const current = await this.currentStorage.requiredCurrentEntry(gameId);
-          if (current.authority !== "ready" || current.season === null) {
+          const target = await this.readImportTarget(gameId);
+          if (target === null) {
             throw new StaleStagingDocumentError(
               `대상 확정 중 적재 가능 상태가 변경되었습니다: ${gameId}`,
             );
           }
-          let verified = this.verifiedTargets.get(gameId);
-          const manifest = canonicalStringify(current);
-          if (verified?.manifest !== manifest) {
-            await this.readCurrentFindings(current);
-            verified = this.verifiedTargets.get(gameId);
-          }
-          if (verified?.manifest !== manifest) {
-            throw new StaleStagingDocumentError(`대상 확정 중 문서가 변경되었습니다: ${gameId}`);
-          }
-          return { ...verified.target };
+          return target;
         }),
       );
       for (const result of results) {
@@ -508,6 +569,8 @@ export class StagingWorkspace {
       snapshotId,
       document,
       findings: envelope.findings,
+      ...approvalMetadata(envelope),
+      ...(envelope.fromSealedDraft ? { fromSealedDraft: true as const } : {}),
       currentContentHash: current?.contentHash ?? null,
     };
   }
@@ -521,22 +584,28 @@ export class StagingWorkspace {
     season: number,
     gameId: string,
     expectedDocumentHash: string,
+    artifact?: ImportTarget["artifact"],
   ): Promise<void> {
     this.assertOpen();
     assertSeason(season);
     assertGameId(gameId);
     await this.verifyLock();
+    await this.recoverGameTransitions(gameId);
+    const current = await this.currentStorage.readCurrentEntry(gameId);
+    if (current === null) return;
+    if (
+      artifact !== undefined &&
+      (current.authority !== "ready" ||
+        current.season !== season ||
+        current.generation !== artifact.generation ||
+        current.contentHash !== artifact.contentHash ||
+        current.documentHash !== expectedDocumentHash)
+    )
+      return;
     const document = await this.readDocument("staging", season, gameId);
     const actualHash = stagingDocumentHash(document);
-    if (actualHash !== expectedDocumentHash) {
-      throw new StaleStagingDocumentError(
-        `적재 후 staging 정리 중 문서 hash가 변경되었습니다: expected=${expectedDocumentHash}, actual=${actualHash}`,
-      );
-    }
-    const current = await this.currentStorage.requiredCurrentEntry(gameId);
-    if (current.authority !== "ready" || current.season !== season) {
-      throw new StaleStagingDocumentError(`현재 staging 권위가 아닙니다: ${gameId}`);
-    }
+    if (actualHash !== expectedDocumentHash)
+      throw new StaleStagingDocumentError("적재 후 정리할 문서 hash가 변경되었습니다.");
     await this.transitionCurrent(current, null);
   }
 
@@ -555,9 +624,13 @@ export class StagingWorkspace {
     this.assertOpen();
     await this.verifyLock();
     const parsedInput = parseStagingCorrectionCommit(input);
+    await this.recoverGameTransitions(parsedInput.document.metadata.gameId);
     let snapshot: SupersededDocumentSnapshot | null = null;
     let current: StagingGameDocumentV2;
     let currentFindings: readonly StoredFinding[];
+    let existingApprovals: readonly RecordCorrectionApprovalReference[] | undefined;
+    let fromSealedDraft: true | undefined;
+    let independentRecordCorrection: true | undefined;
     if (parsedInput.baseAuthority === "superseded") {
       snapshot = await this.readSupersededSnapshot(
         parsedInput.document.metadata.gameId,
@@ -565,17 +638,31 @@ export class StagingWorkspace {
       );
       current = snapshot.document;
       currentFindings = snapshot.findings;
+      existingApprovals = snapshot.recordCorrectionApprovals;
+      fromSealedDraft = snapshot.fromSealedDraft;
+      independentRecordCorrection = snapshot.independentRecordCorrection;
     } else {
       current = await this.readDocument(
         parsedInput.baseAuthority,
         parsedInput.document.metadata.season,
         parsedInput.document.metadata.gameId,
       );
-      currentFindings = await this.readFindings(
-        parsedInput.baseAuthority,
-        parsedInput.document.metadata.season,
+      const entry = await this.currentStorage.requiredCurrentEntry(
         parsedInput.document.metadata.gameId,
       );
+      if (
+        parsedInput.baseCurrentContentHash !== undefined &&
+        entry.contentHash !== parsedInput.baseCurrentContentHash
+      ) {
+        throw new StaleStagingDocumentError(
+          "보정 시작 이후 현재 작업 사본의 내용이나 승인 근거가 변경되었습니다.",
+        );
+      }
+      const envelope = await this.readDocumentEnvelope(entry, current);
+      currentFindings = envelope.findings;
+      existingApprovals = envelope.recordCorrectionApprovals;
+      fromSealedDraft = envelope.fromSealedDraft;
+      independentRecordCorrection = envelope.independentRecordCorrection;
     }
     const currentHash = stagingDocumentHash(current);
     if (currentHash !== parsedInput.baseDocumentHash) {
@@ -592,12 +679,40 @@ export class StagingWorkspace {
       );
     }
     await this.saveOriginalIfAbsent(current, currentFindings);
-    return this.journals.commitCorrection(
-      parsedInput,
-      current,
-      (journal) => this.rollForwardCorrection(journal),
-      failurePoint,
+    const targetEnvelope: StoredFindingEnvelopeV2 = {
+      schemaVersion: 2,
+      findings: parsedInput.findingEnvelope.findings,
+      ...(fromSealedDraft ? { fromSealedDraft } : {}),
+      ...(independentRecordCorrection ? { independentRecordCorrection } : {}),
+      ...(parsedInput.findingEnvelope.recordCorrectionApprovals !== undefined
+        ? { recordCorrectionApprovals: parsedInput.findingEnvelope.recordCorrectionApprovals }
+        : existingApprovals === undefined
+          ? {}
+          : { recordCorrectionApprovals: existingApprovals }),
+    };
+    await this.verifyCorrectionAuthority(
+      parsedInput.document,
+      targetEnvelope,
+      parsedInput.targetAuthority,
     );
+    await this.transitionDocument(
+      parsedInput.targetAuthority,
+      parsedInput.document,
+      targetEnvelope.findings,
+      false,
+      undefined,
+      targetEnvelope,
+      async (transition, publish) => {
+        await this.journals.commitCorrection(
+          { ...parsedInput, findingEnvelope: targetEnvelope },
+          current,
+          transition,
+          (journal) => publish(journal.journalId),
+          failurePoint,
+        );
+      },
+    );
+    return parsedInput.targetAuthority;
   }
 
   public async close(): Promise<void> {
@@ -617,60 +732,80 @@ export class StagingWorkspace {
     findings: readonly StoredFinding[],
     preserveCurrentDocument = false,
     expectedToken?: string | null,
+    provenance?: Pick<
+      StoredFindingEnvelopeV2,
+      "recordCorrectionApprovals" | "fromSealedDraft" | "independentRecordCorrection"
+    >,
+    withCorrectionJournal?: (
+      transition: NonNullable<CorrectionJournal["transition"]>,
+      publish: (operationId?: string) => Promise<void>,
+    ) => Promise<void>,
   ): Promise<void> {
     this.assertOpen();
-    assertSeason(document.metadata.season);
-    assertGameId(document.metadata.gameId);
+    const { gameId, season } = document.metadata;
+    assertSeason(season);
+    assertGameId(gameId);
     await this.verifyLock();
-    const previous = await this.currentStorage.readCurrentEntry(document.metadata.gameId);
+    if (withCorrectionJournal === undefined) await this.recoverGameTransitions(gameId);
+    const previous = await this.currentStorage.readCurrentEntry(gameId);
     this.assertCollectionToken(previous, expectedToken);
     if (preserveCurrentDocument && previous !== null && previous.authority !== "source_failure")
       return;
     const documentHash = stagingDocumentHash(document);
-    const envelope = findingEnvelope(findings);
+    const envelope = documentEnvelope(findings, provenance);
     const contentHash = sha256(canonicalStringify({ document, findingEnvelope: envelope }));
     if (
       previous?.authority === currentDocumentAuthority(authority) &&
       previous.documentHash === documentHash &&
       previous.contentHash === contentHash
-    ) {
+    )
       return;
-    }
-    const reusable = await this.reusableActiveDocument(document.metadata.gameId, contentHash);
+    const reusable = await this.reusableActiveDocument(gameId, contentHash);
     const generation =
-      reusable?.generation ??
-      (await this.currentStorage.nextGeneration(document.metadata.gameId, previous));
-    const artifactPath =
-      reusable?.artifactPath ??
-      this.currentStorage.activeArtifactPath(
-        document.metadata.gameId,
-        `${String(generation)}-${contentHash}.document.json`,
-      );
-    if (reusable === null) {
-      await atomicWrite(
-        this.root,
-        this.currentStorage.absoluteArtifactPath(artifactPath),
-        `${canonicalStringify(document)}\n`,
-      );
-      const findingsPath = this.currentStorage.findingsArtifactPath(artifactPath);
-      if (findings.length === 0) {
-        await removeIfPresent(findingsPath);
-      } else {
-        await atomicWrite(this.root, findingsPath, `${canonicalStringify(envelope)}\n`);
-      }
-    }
-    await this.transitionCurrent(previous, {
+      reusable?.generation ?? (await this.currentStorage.nextGeneration(gameId, previous));
+    const target: CurrentWorkspaceEntry = {
       schemaVersion: 2,
-      gameId: document.metadata.gameId,
-      season: document.metadata.season,
+      gameId,
+      season,
       authority: currentDocumentAuthority(authority),
       generation,
       updatedAt: this.now().toISOString(),
-      artifactPath,
+      artifactPath:
+        reusable?.artifactPath ??
+        this.currentStorage.activeArtifactPath(
+          gameId,
+          `${String(generation)}-${contentHash}.document.json`,
+        ),
       contentHash,
       documentHash,
       displaySummary: workspaceDisplaySummary(document),
-    });
+    };
+    const publish = async (operationId?: string) => {
+      if (reusable === null) await this.writeDocumentArtifact(target, document, envelope);
+      await this.transitionCurrent(previous, target, operationId);
+    };
+    if (withCorrectionJournal === undefined) await publish();
+    else await withCorrectionJournal({ previous, target }, publish);
+  }
+
+  private async writeDocumentArtifact(
+    target: CurrentWorkspaceEntry,
+    document: StagingGameDocumentV2,
+    envelope: StoredFindingEnvelopeV2,
+  ): Promise<void> {
+    await atomicWrite(
+      this.root,
+      this.currentStorage.absoluteArtifactPath(target.artifactPath),
+      `${canonicalStringify(document)}\n`,
+    );
+    const findingsPath = this.currentStorage.findingsArtifactPath(target.artifactPath);
+    if (
+      envelope.findings.length === 0 &&
+      !envelope.recordCorrectionApprovals?.length &&
+      !envelope.fromSealedDraft
+    )
+      await removeIfPresent(findingsPath);
+    else await atomicWrite(this.root, findingsPath, `${canonicalStringify(envelope)}\n`);
   }
 
   private async initializeDirectories(): Promise<void> {
@@ -695,11 +830,17 @@ export class StagingWorkspace {
     await recoverWorkspaceTemporaryFiles(this.root);
   }
 
-  private async recoverCorrectionJournals(): Promise<void> {
+  private async recoverGameTransitions(gameId: string): Promise<void> {
+    await this.currentTransitions.get(gameId)?.catch(() => undefined);
+    await this.currentStorage.recoverWorkspaceTransitions(gameId);
+    await this.recoverCorrectionJournals(gameId);
+  }
+
+  private async recoverCorrectionJournals(gameId?: string): Promise<void> {
     await this.journals.recoverCorrections(async (journal) => {
       await this.saveOriginalIfAbsent(journal.beforeDocument, []);
       await this.rollForwardCorrection(journal);
-    });
+    }, gameId);
   }
 
   private async readCurrentDocument(
@@ -754,24 +895,32 @@ export class StagingWorkspace {
     current: CurrentWorkspaceEntry,
     document: StagingGameDocumentV2,
   ): Promise<readonly StoredFinding[]> {
-    const findings = await readVerifiedFindings(this.root, current, document);
+    return (await this.readDocumentEnvelope(current, document)).findings;
+  }
+
+  private async readDocumentEnvelope(
+    current: CurrentWorkspaceEntry,
+    document: StagingGameDocumentV2,
+  ): Promise<StoredFindingEnvelopeV2> {
+    const envelope = await readVerifiedDocumentEnvelope(this.root, current, document);
     this.verifiedTargets.set(current.gameId, {
       manifest: canonicalStringify(current),
-      target: verifiedImportTarget(current, document),
+      target: verifiedImportTarget(current, document, envelope),
     });
-    return findings;
+    return envelope;
   }
 
   private async transitionCurrent(
     previous: CurrentWorkspaceEntry | null,
     target: CurrentWorkspaceEntry | null,
+    operationId?: string,
   ): Promise<void> {
     const gameId = target?.gameId ?? previous?.gameId;
     if (gameId === undefined) throw new Error("빈 workspace transition은 허용되지 않습니다.");
     const pending = this.currentTransitions.get(gameId) ?? Promise.resolve();
     const next = pending
       .catch(() => undefined)
-      .then(() => this.currentStorage.performCurrentTransition(previous, target));
+      .then(() => this.currentStorage.performCurrentTransition(previous, target, operationId));
     this.currentTransitions.set(gameId, next);
     this.catalogIndex.invalidate(gameId);
     try {
@@ -888,12 +1037,57 @@ export class StagingWorkspace {
     await this.originalStorage.saveIfAbsent(document, findings);
   }
 
+  private async verifyCorrectionAuthority(
+    document: StagingGameDocumentV2,
+    envelope: StoredFindingEnvelopeV2,
+    authority: "staging" | "quarantine",
+  ): Promise<void> {
+    const replay = await this.compile(document);
+    const blocked = [...replay.findings, ...envelope.findings].some(
+      (finding) => finding.severity === "blocking",
+    );
+    if (blocked !== (authority === "quarantine"))
+      throw new Error("보정 결과의 차단 finding과 저장 권위가 일치하지 않습니다.");
+  }
+
   private async rollForwardCorrection(journal: CorrectionJournal): Promise<void> {
-    if (journal.targetAuthority === "staging") {
-      await this.saveReady(journal.document, journal.findingEnvelope.findings);
-    } else {
-      await this.saveQuarantine(journal.document, journal.findingEnvelope.findings);
+    const { gameId } = journal.document.metadata;
+    const actual = await this.currentStorage.readCurrentEntry(gameId);
+    const envelope = documentEnvelope(journal.findingEnvelope.findings, journal.findingEnvelope);
+    const contentHash = sha256(
+      canonicalStringify({ document: journal.document, findingEnvelope: envelope }),
+    );
+    const transition = journal.transition;
+    if (transition === undefined) {
+      if (
+        actual?.contentHash === contentHash &&
+        actual.authority === currentDocumentAuthority(journal.targetAuthority)
+      )
+        return;
+      throw new WorkspacePersistenceBlockedError(
+        `이전 교정 저널의 작업본 세대를 확인할 수 없습니다: ${gameId}`,
+      );
     }
+    const { previous, target } = transition;
+    if (
+      target.gameId !== gameId ||
+      target.contentHash !== contentHash ||
+      target.documentHash !== stagingDocumentHash(journal.document) ||
+      target.authority !== currentDocumentAuthority(journal.targetAuthority)
+    ) {
+      throw new WorkspacePersistenceBlockedError(
+        `교정 저널의 목표 작업본이 일치하지 않습니다: ${gameId}`,
+      );
+    }
+    this.currentStorage.assertCurrentEntryContext(target, gameId);
+    if (sameCurrentEntry(actual, target)) return;
+    if (!sameCurrentEntry(actual, previous))
+      throw new WorkspacePersistenceBlockedError(
+        `교정 저널을 재생하려는 이전 작업본이 바뀌었습니다: ${gameId}`,
+      );
+    await this.verifyCorrectionAuthority(journal.document, envelope, journal.targetAuthority);
+    await this.writeDocumentArtifact(target, journal.document, envelope);
+    await this.transitionCurrent(previous, target, journal.journalId);
   }
 
   private async verifyLock(): Promise<void> {
@@ -914,4 +1108,34 @@ function currentDocumentAuthority(authority: "staging" | "quarantine"): "ready" 
 
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function approvalMetadata(envelope: StoredFindingEnvelopeV2) {
+  return {
+    ...(envelope.recordCorrectionApprovals === undefined
+      ? {}
+      : {
+          recordCorrectionApprovals: envelope.recordCorrectionApprovals,
+        }),
+    ...(envelope.independentRecordCorrection ? { independentRecordCorrection: true as const } : {}),
+  };
+}
+
+function documentEnvelope(
+  findings: readonly StoredFinding[],
+  provenance?: Pick<
+    StoredFindingEnvelopeV2,
+    "recordCorrectionApprovals" | "fromSealedDraft" | "independentRecordCorrection"
+  >,
+): StoredFindingEnvelopeV2 {
+  return {
+    ...findingEnvelope(findings),
+    ...(provenance?.recordCorrectionApprovals?.length
+      ? { recordCorrectionApprovals: provenance.recordCorrectionApprovals }
+      : {}),
+    ...(provenance?.fromSealedDraft ? { fromSealedDraft: true as const } : {}),
+    ...(provenance?.independentRecordCorrection
+      ? { independentRecordCorrection: true as const }
+      : {}),
+  };
 }

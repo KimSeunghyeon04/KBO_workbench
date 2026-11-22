@@ -22,6 +22,7 @@ import {
   type CorrectionCommitResult,
   type CorrectionMutationResult,
   type CorrectionSession,
+  type RecordCorrectionApprovalReference,
   type CorrectionSessionCreateRequest,
   type CorrectionSourceEvidence,
   type StagingGameDocumentV2,
@@ -47,7 +48,8 @@ type CorrectionWorkspace = Pick<
   | "readOriginal"
   | "readSourceBundle"
   | "readSupersededSnapshot"
->;
+> &
+  Partial<Pick<StagingWorkspace, "withGameOperation">>;
 export type CorrectionSourceEvidenceExtractor = (input: {
   readonly event: StagingGameDocumentV2["events"][number];
   readonly payloads: Readonly<Record<string, unknown>>;
@@ -100,6 +102,10 @@ export class CorrectionSessionManager {
         snapshotId: source.snapshotId,
         baseCurrentContentHash: source.currentContentHash,
         document: source.document,
+        recordCorrectionApprovals: source.recordCorrectionApprovals ?? [],
+        ...(source.independentRecordCorrection
+          ? { independentRecordCorrection: true as const }
+          : {}),
         replay,
         prepared,
         storedFindings: [...source.findings],
@@ -127,8 +133,12 @@ export class CorrectionSessionManager {
       gameId: request.gameId,
       baseDocumentHash: prepared.draftDocumentHash,
       authority: current.authority,
-      baseCurrentContentHash: null,
+      baseCurrentContentHash: current.contentHash ?? null,
       document,
+      recordCorrectionApprovals: current.recordCorrectionApprovals ?? [],
+      ...(current.independentRecordCorrection
+        ? { independentRecordCorrection: true as const }
+        : {}),
       replay,
       prepared,
       storedFindings: [...storedFindings],
@@ -142,12 +152,22 @@ export class CorrectionSessionManager {
   public get(sessionId: string): CorrectionSession {
     return snapshot(this.sessions.required(sessionId));
   }
+  public approvalReferences(sessionId: string): readonly RecordCorrectionApprovalReference[] {
+    return this.sessions.required(sessionId).recordCorrectionApprovals;
+  }
+
+  public hasIndependentRecordCorrectionBase(sessionId: string): boolean {
+    return this.sessions.required(sessionId).independentRecordCorrection === true;
+  }
+
   public async command(
     sessionId: string,
     expected: number,
     command: CorrectionCommand,
     apply: boolean,
-    beforeApply?: (draftDocumentHash: string) => Promise<void>,
+    beforeApply?: (
+      draftDocumentHash: string,
+    ) => Promise<readonly RecordCorrectionApprovalReference[] | undefined>,
   ): Promise<CorrectionMutationResult> {
     return this.sessions.withSessionLock(sessionId, expected, async (session) => {
       const computed = await this.computation.run({
@@ -160,8 +180,17 @@ export class CorrectionSessionManager {
       const result = computed.value;
       if (apply) {
         if (computed.snapshot === undefined) throw new Error("Missing correction snapshot");
-        if (beforeApply !== undefined) await beforeApply(computed.snapshot.draftDocumentHash);
-        session.undoStack.push({ before: session.document, after: result.document });
+        const approval = await beforeApply?.(computed.snapshot.draftDocumentHash);
+        const beforeApprovals = session.recordCorrectionApprovals;
+        const afterApprovals =
+          approval === undefined ? beforeApprovals : withApproval(beforeApprovals, approval);
+        session.undoStack.push({
+          before: session.document,
+          after: result.document,
+          beforeApprovals,
+          afterApprovals,
+        });
+        session.recordCorrectionApprovals = afterApprovals;
         session.redoStack = [];
         session.document = result.document;
         session.replay = result.replay;
@@ -171,6 +200,36 @@ export class CorrectionSessionManager {
       return { session: snapshot(session), preview: result.preview };
     });
   }
+  public async approveCurrent(
+    sessionId: string,
+    expected: number,
+    approve: (documentHash: string) => Promise<readonly RecordCorrectionApprovalReference[]>,
+  ): Promise<CorrectionMutationResult> {
+    return this.sessions.withSessionLock(sessionId, expected, async (session) => {
+      const approval = await approve(session.prepared.draftDocumentHash);
+      const beforeApprovals = session.recordCorrectionApprovals;
+      const afterApprovals = withApproval(beforeApprovals, approval);
+      session.undoStack.push({
+        before: session.document,
+        after: session.document,
+        beforeApprovals,
+        afterApprovals,
+      });
+      session.redoStack = [];
+      session.recordCorrectionApprovals = afterApprovals;
+      session.sessionVersion += 1;
+      return {
+        session: snapshot(session),
+        preview: buildCorrectionPreview(
+          session.document,
+          session.replay,
+          session.document,
+          session.replay,
+        ),
+      };
+    });
+  }
+
   public async undo(sessionId: string, expected: number): Promise<CorrectionMutationResult> {
     return this.sessions.withSessionLock(sessionId, expected, async (session) => {
       const entry = session.undoStack.at(-1);
@@ -186,6 +245,7 @@ export class CorrectionSessionManager {
       session.undoStack.pop();
       session.redoStack.push(entry);
       session.document = entry.before;
+      session.recordCorrectionApprovals = entry.beforeApprovals;
       session.replay = replay;
       session.prepared = prepared;
       session.sessionVersion += 1;
@@ -210,6 +270,7 @@ export class CorrectionSessionManager {
       session.redoStack.pop();
       session.undoStack.push(entry);
       session.document = entry.after;
+      session.recordCorrectionApprovals = entry.afterApprovals;
       session.replay = replay;
       session.prepared = prepared;
       session.sessionVersion += 1;
@@ -227,54 +288,75 @@ export class CorrectionSessionManager {
       sessionId,
       request.expectedSessionVersion,
       async (session) => {
-        const committedFindings = mergePersistentSourceFindings(
-          session.storedFindings,
-          session.replay.findings,
-          session.document,
-        );
-        const blocking = committedFindings.filter(
-          (finding) => finding.severity === "blocking",
-        ).length;
-        const canPromoteCleanQuarantine = session.authority === "quarantine" && blocking === 0;
-        const canRestoreSuperseded = session.authority === "superseded";
-        if (session.undoStack.length === 0 && !canPromoteCleanQuarantine && !canRestoreSuperseded) {
-          throw new CorrectionCommitBlockedError("저장할 보정 작업이 없습니다.");
-        }
-        if (blocking > 0 && !request.allowBlockingStaging)
-          throw new CorrectionCommitBlockedError(
-            "차단 finding이 남아 있습니다. quarantine 저장을 명시적으로 허용해야 합니다.",
+        const save = async (): Promise<CorrectionCommitResult> => {
+          const committedFindings = mergePersistentSourceFindings(
+            session.storedFindings,
+            session.replay.findings,
+            session.document,
           );
-        const targetAuthority = blocking > 0 ? "quarantine" : "staging";
-        const document = session.document;
-        const input: StagingCorrectionCommit =
-          session.authority === "superseded"
-            ? {
-                baseAuthority: "superseded",
-                baseSnapshotId: requiredSnapshotId(session),
-                baseCurrentContentHash: session.baseCurrentContentHash,
-                targetAuthority,
-                baseDocumentHash: session.baseDocumentHash,
-                document,
-                findingEnvelope: { schemaVersion: 2, findings: committedFindings },
-              }
-            : {
-                baseAuthority: session.authority,
-                targetAuthority,
-                baseDocumentHash: session.baseDocumentHash,
-                document,
-                findingEnvelope: { schemaVersion: 2, findings: committedFindings },
-              };
-        await this.workspace.commitCorrection(input);
-        session.baseDocumentHash = session.prepared.draftDocumentHash;
-        session.prepared = { ...session.prepared, storedFindings: session.prepared.findings };
-        session.authority = targetAuthority;
-        delete session.snapshotId;
-        session.baseCurrentContentHash = null;
-        session.storedFindings = committedFindings;
-        session.undoStack = [];
-        session.redoStack = [];
-        session.sessionVersion += 1;
-        return { session: snapshot(session), committedAuthority: targetAuthority };
+          const blocking = committedFindings.filter(
+            (finding) => finding.severity === "blocking",
+          ).length;
+          const canPromoteCleanQuarantine = session.authority === "quarantine" && blocking === 0;
+          const canRestoreSuperseded = session.authority === "superseded";
+          if (
+            session.undoStack.length === 0 &&
+            !canPromoteCleanQuarantine &&
+            !canRestoreSuperseded
+          ) {
+            throw new CorrectionCommitBlockedError("저장할 보정 작업이 없습니다.");
+          }
+          if (blocking > 0 && !request.allowBlockingStaging)
+            throw new CorrectionCommitBlockedError(
+              "차단 finding이 남아 있습니다. quarantine 저장을 명시적으로 허용해야 합니다.",
+            );
+          const targetAuthority = blocking > 0 ? "quarantine" : "staging";
+          const document = session.document;
+          const input: StagingCorrectionCommit =
+            session.authority === "superseded"
+              ? {
+                  baseAuthority: "superseded",
+                  baseSnapshotId: requiredSnapshotId(session),
+                  baseCurrentContentHash: session.baseCurrentContentHash,
+                  targetAuthority,
+                  baseDocumentHash: session.baseDocumentHash,
+                  document,
+                  findingEnvelope: {
+                    schemaVersion: 2,
+                    findings: committedFindings,
+                    recordCorrectionApprovals: session.recordCorrectionApprovals,
+                  },
+                }
+              : {
+                  baseAuthority: session.authority,
+                  ...(session.baseCurrentContentHash === null
+                    ? {}
+                    : { baseCurrentContentHash: session.baseCurrentContentHash }),
+                  targetAuthority,
+                  baseDocumentHash: session.baseDocumentHash,
+                  document,
+                  findingEnvelope: {
+                    schemaVersion: 2,
+                    findings: committedFindings,
+                    recordCorrectionApprovals: session.recordCorrectionApprovals,
+                  },
+                };
+          await this.workspace.commitCorrection(input);
+          session.baseDocumentHash = session.prepared.draftDocumentHash;
+          session.prepared = { ...session.prepared, storedFindings: session.prepared.findings };
+          session.authority = targetAuthority;
+          delete session.snapshotId;
+          session.baseCurrentContentHash =
+            (await this.workspace.readCurrentDocumentSnapshot(session.gameId))?.contentHash ?? null;
+          session.storedFindings = committedFindings;
+          session.undoStack = [];
+          session.redoStack = [];
+          session.sessionVersion += 1;
+          return { session: snapshot(session), committedAuthority: targetAuthority };
+        };
+        return this.workspace.withGameOperation === undefined
+          ? save()
+          : this.workspace.withGameOperation(session.gameId, save);
       },
     );
   }
@@ -345,7 +427,12 @@ export class CorrectionSessionManager {
         rebasedOriginal,
         session.storedFindings,
       );
-      session.undoStack.push({ before, after: rebasedOriginal });
+      session.undoStack.push({
+        before,
+        after: rebasedOriginal,
+        beforeApprovals: session.recordCorrectionApprovals,
+        afterApprovals: session.recordCorrectionApprovals,
+      });
       session.redoStack = [];
       session.document = rebasedOriginal;
       session.replay = replay;
@@ -372,4 +459,13 @@ function requiredSnapshotId(session: InternalSession): string {
     throw new CorrectionCommitBlockedError("superseded session snapshot ID가 없습니다.");
   }
   return session.snapshotId;
+}
+
+function withApproval(
+  approvals: readonly RecordCorrectionApprovalReference[],
+  next: readonly RecordCorrectionApprovalReference[],
+): readonly RecordCorrectionApprovalReference[] {
+  const merged = new Map(approvals.map((approval) => [approval.noticeId, approval]));
+  for (const approval of next) merged.set(approval.noticeId, approval);
+  return [...merged.values()];
 }

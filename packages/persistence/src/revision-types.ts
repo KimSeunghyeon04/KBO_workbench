@@ -1,4 +1,9 @@
-import type { StagingGameDocumentV2, StagingRelayEvent } from "@kbo/contracts";
+import type {
+  ImportTarget,
+  RecordCorrectionApprovalReference,
+  StagingGameDocumentV2,
+  StagingRelayEvent,
+} from "@kbo/contracts";
 import type { ReplayResult } from "@kbo/game-core";
 import type { ProjectionTables, ProjectionVersion, RelationalProjection } from "./projection.js";
 
@@ -6,6 +11,10 @@ export type ImportFailurePoint = "after_manifest" | "after_facts" | "before_seal
 
 export interface ImportOptions {
   readonly failurePoint?: ImportFailurePoint;
+  readonly publication?: { readonly jobId: string; readonly target: ImportTarget };
+  readonly verifiedMatchupGeneration?: number;
+  readonly fromIndependentSealedDraft?: true;
+  readonly recordCorrectionApprovals?: readonly RecordCorrectionApprovalReference[];
 }
 
 export interface ImportedRevision {

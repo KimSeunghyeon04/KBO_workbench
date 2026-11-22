@@ -165,10 +165,12 @@ describe("컴파일러 검증 결과 저장", () => {
       await workspace.saveCorrectionDraft(document);
       const { gameId, season } = document.metadata;
       expect(await workspace.readCurrentDocumentSnapshot(gameId)).toStrictEqual({
+        contentHash: expect.stringMatching(/^[0-9a-f]{64}$/),
         authority: "quarantine",
         season,
         document,
         findings: expectedStored,
+        independentRecordCorrection: true,
       });
       expect(await workspace.readOriginalFindings(season, gameId)).toStrictEqual(expectedStored);
     } finally {

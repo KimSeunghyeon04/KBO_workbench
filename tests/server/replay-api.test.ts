@@ -136,6 +136,7 @@ describe("replay HTTP API", () => {
         const saved = await workspace.readCurrentDocumentSnapshot(document.metadata.gameId);
         expect(saved).toEqual({
           authority,
+          contentHash: expect.stringMatching(/^[0-9a-f]{64}$/),
           season: document.metadata.season,
           document,
           findings: storedCompilerFindings(compileStagingGameDocumentV2(document).findings),

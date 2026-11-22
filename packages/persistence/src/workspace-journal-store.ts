@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFile, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 
@@ -11,7 +12,7 @@ import {
   type StagingGameDocumentV2,
 } from "@kbo/contracts";
 
-import { atomicWrite, removeIfPresent } from "./workspace-files.js";
+import { atomicWrite, isMissing, removeIfPresent } from "./workspace-files.js";
 import { assertGameId, assertJobId } from "./workspace-path-policy.js";
 
 // Current transitions and correction validation remain in the owning workspace.
@@ -53,12 +54,19 @@ export class WorkspaceJournalStore {
   public async commitCorrection(
     input: StagingCorrectionCommit,
     beforeDocument: StagingGameDocumentV2,
+    transition: NonNullable<CorrectionJournal["transition"]>,
     apply: (journal: CorrectionJournal) => Promise<void>,
     failurePoint?: "after_journal" | "after_current",
   ): Promise<"staging" | "quarantine"> {
     const createdAt = this.now().toISOString();
-    const journalId = `${createdAt.replaceAll(":", "-")}-${input.baseDocumentHash.slice(0, 12)}`;
-    const journal: CorrectionJournal = { ...input, journalId, beforeDocument, createdAt };
+    const journalId = randomUUID();
+    const journal: CorrectionJournal = {
+      ...input,
+      journalId,
+      beforeDocument,
+      createdAt,
+      transition,
+    };
     const journalPath = this.correctionPath(input.document.metadata.gameId, journalId);
     await atomicWrite(this.root, journalPath, `${canonicalStringify(journal)}\n`);
     if (failurePoint === "after_journal")
@@ -72,15 +80,24 @@ export class WorkspaceJournalStore {
 
   public async recoverCorrections(
     apply: (journal: CorrectionJournal) => Promise<void>,
+    gameId?: string,
   ): Promise<void> {
     const directory = path.join(this.root, "journals");
     for (const entry of await readdir(directory, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.startsWith("correction-") || !entry.name.endsWith(".json"))
+      if (
+        !entry.isFile() ||
+        !entry.name.startsWith(gameId === undefined ? "correction-" : `correction-${gameId}-`) ||
+        !entry.name.endsWith(".json")
+      )
         continue;
       const journalPath = path.join(directory, entry.name);
-      const journal = parseCorrectionJournal(
-        JSON.parse(await readFile(journalPath, "utf8")) as unknown,
-      );
+      const contents = await readFile(journalPath, "utf8").catch((error: unknown) => {
+        if (gameId !== undefined && isMissing(error)) return null;
+        throw error;
+      });
+      if (contents === null) continue;
+      const journal = parseCorrectionJournal(JSON.parse(contents) as unknown);
+      if (gameId !== undefined && journal.document.metadata.gameId !== gameId) continue;
       await apply(journal);
       await unlink(journalPath);
     }

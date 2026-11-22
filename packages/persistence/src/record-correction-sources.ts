@@ -1,4 +1,10 @@
 import {
+  advanceMatchupGenerations,
+  lockMatchupChanges,
+  noticeMatchup,
+  type Matchup,
+} from "./record-correction-matchups.js";
+import {
   parseRecordCorrectionSeasonDataset,
   recordCorrectionSupportKind,
   type RecordCorrectionNotice,
@@ -188,12 +194,24 @@ function assertDatasetComplete(dataset: RecordCorrectionSeasonDataset): void {
     )
   )
     throw new Error("record correction 시즌/시리즈 control source가 없습니다.");
+  const seriesControl = dataset.sourcePages.find(
+    (page) => page.requestKey === `control:series:${dataset.season}`,
+  );
   const recordPages = dataset.sourcePages.filter((page) => page.pageKind === "records");
+  const actualSeries = new Set(recordPages.map((page) => page.seriesId));
+  if (
+    seriesControl?.rowCount !== actualSeries.size ||
+    (dataset.expectedSeriesIds !== undefined &&
+      (dataset.expectedSeriesIds.length !== actualSeries.size ||
+        !dataset.expectedSeriesIds.every((id) => actualSeries.has(id))))
+  ) {
+    throw new Error("record correction records source가 전체 시리즈를 포함하지 않습니다.");
+  }
   if (recordPages.length === 0) throw new Error("record correction records source가 없습니다.");
-  const pageKeys = new Set(dataset.sourcePages.map((page) => page.requestKey));
-  if (dataset.notices.some((notice) => !pageKeys.has(notice.sourceRequestKey)))
+  const pageSeries = new Map(recordPages.map((page) => [page.requestKey, page.seriesId]));
+  if (dataset.notices.some((notice) => pageSeries.get(notice.sourceRequestKey) !== notice.seriesId))
     throw new Error("record correction notice source 참조가 완전하지 않습니다.");
-  for (const seriesId of new Set(recordPages.map((page) => page.seriesId))) {
+  for (const seriesId of actualSeries) {
     if (seriesId === null) throw new Error("record correction records series ID가 없습니다.");
     const pages = recordPages
       .filter((page) => page.seriesId === seriesId)
@@ -306,48 +324,88 @@ async function initializeAssessments(
   dataset: RecordCorrectionSeasonDataset,
   revision: number,
 ): Promise<void> {
-  for (const [noticeSequence, notice] of dataset.notices.entries()) {
-    const existing = await client.query<{
-      readonly source_revision: number;
-      readonly case_version: number;
-      readonly notice_hash: string;
-    }>(
-      `SELECT a.source_revision,a.case_version,n.notice_hash
-       FROM record_correction.match_assessments a
+  const next = new Map(
+    dataset.notices.map((notice, index) => [notice.noticeId, { notice, index }]),
+  );
+  const current = await client.query<{
+    notice_id: string;
+    notice_hash: string;
+    game_date: string;
+    away_team_name: string;
+    home_team_name: string;
+  }>(
+    `SELECT a.notice_id,n.notice_hash,to_char(n.game_date,'YYYY-MM-DD') AS game_date,n.away_team_name,n.home_team_name
+     FROM record_correction.match_assessments a
+     JOIN record_correction.notices n ON (n.season,n.revision,n.notice_sequence)=(a.season,a.source_revision,a.notice_sequence)
+     WHERE a.season=$1 AND a.active`,
+    [dataset.season],
+  );
+  const previous = new Map(current.rows.map((row) => [row.notice_id, row]));
+  const noticeIds = [...new Set([...next.keys(), ...previous.keys()])].sort();
+  const changedMatchups: Matchup[] = [];
+  for (const noticeId of noticeIds) {
+    const old = previous.get(noticeId);
+    const notice = next.get(noticeId)?.notice;
+    if (old?.notice_hash === notice?.noticeHash) continue;
+    if (old !== undefined)
+      changedMatchups.push(
+        noticeMatchup({
+          gameDate: old.game_date,
+          awayTeamName: old.away_team_name,
+          homeTeamName: old.home_team_name,
+        }),
+      );
+    if (notice !== undefined) changedMatchups.push(noticeMatchup(notice));
+  }
+  const changedScopes = await lockMatchupChanges(client, changedMatchups);
+  for (const noticeId of noticeIds) {
+    const entry = next.get(noticeId);
+    if (entry === undefined) {
+      await client.query(
+        `UPDATE record_correction.match_assessments
+         SET active=FALSE,publication=publication+1,case_version=case_version+1,
+             decision_sequence=0,checked_decision_sequence=NULL,checked_matchup_generation=NULL
+         WHERE notice_id=$1 AND active`,
+        [noticeId],
+      );
+      continue;
+    }
+    const previous = await client.query<{ active: boolean; notice_hash: string }>(
+      `SELECT a.active,n.notice_hash FROM record_correction.match_assessments a
        JOIN record_correction.notices n
-         ON n.season=a.season AND n.revision=a.source_revision
-        AND n.notice_sequence=a.notice_sequence
-       WHERE a.notice_id=$1`,
-      [notice.noticeId],
+         ON (n.season,n.revision,n.notice_sequence)=(a.season,a.source_revision,a.notice_sequence)
+       WHERE a.notice_id=$1 FOR UPDATE OF a`,
+      [noticeId],
     );
-    const previous = existing.rows[0];
-    const changed = previous !== undefined && previous.notice_hash !== notice.noticeHash;
+    const row = previous.rows[0];
+    const changed =
+      row !== undefined && (!row.active || row.notice_hash !== entry.notice.noticeHash);
     await client.query(
-      `INSERT INTO record_correction.match_assessments
+      `INSERT INTO record_correction.match_assessments AS a
          (notice_id,season,source_revision,notice_sequence,case_version,status,
           reason_code,reason_message,assessed_at)
        VALUES ($1,$2,$3,$4,1,'manual_review','awaiting_assessment',
                '수집된 공지를 아직 평가하지 않았습니다.',$5)
        ON CONFLICT (notice_id) DO UPDATE SET
-         season=EXCLUDED.season,source_revision=EXCLUDED.source_revision,
-         notice_sequence=EXCLUDED.notice_sequence,
-         case_version=CASE WHEN $6 THEN record_correction.match_assessments.case_version+1
-                           ELSE record_correction.match_assessments.case_version END,
-         status=CASE WHEN $6 THEN 'manual_review' ELSE record_correction.match_assessments.status END,
-         reason_code=CASE WHEN $6 THEN 'notice_source_changed'
-                          ELSE record_correction.match_assessments.reason_code END,
-         reason_message=CASE WHEN $6 THEN 'KBO 공지 내용이 변경되어 재검토가 필요합니다.'
-                             ELSE record_correction.match_assessments.reason_message END,
-         proposal_hash=CASE WHEN $6 THEN NULL ELSE record_correction.match_assessments.proposal_hash END,
-         applied_revision=CASE WHEN $6 THEN NULL ELSE record_correction.match_assessments.applied_revision END,
-         assessed_at=CASE WHEN $6 THEN EXCLUDED.assessed_at
-                          ELSE record_correction.match_assessments.assessed_at END`,
-      [notice.noticeId, dataset.season, revision, noticeSequence, dataset.collectedAt, changed],
+         active=TRUE,source_revision=EXCLUDED.source_revision,notice_sequence=EXCLUDED.notice_sequence,
+         publication=a.publication+CASE WHEN $6 THEN 1 ELSE 0 END,
+         case_version=a.case_version+CASE WHEN $6 THEN 1 ELSE 0 END,
+         decision_sequence=CASE WHEN $6 THEN 0 ELSE a.decision_sequence END,
+         checked_matchup_generation=CASE WHEN $6 THEN NULL ELSE a.checked_matchup_generation END,
+         checked_decision_sequence=CASE WHEN $6 THEN NULL ELSE a.checked_decision_sequence END,
+         status=CASE WHEN $6 THEN 'manual_review' ELSE a.status END,
+         reason_code=CASE WHEN $6 THEN 'notice_source_changed' ELSE a.reason_code END,
+         reason_message=CASE WHEN $6 THEN 'KBO 공지 내용이 변경되어 재검토가 필요합니다.' ELSE a.reason_message END,
+         proposal_hash=CASE WHEN $6 THEN NULL ELSE a.proposal_hash END,
+         applied_revision=CASE WHEN $6 THEN NULL ELSE a.applied_revision END,
+         assessed_at=CASE WHEN $6 THEN EXCLUDED.assessed_at ELSE a.assessed_at END`,
+      [noticeId, dataset.season, revision, entry.index, dataset.collectedAt, changed],
     );
   }
+  await advanceMatchupGenerations(client, changedScopes);
 }
 export async function loadNotice(
-  pool: Pool,
+  pool: Pick<Pool, "query">,
   season: number,
   revision: number,
   noticeSequence: number,

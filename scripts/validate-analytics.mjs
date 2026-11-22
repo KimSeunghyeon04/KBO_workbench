@@ -146,7 +146,7 @@ if (options["--cleanup"]) {
     PGPASSWORD: password,
     PGDATABASE: "kbo_validation",
     KBO_DATA_DIR: path.join(directory, "workspace"),
-    EXPECTED_MIGRATION_VERSION: "0015_strike_zone_rule_fallback",
+    EXPECTED_MIGRATION_VERSION: "0018_record_correction_proofs",
     MIGRATIONS_DIR: path.join(root, "database", "v3"),
     KBO_ANALYST_USER: "",
     KBO_ANALYST_PASSWORD: "",

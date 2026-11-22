@@ -7,7 +7,11 @@ import {
   type RecordCorrectionCase,
   type StagingGameDocumentV2,
 } from "@kbo/contracts";
-import { StagingWorkspace, type RecordCorrectionAssessmentInput } from "@kbo/persistence";
+import {
+  StagingWorkspace,
+  type RecordCorrectionApprovalEvidence,
+  type RecordCorrectionAssessmentInput,
+} from "@kbo/persistence";
 import { describe, expect, it, vi } from "vitest";
 
 import { CorrectionSessionManager } from "../../apps/server/src/correction-session-manager.js";
@@ -186,27 +190,64 @@ async function setup(root: string, name: Parameters<typeof recordCorrectionFixtu
       return item;
     },
   );
+  const currentGame = () => ({
+    gameId,
+    revision: 1,
+    documentHash: "b".repeat(64),
+    sourceGameId: document.source.sourceGameId,
+    gameDate: document.metadata.gameDate,
+    stadium: document.metadata.stadium ?? null,
+    awayTeamName: document.teams.away.name,
+    homeTeamName: document.teams.home.name,
+  });
+  let savedApproval: RecordCorrectionApprovalEvidence | undefined;
   const service = new RecordCorrectionService(
     {
       assess,
+      pendingNoticeIds: async () => [],
+      listCasesForImport: async () => [],
       case: async () => item,
-      gameCandidates: async () => [
-        {
-          gameId,
-          revision: 1,
-          documentHash: "b".repeat(64),
-          sourceGameId: document.source.sourceGameId,
-          gameDate: document.metadata.gameDate,
-          stadium: document.metadata.stadium ?? null,
-          awayTeamName: document.teams.away.name,
-          homeTeamName: document.teams.home.name,
-        },
-      ],
+      assessmentBasis: async () => ({
+        caseVersion: item?.caseVersion ?? 0,
+        publication: 1,
+        matchupGeneration: 1,
+        actionSequence: 0,
+        selection: null,
+        games: [currentGame()],
+      }),
       listCases: async () => (item === null ? [] : [item]),
       listCaseSummaries: async () => [],
-      markProposalApplied: async () => undefined,
-      markResolvedIfImported: async () => [],
-      markResolvedAfterReassessment: async () => true,
+      markProposalApplied: async () => ({ noticeId: source.notice.noticeId, actionSequence: 1 }),
+      matchupContext: async () => ({
+        generation: 1,
+        games: [currentGame()],
+        notices: [{ notice: source.notice, selection: null }],
+      }),
+      markProposalBundle: async ({ noticeId, proposalHash, documentHash }) => {
+        const eventId = item?.eventId;
+        if (eventId == null) throw new Error("approval fixture event");
+        const ref = { noticeId, actionSequence: 1 };
+        savedApproval = {
+          ...ref,
+          gameId,
+          revision: 1,
+          baseHash: currentGame().documentHash,
+          eventId,
+          proposalHash,
+          documentHash,
+        };
+        return [ref];
+      },
+      approvalEvidence: async (refs) => {
+        const proof = savedApproval;
+        return proof !== undefined &&
+          refs.some(
+            (ref) => ref.noticeId === proof.noticeId && ref.actionSequence === proof.actionSequence,
+          )
+          ? [proof]
+          : [];
+      },
+
       reviewAction: async () => {
         throw new Error("unexpected review action");
       },

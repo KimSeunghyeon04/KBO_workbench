@@ -1,5 +1,9 @@
 import { extractNaverPlayerHeights, extractNaverPlayerBattingProfiles } from "@kbo/collection";
-import { applyCorrectionCommand, buildRecordCorrectionBatchProposal } from "@kbo/correction";
+import {
+  applyCorrectionCommand,
+  buildRecordCorrectionBatchProposal,
+  createRecordCorrectionFactsReader,
+} from "@kbo/correction";
 import {
   compileStagingGameDocumentV2,
   summarizePitchQuality,
@@ -180,6 +184,13 @@ export function compute(input: Computation): ComputationResult | Promise<Computa
         kind: input.kind,
         value: matchPlateAppearances(input.notice, input.game, input.document),
       };
+    case "record_correction_facts": {
+      const readFacts = createRecordCorrectionFactsReader(input.document);
+      return {
+        kind: input.kind,
+        value: input.targets.map(({ notice, binding }) => readFacts(notice, binding)),
+      };
+    }
     case "proposal":
       return {
         kind: input.kind,

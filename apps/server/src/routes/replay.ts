@@ -43,7 +43,9 @@ export const replayRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app,
         request.params.gameId,
         request.params.revision,
       );
-      await context.runtime.workspace.saveCorrectionDraft(document);
+      await context.runtime.workspace.withGameOperation(request.params.gameId, () =>
+        context.runtime.workspace.saveCorrectionDraft(document),
+      );
       reply.code(201);
       return sendCanonicalDocument(reply, document);
     },

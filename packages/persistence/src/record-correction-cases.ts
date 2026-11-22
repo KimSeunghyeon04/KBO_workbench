@@ -1,161 +1,280 @@
 import type {
+  RecordCorrectionApprovalReference,
   RecordCorrectionCase,
   RecordCorrectionCaseStatus,
   RecordCorrectionListItem,
+  RecordCorrectionMatchCandidate,
   RecordCorrectionNotice,
   RecordCorrectionQueue,
   RecordCorrectionReviewActionRequest,
   RecordCorrectionSummary,
 } from "@kbo/contracts";
+import { canonicalStringify } from "@kbo/contracts";
 import type { Pool, PoolClient } from "pg";
 import { iso, nullableIso } from "./record-correction-db.js";
-import { RecordCorrectionSources, loadNotice } from "./record-correction-sources.js";
+import {
+  advanceMatchupGenerations,
+  lockMatchupAssessment,
+  lockMatchupChanges,
+  readMatchupGeneration,
+  noticeMatchup,
+  readMatchupCandidates,
+  readRevisionMatchups,
+  matchesRecordCorrectionDoubleheader,
+  type Matchup,
+} from "./record-correction-matchups.js";
+import { readApprovalEvidence } from "./record-correction-publication.js";
+import { loadNotice } from "./record-correction-sources.js";
 import {
   RecordCorrectionStaleError,
+  type RecordCorrectionApprovalEvidence,
+  type RecordCorrectionApprovalInput,
+  type RecordCorrectionMatchup,
+  type RecordCorrectionMatchupContext,
   type RecordCorrectionAssessmentInput,
+  type RecordCorrectionAssessmentBasis,
   type RecordCorrectionGameCandidate,
 } from "./record-correction-types.js";
+import { RevisionConflictError } from "./revision-types.js";
+
+interface AssessmentRow {
+  readonly season: number;
+  readonly source_revision: number;
+  readonly notice_sequence: number;
+  readonly case_version: number;
+  readonly status: RecordCorrectionCaseStatus;
+  readonly game_id: string | null;
+  readonly game_revision: number | null;
+  readonly document_hash: string | null;
+  readonly event_id: string | null;
+  readonly batter_player_id: string | null;
+  readonly pitcher_player_id: string | null;
+  readonly reason_code: string;
+  readonly reason_message: string;
+  readonly proposal_hash: string | null;
+  readonly applied_revision: number | null;
+  readonly assessed_at: Date | string;
+  readonly notice_hash: string;
+  readonly publication: number;
+  readonly decision_sequence: number;
+  readonly matchup_generation: number;
+  readonly checked_matchup_generation: number | null;
+  readonly assessment_current: boolean;
+  readonly effective_status: RecordCorrectionCaseStatus;
+  readonly doubleheader_number: number | null;
+}
+
 export class RecordCorrectionCases {
-  public constructor(
-    private readonly pool: Pool,
-    private readonly sources: RecordCorrectionSources,
-  ) {}
+  public constructor(private readonly pool: Pool) {}
   public async gameCandidates(
     notice: RecordCorrectionNotice,
   ): Promise<RecordCorrectionGameCandidate[]> {
-    const result = await this.pool.query<{
-      readonly game_id: string;
-      readonly revision: number;
-      readonly document_hash: string;
-      readonly source_game_id: string;
-      readonly game_date: string;
-      readonly stadium: string | null;
-      readonly away_team_name: string;
-      readonly home_team_name: string;
-    }>(
-      `SELECT r.game_id,r.revision,r.document_hash,r.source_game_id,r.game_date::text,
-              r.stadium,away_team.team_name away_team_name,home_team.team_name home_team_name
-       FROM workbench.games g
-       JOIN workbench.game_revisions r
-         ON r.game_id=g.game_id AND r.revision=g.current_revision AND r.sealed
-       JOIN workbench.game_team_snapshots away_team
-         ON away_team.game_id=r.game_id AND away_team.revision=r.revision AND away_team.side='away'
-       JOIN workbench.game_team_snapshots home_team
-         ON home_team.game_id=r.game_id AND home_team.revision=r.revision AND home_team.side='home'
-       WHERE r.season=$1 AND r.game_date=$2 AND away_team.team_name=$3
-         AND home_team.team_name=$4
-       ORDER BY r.source_game_id,r.game_id`,
-      [
-        Number(notice.gameDate.slice(0, 4)),
-        notice.gameDate,
-        notice.awayTeamName,
-        notice.homeTeamName,
-      ],
+    return readMatchupCandidates(this.pool, noticeMatchup(notice));
+  }
+
+  public async assessmentBasis(
+    notice: RecordCorrectionNotice,
+  ): Promise<RecordCorrectionAssessmentBasis> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const row = await activeAssessment(client, notice.noticeId);
+      if (row === undefined || row.notice_hash !== notice.noticeHash)
+        throw new RecordCorrectionStaleError("평가 중 기록정정 공지 발행이 변경되었습니다.");
+      const selection = await readSelection(client, notice.noticeId);
+      const matchup = noticeMatchup(notice);
+      const games = await readMatchupCandidates(client, matchup);
+      const peers = await scopedNotices(client, matchup);
+      const actionSequence = (await nextActionSequence(client, notice.noticeId)) - 1;
+      await client.query("COMMIT");
+      return {
+        caseVersion: row.case_version,
+        publication: row.publication,
+        matchupGeneration: row.matchup_generation,
+        actionSequence,
+        selection,
+        games,
+        peers,
+      };
+    } catch (error: unknown) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  public async matchupContext(
+    notice: RecordCorrectionMatchup,
+  ): Promise<RecordCorrectionMatchupContext> {
+    const client = await this.pool.connect();
+    const matchup = noticeMatchup(notice);
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const generation = await readMatchupGeneration(client, matchup);
+      const games = await readMatchupCandidates(client, matchup);
+      const notices = await scopedNotices(client, matchup);
+      await client.query("COMMIT");
+      return { generation, games, notices };
+    } catch (error: unknown) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  public async approvalEvidence(
+    references: readonly RecordCorrectionApprovalReference[],
+  ): Promise<RecordCorrectionApprovalEvidence[]> {
+    if (references.length === 0) return [];
+    return readApprovalEvidence(this.pool, references);
+  }
+
+  public async pendingNoticeIds(after: string, limit: number, season?: number): Promise<string[]> {
+    const result = await this.pool.query<{ notice_id: string }>(
+      `SELECT notice_id FROM record_correction.active_assessments
+       WHERE notice_id > $1 AND NOT assessment_current AND status <> 'dismissed'
+         AND ($3::integer IS NULL OR season=$3)
+       ORDER BY notice_id LIMIT $2`,
+      [after, limit, season ?? null],
     );
-    return result.rows.map((row) => ({
-      gameId: row.game_id,
-      revision: row.revision,
-      documentHash: row.document_hash,
-      sourceGameId: row.source_game_id,
-      gameDate: row.game_date,
-      stadium: row.stadium,
-      awayTeamName: row.away_team_name,
-      homeTeamName: row.home_team_name,
-    }));
+    return result.rows.map((row) => row.notice_id);
   }
 
   public async seasonHasPendingAssessments(season: number): Promise<boolean> {
-    const result = await this.pool.query<{ readonly pending: boolean }>(
-      `SELECT EXISTS (
-         SELECT 1 FROM record_correction.match_assessments a
-         JOIN record_correction.season_current_revisions c
-           ON c.season=a.season AND c.current_revision=a.source_revision
-         WHERE a.season=$1
-           AND a.reason_code IN ('awaiting_assessment','notice_source_changed')
-       ) AS pending`,
-      [season],
-    );
-    return result.rows[0]?.pending === true;
+    return (await this.pendingNoticeIds("", 1, season)).length > 0;
   }
 
   public async assess(input: RecordCorrectionAssessmentInput): Promise<RecordCorrectionCase> {
+    const matchup = noticeMatchup(input.matchup);
     const client = await this.pool.connect();
     try {
-      await client.query("BEGIN");
-      const current = await client.query<{
-        readonly case_version: number;
-        readonly status: RecordCorrectionCaseStatus;
-        readonly source_revision: number;
-      }>(
-        `SELECT case_version,status,source_revision
-         FROM record_correction.match_assessments WHERE notice_id=$1 FOR UPDATE`,
-        [input.noticeId],
+      await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+      const gameBases = [...(input.gameBases ?? [])].sort((a, b) =>
+        a.gameId < b.gameId ? -1 : a.gameId > b.gameId ? 1 : 0,
       );
-      const old = current.rows[0];
-      // Source imports also update this case under its row lock.
-      const location = await this.sources.noticeLocation(input.noticeId, client);
-      if (location?.noticeHash !== input.noticeHash)
-        throw new RecordCorrectionStaleError("평가 중 기록정정 공지가 변경되었습니다.");
-      const preserveDecision =
-        old?.source_revision === location.sourceRevision &&
-        (old.status === "dismissed" || old.status === "resolved");
-      const caseVersion = (old?.case_version ?? 0) + 1;
-      const status = preserveDecision && old !== undefined ? old.status : input.status;
-      await client.query(
-        `INSERT INTO record_correction.match_assessments
-           (notice_id,season,source_revision,notice_sequence,case_version,status,game_id,
-            game_revision,document_hash,event_id,batter_player_id,pitcher_player_id,
-            reason_code,reason_message,proposal_hash,assessed_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-         ON CONFLICT (notice_id) DO UPDATE SET
-           season=EXCLUDED.season,source_revision=EXCLUDED.source_revision,
-           notice_sequence=EXCLUDED.notice_sequence,case_version=EXCLUDED.case_version,
-           status=EXCLUDED.status,game_id=EXCLUDED.game_id,game_revision=EXCLUDED.game_revision,
-           document_hash=EXCLUDED.document_hash,event_id=EXCLUDED.event_id,
-           batter_player_id=EXCLUDED.batter_player_id,
-           pitcher_player_id=EXCLUDED.pitcher_player_id,reason_code=EXCLUDED.reason_code,
-           reason_message=EXCLUDED.reason_message,proposal_hash=EXCLUDED.proposal_hash,
-           assessed_at=EXCLUDED.assessed_at`,
-        [
-          input.noticeId,
-          location.season,
-          location.sourceRevision,
-          location.noticeSequence,
-          caseVersion,
-          status,
-          input.gameId,
-          input.gameRevision,
-          input.documentHash,
-          input.eventId,
-          input.batterPlayerId,
-          input.pitcherPlayerId,
-          input.reasonCode,
-          input.reasonMessage,
-          input.proposalHash,
-          input.assessedAt,
-        ],
-      );
-      for (const [candidateOrder, candidate] of input.candidates.entries())
+      for (const { gameId, revision, documentHash } of gameBases) {
+        if (!(await isCurrentSealedRevision(client, gameId, revision, documentHash))) {
+          throw new RevisionConflictError("기록정정 평가 중 current revision이 변경되었습니다.");
+        }
+      }
+      await lockMatchupAssessment(client, matchup);
+      await lockNotice(client, input.noticeId);
+      const old = await activeAssessment(client, input.noticeId);
+      if (
+        old === undefined ||
+        old.notice_hash !== input.noticeHash ||
+        old.case_version !== input.caseVersion ||
+        input.basis.publication !== old.publication ||
+        input.basis.actionSequence !== (await nextActionSequence(client, input.noticeId)) - 1
+      ) {
+        throw new RecordCorrectionStaleError("평가 중 기록정정 공지나 사례가 갱신되었습니다.");
+      }
+      if (input.basis.matchupGeneration !== old.matchup_generation)
+        throw new RevisionConflictError("기록정정 평가 중 대진의 경기 후보가 변경되었습니다.");
+      if (input.gameBases !== null) {
+        const candidates = await readMatchupCandidates(client, matchup);
+        if (
+          candidates.length !== input.gameBases.length ||
+          candidates.some((candidate, index) => {
+            const expected = input.gameBases?.[index];
+            return (
+              candidate.gameId !== expected?.gameId ||
+              candidate.revision !== expected.revision ||
+              candidate.documentHash !== expected.documentHash
+            );
+          })
+        ) {
+          throw new RevisionConflictError("기록정정 평가 중 대진의 경기 후보가 변경되었습니다.");
+        }
+      }
+
+      const resolved =
+        input.status === "already_applied" && input.gameRevision !== null && input.gameRevision > 1;
+      const status = old.status === "dismissed" ? old.status : resolved ? "resolved" : input.status;
+      const reasonCode =
+        status === "dismissed"
+          ? old.reason_code
+          : resolved
+            ? "sealed_revision_satisfies_kbo_after_state"
+            : input.reasonCode;
+      const reasonMessage =
+        status === "dismissed"
+          ? old.reason_message
+          : resolved
+            ? "현재 봉인된 교정 revision이 KBO 정정 후 상태를 만족합니다."
+            : input.reasonMessage;
+      const appliedRevision = resolved ? input.gameRevision : null;
+      const proposalHash = input.proposalHash;
+      const next = [
+        status,
+        input.gameId,
+        input.gameRevision,
+        input.documentHash,
+        input.eventId,
+        input.batterPlayerId,
+        input.pitcherPlayerId,
+        reasonCode,
+        reasonMessage,
+        proposalHash,
+        appliedRevision,
+      ];
+      const previous = [
+        old.status,
+        old.game_id,
+        old.game_revision,
+        old.document_hash,
+        old.event_id,
+        old.batter_player_id,
+        old.pitcher_player_id,
+        old.reason_code,
+        old.reason_message,
+        old.proposal_hash,
+        old.applied_revision,
+      ];
+      const changed =
+        canonicalStringify(next) !== canonicalStringify(previous) ||
+        canonicalStringify(input.candidates) !==
+          canonicalStringify(
+            await readAssessmentCandidates(client, input.noticeId, old.case_version),
+          );
+      const version = old.case_version + Number(changed);
+      if (changed && status !== "dismissed") {
         await client.query(
-          `INSERT INTO record_correction.match_candidates
-             (notice_id,case_version,candidate_id,candidate_order,game_id,game_revision,
-              document_hash,event_id,batter_player_id,pitcher_player_id,label,confidence_reason)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-          [
-            input.noticeId,
-            caseVersion,
-            candidate.candidateId,
-            candidateOrder,
-            candidate.gameId,
-            candidate.revision,
-            candidate.documentHash,
-            candidate.eventId,
-            candidate.batterPlayerId,
-            candidate.pitcherPlayerId,
-            candidate.label,
-            candidate.confidenceReason,
-          ],
+          `UPDATE record_correction.match_assessments SET
+             status=$2,game_id=$3,game_revision=$4,document_hash=$5,event_id=$6,
+             batter_player_id=$7,pitcher_player_id=$8,reason_code=$9,reason_message=$10,
+             proposal_hash=$11,applied_revision=$12,case_version=$13,assessed_at=$14
+           WHERE notice_id=$1`,
+          [input.noticeId, ...next, version, input.assessedAt],
         );
+        await writeCandidates(client, input.noticeId, version, input.candidates);
+        if (resolved) {
+          await client.query(
+            `INSERT INTO record_correction.review_actions
+             (notice_id,action_sequence,case_version,action_kind,document_hash,applied_revision,notice_publication,target_game_id)
+             SELECT $1,$2,$3,'resolved',$4,$5,$6,$7
+             WHERE NOT EXISTS (SELECT 1 FROM record_correction.review_actions
+               WHERE notice_id=$1 AND action_kind='resolved' AND notice_publication=$6
+                 AND document_hash=$4 AND target_game_id=$7)`,
+            [
+              input.noticeId,
+              await nextActionSequence(client, input.noticeId),
+              version,
+              input.documentHash,
+              appliedRevision,
+              old.publication,
+              input.gameId,
+            ],
+          );
+        }
+      }
+      await client.query(
+        `UPDATE record_correction.match_assessments SET
+           checked_matchup_generation=$2,checked_decision_sequence=decision_sequence WHERE notice_id=$1`,
+        [input.noticeId, old.matchup_generation],
+      );
       await client.query("COMMIT");
     } catch (error: unknown) {
       await client.query("ROLLBACK").catch(() => undefined);
@@ -164,7 +283,8 @@ export class RecordCorrectionCases {
       client.release();
     }
     const result = await this.case(input.noticeId);
-    if (result === null) throw new Error("record correction assessment 저장에 실패했습니다.");
+    if (result === null)
+      throw new RecordCorrectionStaleError("평가 중 기록정정 공지가 비활성화되었습니다.");
     return result;
   }
 
@@ -175,16 +295,30 @@ export class RecordCorrectionCases {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const assessment = await client.query<{
-        readonly case_version: number;
-      }>(
-        `SELECT case_version FROM record_correction.match_assessments
-         WHERE notice_id=$1 FOR UPDATE`,
-        [noticeId],
+      const before = await activeAssessment(client, noticeId);
+      if (before === undefined) throw new RecordCorrectionStaleError("현재 공지 발행이 없습니다.");
+      const notice = await loadNotice(
+        client,
+        before.season,
+        before.source_revision,
+        before.notice_sequence,
       );
-      if (assessment.rows[0] === undefined) throw new Error("record correction case가 없습니다.");
-      if (assessment.rows[0].case_version !== request.caseVersion)
+      const matchup = noticeMatchup(notice);
+      const lockedMatchups = await lockMatchupChanges(client, [matchup]);
+      await lockNotice(client, noticeId);
+      const row = await activeAssessment(client, noticeId);
+      if (
+        row === undefined ||
+        row.publication !== before.publication ||
+        row.case_version !== request.caseVersion
+      )
         throw new RecordCorrectionStaleError("record correction case version이 변경되었습니다.");
+      if (
+        (row.status === "dismissed" && request.action !== "reopen") ||
+        (request.action === "reopen" && row.status !== "dismissed")
+      ) {
+        throw new RecordCorrectionStaleError("현재 검토 상태에서 실행할 수 없는 작업입니다.");
+      }
       const actionSequence = await nextActionSequence(client, noticeId);
       if (request.action === "select_candidate") {
         if (request.candidateId === null)
@@ -203,14 +337,27 @@ export class RecordCorrectionCases {
           [noticeId, request.caseVersion, request.candidateId],
         );
         const selected = candidate.rows[0];
-        if (selected === undefined) throw new Error("선택한 record correction 후보가 없습니다.");
-        await insertReviewAction(client, noticeId, actionSequence, request, null);
+        const games = await readMatchupCandidates(client, matchup);
+        if (
+          selected === undefined ||
+          selected.event_id === null ||
+          !games.some(
+            (game) =>
+              game.gameId === selected.game_id &&
+              game.revision === selected.game_revision &&
+              game.documentHash === selected.document_hash &&
+              matchesRecordCorrectionDoubleheader(game.sourceGameId, row.doubleheader_number),
+          )
+        ) {
+          throw new RecordCorrectionStaleError("현재 공지에서 유효한 경기·타석 후보가 아닙니다.");
+        }
+        await insertReviewAction(client, noticeId, actionSequence, request, row.publication);
         await client.query(
           `UPDATE record_correction.match_assessments SET
              status='manual_review',game_id=$2,game_revision=$3,document_hash=$4,event_id=$5,
              batter_player_id=$6,pitcher_player_id=$7,reason_code='manual_candidate_selected',
              reason_message='사용자가 경기/플레이 후보를 선택했습니다.',
-             proposal_hash=NULL,assessed_at=CURRENT_TIMESTAMP
+             proposal_hash=NULL,applied_revision=NULL,assessed_at=CURRENT_TIMESTAMP
            WHERE notice_id=$1`,
           [
             noticeId,
@@ -225,10 +372,10 @@ export class RecordCorrectionCases {
       } else {
         if (request.action === "dismiss" && request.reason === null)
           throw new Error("무시에는 사유가 필요합니다.");
-        await insertReviewAction(client, noticeId, actionSequence, request, null);
+        await insertReviewAction(client, noticeId, actionSequence, request, row.publication);
         await client.query(
           `UPDATE record_correction.match_assessments SET status=$2,
-             reason_code=$3,reason_message=$4,assessed_at=CURRENT_TIMESTAMP
+             reason_code=$3,reason_message=$4,proposal_hash=NULL,applied_revision=NULL,assessed_at=CURRENT_TIMESTAMP
            WHERE notice_id=$1`,
           [
             noticeId,
@@ -249,9 +396,10 @@ export class RecordCorrectionCases {
         [noticeId, request.caseVersion, nextVersion],
       );
       await client.query(
-        "UPDATE record_correction.match_assessments SET case_version=$2 WHERE notice_id=$1",
-        [noticeId, nextVersion],
+        "UPDATE record_correction.match_assessments SET case_version=$2,decision_sequence=$3 WHERE notice_id=$1",
+        [noticeId, nextVersion, actionSequence],
       );
+      await advanceMatchupGenerations(client, lockedMatchups);
       await client.query("COMMIT");
     } catch (error: unknown) {
       await client.query("ROLLBACK").catch(() => undefined);
@@ -264,160 +412,81 @@ export class RecordCorrectionCases {
     return result;
   }
 
-  public async markProposalApplied(input: {
-    readonly noticeId: string;
-    readonly caseVersion: number;
-    readonly sessionId: string;
-    readonly proposalHash: string;
-    readonly documentHash: string;
-  }): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      const updated = await client.query(
-        `UPDATE record_correction.match_assessments
-         SET reason_code='proposal_applied_to_draft',
-             reason_message='정정 제안을 correction session에 적용했습니다.',
-             assessed_at=CURRENT_TIMESTAMP
-         WHERE notice_id=$1 AND case_version=$2`,
-        [input.noticeId, input.caseVersion],
-      );
-      if (updated.rowCount !== 1)
-        throw new RecordCorrectionStaleError("record correction case version이 변경되었습니다.");
-
-      const actionSequence = await nextActionSequence(client, input.noticeId);
-      await client.query(
-        `INSERT INTO record_correction.review_actions
-           (notice_id,action_sequence,case_version,action_kind,session_id,proposal_hash,document_hash)
-         VALUES ($1,$2,$3,'proposal_applied',$4,$5,$6)`,
-        [
-          input.noticeId,
-          actionSequence,
-          input.caseVersion,
-          input.sessionId,
-          input.proposalHash,
-          input.documentHash,
-        ],
-      );
-      await client.query("COMMIT");
-    } catch (error: unknown) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
-    }
+  public async markProposalApplied(
+    input: RecordCorrectionApprovalInput,
+  ): Promise<RecordCorrectionApprovalReference> {
+    const [first] = await this.markProposalBundle(input);
+    if (first === undefined) throw new Error("Missing recorded approval");
+    return first;
   }
 
-  public async markResolvedIfImported(
-    gameId: string,
-    revision: number,
-    documentHash: string,
-  ): Promise<string[]> {
+  public async markProposalBundle(
+    input: RecordCorrectionApprovalInput,
+  ): Promise<RecordCorrectionApprovalReference[]> {
     const client = await this.pool.connect();
     try {
-      await client.query("BEGIN");
-      if (!(await isCurrentSealedRevision(client, gameId, revision, documentHash))) {
-        await client.query("COMMIT");
-        return [];
-      }
-      // Wait for concurrent review writes before reading the approval in a new statement.
-      const matching = await client.query<{ readonly notice_id: string }>(
-        `SELECT notice_id FROM record_correction.match_assessments
-         WHERE game_id=$1 AND status NOT IN ('dismissed','resolved')
-         ORDER BY notice_id FOR UPDATE`,
-        [gameId],
+      await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+      const before = await activeAssessment(client, input.noticeId);
+      if (before === undefined) throw staleApproval();
+      const notice = await loadNotice(
+        client,
+        before.season,
+        before.source_revision,
+        before.notice_sequence,
       );
-      const resolved = await client.query<{
-        readonly notice_id: string;
-        readonly case_version: number;
-      }>(
-        `UPDATE record_correction.match_assessments AS assessment SET
-           status='resolved',applied_revision=$2,reason_code='sealed_revision_matches_approval',
-           reason_message='승인된 문서가 새 current revision으로 봉인되었습니다.',
-           assessed_at=CURRENT_TIMESTAMP
-         WHERE assessment.notice_id = ANY($1::text[])
-           AND EXISTS (
-             SELECT 1 FROM (
-               SELECT case_version,action_kind,document_hash
-               FROM record_correction.review_actions
-               WHERE notice_id=assessment.notice_id
-               ORDER BY action_sequence DESC LIMIT 1
-             ) AS latest
-             WHERE latest.case_version=assessment.case_version
-               AND latest.action_kind='proposal_applied' AND latest.document_hash=$3
-           )
-         RETURNING assessment.notice_id,assessment.case_version`,
-        [matching.rows.map((row) => row.notice_id), revision, documentHash],
-      );
-      for (const notice of resolved.rows)
-        await client.query(
-          `INSERT INTO record_correction.review_actions
-             (notice_id,action_sequence,case_version,action_kind,document_hash,applied_revision)
-           VALUES ($1,$2,$3,'resolved',$4,$5)`,
-          [
-            notice.notice_id,
-            await nextActionSequence(client, notice.notice_id),
-            notice.case_version,
-            documentHash,
-            revision,
-          ],
-        );
-      await client.query("COMMIT");
-      return resolved.rows.map((row) => row.notice_id);
-    } catch (error: unknown) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  public async markResolvedAfterReassessment(input: {
-    readonly noticeId: string;
-    readonly caseVersion: number;
-    readonly gameId: string;
-    readonly revision: number;
-    readonly documentHash: string;
-  }): Promise<boolean> {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
+      await lockMatchupAssessment(client, noticeMatchup(notice));
+      const carry = input.carry ?? [];
+      const ids = [input.noticeId, ...carry.map(({ noticeId }) => noticeId)].sort();
+      if (new Set(ids).size !== ids.length) throw staleApproval();
+      for (const id of ids) await lockNotice(client, id);
+      const row = await activeAssessment(client, input.noticeId);
       if (
-        !(await isCurrentSealedRevision(client, input.gameId, input.revision, input.documentHash))
-      ) {
-        await client.query("COMMIT");
-        return false;
+        row === undefined ||
+        row.publication !== before.publication ||
+        row.case_version !== input.caseVersion ||
+        !row.assessment_current ||
+        (input.generation !== undefined && row.matchup_generation !== input.generation) ||
+        row.status === "dismissed" ||
+        row.status === "resolved" ||
+        row.game_id === null ||
+        row.game_revision === null ||
+        row.event_id === null ||
+        row.document_hash === null
+      )
+        throw staleApproval();
+
+      const references = [
+        await recordApproval(client, input, row, input.proposalHash, row.event_id),
+      ];
+      const evidence = await readApprovalEvidence(client, carry);
+      if (evidence.length !== carry.length) throw staleApproval();
+      for (const proof of evidence) {
+        const peer = await activeAssessment(client, proof.noticeId);
+        if (
+          peer === undefined ||
+          proof.gameId !== row.game_id ||
+          proof.revision !== row.game_revision ||
+          proof.baseHash !== row.document_hash ||
+          proof.documentHash !== input.previousDocumentHash
+        )
+          throw staleApproval();
+        references.push(
+          await recordApproval(
+            client,
+            { ...input, noticeId: proof.noticeId },
+            {
+              ...peer,
+              game_id: proof.gameId,
+              game_revision: proof.revision,
+              document_hash: proof.baseHash,
+            },
+            proof.proposalHash,
+            proof.eventId,
+          ),
+        );
       }
-      const updated = await client.query<{ readonly case_version: number }>(
-        `UPDATE record_correction.match_assessments SET
-           status='resolved',applied_revision=$4,
-           reason_code='manual_import_satisfies_kbo_after_state',
-           reason_message='수동 교정 revision이 KBO 정정 후 상태를 만족합니다.',
-           assessed_at=CURRENT_TIMESTAMP
-         WHERE notice_id=$1 AND case_version=$2 AND game_id=$3 AND game_revision=$4
-           AND document_hash=$5 AND status='already_applied'
-         RETURNING case_version`,
-        [input.noticeId, input.caseVersion, input.gameId, input.revision, input.documentHash],
-      );
-      const row = updated.rows[0];
-      if (row === undefined) {
-        await client.query("ROLLBACK");
-        return false;
-      }
-      await client.query(
-        `INSERT INTO record_correction.review_actions
-           (notice_id,action_sequence,case_version,action_kind,document_hash,applied_revision)
-         VALUES ($1,$2,$3,'resolved',$4,$5)`,
-        [
-          input.noticeId,
-          await nextActionSequence(client, input.noticeId),
-          row.case_version,
-          input.documentHash,
-          input.revision,
-        ],
-      );
       await client.query("COMMIT");
-      return true;
+      return references;
     } catch (error: unknown) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
@@ -431,11 +500,9 @@ export class RecordCorrectionCases {
       readonly status: RecordCorrectionCaseStatus;
       readonly count: string;
     }>(
-      `SELECT a.status,COUNT(*)::text count
-       FROM record_correction.match_assessments a
-       JOIN record_correction.season_current_revisions c
-         ON c.season=a.season AND c.current_revision=a.source_revision
-       GROUP BY a.status`,
+      `SELECT a.effective_status AS status,COUNT(*)::text count
+       FROM record_correction.active_assessments a
+       GROUP BY a.effective_status`,
     );
     const byStatus = new Map(counts.rows.map((row) => [row.status, Number(row.count)]));
     const last = await this.pool.query<{ readonly finished_at: Date | string | null }>(
@@ -466,6 +533,7 @@ export class RecordCorrectionCases {
       readonly status?: RecordCorrectionCaseStatus;
       readonly search?: string;
     } = {},
+    matchups?: readonly Matchup[],
   ): Promise<RecordCorrectionCase[]> {
     const conditions: string[] = [];
     const values: unknown[] = [];
@@ -475,7 +543,7 @@ export class RecordCorrectionCases {
     }
     if (filters.status !== undefined) {
       values.push(filters.status);
-      conditions.push(`a.status=$${String(values.length)}`);
+      conditions.push(`a.effective_status=$${String(values.length)}`);
     }
     if (filters.search !== undefined && filters.search.trim().length > 0) {
       values.push(`%${filters.search.trim()}%`);
@@ -483,10 +551,19 @@ export class RecordCorrectionCases {
         `(n.away_team_name ILIKE $${String(values.length)} OR n.home_team_name ILIKE $${String(values.length)} OR n.content_text ILIKE $${String(values.length)})`,
       );
     }
+    if (matchups !== undefined) {
+      if (matchups.length === 0) return [];
+      conditions.push("NOT a.assessment_current AND a.status <> 'dismissed'");
+      const predicates = matchups.map((matchup) => {
+        const index = values.length;
+        values.push(...matchup);
+        return `(n.season=$${index + 1} AND n.game_date=$${index + 2}
+          AND n.away_team_name=$${index + 3} AND n.home_team_name=$${index + 4})`;
+      });
+      conditions.push(`(${predicates.join(" OR ")})`);
+    }
     const result = await this.pool.query<{ readonly notice_id: string }>(
-      `SELECT a.notice_id FROM record_correction.match_assessments a
-       JOIN record_correction.season_current_revisions c
-         ON c.season=a.season AND c.current_revision=a.source_revision
+      `SELECT a.notice_id FROM record_correction.active_assessments a
        JOIN record_correction.notices n
          ON n.season=a.season AND n.revision=a.source_revision
         AND n.notice_sequence=a.notice_sequence
@@ -494,13 +571,18 @@ export class RecordCorrectionCases {
        ORDER BY n.game_date DESC,n.record_number DESC,a.notice_id`,
       values,
     );
-    return Promise.all(
-      result.rows.map(async (row) => {
-        const item = await this.case(row.notice_id);
-        if (item === null) throw new Error("record correction case 조회가 일관되지 않습니다.");
-        return item;
-      }),
+    const cases = await Promise.all(result.rows.map((row) => this.case(row.notice_id)));
+    return cases.filter(
+      (item): item is RecordCorrectionCase =>
+        item !== null && (filters.status === undefined || filters.status === item.status),
     );
+  }
+
+  public async listCasesForImport(
+    gameId: string,
+    revision: number,
+  ): Promise<RecordCorrectionCase[]> {
+    return this.listCases({}, await readRevisionMatchups(this.pool, gameId, revision));
   }
 
   public async listCaseSummaries(
@@ -519,12 +601,14 @@ export class RecordCorrectionCases {
     }
     if (filters.status !== undefined) {
       values.push(filters.status);
-      conditions.push(`a.status=$${String(values.length)}`);
+      conditions.push(`a.effective_status=$${String(values.length)}`);
     }
     if (filters.queue === "needs_action") {
-      conditions.push(`a.status IN ('action_required','manual_review','unmatched')`);
+      conditions.push(`a.effective_status IN ('action_required','manual_review','unmatched')`);
     } else if (filters.queue === "completed") {
-      conditions.push(`a.status IN ('already_applied','out_of_scope','resolved','dismissed')`);
+      conditions.push(
+        `a.effective_status IN ('already_applied','out_of_scope','resolved','dismissed')`,
+      );
     }
     if (filters.search !== undefined && filters.search.trim().length > 0) {
       values.push(`%${filters.search.trim()}%`);
@@ -546,12 +630,11 @@ export class RecordCorrectionCases {
       readonly before_record_text: string;
       readonly after_record_text: string;
     }>(
-      `SELECT a.notice_id,a.case_version,a.status,a.season,a.game_id,a.assessed_at,
+      `SELECT a.notice_id,a.case_version,a.effective_status AS status,a.season,
+              CASE WHEN a.assessment_current THEN a.game_id END AS game_id,a.assessed_at,
               n.game_date::text AS game_date,n.away_team_name,n.home_team_name,n.venue_name,
               n.before_record_text,n.after_record_text
-       FROM record_correction.match_assessments a
-       JOIN record_correction.season_current_revisions c
-         ON c.season=a.season AND c.current_revision=a.source_revision
+       FROM record_correction.active_assessments a
        JOIN record_correction.notices n
          ON n.season=a.season AND n.revision=a.source_revision
         AND n.notice_sequence=a.notice_sequence
@@ -576,73 +659,214 @@ export class RecordCorrectionCases {
   }
 
   public async case(noticeId: string): Promise<RecordCorrectionCase | null> {
-    const result = await this.pool.query<{
-      readonly season: number;
-      readonly source_revision: number;
-      readonly notice_sequence: number;
-      readonly case_version: number;
-      readonly status: RecordCorrectionCaseStatus;
-      readonly game_id: string | null;
-      readonly game_revision: number | null;
-      readonly event_id: string | null;
-      readonly reason_code: string;
-      readonly reason_message: string;
-      readonly proposal_hash: string | null;
-      readonly applied_revision: number | null;
-      readonly assessed_at: Date | string;
-    }>("SELECT * FROM record_correction.match_assessments WHERE notice_id=$1", [noticeId]);
-    const row = result.rows[0];
-    if (row === undefined) return null;
-    const notice = await loadNotice(
-      this.pool,
-      row.season,
-      row.source_revision,
-      row.notice_sequence,
-    );
-    const candidates = await this.pool.query<{
-      readonly candidate_id: string;
-      readonly game_id: string;
-      readonly game_revision: number;
-      readonly document_hash: string;
-      readonly event_id: string | null;
-      readonly batter_player_id: string | null;
-      readonly pitcher_player_id: string | null;
-      readonly label: string;
-      readonly confidence_reason: string;
-    }>(
-      `SELECT * FROM record_correction.match_candidates
-       WHERE notice_id=$1 AND case_version=$2 ORDER BY candidate_order`,
-      [noticeId, row.case_version],
-    );
-    return {
-      noticeId,
-      season: row.season,
-      sourceRevision: row.source_revision,
-      caseVersion: row.case_version,
-      status: row.status,
-      gameId: row.game_id,
-      gameRevision: row.game_revision,
-      eventId: row.event_id,
-      reasonCode: row.reason_code,
-      reasonMessage: row.reason_message,
-      proposalHash: row.proposal_hash,
-      appliedRevision: row.applied_revision,
-      assessedAt: iso(row.assessed_at),
-      notice,
-      candidates: candidates.rows.map((candidate) => ({
-        candidateId: candidate.candidate_id,
-        gameId: candidate.game_id,
-        revision: candidate.game_revision,
-        documentHash: candidate.document_hash,
-        eventId: candidate.event_id,
-        batterPlayerId: candidate.batter_player_id,
-        pitcherPlayerId: candidate.pitcher_player_id,
-        label: candidate.label,
-        confidenceReason: candidate.confidence_reason,
-      })),
-    };
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const row = await activeAssessment(client, noticeId);
+      if (row === undefined) {
+        await client.query("COMMIT");
+        return null;
+      }
+      const notice = await loadNotice(client, row.season, row.source_revision, row.notice_sequence);
+      const pending = !row.assessment_current && row.status !== "dismissed";
+      const candidates =
+        pending && row.reason_code !== "manual_candidate_selected"
+          ? []
+          : await readAssessmentCandidates(client, noticeId, row.case_version);
+      await client.query("COMMIT");
+      return {
+        noticeId,
+        season: row.season,
+        sourceRevision: row.source_revision,
+        caseVersion: row.case_version,
+        status: row.effective_status,
+        gameId: pending ? null : row.game_id,
+        gameRevision: pending ? null : row.game_revision,
+        eventId: pending ? null : row.event_id,
+        reasonCode:
+          pending && row.checked_matchup_generation !== null
+            ? "awaiting_assessment"
+            : row.reason_code,
+        reasonMessage:
+          pending && row.checked_matchup_generation !== null
+            ? "현재 경기와 검토 근거를 재평가하고 있습니다."
+            : row.reason_message,
+        proposalHash: pending ? null : row.proposal_hash,
+        appliedRevision: pending ? null : row.applied_revision,
+        assessedAt: iso(row.assessed_at),
+        notice,
+        candidates,
+      };
+    } catch (error: unknown) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }
+
+async function lockNotice(client: PoolClient, noticeId: string): Promise<void> {
+  await client.query(
+    "SELECT notice_id FROM record_correction.match_assessments WHERE notice_id=$1 FOR UPDATE",
+    [noticeId],
+  );
+}
+
+async function activeAssessment(
+  client: PoolClient,
+  noticeId: string,
+): Promise<AssessmentRow | undefined> {
+  return (
+    await client.query<AssessmentRow>(
+      "SELECT * FROM record_correction.active_assessments WHERE notice_id=$1",
+      [noticeId],
+    )
+  ).rows[0];
+}
+
+async function readSelection(
+  client: PoolClient,
+  noticeId: string,
+): Promise<RecordCorrectionMatchCandidate | null> {
+  const result = await client.query<{ case_version: number; candidate_id: string }>(
+    `SELECT case_version,candidate_id FROM record_correction.active_review_actions
+     WHERE notice_id=$1 AND action_kind='select_candidate' ORDER BY action_sequence DESC LIMIT 1`,
+    [noticeId],
+  );
+  const selection = result.rows[0];
+  if (selection === undefined) return null;
+  const candidates = await readAssessmentCandidates(client, noticeId, selection.case_version);
+  return candidates.find((candidate) => candidate.candidateId === selection.candidate_id) ?? null;
+}
+
+async function writeCandidates(
+  client: PoolClient,
+  noticeId: string,
+  caseVersion: number,
+  candidates: readonly RecordCorrectionMatchCandidate[],
+): Promise<void> {
+  for (const [order, candidate] of candidates.entries()) {
+    await client.query(
+      `INSERT INTO record_correction.match_candidates
+       (notice_id,case_version,candidate_id,candidate_order,game_id,game_revision,document_hash,event_id,
+        batter_player_id,pitcher_player_id,label,confidence_reason)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [
+        noticeId,
+        caseVersion,
+        candidate.candidateId,
+        order,
+        candidate.gameId,
+        candidate.revision,
+        candidate.documentHash,
+        candidate.eventId,
+        candidate.batterPlayerId,
+        candidate.pitcherPlayerId,
+        candidate.label,
+        candidate.confidenceReason,
+      ],
+    );
+  }
+}
+
+function staleApproval(): RecordCorrectionStaleError {
+  return new RecordCorrectionStaleError("승인 중 현재 공지·경기·사례가 갱신되었습니다.");
+}
+
+async function scopedNotices(
+  client: PoolClient,
+  matchup: Matchup,
+): Promise<RecordCorrectionMatchupContext["notices"]> {
+  const result = await client.query<
+    Pick<AssessmentRow, "season" | "source_revision" | "notice_sequence"> & { notice_id: string }
+  >(
+    `SELECT a.notice_id,a.season,a.source_revision,a.notice_sequence
+     FROM record_correction.active_assessments a
+     JOIN record_correction.notices n ON (n.season,n.revision,n.notice_sequence)=
+       (a.season,a.source_revision,a.notice_sequence)
+     WHERE a.season=$1 AND n.game_date=$2 AND n.away_team_name=$3 AND n.home_team_name=$4
+       AND a.status <> 'dismissed' ORDER BY a.notice_id`,
+    [...matchup],
+  );
+  const notices = [];
+  for (const row of result.rows) {
+    notices.push({
+      notice: await loadNotice(client, row.season, row.source_revision, row.notice_sequence),
+      selection: await readSelection(client, row.notice_id),
+    });
+  }
+  return notices;
+}
+
+async function recordApproval(
+  client: PoolClient,
+  input: RecordCorrectionApprovalInput,
+  row: AssessmentRow,
+  proposalHash: string,
+  eventId: string,
+): Promise<RecordCorrectionApprovalReference> {
+  const existing = await client.query<{ action_sequence: number }>(
+    `SELECT action_sequence FROM record_correction.active_review_actions
+     WHERE notice_id=$1 AND action_kind='proposal_applied' AND target_decision_sequence=$2
+       AND target_game_id=$3 AND target_game_revision=$4 AND target_event_id=$5
+       AND proposal_hash=$6 AND document_hash=$7 AND verified_matchup_generation IS NOT DISTINCT FROM $8
+     ORDER BY action_sequence DESC LIMIT 1`,
+    [
+      input.noticeId,
+      row.decision_sequence,
+      row.game_id,
+      row.game_revision,
+      eventId,
+      proposalHash,
+      input.documentHash,
+      input.generation ?? null,
+    ],
+  );
+  const reused = existing.rows[0]?.action_sequence;
+  if (reused !== undefined) return { noticeId: input.noticeId, actionSequence: reused };
+  const actionSequence = await nextActionSequence(client, input.noticeId);
+  await client.query(
+    `INSERT INTO record_correction.review_actions
+       (notice_id,action_sequence,case_version,action_kind,session_id,proposal_hash,document_hash,
+        notice_publication,target_decision_sequence,target_game_id,target_game_revision,target_document_hash,
+        target_event_id,verified_matchup_generation)
+     VALUES ($1,$2,$3,'proposal_applied',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+    [
+      input.noticeId,
+      actionSequence,
+      row.case_version,
+      input.sessionId,
+      proposalHash,
+      input.documentHash,
+      row.publication,
+      row.decision_sequence,
+      row.game_id,
+      row.game_revision,
+      row.document_hash,
+      eventId,
+      input.generation ?? null,
+    ],
+  );
+  return { noticeId: input.noticeId, actionSequence };
+}
+
+async function readAssessmentCandidates(
+  executor: Pool | PoolClient,
+  noticeId: string,
+  caseVersion: number,
+): Promise<RecordCorrectionMatchCandidate[]> {
+  const result = await executor.query<RecordCorrectionMatchCandidate>(
+    `SELECT candidate_id AS "candidateId",game_id AS "gameId",game_revision AS revision,
+            document_hash AS "documentHash",event_id AS "eventId",batter_player_id AS "batterPlayerId",
+            pitcher_player_id AS "pitcherPlayerId",label,confidence_reason AS "confidenceReason"
+     FROM record_correction.match_candidates
+     WHERE notice_id=$1 AND case_version=$2 ORDER BY candidate_order`,
+    [noticeId, caseVersion],
+  );
+  return result.rows;
+}
+
 async function isCurrentSealedRevision(
   client: PoolClient,
   gameId: string,
@@ -673,11 +897,11 @@ async function insertReviewAction(
   noticeId: string,
   actionSequence: number,
   request: RecordCorrectionReviewActionRequest,
-  sessionId: string | null,
+  publication: number,
 ): Promise<void> {
   await client.query(
     `INSERT INTO record_correction.review_actions
-       (notice_id,action_sequence,case_version,action_kind,candidate_id,reason,session_id)
+       (notice_id,action_sequence,case_version,action_kind,candidate_id,reason,notice_publication)
      VALUES ($1,$2,$3,$4,$5,$6,$7)`,
     [
       noticeId,
@@ -686,7 +910,7 @@ async function insertReviewAction(
       request.action,
       request.candidateId,
       request.reason,
-      sessionId,
+      publication,
     ],
   );
 }

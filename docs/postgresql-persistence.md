@@ -31,7 +31,7 @@ PostgreSQL은 검증된 `StagingGameDocumentV2`를 typed fact로 투영해 봉�
 
 - PostgreSQL 16
 - fresh baseline: `database/v3/0001_v3_initial.sql`
-- migration head: `database/v3/0015_strike_zone_rule_fallback.sql`
+- migration head: `database/v3/0018_record_correction_proofs.sql`
 - analytics/projection/registry/record correction contract: `4/4/1/2`
 - schema: `catalog`, `workbench`, `baseball`, `registry`, `record_correction`, `analytics`
 - JSON, JSONB, ARRAY, tracking EAV 컬럼 없음
@@ -56,7 +56,12 @@ action을 scalar typed column으로 저장한다. JSON/JSONB/ARRAY는 사용하�
 
 정정 적용은 이 schema나 기존 sealed fact를 직접 갱신하지 않는다. current game revision을 correction
 draft로 hydrate하고 기존 compiler·workspace commit·append-only import를 거친다. import 성공 후
-assessment만 재평가해 승인 hash와 KBO 정정 후 값이 맞을 때 applied revision을 기록한다.
+현재 봉인본과 활성 공지를 재평가해 KBO 정정 후 값을 충족하면 applied revision을 기록한다.
+
+파일 적재 작업은 접수할 때 경기, revision, 원장 hash, 작업본 generation과 content hash를 고정한다.
+봉인과 작업 식별자 저장은 같은 PostgreSQL 트랜잭션에서 커밋한다. 응답 유실이나 재시작 뒤에는
+해당 식별자의 봉인 기록을 확인한다. 파일 정리는 일치하는 작업본에만 적용하며 정리 오류 뒤에
+새 작업본을 저장할 때는 같은 경기의 남은 저널을 먼저 처리한다.
 
 ## Catalog와 불변 경기 snapshot
 

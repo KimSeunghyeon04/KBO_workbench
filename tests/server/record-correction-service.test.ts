@@ -11,7 +11,6 @@ import {
 import {
   StagingWorkspace,
   RecordCorrectionStaleError,
-  RevisionConflictError,
   type CurrentRevisionBase,
   type RecordCorrectionAssessmentInput,
   type RecordCorrectionGameCandidate,
@@ -37,7 +36,8 @@ describe("RecordCorrectionService 매칭", () => {
   it("worker에서 매칭과 제안을 계산하고 검증한 원장은 평가마다 한 번만 읽는다", async () => {
     const pool = new ComputationPool(1);
     const run = vi.spyOn(pool, "run");
-    const fixture = await setup([game("anon-game", "anon_DH1")], pool);
+    const base = game("anon-game", "anon_DH1");
+    const fixture = await setup([base], pool);
     try {
       const first = await fixture.service.assessNotice(fixture.notice);
       expect(first).toMatchObject({ status: "action_required", eventId: "e10" });
@@ -47,7 +47,7 @@ describe("RecordCorrectionService 매칭", () => {
         "proposal",
       ]);
       expect(fixture.loadCorrectionDraft).toHaveBeenCalledOnce();
-      expect(fixture.currentRevisionBase).toHaveBeenCalledOnce();
+      expect(fixture.assess.mock.calls[0]?.[0].gameBases).toEqual([base]);
       const repeated = await fixture.service.assessNotice(fixture.notice);
       expect(repeated.candidates).toEqual(first.candidates);
       expect(fixture.loadCorrectionDraft).toHaveBeenCalledTimes(2);
@@ -67,34 +67,6 @@ describe("RecordCorrectionService 매칭", () => {
         },
       });
       await expect(fixture.service.assessNotice(fixture.notice)).rejects.toThrow("worker failed");
-      expect(fixture.assess).not.toHaveBeenCalled();
-      expect(fixture.loadCorrectionDraft).toHaveBeenCalledOnce();
-      fixture.service.close();
-    },
-  );
-
-  it.each(["revision", "hash", "missing"] as const)(
-    "제안 계산 중 DB base가 바뀌면 오래된 평가를 저장하지 않는다: %s",
-    async (changed) => {
-      const fixture = await setup([game("anon-game", "anon_DH1")], {
-        async run(input) {
-          const result = await inlineComputation.run(input);
-          if (input.kind === "proposal")
-            fixture.currentRevisionBase.mockResolvedValue(
-              changed === "missing"
-                ? null
-                : {
-                    revision: changed === "revision" ? 2 : 1,
-                    documentHash: changed === "hash" ? "c".repeat(64) : "b".repeat(64),
-                    sourceBundleHash: fixture.document.source.sourceBundleHash,
-                  },
-            );
-          return result;
-        },
-      });
-      await expect(fixture.service.assessNotice(fixture.notice)).rejects.toThrow(
-        RevisionConflictError,
-      );
       expect(fixture.assess).not.toHaveBeenCalled();
       expect(fixture.loadCorrectionDraft).toHaveBeenCalledOnce();
       fixture.service.close();
@@ -183,7 +155,7 @@ describe("RecordCorrectionService 매칭", () => {
     const fixture = await setup([game("anon-game-1", "anon_DH1")]);
     await expect(
       fixture.service.assessNotice({ ...fixture.notice, doubleheaderNumber: 2 }),
-    ).resolves.toMatchObject({ status: "manual_review", reasonCode: "ambiguous_game_identity" });
+    ).resolves.toMatchObject({ status: "manual_review", reasonCode: "specified_game_not_found" });
   });
 
   it("미연결 공지는 해당 경기의 최초 적재 뒤 재평가하고 다른 경기 적재에는 유지한다", async () => {
@@ -191,24 +163,27 @@ describe("RecordCorrectionService 매칭", () => {
     await expect(fixture.service.assessNotice(fixture.notice)).resolves.toMatchObject({
       status: "unmatched",
     });
-    await fixture.service.afterImport("unrelated-game", 1, "c".repeat(64));
+    expect(fixture.assess.mock.calls[0]?.[0].gameBases).toEqual([]);
+    await fixture.service.afterImport("unrelated-game", 1);
     expect(fixture.assess).toHaveBeenCalledOnce();
 
     fixture.setGameCandidates([game("anon-game", "anon_DH1")]);
-    await fixture.service.afterImport("anon-game", 1, "b".repeat(64));
+    await fixture.service.afterImport("anon-game", 1);
     expect(fixture.assess).toHaveBeenLastCalledWith(
       expect.objectContaining({ status: "action_required", gameId: "anon-game", gameRevision: 1 }),
     );
   });
 
   it("복수 경기에서 DH identity를 확정할 수 없으면 단일 PA 후보여도 수동 검토한다", async () => {
-    const fixture = await setup([game("anon-game-1", "anon_DH1"), game("anon-game-2", "anon_DH2")]);
+    const bases = [game("anon-game-1", "anon_DH1"), game("anon-game-2", "anon_DH2")];
+    const fixture = await setup(bases);
 
     await expect(fixture.service.assessNotice(fixture.notice)).resolves.toMatchObject({
       status: "manual_review",
       reasonCode: "ambiguous_game_identity",
     });
     expect(fixture.assess.mock.calls[0]?.[0].candidates).toHaveLength(2);
+    expect(fixture.assess.mock.calls[0]?.[0].gameBases).toEqual(bases);
   });
 
   it("공지 DH1과 Naver source identity가 맞는 경기만 자동 선택한다", async () => {
@@ -258,7 +233,17 @@ describe("RecordCorrectionService 매칭", () => {
     const fixture = await setup([game("golden-game-1", "anon_DH1")]);
     const item = await fixture.service.assessNotice(fixture.notice);
     const workspace = await StagingWorkspace.open(temporary.path);
-    await workspace.saveReady(fixture.document, []);
+    await workspace.saveReady(
+      parseStagingGameDocumentV2({
+        ...fixture.document,
+        revisionBase: {
+          kind: "sealed_revision",
+          revision: 1,
+          documentHash: game("golden-game-1", "anon_DH1").documentHash,
+        },
+      }),
+      [],
+    );
     const sessions = new CorrectionSessionManager(workspace);
     const service = new RecordCorrectionService(
       fixture.repository,
@@ -335,18 +320,11 @@ describe("RecordCorrectionService 매칭", () => {
       { ...game("anon-game", "anon_DH1"), revision: 2, documentHash: "c".repeat(64) },
     ]);
 
-    await fixture.service.afterImport("anon-game", 2, "c".repeat(64));
+    await fixture.service.afterImport("anon-game", 2);
 
     expect(fixture.assess).toHaveBeenLastCalledWith(
       expect.objectContaining({ status: "already_applied", gameRevision: 2 }),
     );
-    expect(fixture.markResolvedAfterReassessment).toHaveBeenCalledWith({
-      noticeId: fixture.notice.noticeId,
-      caseVersion: 2,
-      gameId: "anon-game",
-      revision: 2,
-      documentHash: "c".repeat(64),
-    });
   });
 });
 
@@ -422,17 +400,26 @@ async function setup(
       return currentCase;
     },
   );
-  const markProposalApplied = vi.fn(async () => undefined);
-  const markResolvedAfterReassessment = vi.fn(async () => true);
+  const markProposalApplied = vi.fn(async () => ({ noticeId: notice.noticeId, actionSequence: 1 }));
   const repository = {
     assess,
+    assessmentBasis: async () => ({
+      caseVersion: currentCase?.caseVersion ?? 0,
+      publication: 1,
+      matchupGeneration: 1,
+      actionSequence: 0,
+      games: [...candidates],
+      selection: null,
+    }),
+    pendingNoticeIds: async () => [],
     case: async () => currentCase,
-    gameCandidates: async () => [...candidates],
     listCases: async () => (currentCase === null ? [] : [currentCase]),
+    listCasesForImport: async (gameId: string) =>
+      currentCase !== null && candidates.some((candidate) => candidate.gameId === gameId)
+        ? [currentCase]
+        : [],
     listCaseSummaries: async () => [],
     markProposalApplied,
-    markResolvedAfterReassessment,
-    markResolvedIfImported: async () => [],
     reviewAction: async () => {
       throw new Error("unexpected review action");
     },
@@ -459,6 +446,10 @@ async function setup(
       },
     },
     {
+      approvalReferences: () => [],
+      approveCurrent: () => {
+        throw new Error("unexpected approval");
+      },
       command: () => {
         throw new Error("unexpected command");
       },
@@ -475,10 +466,8 @@ async function setup(
   return {
     assess,
     loadCorrectionDraft,
-    currentRevisionBase,
     document,
     markProposalApplied,
-    markResolvedAfterReassessment,
     notice,
     repository,
     service,

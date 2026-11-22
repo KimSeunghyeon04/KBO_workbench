@@ -6,6 +6,7 @@ import {
   JobStatusSchema,
   GameCatalogItemSchema,
 } from "./collection.js";
+import { RecordCorrectionApprovalReferenceSchema } from "./record-correction.js";
 import { DatabaseStatusSchema } from "./system.js";
 
 const strict = { additionalProperties: false } as const;
@@ -151,12 +152,29 @@ export const ImportSelectionSchema = Type.Object(
   },
   strict,
 );
+const ImportArtifactSchema = Type.Object(
+  { generation: Type.Integer({ minimum: 1 }), contentHash: HashSchema },
+  strict,
+);
+
 export const ImportTargetSchema = Type.Object(
   {
     gameId: GameIdSchema,
     season: Type.Integer({ minimum: 1982, maximum: 9999 }),
     documentHash: HashSchema,
     revision: Type.Integer({ minimum: 1 }),
+    artifact: Type.Optional(ImportArtifactSchema),
+    recordCorrection: Type.Optional(
+      Type.Object(
+        {
+          generation: Type.Optional(Type.Integer({ minimum: 1 })),
+          contentHash: Type.Optional(HashSchema),
+          approvals: Type.Array(RecordCorrectionApprovalReferenceSchema, { maxItems: 100 }),
+          fromSealedDraft: Type.Optional(Type.Literal(true)),
+        },
+        strict,
+      ),
+    ),
   },
   strict,
 );
@@ -173,6 +191,7 @@ export const ImportJobRecordSchema = Type.Object(
     job: ImportJobSchema,
     sourceSeason: Type.Union([Type.Integer({ minimum: 1982, maximum: 9999 }), Type.Null()]),
     target: Type.Union([ImportTargetSchema, Type.Null()]),
+    publicationPending: Type.Optional(Type.Literal(true)),
   },
   strict,
 );

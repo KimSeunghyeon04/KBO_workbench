@@ -1,4 +1,8 @@
-import type { CorrectionSession, StagingGameDocumentV2 } from "@kbo/contracts";
+import type {
+  CorrectionSession,
+  RecordCorrectionApprovalReference,
+  StagingGameDocumentV2,
+} from "@kbo/contracts";
 import type { ReplayResult } from "@kbo/game-core";
 import type { StoredFinding } from "@kbo/persistence";
 import type { PreparedCorrectionSnapshot } from "./correction-snapshot.js";
@@ -6,6 +10,8 @@ import type { PreparedCorrectionSnapshot } from "./correction-snapshot.js";
 export interface HistoryEntry {
   readonly before: StagingGameDocumentV2;
   readonly after: StagingGameDocumentV2;
+  readonly beforeApprovals: readonly RecordCorrectionApprovalReference[];
+  readonly afterApprovals: readonly RecordCorrectionApprovalReference[];
 }
 
 export interface InternalSession {
@@ -16,6 +22,8 @@ export interface InternalSession {
   snapshotId?: string;
   baseCurrentContentHash: string | null;
   document: StagingGameDocumentV2;
+  readonly independentRecordCorrection?: true;
+  recordCorrectionApprovals: readonly RecordCorrectionApprovalReference[];
   replay: ReplayResult;
   prepared: PreparedCorrectionSnapshot;
   storedFindings: StoredFinding[];

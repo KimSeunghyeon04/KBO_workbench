@@ -8,6 +8,8 @@ export { buildCorrectionPreview } from "./preview.js";
 export {
   buildRecordCorrectionBatchProposal,
   createRecordCorrectionProposalBuilder,
+  createRecordCorrectionFactsReader,
+  type RecordCorrectionAfterFact,
   type BuiltRecordCorrectionProposal,
   type RecordCorrectionProposalBinding,
 } from "./record-correction-proposal.js";

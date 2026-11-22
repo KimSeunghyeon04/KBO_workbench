@@ -56,10 +56,10 @@ export function RecordCorrectionProposalPanel(props: {
         <button
           type="button"
           className="primary-button"
-          disabled={data?.eligible !== true || data.batch === null || apply.isPending}
+          disabled={data?.eligible !== true || apply.isPending}
           onClick={() => apply.mutate()}
         >
-          제안 적용
+          {data?.eligible === true && data.batch === null ? "현재 작업본 재승인" : "제안 적용"}
         </button>
       </div>
       {proposal.isLoading ? <p className="muted-text">제안을 검증하는 중입니다.</p> : null}

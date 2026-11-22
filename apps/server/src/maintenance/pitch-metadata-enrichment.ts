@@ -88,17 +88,24 @@ export async function enrichPitchMetadataGame(
         prepared.replay.findings,
         prepared.document,
       );
-      await workspace.commitCorrection({
-        baseAuthority: snapshot.authority,
-        targetAuthority: findings.some((finding) => finding.severity === "blocking")
-          ? "quarantine"
-          : "staging",
-        baseDocumentHash: stagingDocumentHash(document),
-        document: prepared.document,
-        findingEnvelope: { schemaVersion: 2, findings },
-      });
+      await workspace.withGameOperation(gameId, () =>
+        workspace.commitCorrection({
+          baseAuthority: snapshot.authority,
+          targetAuthority: findings.some((finding) => finding.severity === "blocking")
+            ? "quarantine"
+            : "staging",
+          baseDocumentHash: stagingDocumentHash(document),
+          ...(snapshot.contentHash === undefined
+            ? {}
+            : { baseCurrentContentHash: snapshot.contentHash }),
+          document: prepared.document,
+          findingEnvelope: { schemaVersion: 2, findings },
+        }),
+      );
     } else {
-      revision = (await store.importRevision(prepared.document)).revision;
+      revision = (
+        await store.importRevision(prepared.document, { fromIndependentSealedDraft: true })
+      ).revision;
     }
   }
   return {

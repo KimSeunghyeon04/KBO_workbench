@@ -49,8 +49,12 @@ export {
 export {
   RecordCorrectionRepository,
   RecordCorrectionStaleError,
+  matchesRecordCorrectionDoubleheader,
+  type RecordCorrectionAssessmentBasis,
   type RecordCorrectionAssessmentInput,
   type RecordCorrectionGameCandidate,
+  type RecordCorrectionApprovalEvidence,
+  type RecordCorrectionMatchupContext,
   type RecordCorrectionImportedSeason,
 } from "./record-correction-repository.js";
 export {

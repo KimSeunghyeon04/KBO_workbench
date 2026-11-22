@@ -114,7 +114,7 @@ function buildProposal(
     return blocked("선택한 이벤트의 타자 또는 투수가 매칭 결과와 다릅니다.", changes);
   }
 
-  const targetResult = targetPlateResult(document, notice, binding, event.payload.result, reasons);
+  const targetResult = targetPlateResult(notice, binding, event.payload.result, reasons);
   if (targetResult !== null) {
     const currentDecision = decisionForResult(event.payload.result);
     if (matchesTargetResult(event.payload, targetResult))
@@ -390,6 +390,20 @@ function buildProposal(
   }
 }
 
+export interface RecordCorrectionAfterFact {
+  readonly key: string | null;
+  readonly values: readonly (PlateResult | number)[];
+  readonly satisfied: boolean;
+  readonly reasons: readonly string[];
+}
+
+export function createRecordCorrectionFactsReader(input: StagingGameDocumentV2) {
+  const document = parseStagingGameDocumentV2(input);
+  const replay = compileStagingGameDocumentV2(document);
+  return (notice: RecordCorrectionNotice, binding: RecordCorrectionProposalBinding) =>
+    afterFacts(document, replay, notice, binding);
+}
+
 function verifyAfterState(
   document: StagingGameDocumentV2,
   replay: ReturnType<typeof compileStagingGameDocumentV2>,
@@ -398,75 +412,119 @@ function verifyAfterState(
   target: PlateResultTarget | null,
   reasons: string[],
 ): void {
+  for (const fact of afterFacts(document, replay, notice, binding, target))
+    reasons.push(...fact.reasons);
+}
+
+function afterFacts(
+  document: StagingGameDocumentV2,
+  replay: ReturnType<typeof compileStagingGameDocumentV2>,
+  notice: RecordCorrectionNotice,
+  binding: RecordCorrectionProposalBinding,
+  exactTarget?: PlateResultTarget | null,
+): RecordCorrectionAfterFact[] {
+  const facts: RecordCorrectionAfterFact[] = [];
   const event = document.events.find((item) => item.identity.eventId === binding.eventId);
-  if (
-    target !== null &&
-    (event?.kind !== "plate_result" || !matchesTargetResult(event.payload, target))
-  )
-    reasons.push("제안 적용 후 플레이가 KBO 정정 후 판정과 일치하지 않습니다.");
+  const payload =
+    event?.kind === "plate_result" &&
+    event.payload.batterId === binding.batterPlayerId &&
+    event.payload.pitcherId === binding.pitcherPlayerId
+      ? event.payload
+      : null;
+  const isHit = notice.decisionAfter === "hit" && exactTarget === undefined;
+  const target =
+    exactTarget === undefined && !isHit
+      ? targetPlateResult(notice, binding, payload?.result ?? null, [])
+      : exactTarget;
+  if (isHit || (target !== undefined && target !== null)) {
+    const values: readonly PlateResult[] = isHit
+      ? ["single", "double", "triple", "home_run"]
+      : target
+        ? [target.result]
+        : [];
+    const matches =
+      payload !== null &&
+      (target === undefined || target === null
+        ? values.includes(payload.result)
+        : matchesTargetResult(payload, target));
+    facts.push({
+      key: JSON.stringify([
+        "plate",
+        binding.eventId,
+        binding.batterPlayerId,
+        binding.pitcherPlayerId,
+      ]),
+      values,
+      satisfied: matches,
+      reasons: matches ? [] : ["제안 적용 후 플레이가 KBO 정정 후 판정과 일치하지 않습니다."],
+    });
+  }
   for (const stat of notice.statChanges) {
     const playerId = participantPlayerId(binding, stat.participantIndex);
     const supportKind = effectiveSupportKind(stat);
     if (supportKind === "evidence_only" || supportKind === "unknown") continue;
+    const values = [stat.afterValue];
     if (supportKind === "derived") {
-      const batterId = playerId ?? binding.batterPlayerId;
+      const batterId = playerId ?? (stat.participantIndex === null ? binding.batterPlayerId : null);
       const line = replay.batterLines.find((item) => item.playerId === batterId);
       const totalBases =
         line === undefined ? null : line.hits + line.doubles + 2 * line.triples + 3 * line.homeRuns;
-      if (totalBases !== stat.afterValue)
-        reasons.push(`제안 적용 후 ${stat.rawStatName} 파생값이 KBO 정정 후 값과 다릅니다.`);
+      const satisfied = totalBases === stat.afterValue;
+      facts.push({
+        key: batterId === null ? null : JSON.stringify(["batter", batterId, stat.statCode]),
+        values,
+        satisfied,
+        reasons: satisfied
+          ? []
+          : [`제안 적용 후 ${stat.rawStatName} 파생값이 KBO 정정 후 값과 다릅니다.`],
+      });
       continue;
     }
-    if (playerId === null) continue;
-    if (stat.scope === "batter") {
-      const descriptor = BATTER_FIELDS[stat.statCode];
-      const record = document.officialRecords.batters.find((item) => item.playerId === playerId);
-      if (
-        descriptor !== undefined &&
-        record !== undefined &&
-        numericField(record, descriptor) !== stat.afterValue
-      )
-        reasons.push(`제안 적용 후 ${stat.rawStatName} 공식 기록이 KBO 정정 후 값과 다릅니다.`);
-      if (descriptor !== undefined) {
-        const line = replay.batterLines.find((item) => item.playerId === playerId);
-        verifyCompiledValue(line?.[descriptor.field], stat, playerId, reasons);
-      }
-    } else if (stat.scope === "pitcher") {
-      const descriptor = PITCHER_FIELDS[stat.statCode];
-      const record = document.officialRecords.pitchers.find((item) => item.playerId === playerId);
-      if (
-        descriptor !== undefined &&
-        record !== undefined &&
-        numericField(record, descriptor) !== stat.afterValue
-      )
-        reasons.push(`제안 적용 후 ${stat.rawStatName} 공식 기록이 KBO 정정 후 값과 다릅니다.`);
-      // ER is source evidence, not a compiler-derived statistic.
-      if (descriptor !== undefined && descriptor.field !== "earnedRuns") {
-        const line = replay.pitcherLines.find((item) => item.playerId === playerId);
-        verifyCompiledValue(line?.[descriptor.field], stat, playerId, reasons);
+    const descriptor =
+      stat.scope === "batter"
+        ? BATTER_FIELDS[stat.statCode]
+        : stat.scope === "pitcher"
+          ? PITCHER_FIELDS[stat.statCode]
+          : undefined;
+    if (descriptor === undefined) continue;
+    const record =
+      stat.scope === "batter"
+        ? document.officialRecords.batters.find((item) => item.playerId === playerId)
+        : document.officialRecords.pitchers.find((item) => item.playerId === playerId);
+    const line =
+      stat.scope === "batter"
+        ? replay.batterLines.find((item) => item.playerId === playerId)
+        : replay.pitcherLines.find((item) => item.playerId === playerId);
+    const reasons: string[] = [];
+    if (record === undefined || numericField(record, descriptor) !== stat.afterValue)
+      reasons.push(`제안 적용 후 ${stat.rawStatName} 공식 기록이 KBO 정정 후 값과 다릅니다.`);
+    // ER has an official observation only.
+    if (playerId !== null && descriptor.field !== "earnedRuns") {
+      const actual =
+        line === undefined
+          ? undefined
+          : Object.entries(line).find(([field]) => field === descriptor.field)?.[1];
+      if (actual !== stat.afterValue) {
+        const value = typeof actual === "number" ? actual : "미확인";
+        reasons.push(
+          `선수 ${playerId}의 ${stat.rawStatName} compiler 계산값(${value})이 KBO 정정 후 값(${String(stat.afterValue)})과 다릅니다. 원장을 수동 검토해야 합니다.`,
+        );
       }
     }
+    facts.push({
+      key: playerId === null ? null : JSON.stringify([stat.scope, playerId, stat.statCode]),
+      values,
+      satisfied: reasons.length === 0,
+      reasons,
+    });
   }
-}
-
-function verifyCompiledValue(
-  actual: unknown,
-  stat: RecordCorrectionNotice["statChanges"][number],
-  playerId: string,
-  reasons: string[],
-): void {
-  if (actual === stat.afterValue) return;
-  const value = typeof actual === "number" ? String(actual) : "미확인";
-  reasons.push(
-    `선수 ${playerId}의 ${stat.rawStatName} compiler 계산값(${value})이 KBO 정정 후 값(${String(stat.afterValue)})과 다릅니다. 원장을 수동 검토해야 합니다.`,
-  );
+  return facts;
 }
 
 function targetPlateResult(
-  document: StagingGameDocumentV2,
   notice: RecordCorrectionNotice,
   binding: RecordCorrectionProposalBinding,
-  currentResult: PlateResult,
+  currentResult: PlateResult | null,
   reasons: string[],
 ): PlateResultTarget | null {
   if (notice.decisionAfter === "fielder_choice" || notice.decisionAfter === "error") {
@@ -484,7 +542,10 @@ function targetPlateResult(
     };
   }
   if (notice.decisionAfter === "hit") {
-    if (["single", "double", "triple", "home_run"].includes(currentResult))
+    if (
+      currentResult !== null &&
+      ["single", "double", "triple", "home_run"].includes(currentResult)
+    )
       return { result: currentResult, destination: effectiveDestination(currentResult) };
     const totalBases = notice.statChanges.find(
       (stat) =>

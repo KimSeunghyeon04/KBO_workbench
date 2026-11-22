@@ -23,6 +23,7 @@ import {
   GameAlreadyImportedError,
   RevisionConflictError,
   type ImportedRevision,
+  type ImportOptions,
   type ImportWorkspace,
 } from "@kbo/persistence";
 
@@ -30,6 +31,7 @@ interface ImportSourceWorkspace {
   readonly imports?: ImportWorkspace;
   withGameOperation?<T>(gameId: string, operation: () => Promise<T>): Promise<T>;
   catalog(): Promise<GameCatalog>;
+  readImportTarget?(gameId: string): Promise<ImportTarget | null>;
   readImportTargets?(gameIds: readonly string[]): Promise<ImportTarget[]>;
   readDocument(
     authority: "staging" | "quarantine",
@@ -40,11 +42,13 @@ interface ImportSourceWorkspace {
     season: number,
     gameId: string,
     expectedDocumentHash: string,
+    artifact?: ImportTarget["artifact"],
   ): Promise<void>;
 }
 interface RevisionImporter {
-  importRevision(input: unknown): Promise<ImportedRevision>;
+  importRevision(input: unknown, options?: ImportOptions): Promise<ImportedRevision>;
   revisions?(gameId: string): Promise<RevisionCatalog>;
+  importPublication?(jobId: string, target: ImportTarget): Promise<ImportedRevision | null>;
 }
 interface InternalImportJob {
   readonly request: ImportJobCreateRequest;
@@ -52,6 +56,7 @@ interface InternalImportJob {
   target: ImportTarget | null;
   snapshot: ImportJob;
   execution: Promise<void> | null;
+  publicationPending?: true;
 }
 export class ImportJobNotFoundError extends Error {}
 export class ImportIdempotencyConflictError extends Error {}
@@ -83,6 +88,10 @@ export class ImportJobManager {
       revision: number,
       documentHash: string,
     ) => Promise<void> = async () => undefined,
+    private readonly verifyRecordCorrection?: (
+      document: StagingGameDocumentV2,
+      target: ImportTarget,
+    ) => Promise<number | undefined>,
   ) {
     if (!Number.isInteger(maxConcurrentJobs) || maxConcurrentJobs < 1)
       throw new Error("동시 적재 작업 수는 1 이상의 정수여야 합니다.");
@@ -102,40 +111,93 @@ export class ImportJobManager {
     }
     for (const record of await storage.jobs()) this.register(record);
     for (const job of this.jobs.values()) {
-      if (isTerminal(job.snapshot.status) && job.snapshot.followUpPending !== true) continue;
-      const target = job.target;
-      const revisions = target === null ? null : await this.importer.revisions?.(target.gameId);
-      const committed = revisions?.revisions.find(
-        (revision) =>
-          revision.sealed &&
-          revision.revision === target?.revision &&
-          revision.documentHash === target.documentHash,
-      );
-      if (committed !== undefined && target !== null) {
-        job.snapshot = {
-          ...job.snapshot,
-          status: "succeeded",
-          revision: committed.revision,
-          documentHash: committed.documentHash,
-          projectionHash: committed.projectionHash,
-          finishedAt: job.snapshot.finishedAt ?? this.now().toISOString(),
-          followUpPending: true,
-          error: null,
-          errorCategory: null,
-        };
-        await this.followUp(job);
+      if (
+        job.publicationPending !== true &&
+        isTerminal(job.snapshot.status) &&
+        job.snapshot.followUpPending !== true
+      )
+        continue;
+      await this.restoreJob(job);
+    }
+  }
+
+  private async restoreJob(job: InternalImportJob): Promise<void> {
+    await this.withGame(job.snapshot.gameId, async () => {
+      if (
+        job.snapshot.status === "succeeded" &&
+        job.snapshot.revision !== null &&
+        job.snapshot.documentHash !== null
+      ) {
+        await this.followUpUnlocked(job);
+        await this.save(job);
+        return;
+      }
+      let committed: ImportedRevision | null;
+      try {
+        committed = await this.committedPublication(job);
+      } catch {
+        this.keepPublicationPending(job);
+        await this.save(job);
+        return;
+      }
+      if (committed !== null) {
+        this.recordPublication(job, committed);
+        await this.save(job);
+        await this.followUpUnlocked(job);
       } else {
+        delete job.publicationPending;
         job.snapshot = {
           ...job.snapshot,
           status: "cancelled",
           interrupted: true,
           finishedAt: this.now().toISOString(),
-          error: "서버가 중단되어 자동 재실행하지 않았습니다. 현재 상태를 확인해 다시 선택하세요.",
+          error: "봉인 기록이 확인되지 않은 중단 작업입니다. 현재 상태를 확인해 다시 선택하세요.",
           errorCategory: "persistence",
         };
       }
       await this.save(job);
-    }
+    });
+  }
+
+  private async committedPublication(job: InternalImportJob): Promise<ImportedRevision | null> {
+    const target = job.target;
+    if (target === null) return null;
+    if (this.importer.importPublication !== undefined)
+      return this.importer.importPublication(job.snapshot.jobId, target);
+    const revisions = await this.importer.revisions?.(target.gameId);
+    const committed = revisions?.revisions.find(
+      (revision) =>
+        revision.sealed &&
+        revision.revision === target.revision &&
+        revision.documentHash === target.documentHash,
+    );
+    return committed === undefined ? null : { ...committed, gameId: target.gameId };
+  }
+
+  private keepPublicationPending(job: InternalImportJob): void {
+    job.publicationPending = true;
+    job.snapshot = {
+      ...job.snapshot,
+      status: "running",
+      finishedAt: null,
+      error: "DB 봉인 결과를 아직 확인하지 못했습니다. 복구 시 다시 확인합니다.",
+      errorCategory: "persistence",
+    };
+  }
+
+  private recordPublication(job: InternalImportJob, imported: ImportedRevision): void {
+    delete job.publicationPending;
+    job.snapshot = {
+      ...job.snapshot,
+      status: "succeeded",
+      finishedAt: job.snapshot.finishedAt ?? this.now().toISOString(),
+      revision: imported.revision,
+      documentHash: imported.documentHash,
+      projectionHash: imported.projectionHash,
+      followUpPending: true,
+      error: null,
+      errorCategory: null,
+    };
   }
 
   public create(request: ImportJobCreateRequest): Promise<ImportJob> {
@@ -149,7 +211,8 @@ export class ImportJobManager {
           );
         return this.get(existing.jobId);
       }
-      const job = this.prepare(request, null);
+      const target = await this.workspace.readImportTarget?.(request.gameId);
+      const job = this.prepare(request, target ?? null);
       await this.save(job);
       this.register(this.record(job));
       this.pendingJobIds.push(job.snapshot.jobId);
@@ -398,7 +461,9 @@ export class ImportJobManager {
   }
   public async reconcile(jobId: string): Promise<ImportJob> {
     const job = this.internal(jobId);
-    if (job.snapshot.status === "succeeded" && job.snapshot.followUpPending === true) {
+    if (job.publicationPending === true) {
+      await this.restoreJob(job);
+    } else if (job.snapshot.status === "succeeded" && job.snapshot.followUpPending === true) {
       await this.followUp(job);
       await this.save(job);
     }
@@ -454,6 +519,7 @@ export class ImportJobManager {
       sourceSeason: record.sourceSeason,
       target: record.target,
       snapshot: record.job,
+      ...(record.publicationPending ? { publicationPending: true as const } : {}),
       execution: null,
     });
     this.idempotency.set(record.request.idempotencyKey, {
@@ -467,6 +533,7 @@ export class ImportJobManager {
       sourceSeason: job.sourceSeason,
       target: job.target,
       job: job.snapshot,
+      ...(job.publicationPending ? { publicationPending: true as const } : {}),
     };
   }
   private async save(job: InternalImportJob): Promise<void> {
@@ -527,6 +594,8 @@ export class ImportJobManager {
     try {
       await this.save(job);
       await this.withGame(job.snapshot.gameId, async () => {
+        if (job.target === null && this.workspace.readImportTarget !== undefined)
+          throw new ImportSourceNotReadyError("접수 시 적재 가능 작업본이 없었습니다.");
         const catalog = await this.workspace.catalog();
         const source = catalog.games.find(
           (game) => game.gameId === job.snapshot.gameId && game.authority === "staging",
@@ -534,7 +603,12 @@ export class ImportJobManager {
         if (source?.season === null || source === undefined)
           throw new ImportSourceNotReadyError("staging ready 상태인 경기를 찾을 수 없습니다.");
         const document = await this.workspace.readDocument("staging", source.season, source.gameId);
-        const target = targetOf(document);
+        const target =
+          this.workspace.readImportTarget === undefined
+            ? targetOf(document)
+            : await this.workspace.readImportTarget(source.gameId);
+        if (target === null || target.documentHash !== stagingDocumentHash(document))
+          throw new ImportSourceNotReadyError("적재 중 보정 작업 사본이 변경되었습니다.");
         if (
           job.request.expectedDocumentHash !== undefined &&
           job.request.expectedDocumentHash !== target.documentHash
@@ -548,21 +622,51 @@ export class ImportJobManager {
           );
         job.target = target;
         job.sourceSeason = source.season;
+        const verifiedMatchupGeneration = await this.verifyRecordCorrection?.(document, target);
+        const publication = this.importer.importPublication !== undefined;
+        if (publication && target.artifact === undefined)
+          throw new ImportSourceNotReadyError("저장된 작업본의 적재 식별자가 없습니다.");
+        if (publication) job.publicationPending = true;
         await this.save(job);
-        const imported = await this.importer.importRevision(document);
-        job.snapshot = {
-          ...job.snapshot,
-          status: "succeeded",
-          finishedAt: this.now().toISOString(),
-          revision: imported.revision,
-          documentHash: imported.documentHash,
-          projectionHash: imported.projectionHash,
-          followUpPending: true,
+        const options: ImportOptions = {
+          ...(publication ? { publication: { jobId: job.snapshot.jobId, target } } : {}),
+          ...(target.recordCorrection === undefined
+            ? {}
+            : {
+                recordCorrectionApprovals: target.recordCorrection.approvals,
+                ...(target.recordCorrection.fromSealedDraft
+                  ? { fromIndependentSealedDraft: true as const }
+                  : {}),
+              }),
+          ...(verifiedMatchupGeneration === undefined ? {} : { verifiedMatchupGeneration }),
         };
+        const imported =
+          Object.keys(options).length === 0
+            ? await this.importer.importRevision(document)
+            : await this.importer.importRevision(document, options);
+        this.recordPublication(job, imported);
         await this.save(job);
         await this.followUpUnlocked(job);
       });
     } catch (error: unknown) {
+      if (job.publicationPending === true) {
+        let committed: ImportedRevision | null;
+        try {
+          committed = await this.committedPublication(job);
+        } catch {
+          this.keepPublicationPending(job);
+          await this.save(job);
+          return;
+        }
+        if (committed !== null) {
+          this.recordPublication(job, committed);
+          await this.save(job);
+          await this.followUp(job);
+          await this.save(job);
+          return;
+        }
+        delete job.publicationPending;
+      }
       job.snapshot = {
         ...job.snapshot,
         status:
@@ -591,16 +695,31 @@ export class ImportJobManager {
     const { revision, documentHash } = job.snapshot;
     if (revision === null || documentHash === null || job.sourceSeason === null) return;
     try {
-      const current = (await this.workspace.catalog()).games.find(
-        (game) => game.gameId === job.snapshot.gameId,
-      );
-      if (current?.authority === "staging")
-        await this.workspace.removeImportedStaging?.(
-          job.sourceSeason,
-          job.snapshot.gameId,
-          documentHash,
-        );
+      let cleanup: unknown;
+      try {
+        if (job.target?.artifact !== undefined) {
+          await this.workspace.removeImportedStaging?.(
+            job.sourceSeason,
+            job.snapshot.gameId,
+            documentHash,
+            job.target.artifact,
+          );
+        } else if (this.importer.importPublication === undefined) {
+          const current = (await this.workspace.catalog()).games.find(
+            (game) => game.gameId === job.snapshot.gameId,
+          );
+          if (current?.authority === "staging")
+            await this.workspace.removeImportedStaging?.(
+              job.sourceSeason,
+              job.snapshot.gameId,
+              documentHash,
+            );
+        }
+      } catch (error: unknown) {
+        cleanup = error;
+      }
       await this.onSucceeded(job.snapshot.gameId, revision, documentHash);
+      if (cleanup !== undefined) throw cleanup;
       job.snapshot = { ...job.snapshot, followUpPending: false, error: null, errorCategory: null };
     } catch (error: unknown) {
       job.snapshot = {

@@ -1,4 +1,9 @@
-import type { RecordCorrectionCaseStatus, RecordCorrectionMatchCandidate } from "@kbo/contracts";
+import type {
+  RecordCorrectionApprovalReference,
+  RecordCorrectionCaseStatus,
+  RecordCorrectionMatchCandidate,
+  RecordCorrectionNotice,
+} from "@kbo/contracts";
 export interface RecordCorrectionImportedSeason {
   readonly season: number;
   readonly revision: number | null;
@@ -24,9 +29,59 @@ export interface RecordCorrectionResumableJob {
   readonly hasChanges: boolean;
 }
 
+export type RecordCorrectionMatchup = Pick<
+  RecordCorrectionNotice,
+  "gameDate" | "awayTeamName" | "homeTeamName"
+>;
+export interface RecordCorrectionMatchupContext {
+  readonly generation: number;
+  readonly games: readonly RecordCorrectionGameCandidate[];
+  readonly notices: readonly {
+    readonly notice: RecordCorrectionNotice;
+    readonly selection: RecordCorrectionMatchCandidate | null;
+  }[];
+}
+export interface RecordCorrectionApprovalEvidence {
+  readonly noticeId: string;
+  readonly actionSequence: number;
+  readonly gameId: string;
+  readonly revision: number;
+  readonly baseHash: string;
+  readonly eventId: string;
+  readonly documentHash: string;
+  readonly proposalHash: string;
+}
+export interface RecordCorrectionApprovalInput {
+  readonly noticeId: string;
+  readonly caseVersion: number;
+  readonly sessionId: string;
+  readonly proposalHash: string;
+  readonly documentHash: string;
+  readonly generation?: number;
+  readonly carry?: readonly RecordCorrectionApprovalReference[];
+  readonly previousDocumentHash?: string;
+}
+export interface RecordCorrectionAssessmentBasis {
+  readonly caseVersion: number;
+  readonly publication: number;
+  readonly matchupGeneration: number;
+  readonly actionSequence: number;
+  readonly games: RecordCorrectionGameCandidate[];
+  readonly selection: RecordCorrectionMatchCandidate | null;
+  readonly peers?: RecordCorrectionMatchupContext["notices"];
+}
+
 export interface RecordCorrectionAssessmentInput {
   readonly noticeId: string;
   readonly noticeHash: string;
+  readonly caseVersion: number;
+  readonly basis: Omit<
+    RecordCorrectionAssessmentBasis,
+    "caseVersion" | "games" | "selection" | "peers"
+  >;
+  readonly matchup: Pick<RecordCorrectionNotice, "gameDate" | "awayTeamName" | "homeTeamName">;
+  readonly gameBases:
+    readonly Pick<RecordCorrectionGameCandidate, "gameId" | "revision" | "documentHash">[] | null;
   readonly status: RecordCorrectionCaseStatus;
   readonly gameId: string | null;
   readonly gameRevision: number | null;

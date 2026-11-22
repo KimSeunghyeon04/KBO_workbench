@@ -332,9 +332,14 @@ ready/quarantine을 선택한다. 서버는 공용 bounded worker를 주입하�
 검증이 실패하면 original/current를 쓰지 않는다. 기존 저장 API의 blocking 거부와 current 전환 검증은
 유지한다. 기록정정 저장소는 jobs, sources, cases 내부 모듈을 공개 repository가 조립하며 SQL과
 트랜잭션 경계를 유지한다. 보정 drawer의 상태·명령 조정과 종류별 입력 UI도 별도 모듈이 소유한다.
+기록정정의 현재 판정은 활성 공지 발행, 대진별 현재 경기, 운영자의 검토 결정으로 계산한다.
+경기 봉인과 대진 변경은 같은 트랜잭션에서 기록하고 대진별 변경과 공지별 평가 확인이 다르면
+다시 평가한다. 작업 사본의 승인 참조는 파일 전이 및 적재 저널에 보존하며 봉인 전 효력을 검사한다.
+
 기록정정 타석 매칭의 전체 컴파일은 공용 bounded worker에서 수행한다. 한 공지 평가 안에서는
-후보 경기별로 검증한 원장을 한 번 읽어 매칭과 제안에 사용한다. 제안 계산 후 current revision과
-document hash를 다시 조회하며 달라졌거나 사라졌으면 평가 저장 없이 revision conflict로 거부한다.
+후보 경기별로 검증한 원장을 한 번 읽어 매칭과 제안에 사용한다. 평가 저장은 후보 경기 행과
+대진을 잠그고 현재 봉인 후보 전체의 경기 ID·revision·문서 hash를 검증한다. 경기 적재는
+현재 revision 전환 시 같은 대진을 잠근다. 최초 적재로 후보가 추가되는 경우도 revision conflict 대상이다.
 worker 실패도 평가를 저장하지 않는다. 모호한 DH·동명이인 후보의 수동 검토 규칙은 유지한다.
 
 `lifecycle=while_event_unresolved` finding은 대응 행이 현재도 `unresolved`일 때만 현재 차단으로 병합한다. 사람이
@@ -344,7 +349,7 @@ typed 행으로 교체하거나 명시적으로 삭제한 행의 finding은 immu
 ## 8. PostgreSQL V3
 
 활성 DB는 PostgreSQL 16에 `database/v3/0001_v3_initial.sql`을 적용하고 migration head
-`database/v3/0015_strike_zone_rule_fallback.sql`까지 올린다.
+`database/v3/0018_record_correction_proofs.sql`까지 올린다.
 analytics/projection/registry/record correction contract는 `4/4/1/2`이다. V2 SQL은
 `database/migrations`에 복구용 legacy로
 보존하며 V2 DB에 V3 DDL을 적용하지 않는다. JSON, JSONB, ARRAY와 tracking EAV 컬럼은 사용하지 않는다.
@@ -730,9 +735,16 @@ draft 생성, session proposal preview/apply를 제공한다. `/record-correctio
 필터링하고 실행 중 job만 polling한다. proposal apply는 session lock 안에서 컴파일하고, 제안의
 평가 버전과 DB의 현재 평가 버전이 일치할 때 승인 이력을 저장한다. 후보 선택과 검토 상태 변경도
 새 평가 버전을 만들며 적용 중 버전이 바뀌면 `409`를 반환한다. 승인 트랜잭션이 성공한 뒤 작업
-사본과 session version을 갱신한다. 평가 결과는 계산에 사용한 공지 hash와 현재 공지를 대조해
-저장한다. 현재 원장과 봉인본은 commit/import API로 갱신한다. 적재 후에는
-현재 평가 버전의 최신 승인 이력과 봉인 문서 hash를 대조하고 완료 상태와 이력을 함께 저장한다.
+사본과 session version을 갱신한다. 평가 저장은 경기 행·대진·공지의 평가 행 순으로 잠그고, 계산에
+사용한 공지 hash와 평가 버전을 현재 값과 대조한다. 대진은 시즌·경기일·원정팀·홈팀으로 구분한다.
+현재 원장과 봉인본은 commit/import API로 갱신한다. 봉인된 현재 기록이 공지의 정정 후 상태를
+충족하면 완료 상태와 이력을 함께 저장한다.
+적재 후속 작업은 새 봉인본과 직전 봉인본의 대진을 범위로 삼아 현재 후보로 재평가한다. 최초
+평가와 동일한 차전 판정을 사용하고, 평가 결과와 후보가 같을 때 버전을 올리지 않는다. 최신
+검토 이력에서 확인한 수동 선택은 그 봉인본과 타석이 현재도 유효할 때 보존한다. 근거가 달라진
+수동 선택은 연결을 해제하고 다시 검토하도록 표시한다. 평가는 같은 대진의 활성 공지가 요구하는
+타석과 선수별 통계를 함께 확인한다. 적용 전에 전체 작업본이 승인된 효과로 설명되는지 검증하고,
+적재할 때 작업본이 참조한 승인과 현재 공지의 효과를 다시 확인한다.
 
 공지의 경기 연결은 날짜·원정/홈 팀을 기준으로 current sealed revision에서 찾는다. 구장명은
 연결 조건이 아니며 표기 차이나 미제공을 허용한다. 복수 대진은 DH 번호로 구분하고, 명시된 DH
@@ -796,8 +808,9 @@ compiler를 실행하지 않는다. `StagingWorkspace`는 writer lock·경기별
 2025 시즌 검토 후 DB 화면은 `/database/games`와 `/import-history` 서버 페이지(기본 50, 최대 200)를
 사용한다. 필터에서 제외된 상세를 해제하며 실행 선택은 탐색과 독립적이다. `/import-selections`는
 문서 hash와 revision base 집합을 확정하고 batch는 선택 ID를 제출한다. 시작 시 달라진 문서는 건너뛴다.
-`.data/imports`에 batch 의도와 경기별 결과·요청 키를 응답 전에 저장한다. 재시작 시 DB manifest를
-대조하고 미완료 작업을 자동 실행하지 않는다. DB 저장 성공과 후속 파일 정리 필요를 구분한다.
+`.data/imports`에 batch 의도와 경기별 결과·요청 키를 응답 전에 저장한다. 접수한 작업본의 generation과
+content hash를 보존하고, 봉인 트랜잭션에 적재 작업 식별자를 함께 기록한다. 재시작과 커밋 응답 유실
+시에는 이 식별자로 완료 여부를 확인한다. 후속 정리는 같은 작업본에만 적용한다.
 
 보정 UI는 날짜·대진·기간 탐색, 동일 종류 검증의 접기, 최초 미적용 차단 행 이동, 명령 전후 해소/신규
 차단 수, 요약 원문과 전체 JSON 접기, 저장한 문서의 단건 적재 및 다음 검토 경기 이동을 제공한다.

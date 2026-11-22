@@ -164,6 +164,7 @@ describe("staging workspace", () => {
       document,
     );
     await expect(workspace.readCurrentDocumentSnapshot(document.metadata.gameId)).resolves.toEqual({
+      contentHash: expect.stringMatching(/^[0-9a-f]{64}$/),
       authority: "staging",
       season: document.metadata.season,
       document,

@@ -22,6 +22,8 @@ import {
   writeProjection,
 } from "../../packages/persistence/src/projection-repository.js";
 
+import { insertManifest } from "../../packages/persistence/src/revision-manifest.js";
+
 const dsn = process.env.KBO_TEST_POSTGRES_DSN;
 
 (dsn === undefined ? describe.skip : describe)("V3 → V4 투구 metadata migration", () => {
@@ -92,8 +94,27 @@ const dsn = process.env.KBO_TEST_POSTGRES_DSN;
       expect((await pool.query("SELECT * FROM workbench.game_revisions")).rows).toEqual(
         oldManifest,
       );
-      const imported = await store.importRevision(enriched);
-      expect(imported.revision).toBe(2);
+      // Freeze a V4 revision as written on migration 0004, before the current publication contract.
+      const v4 = buildRelationalProjection(enriched, compileStagingGameDocumentV2(enriched), 2);
+      const historicalWriter = await pool.connect();
+      try {
+        await historicalWriter.query("BEGIN");
+        await insertManifest(
+          historicalWriter,
+          enriched,
+          2,
+          stagingDocumentHash(enriched),
+          v4.projectionHash,
+        );
+        await writeProjection(historicalWriter, v4.tables);
+        await historicalWriter.query(
+          "UPDATE workbench.game_revisions SET sealed=TRUE,sealed_at=CURRENT_TIMESTAMP WHERE revision=2",
+        );
+        await historicalWriter.query("UPDATE workbench.games SET current_revision=2");
+        await historicalWriter.query("COMMIT");
+      } finally {
+        historicalWriter.release();
+      }
       expect(
         (
           await pool.query(
@@ -136,7 +157,6 @@ const dsn = process.env.KBO_TEST_POSTGRES_DSN;
           pool.query(`UPDATE ${table} SET speed_kph=145 WHERE revision=2`),
         ).rejects.toThrow(/sealed/);
       await expect(store.importRevision(enriched)).rejects.toThrow(/base|current|revision/i);
-      const v4 = buildRelationalProjection(enriched, compileStagingGameDocumentV2(enriched), 2);
       for (const table of ["relay_pitches", "pitch_facts"] as const)
         for (const field of ["speed_kph", "pitch_type"] as const) {
           const corrupted = {

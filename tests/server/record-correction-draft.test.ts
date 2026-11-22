@@ -345,24 +345,33 @@ async function setup(root: string, copies = 1) {
       throw new RevisionConflictError("current revision만 교정 초안으로 열 수 있습니다: current=2");
     return document;
   });
+  const game = {
+    gameId: document.metadata.gameId,
+    revision: base.revision,
+    documentHash: base.documentHash,
+    sourceGameId: document.source.sourceGameId,
+    gameDate: document.metadata.gameDate,
+    stadium: document.metadata.stadium ?? "비식별구장",
+    awayTeamName: document.teams.away.name,
+    homeTeamName: document.teams.home.name,
+  };
+  const proofs = new Map<number, { proposalHash: string; documentHash: string }>();
   const workspace = await StagingWorkspace.open(root);
   const sessions = new CorrectionSessionManager(workspace);
   const service = new RecordCorrectionService(
     {
       case: async () => item,
       assess,
-      gameCandidates: async () => [
-        {
-          gameId: document.metadata.gameId,
-          revision: base.revision,
-          documentHash: base.documentHash,
-          sourceGameId: document.source.sourceGameId,
-          gameDate: document.metadata.gameDate,
-          stadium: document.metadata.stadium ?? "비식별구장",
-          awayTeamName: document.teams.away.name,
-          homeTeamName: document.teams.home.name,
-        },
-      ],
+      pendingNoticeIds: async () => [],
+      listCasesForImport: async () => [],
+      assessmentBasis: async () => ({
+        caseVersion: item.caseVersion,
+        publication: 1,
+        matchupGeneration: 1,
+        actionSequence: 0,
+        selection: null,
+        games: [game],
+      }),
       listCases: async () => [item],
       listCaseSummaries: async () =>
         Array.from({ length: copies }, (_, i) => ({
@@ -379,9 +388,34 @@ async function setup(root: string, copies = 1) {
           beforeRecordText: notice.beforeRecordText,
           afterRecordText: notice.afterRecordText,
         })),
-      markProposalApplied: async () => undefined,
-      markResolvedAfterReassessment: async () => false,
-      markResolvedIfImported: async () => [],
+      markProposalApplied: async () => ({ noticeId: notice.noticeId, actionSequence: 1 }),
+      matchupContext: async () => ({
+        generation: 1,
+        games: [game],
+        notices: [{ notice, selection: null }],
+      }),
+      markProposalBundle: async ({ proposalHash, documentHash }) => {
+        const actionSequence = proofs.size + 1;
+        proofs.set(actionSequence, { proposalHash, documentHash });
+        return [{ noticeId: notice.noticeId, actionSequence }];
+      },
+      approvalEvidence: async (refs) =>
+        refs.flatMap((ref) => {
+          const proof =
+            ref.noticeId === notice.noticeId ? proofs.get(ref.actionSequence) : undefined;
+          return proof === undefined
+            ? []
+            : [
+                {
+                  ...ref,
+                  ...proof,
+                  gameId: game.gameId,
+                  revision: game.revision,
+                  baseHash: game.documentHash,
+                  eventId: event.identity.eventId,
+                },
+              ];
+        }),
       reviewAction: async () => item,
     },
     {

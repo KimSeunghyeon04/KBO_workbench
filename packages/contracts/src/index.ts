@@ -284,6 +284,8 @@ export {
 } from "./registry.js";
 export {
   parseRecordCorrectionSeasonDataset,
+  RecordCorrectionApprovalReferenceSchema,
+  type RecordCorrectionApprovalReference,
   RecordCorrectionCaseSchema,
   RecordCorrectionDraftProgressSchema,
   RecordCorrectionCaseStatusSchema,
