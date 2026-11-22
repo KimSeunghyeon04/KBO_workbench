@@ -1,8 +1,9 @@
-import type { PitchOutcomeRow, TerminalPaRow } from "@kbo/contracts";
+import type { PitchCountFlowRow, PitchOutcomeRow, TerminalPaRow } from "@kbo/contracts";
 import { disciplineRow } from "./batter-discipline.js";
 export function outcomeRow(overrides: Partial<PitchOutcomeRow> = {}): PitchOutcomeRow {
+  const base = disciplineRow();
   return {
-    ...disciplineRow(),
+    ...base,
     pitcherId: "hp1",
     pitchSequence: 0,
     paId: "pa1",
@@ -10,6 +11,25 @@ export function outcomeRow(overrides: Partial<PitchOutcomeRow> = {}): PitchOutco
     calledStrike: true,
     csw: true,
     inPlay: false,
+    ...overrides,
+  };
+}
+export function countFlowRow(overrides: Partial<PitchCountFlowRow> = {}): PitchCountFlowRow {
+  const base = outcomeRow();
+  return {
+    gameId: base.gameId,
+    revision: base.revision,
+    pitchId: base.pitchId,
+    pitchType: base.pitchType,
+    stance: base.stance,
+    balls: base.balls,
+    strikes: base.strikes,
+    afterBalls: overrides.balls ?? base.balls,
+    afterStrikes: (overrides.strikes ?? base.strikes) + 1,
+    pitchCall: base.pitchCall,
+    inPlay: false,
+    eligible: true,
+    terminalResult: null,
     ...overrides,
   };
 }

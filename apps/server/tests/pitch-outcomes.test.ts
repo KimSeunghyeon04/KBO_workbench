@@ -6,12 +6,100 @@ import {
   resolveAnalysisScope,
   pitchLocationComparisonQueries,
   PitchLocationComparisonResponseSchema,
+  pitchOutcomeScope,
+  PitchCountFlowResponseSchema,
 } from "@kbo/contracts";
 import { Value } from "@sinclair/typebox/value";
-import { analyzePitchLocation, analyzeBatterProfile, comparePitchLocations } from "@kbo/game-core";
+import {
+  analyzePitchCountFlow,
+  analyzePitchLocation,
+  analyzeBatterProfile,
+  comparePitchLocations,
+} from "@kbo/game-core";
+import { countFlowRow, outcomeRow, terminalPa } from "../../../tests/helpers/pitch-outcomes.js";
 import { pitchLocationRoutes } from "../src/routes/pitch-location.js";
 import { batterProfileRoutes } from "../src/routes/batter-profile.js";
 import { installHttpErrorHandler } from "../src/http-error-handler.js";
+
+it("serves count flow separately while retaining the old location response keys", async () => {
+  const source = "a".repeat(64);
+  const flow = vi
+    .spyOn(PitchLocationRepository.prototype, "countFlow")
+    .mockImplementation(async (query, id) =>
+      analyzePitchCountFlow(
+        query,
+        id,
+        pitchOutcomeScope(query),
+        source,
+        id === "p1"
+          ? [
+              countFlowRow({
+                pitchCall: "ball",
+                afterBalls: 1,
+                afterStrikes: 0,
+                terminalResult: "hit_by_pitch",
+              }),
+              countFlowRow({ pitchId: "second" }),
+            ]
+          : [],
+      ),
+    );
+  vi.spyOn(PitchLocationRepository.prototype, "analyze").mockImplementation(async (query, id) =>
+    analyzePitchLocation(
+      query,
+      id,
+      pitchOutcomeScope(query),
+      source,
+      [outcomeRow()],
+      [terminalPa()],
+    ),
+  );
+  const app = Fastify();
+  const pool = new Pool();
+  installHttpErrorHandler(app);
+  await app.register(pitchLocationRoutes, { pool });
+  const path = "/api/v2/analysis/pitch-location/p1";
+  try {
+    const location = await app.inject(`${path}?season=2024`);
+    expect(location.statusCode).toBe(200);
+    expect(Object.keys(location.json()).sort()).toEqual([
+      "arsenal",
+      "byCount",
+      "byStance",
+      "byType",
+      "cells",
+      "coverage",
+      "pitcherId",
+      "points",
+      "query",
+      "scope",
+      "sourceHash",
+      "total",
+    ]);
+    expect(flow).not.toHaveBeenCalled();
+    const response = await app.inject(`${path}/count-flow?season=2024`);
+    expect(response.statusCode).toBe(200);
+    const payload = Value.Decode(PitchCountFlowResponseSchema, response.json());
+    expect(
+      payload.groups
+        .find((group) => group.stance === "all")
+        ?.transitions.find((step) => step.outcome === "hitByPitch"),
+    ).toEqual({ outcome: "hitByPitch", pitches: 1, rate: 0.5 });
+    const empty = await app.inject(
+      "/api/v2/analysis/pitch-location/unlisted/count-flow?season=2024",
+    );
+    expect(empty.statusCode).toBe(200);
+    expect(empty.json()).toMatchObject({ scopePitches: 0, groups: [] });
+    expect((await app.inject(`${path}/count-flow?season=2024&cohort=unknown`)).statusCode).toBe(
+      400,
+    );
+  } finally {
+    await app.close();
+    await pool.end();
+    vi.restoreAllMocks();
+  }
+});
+
 it("validates concrete pitch outcome filters and returns strict independent PA results", async () => {
   vi.spyOn(PitchLocationRepository.prototype, "analyze").mockImplementation(async (q, id) =>
     analyzePitchLocation(

@@ -8,9 +8,11 @@ import {
   pitchLocationComparisonQueries,
   pitchOutcomeScope,
   type PitchOutcomeQuery,
+  type PitchCountFlowQuery,
   type PitchLocationComparisonQuery,
 } from "@kbo/contracts";
 import { analyzePitchLocation, comparePitchLocations } from "@kbo/game-core";
+import { readPitchCountFlow } from "./pitch-count-flow.js";
 import {
   readPitchOutcomePair,
   readPitchOutcomes,
@@ -53,6 +55,10 @@ export class PitchLocationRepository {
       this.samples,
     );
     return Value.Decode(PitchLocationResponseSchema, location(query, pitcherId, snapshot));
+  }
+
+  public countFlow(input: PitchCountFlowQuery, pitcherId: string) {
+    return readPitchCountFlow(this.pool, input, pitcherId);
   }
 }
 

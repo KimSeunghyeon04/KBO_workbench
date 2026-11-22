@@ -7,7 +7,9 @@ import { Link } from "react-router-dom";
 import { Value } from "@sinclair/typebox/value";
 import {
   PitchOutcomeQuerySchema,
+  PitchCountFlowQuerySchema,
   type PitchAnalysisCatalog,
+  type PitchCountFlowResponse,
   type DisciplineCatalog,
 } from "@kbo/contracts";
 import { AnalysisScopeFields, analysisScopeSummary } from "../analysis/analysis-scope-fields";
@@ -30,6 +32,8 @@ import {
   batterCatalogQueryOptions,
 } from "../api/analysis-catalog-query-options";
 import { getPitchLocation, getBatterProfile } from "../api/pitch-outcomes-client";
+import { getPitchCountFlow, isCountFlowUnavailable } from "../api/pitch-count-flow-client";
+import { retryQuery } from "../api/query-retry";
 import "../styles/pitch-analysis.css";
 import "../styles/analysis-workspace.css";
 import "../styles/pitch-location-comparison.css";
@@ -81,14 +85,17 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
     )
       workspace.scrollIntoView({ block: "start" });
   }
-  const candidate = {
+  const flowCandidate = {
     season,
     ...scope.options,
+    cohort: params.get("cohort") ?? "all",
+  };
+  const candidate = {
+    ...flowCandidate,
     ...(params.has("balls") ? { balls: Number(params.get("balls")) } : {}),
     ...(params.has("strikes") ? { strikes: Number(params.get("strikes")) } : {}),
     ...(params.has("pitchType") ? { pitchType: params.get("pitchType") } : {}),
     ...(params.has("stance") ? { stance: params.get("stance") } : {}),
-    cohort: params.get("cohort") ?? "all",
   };
   const valid = scope.error === null && Value.Check(PitchOutcomeQuerySchema, candidate);
   const catalog = useQuery<
@@ -106,11 +113,15 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
   const id = params.get(role) ?? players?.[0]?.id ?? "";
   const canAnalyze = valid && id !== "";
   const isComparisonTab = activeTab === "period";
+  const isArsenalTab = activeTab === "arsenal";
+  const isOutcomeTab = !isComparisonTab && !isArsenalTab;
+  const flowValid = scope.error === null && Value.Check(PitchCountFlowQuerySchema, flowCandidate);
+  const activeValid = isArsenalTab ? flowValid : valid;
   const analysis = useQuery({
     queryKey: ["pitch-outcomes", role, id, candidate],
     meta: analysisQueryMeta(candidate),
-    enabled: canAnalyze && !isComparisonTab,
-    subscribed: !isComparisonTab,
+    enabled: canAnalyze && isOutcomeTab,
+    subscribed: isOutcomeTab,
     queryFn: async ({ signal }) => {
       if (!Value.Check(PitchOutcomeQuerySchema, candidate)) throw new Error("잘못된 투구 조건");
       return role === "pitcher"
@@ -118,13 +129,38 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
         : getBatterProfile(candidate, id, signal);
     },
   });
+  const flow = useQuery<PitchCountFlowResponse>({
+    queryKey: ["pitch-count-flow", id, flowCandidate],
+    meta: analysisQueryMeta(flowCandidate),
+    enabled: isArsenalTab && flowValid && id !== "",
+    subscribed: isArsenalTab,
+    retry: (failures, error) => !isCountFlowUnavailable(error) && retryQuery(failures, error),
+    refetchOnWindowFocus: (query) => !isCountFlowUnavailable(query.state.error),
+    refetchOnReconnect: (query) => !isCountFlowUnavailable(query.state.error),
+    queryFn: ({ signal }) => {
+      if (!Value.Check(PitchCountFlowQuerySchema, flowCandidate))
+        throw new Error("잘못된 구종 배합 조건");
+      return getPitchCountFlow(flowCandidate, id, signal);
+    },
+  });
+  const flowUnavailable = isArsenalTab && isCountFlowUnavailable(flow.error);
+  const flowData = flowUnavailable ? undefined : flow.data;
+  const activeQueries = isArsenalTab
+    ? flowUnavailable
+      ? [catalog]
+      : [flow, catalog]
+    : isOutcomeTab
+      ? [analysis, catalog]
+      : [catalog];
   const data = analysis.data;
   const conditions = [
     analysisScopeSummary(selected),
-    ...(params.has("balls") ? [`${params.get("balls")}볼`] : []),
-    ...(params.has("strikes") ? [`${params.get("strikes")}스트라이크`] : []),
-    ...(params.has("pitchType") ? [params.get("pitchType")] : []),
-    ...(params.has("stance") ? [params.get("stance")] : []),
+    ...(activeTab !== "arsenal" && params.has("balls") ? [`${params.get("balls")}볼`] : []),
+    ...(activeTab !== "arsenal" && params.has("strikes")
+      ? [`${params.get("strikes")}스트라이크`]
+      : []),
+    ...(activeTab !== "arsenal" && params.has("pitchType") ? [params.get("pitchType")] : []),
+    ...(activeTab !== "arsenal" && params.has("stance") ? [params.get("stance")] : []),
     ...(params.get("cohort") === "discipline" ? ["선구안과 동일 상황"] : []),
   ].join(" · ");
   return (
@@ -142,50 +178,54 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
         advanced={
           <>
             <AnalysisScopeFields params={selected} onChange={change} />
-            <label>
-              볼
-              <select
-                value={params.get("balls") ?? ""}
-                onChange={(e) => change("balls", e.target.value)}
-              >
-                <option value="">전체</option>
-                {[0, 1, 2, 3].map((n) => (
-                  <option key={n}>{n}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              스트라이크
-              <select
-                value={params.get("strikes") ?? ""}
-                onChange={(e) => change("strikes", e.target.value)}
-              >
-                <option value="">전체</option>
-                {[0, 1, 2].map((n) => (
-                  <option key={n}>{n}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              구종
-              <input
-                value={params.get("pitchType") ?? ""}
-                onChange={(e) => change("pitchType", e.target.value)}
-                placeholder="전체"
-              />
-            </label>
-            <label>
-              타석 좌우
-              <select
-                value={params.get("stance") ?? ""}
-                onChange={(e) => change("stance", e.target.value)}
-              >
-                <option value="">전체</option>
-                {["L", "R", "S"].map((v) => (
-                  <option key={v}>{v}</option>
-                ))}
-              </select>
-            </label>
+            {activeTab !== "arsenal" && (
+              <>
+                <label>
+                  볼
+                  <select
+                    value={params.get("balls") ?? ""}
+                    onChange={(e) => change("balls", e.target.value)}
+                  >
+                    <option value="">전체</option>
+                    {[0, 1, 2, 3].map((n) => (
+                      <option key={n}>{n}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  스트라이크
+                  <select
+                    value={params.get("strikes") ?? ""}
+                    onChange={(e) => change("strikes", e.target.value)}
+                  >
+                    <option value="">전체</option>
+                    {[0, 1, 2].map((n) => (
+                      <option key={n}>{n}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  구종
+                  <input
+                    value={params.get("pitchType") ?? ""}
+                    onChange={(e) => change("pitchType", e.target.value)}
+                    placeholder="전체"
+                  />
+                </label>
+                <label>
+                  타석 좌우
+                  <select
+                    value={params.get("stance") ?? ""}
+                    onChange={(e) => change("stance", e.target.value)}
+                  >
+                    <option value="">전체</option>
+                    {["L", "R", "S"].map((v) => (
+                      <option key={v}>{v}</option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            )}
             <label>
               표본
               <select
@@ -233,13 +273,13 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
             onChange={(tab) => switchTab(tab)}
           />
         </div>
-        <PitchOutcomeQuickFilters params={params} onChange={setParams} />
-        {!valid && <p role="alert">{scope.error ?? "투구 조건이 올바르지 않습니다."}</p>}
-        <AnalysisQueryError
-          queries={isComparisonTab ? [catalog] : [analysis, catalog]}
-          enabled={valid}
-        />
-        {catalog.isLoading || (!isComparisonTab && analysis.isFetching) ? (
+        {activeTab !== "arsenal" && (
+          <PitchOutcomeQuickFilters params={params} onChange={setParams} />
+        )}
+        {!activeValid && <p role="alert">{scope.error ?? "투구 조건이 올바르지 않습니다."}</p>}
+        <AnalysisQueryError queries={activeQueries} enabled={activeValid} />
+        {catalog.isLoading ||
+        (isArsenalTab ? flow.isFetching : isOutcomeTab && analysis.isFetching) ? (
           <p role="status">분석 자료를 읽고 있습니다.</p>
         ) : null}
         {scope.error === null && players?.length === 0 && (
@@ -321,18 +361,27 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
                 </div>
               </>
             )}
-            {activeTab === tab.id && tab.id === "arsenal" && data && "arsenal" in data && (
+            {activeTab === tab.id && tab.id === "arsenal" && flowUnavailable && (
+              <div className="panel" role="alert">
+                <p>이 서버에서 구종 전이 자료를 사용할 수 없습니다.</p>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={!flowValid || flow.isFetching}
+                  onClick={() => void flow.refetch()}
+                >
+                  구종 배합 다시 시도
+                </button>
+              </div>
+            )}
+            {activeTab === tab.id && tab.id === "arsenal" && flowData && (
               <PitchArsenalPanel
-                groups={data.arsenal}
+                groups={flowData.groups}
                 onSelect={(group, pitchType) => {
-                  if (
-                    pitchType === null ||
-                    (group.stance !== "L" && group.stance !== "R" && group.stance !== "S")
-                  )
-                    return;
                   const next = new URLSearchParams(params);
                   next.set("pitchType", pitchType);
-                  next.set("stance", group.stance);
+                  if (group.stance === "all") next.delete("stance");
+                  else next.set("stance", group.stance);
                   next.set("balls", String(group.balls));
                   next.set("strikes", String(group.strikes));
                   next.delete("locationCell");
@@ -404,7 +453,7 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
             )}
           </div>
         ))}
-        {(data || (isComparisonTab && canAnalyze)) && (
+        {((isArsenalTab ? flowData : data) || (isComparisonTab && canAnalyze)) && (
           <>
             <Link
               className="outcome-related-link"

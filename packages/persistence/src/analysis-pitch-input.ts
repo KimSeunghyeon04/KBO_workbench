@@ -35,3 +35,10 @@ export const pitchGeometrySql = [
 
 export const pitchEligibilitySql =
   "(p.pitch_call NOT IN ('hit_by_pitch','foul_bunt') AND NOT COALESCE(pa.is_bunt,FALSE) AND pa.result IS DISTINCT FROM 'intentional_walk')";
+
+export const lastPitchesCteSql = `last_pitches AS (
+  SELECT DISTINCT ON (q.game_id,q.revision,q.plate_appearance_event_id) q.*
+  FROM baseball.pitch_facts q JOIN selected_pas s ON s.game_id=q.game_id AND s.revision=q.revision AND s.pa_id=q.plate_appearance_event_id
+  WHERE q.pitch_call<>'no_pitch'
+  ORDER BY q.game_id,q.revision,q.plate_appearance_event_id,q.pitch_sequence DESC
+)`;

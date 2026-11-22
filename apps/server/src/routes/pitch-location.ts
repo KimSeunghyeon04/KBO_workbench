@@ -3,6 +3,8 @@ import {
   ApiErrorSchema,
   PitchOutcomeQuerySchema,
   PitchLocationResponseSchema,
+  PitchCountFlowQuerySchema,
+  PitchCountFlowResponseSchema,
   PitchLocationComparisonQuerySchema,
   PitchLocationComparisonResponseSchema,
   PitchAnalysisPitcherParamsSchema,
@@ -12,6 +14,17 @@ import type { RouteContext } from "./context.js";
 type Options = Pick<RouteContext, "pool"> & { outcomeSamples?: PitchOutcomeCache };
 export const pitchLocationRoutes: FastifyPluginAsyncTypebox<Options> = async (app, context) => {
   const repository = new PitchLocationRepository(context.pool, context.outcomeSamples);
+  app.get(
+    "/api/v2/analysis/pitch-location/:pitcherId/count-flow",
+    {
+      schema: {
+        params: PitchAnalysisPitcherParamsSchema,
+        querystring: PitchCountFlowQuerySchema,
+        response: { 200: PitchCountFlowResponseSchema, 400: ApiErrorSchema, 500: ApiErrorSchema },
+      },
+    },
+    (request) => repository.countFlow(request.query, request.params.pitcherId),
+  );
   app.get(
     "/api/v2/analysis/pitch-location/:pitcherId/comparison",
     {

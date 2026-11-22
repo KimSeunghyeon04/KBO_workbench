@@ -578,6 +578,9 @@ export {
 } from "./player-statistics.js";
 export {
   PitchOutcomeQuerySchema,
+  PitchCountFlowQuerySchema,
+  PitchCountFlowRowSchema,
+  PitchCountFlowResponseSchema,
   PitchOutcomeRowSchema,
   TerminalPaRowSchema,
   PitchRateGroupSchema,
@@ -585,13 +588,23 @@ export {
   PitchLocationResponseSchema,
   pitchOutcomeScope,
   type PitchOutcomeQuery,
+  type PitchCountFlowQuery,
+  type PitchCountFlowRow,
+  type PitchCountFlowResponse,
   type PitchOutcomeRow,
   type TerminalPaRow,
   type PitchRateGroup,
   type PitchLocationPoint,
   type PitchLocationResponse,
 } from "./pitch-outcomes.js";
-export { PitchArsenalGroupSchema, type PitchArsenalGroup } from "./pitch-arsenal.js";
+export {
+  PitchArsenalGroupSchema,
+  PitchCountFlowGroupSchema,
+  pitchCountOutcomes,
+  type PitchArsenalGroup,
+  type PitchCountFlowGroup,
+  type PitchCountOutcome,
+} from "./pitch-arsenal.js";
 export {
   PitchLocationComparisonQuerySchema,
   PitchLocationComparisonResponseSchema,

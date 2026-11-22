@@ -1,106 +1,12 @@
-.outcome-arsenal > .analysis-caption,
 .location-period-comparison > .analysis-caption {
   margin: 12px 0 20px;
   max-width: 75ch;
 }
-.arsenal-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 20px;
-  list-style: none;
-  padding: 0;
-  margin: 16px 0;
-}
-.arsenal-legend li {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-}
-.arsenal-legend i {
-  width: 12px;
-  height: 12px;
-  border-radius: 4px;
-}
-.arsenal-columns,
 .location-comparison-maps,
 .location-period-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 28px;
-}
-.arsenal-columns h3 {
-  margin: 8px 0 16px;
-}
-.arsenal-column-heading,
-.arsenal-count > summary,
-.arsenal-empty-row {
-  display: grid;
-  grid-template-columns: 80px minmax(0, 1fr) 64px;
-  align-items: center;
-  gap: 12px;
-}
-.arsenal-column-heading {
-  color: var(--ui-muted);
-  font-size: 12px;
-  margin-bottom: 8px;
-}
-.arsenal-count > summary,
-.arsenal-empty-row {
-  min-height: 44px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--ui-line);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-.arsenal-count > summary {
-  cursor: pointer;
-}
-.arsenal-count-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.arsenal-count[open] .arsenal-count-label svg {
-  transform: rotate(180deg);
-}
-.arsenal-count > summary:hover,
-.arsenal-count[open] > summary {
-  background: var(--ui-surface-subtle);
-}
-.arsenal-column-heading > :last-child,
-.arsenal-count > summary > :last-child,
-.arsenal-empty-row > :last-child {
-  text-align: right;
-}
-.arsenal-empty-row {
-  color: var(--ui-muted);
-}
-.arsenal-stack {
-  display: flex;
-  height: 16px;
-  overflow: hidden;
-  border-radius: 4px;
-}
-.arsenal-stack i {
-  display: block;
-  height: 100%;
-}
-.arsenal-type-choices {
-  padding: 0;
-  list-style: none;
-  margin: 12px 0 16px;
-}
-.arsenal-type-choices button {
-  display: flex;
-  width: 100%;
-  min-height: 40px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 4px 0;
-  text-align: left;
-  white-space: normal;
 }
 .location-period-comparison .analysis-panel-heading {
   flex-wrap: wrap;
@@ -210,7 +116,6 @@
   }
 }
 @media (max-width: 760px) {
-  .arsenal-columns,
   .location-comparison-maps,
   .location-comparison-values {
     grid-template-columns: 1fr;
@@ -220,12 +125,6 @@
   }
   .location-period-fields label:first-of-type {
     grid-column: 1 / -1;
-  }
-  .arsenal-column-heading,
-  .arsenal-count > summary,
-  .arsenal-empty-row {
-    grid-template-columns: 64px minmax(0, 1fr) 50px;
-    gap: 8px;
   }
 }
 .period-results {

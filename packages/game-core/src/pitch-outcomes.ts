@@ -50,14 +50,19 @@ export function matchesPitchOutcome(
     (query.stance === undefined || query.stance === row.stance)
   );
 }
-export function pitchOutcomeSummarizer(pas: readonly TerminalPaRow[]) {
-  const terminal = new Map(
+function terminalPitchIndex(pas: readonly TerminalPaRow[]) {
+  return new Map(
     pas.flatMap((pa) =>
       hasTerminalPitch(pa) && pa.terminalActual === true && pa.pitchId !== null
         ? [[key({ gameId: pa.gameId, revision: pa.revision, pitchId: pa.pitchId }), pa] as const]
         : [],
     ),
   );
+}
+export function pitchOutcomeSummarizer(pas: readonly TerminalPaRow[]) {
+  return summarizeWithTerminals(terminalPitchIndex(pas));
+}
+function summarizeWithTerminals(terminal: ReturnType<typeof terminalPitchIndex>) {
   return (groupKey: string, selected: readonly PitchOutcomeRow[]): PitchRateGroup => {
     let swings = 0,
       whiffs = 0,
@@ -138,6 +143,7 @@ export function analyzePitchLocation(
 ): PitchLocationResponse {
   const filtered = rows.filter((r) => matchesPitchOutcome(r, query));
   const selected = filtered.filter((r) => query.cohort !== "discipline" || r.eligible);
+  const terminals = terminalPitchIndex(pas);
   const points: PitchLocationPoint[] = [];
   const cellRows = Array.from({ length: 25 }, () => [] as PitchOutcomeRow[]);
   for (const row of selected) {
@@ -164,7 +170,7 @@ export function analyzePitchLocation(
     });
     cellRows[location.cell]?.push(row);
   }
-  const summarize = pitchOutcomeSummarizer(pas);
+  const summarize = summarizeWithTerminals(terminals);
   const group = (getKey: (r: PitchOutcomeRow) => string) => {
     const map = new Map<string, PitchOutcomeRow[]>();
     for (const row of selected) {

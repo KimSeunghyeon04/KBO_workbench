@@ -6,7 +6,7 @@ import {
 } from "./analysis-scope.js";
 import { DisciplineRowSchema } from "./batter-discipline.js";
 import { PitchCallSchema, PlateResultSchema } from "./game-document/events.js";
-import { PitchArsenalGroupSchema } from "./pitch-arsenal.js";
+import { PitchArsenalGroupSchema, PitchCountFlowGroupSchema } from "./pitch-arsenal.js";
 const strict = { additionalProperties: false } as const;
 const text = Type.String({ minLength: 1 }),
   textOrNull = Type.Union([text, Type.Null()]);
@@ -151,6 +151,45 @@ export const PitchLocationResponseSchema = Type.Object(
   strict,
 );
 export type PitchOutcomeQuery = Static<typeof PitchOutcomeQuerySchema>;
+
+export const PitchCountFlowQuerySchema = Type.Pick(
+  PitchOutcomeQuerySchema,
+  ["season", "competition", "dateFrom", "dateTo", "cohort"],
+  strict,
+);
+export const PitchCountFlowRowSchema = Type.Object(
+  {
+    gameId: text,
+    revision: Type.Integer({ minimum: 1 }),
+    pitchId: text,
+    pitchType: textOrNull,
+    stance: textOrNull,
+    balls: PitchCountFlowGroupSchema.properties.balls,
+    strikes: PitchCountFlowGroupSchema.properties.strikes,
+    afterBalls: Type.Integer({ minimum: 0, maximum: 4 }),
+    afterStrikes: Type.Integer({ minimum: 0, maximum: 3 }),
+    pitchCall: PitchCallSchema,
+    inPlay: Type.Boolean(),
+    eligible: Type.Boolean(),
+    terminalResult: Type.Union([PlateResultSchema, Type.Null()]),
+  },
+  strict,
+);
+export const PitchCountFlowResponseSchema = Type.Object(
+  {
+    query: PitchCountFlowQuerySchema,
+    pitcherId: text,
+    scope: AnalysisScopeSchema,
+    sourceHash: PitchLocationResponseSchema.properties.sourceHash,
+    scopePitches: count,
+    excludedSituations: count,
+    groups: Type.Array(PitchCountFlowGroupSchema, { maxItems: 36 }),
+  },
+  strict,
+);
+export type PitchCountFlowQuery = Static<typeof PitchCountFlowQuerySchema>;
+export type PitchCountFlowRow = Static<typeof PitchCountFlowRowSchema>;
+export type PitchCountFlowResponse = Static<typeof PitchCountFlowResponseSchema>;
 
 export function pitchOutcomeScope({ season, competition, dateFrom, dateTo }: PitchOutcomeQuery) {
   return resolveAnalysisScope(

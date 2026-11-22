@@ -2,120 +2,123 @@
 import { createElement } from "react";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import type { PitchArsenalGroup } from "@kbo/contracts";
+import { analyzePitchCountFlow } from "@kbo/game-core";
+import { pitchOutcomeScope } from "@kbo/contracts";
 import { PitchArsenalPanel } from "../../apps/web/src/analysis/pitch-arsenal-panel.js";
+import { countFlowRow } from "../helpers/pitch-outcomes.js";
 
 afterEach(cleanup);
-function group(
-  stance: string | null,
-  balls = 0,
-  strikes = 0,
-  types: [string | null, number][] = [
-    ["직구", 6],
-    ["슬라이더", 4],
-  ],
-): PitchArsenalGroup {
-  const pitches = types.reduce((sum, [, count]) => sum + count, 0);
-  return {
-    stance,
-    balls,
-    strikes,
-    pitches,
-    types: types.map(([pitchType, count]) => ({
-      pitchType,
-      pitches: count,
-      usageRate: count / pitches,
-    })),
-  };
-}
-function show(groups: PitchArsenalGroup[], onSelect = vi.fn()) {
-  const view = render(createElement(PitchArsenalPanel, { groups, onSelect }));
-  return { ...view, onSelect };
-}
-it("selects a count state and shows both sides using server rates, then drills into the original group", () => {
-  const selected = group("R", 2, 1, [
-    ["체인지업", 3],
-    ["직구", 1],
+const query = { season: 2024 };
+const scope = pitchOutcomeScope(query);
+const slider = { pitchType: "슬라이더", stance: "L" };
+function show() {
+  const data = analyzePitchCountFlow(query, "hp1", scope, "a".repeat(64), [
+    countFlowRow({
+      ...slider,
+      pitchId: "l0",
+      balls: 0,
+      strikes: 0,
+      afterBalls: 1,
+      afterStrikes: 0,
+      pitchCall: "ball",
+    }),
+    countFlowRow({
+      pitchType: "직구",
+      stance: "L",
+      pitchId: "l1",
+      balls: 0,
+      strikes: 0,
+      afterBalls: 0,
+      afterStrikes: 1,
+    }),
+    countFlowRow({
+      ...slider,
+      pitchId: "r0",
+      stance: "R",
+      balls: 0,
+      strikes: 0,
+      afterBalls: 0,
+      afterStrikes: 1,
+    }),
+    countFlowRow({
+      ...slider,
+      pitchId: "lf",
+      balls: 3,
+      strikes: 2,
+      afterBalls: 3,
+      afterStrikes: 2,
+      pitchCall: "foul",
+    }),
+    countFlowRow({
+      ...slider,
+      pitchId: "rf",
+      terminalResult: "strikeout",
+      stance: "R",
+      balls: 3,
+      strikes: 2,
+      afterBalls: 3,
+      afterStrikes: 3,
+    }),
+    countFlowRow({
+      ...slider,
+      pitchId: "uf",
+      terminalResult: "walk",
+      stance: null,
+      balls: 3,
+      strikes: 2,
+      afterBalls: 4,
+      afterStrikes: 2,
+      pitchCall: "ball",
+    }),
   ]);
-  const { onSelect } = show([group("L"), group("R"), selected]);
-  const board = screen.getByRole("group", { name: "볼카운트 상태 선택" });
-  expect(within(board).getAllByRole("button")).toHaveLength(12);
-  expect(
-    within(board)
-      .getByRole("button", { name: /^0볼 0스트라이크/ })
-      .getAttribute("aria-pressed"),
-  ).toBe("true");
-  fireEvent.click(within(board).getByRole("button", { name: /^2볼 1스트라이크/ }));
-  expect(screen.getByRole("heading", { name: "2–1 카운트의 구종 선택" })).toBeTruthy();
-  const right = screen.getByRole("region", { name: "우타자 선택 카운트 구종 배합" });
-  expect(within(right).getByText("3/4구")).toBeTruthy();
-  expect(within(right).getByText("75.0%")).toBeTruthy();
-  expect(screen.getByText("이 방향·카운트에서 관측된 투구가 없습니다.")).toBeTruthy();
-  fireEvent.click(
-    within(right).getByRole("button", { name: "우타자 2볼 1스트라이크 체인지업 코스 보기" }),
-  );
-  expect(onSelect).toHaveBeenCalledExactlyOnceWith(selected, "체인지업");
+  const onSelect = vi.fn();
+  const view = render(createElement(PitchArsenalPanel, { groups: data.groups, onSelect }));
+  const left = screen.getByRole("figure", { name: "좌타자 상대" });
+  const right = screen.getByRole("figure", { name: "우타자 상대" });
+  return { view, onSelect, left, right };
+}
+function rate(tree: HTMLElement, from: string, outcome: string) {
+  return tree.querySelector(`[data-from="${from}"][data-outcome="${outcome}"] .pitch-flow-rate`)
+    ?.textContent;
+}
+
+it("applies the chosen pitch at every count and pools the actual observations in the overall view", () => {
+  const { left, right, onSelect } = show();
+  expect(rate(left, "0–0", "ball")).toBe("50.0%");
+  const full = within(left).getByRole("button", { name: "좌타자 상대 3볼 2스트라이크 구종 비중" });
+  fireEvent.click(full);
+  fireEvent.click(within(left).getByRole("button", { name: /슬라이더 100.0%/ }));
+  expect(rate(left, "0–0", "ball")).toBe("100.0%");
+  expect(rate(right, "0–0", "ball")).toBe("0.0%");
+  expect(rate(left, "3–2", "foul")).toBe("100.0%");
+  expect(rate(right, "3–2", "strikeout")).toBe("100.0%");
+  expect(rate(right, "3–2", "walk")).toBe("0.0%");
+  expect(rate(right, "2–2", "strikeout")).toBe("—");
+  fireEvent.click(screen.getByRole("button", { name: "좌타자 상대 코스 보기" }));
+  expect(onSelect).toHaveBeenCalledWith({ stance: "L", balls: 3, strikes: 2 }, "슬라이더");
+  fireEvent.click(screen.getByRole("button", { name: "전체", exact: true }));
+  const all = screen.getByRole("figure", { name: "전체 타자" });
+  expect(screen.getAllByRole("figure")).toHaveLength(1);
+  expect(rate(all, "3–2", "walk")).toBe("33.3%");
+  expect(rate(all, "3–2", "strikeout")).toBe("33.3%");
+  expect(rate(all, "3–2", "foul")).toBe("33.3%");
+  expect(rate(all, "0–0", "ball")).toBe("50.0%");
 });
-it("keeps missing direction and S records separate without assigning them to L/R", () => {
-  const { onSelect } = show([
-    group("L"),
-    group(null, 1, 0, [["직구", 1]]),
-    group("S", 0, 2, [["슬라이더", 2]]),
-  ]);
-  const disclosure = screen.getByText("좌·우로 분류하지 않은 기록").closest("details");
-  if (!(disclosure instanceof HTMLDetailsElement))
-    throw new Error("Missing unclassified disclosure");
-  expect(disclosure.open).toBe(false);
-  fireEvent.click(screen.getByText("좌·우로 분류하지 않은 기록"));
-  const table = screen.getByRole("table", { name: "좌우 미분류 구종 배합" });
-  expect(within(table).getByText("타석 방향 미확인")).toBeTruthy();
-  expect(within(table).getByText("양타석 표기")).toBeTruthy();
-  expect(within(table).getByText("1/1구")).toBeTruthy();
-  expect(screen.getByText(/같은 경기의 선수 프로필에 명시된 좌타·우타로 보완/)).toBeTruthy();
-  expect(
-    screen.getByRole("region", { name: "좌타자 선택 카운트 구종 배합" }).textContent,
-  ).toContain("10구");
-  expect(
-    screen.getByRole("region", { name: "우타자 선택 카운트 구종 배합" }).textContent,
-  ).toContain("투구 없음");
-  fireEvent.click(within(table).getByRole("button", { name: "슬라이더 코스 보기" }));
-  expect(onSelect.mock.calls[0]?.[0]).toMatchObject({ stance: "S", strikes: 2 });
-});
-it("does not invent a known-side state or action for unknown-only data", () => {
-  show([group(null, 0, 0, [[null, 1]])]);
-  expect(screen.queryByRole("group", { name: "볼카운트 상태 선택" })).toBeNull();
-  expect(screen.getByRole("status").textContent).toContain(
-    "좌·우타석 방향이 확인된 투구가 없습니다",
-  );
-  fireEvent.click(screen.getByText("좌·우로 분류하지 않은 기록"));
-  expect(screen.getByRole("table", { name: "좌우 미분류 구종 배합" }).textContent).toContain(
-    "구종 미상",
-  );
-  expect(screen.queryByRole("button")).toBeNull();
-});
-it("distinguishes the six provider pitch colors and shows ties truthfully", () => {
-  const types: [string, number][] = ["직구", "슬라이더", "체인지업", "커브", "커터", "투심"].map(
-    (type) => [type, 1],
-  );
-  show([group("L", 0, 0, types)]);
-  const legend = screen.getByRole("list", { name: "구종 색상" });
-  const colors = within(legend)
-    .getAllByRole("listitem")
-    .map((item) => item.querySelector("i")?.style.background);
-  expect(new Set(colors).size).toBe(6);
-  expect(screen.getAllByText(/공동 최다/).length).toBeGreaterThan(0);
-});
-it("falls back to an available state after filters change without mutating the cached groups", () => {
-  const a = group("L"),
-    b = group("R", 3, 2);
-  Object.freeze(a.types);
-  Object.freeze(a);
-  const view = show([a, b]);
-  fireEvent.click(screen.getByRole("button", { name: /^3볼 2스트라이크/ }));
-  const c = group("R", 1, 1);
-  view.rerender(createElement(PitchArsenalPanel, { groups: [c], onSelect: view.onSelect }));
-  expect(
-    screen.getByRole("button", { name: /^1볼 1스트라이크/ }).getAttribute("aria-pressed"),
-  ).toBe("true");
-  expect(screen.getByRole("heading", { name: "1–1 카운트의 구종 선택" })).toBeTruthy();
+
+it("opens every available pitch at the expanded node and keeps filtering until another pitch is chosen", () => {
+  const { left } = show();
+  const start = within(left).getByRole("button", { name: "좌타자 상대 0볼 0스트라이크 구종 비중" });
+  fireEvent.click(start);
+  fireEvent.click(within(left).getByRole("button", { name: /슬라이더 50.0%/ }));
+  expect(start.querySelectorAll(".pitch-flow-dim")).toHaveLength(1);
+  expect(start.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.pointerOver(start);
+  expect(start.getAttribute("aria-expanded")).toBe("true");
+  expect(rate(left, "0–0", "ball")).toBe("100.0%");
+  fireEvent.click(within(left).getByRole("button", { name: /직구 50.0%/ }));
+  expect(rate(left, "0–0", "ball")).toBe("0.0%");
+  expect(rate(left, "3–2", "foul")).toBe("—");
+  fireEvent.click(screen.getByRole("button", { name: "전체 구종으로" }));
+  expect(start.querySelectorAll(".pitch-flow-dim")).toHaveLength(0);
+  expect(rate(left, "0–0", "ball")).toBe("50.0%");
 });

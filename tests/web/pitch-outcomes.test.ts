@@ -8,14 +8,15 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Value } from "@sinclair/typebox/value";
 import {
   PitchOutcomeQuerySchema,
+  PitchCountFlowQuerySchema,
   resolveAnalysisScope,
   inAnalysisPeriod,
   type PitchOutcomeRow,
   type TerminalPaRow,
 } from "@kbo/contracts";
-import { analyzeBatterProfile, analyzePitchLocation } from "@kbo/game-core";
+import { analyzeBatterProfile, analyzePitchCountFlow, analyzePitchLocation } from "@kbo/game-core";
 import { PitchOutcomesPage } from "../../apps/web/src/pages/pitch-outcomes-page.js";
-import { outcomeRow, terminalPa } from "../helpers/pitch-outcomes.js";
+import { countFlowRow, outcomeRow, terminalPa } from "../helpers/pitch-outcomes.js";
 const clients: QueryClient[] = [];
 afterEach(() => {
   cleanup();
@@ -27,6 +28,7 @@ afterEach(() => {
 function mockOutcomes(
   rows: PitchOutcomeRow[] = [outcomeRow()],
   pas: TerminalPaRow[] = [terminalPa()],
+  flowResponse?: () => Response | undefined,
 ) {
   const fetch = vi.fn(async (input: RequestInfo | URL) => {
     const u = new URL(String(input), "http://localhost");
@@ -62,6 +64,29 @@ function mockOutcomes(
     const scopedPas = pas.filter(
       (pa) => pa.gameDate.startsWith(`${scope.season}-`) && inAnalysisPeriod(pa.gameDate, scope),
     );
+    if (u.pathname.endsWith("/count-flow")) {
+      return (
+        flowResponse?.() ??
+        Response.json(
+          analyzePitchCountFlow(
+            Value.Decode(PitchCountFlowQuerySchema, query),
+            "hp1",
+            scope,
+            "f".repeat(64),
+            scopedRows.map((row) =>
+              countFlowRow({
+                pitchId: row.pitchId,
+                stance: row.stance,
+                pitchType: row.pitchType,
+                balls: row.balls,
+                strikes: row.strikes,
+                eligible: row.eligible,
+              }),
+            ),
+          ),
+        )
+      );
+    }
     return Response.json(
       u.pathname.includes("batter-profile")
         ? analyzeBatterProfile(query, "b1", scope, "a".repeat(64), scopedRows, scopedPas)
@@ -102,6 +127,7 @@ function show(role: "pitcher" | "batter", search = "season=2024&competition=all"
       ),
     ),
   );
+  return client;
 }
 
 function detailsFor(label: string | RegExp) {
@@ -111,7 +137,7 @@ function detailsFor(label: string | RegExp) {
   return { trigger, details };
 }
 
-it("opens count/stance composition without refetching and drills back to the map with exact filters", async () => {
+it("loads the count tree only on its tab and drills back to the map with exact filters", async () => {
   const fetch = mockOutcomes([
     outcomeRow({ pitchId: "l-fast", stance: "L", strikes: 2, pitchType: "직구" }),
     outcomeRow({
@@ -123,28 +149,39 @@ it("opens count/stance composition without refetching and drills back to the map
     }),
     outcomeRow({ pitchId: "r-fast", stance: "R", strikes: 2, pitchType: "직구" }),
   ]);
-  show("pitcher", "season=2024&competition=all&pitcher=hp1&dateFrom=2024-06-01&dateTo=2024-06-30");
+  show(
+    "pitcher",
+    "season=2024&competition=unknown&pitcher=hp1&dateFrom=2024-06-01&dateTo=2024-06-30",
+  );
   await screen.findByRole("table", { name: "구종별 반응" });
   const before = fetch.mock.calls.length;
-  expect(screen.queryByRole("heading", { name: /좌우 타자별 구종 배합/ })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "카운트별 구종과 전이" })).toBeNull();
   fireEvent.click(screen.getByRole("tab", { name: "구종 배합" }));
   const panel = screen.getByRole("tabpanel", { name: "구종 배합" });
   expect(screen.queryByRole("group", { name: "실제 코스 지도" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: /^0볼 2스트라이크 배합 선택/ }));
-  const left = within(panel).getByRole("region", { name: "좌타자 선택 카운트 구종 배합" });
-  expect(within(left).getAllByText("1/2구")).toHaveLength(2);
-  expect(within(left).getAllByText("50.0%")).toHaveLength(2);
-  expect(fetch).toHaveBeenCalledTimes(before);
+  const left = await within(panel).findByRole("figure", { name: "좌타자 상대" });
   fireEvent.click(
-    screen.getByRole("button", { name: "좌타자 0볼 2스트라이크 슬라이더 코스 보기" }),
+    within(left).getByRole("button", { name: "좌타자 상대 0볼 2스트라이크 구종 비중" }),
   );
+  fireEvent.click(within(left).getByRole("button", { name: /슬라이더 50.0%/ }));
+  expect(fetch).toHaveBeenCalledTimes(before + 1);
+  const path = new URL(String(fetch.mock.calls.at(-1)?.[0]), "http://localhost");
+  expect(path.pathname).toBe("/api/v2/analysis/pitch-location/hp1/count-flow");
+  expect(Object.fromEntries(path.searchParams)).toEqual({
+    season: "2024",
+    competition: "unknown",
+    dateFrom: "2024-06-01",
+    dateTo: "2024-06-30",
+    cohort: "all",
+  });
+  fireEvent.click(screen.getByRole("button", { name: "좌타자 상대 코스 보기" }));
   await waitFor(() =>
     expect(screen.getByLabelText("현재 주소").textContent).toContain("pitchType="),
   );
   const params = new URLSearchParams(screen.getByLabelText("현재 주소").textContent ?? "");
   expect(Object.fromEntries(params)).toMatchObject({
     season: "2024",
-    competition: "all",
+    competition: "unknown",
     pitcher: "hp1",
     dateFrom: "2024-06-01",
     dateTo: "2024-06-30",
@@ -158,6 +195,45 @@ it("opens count/stance composition without refetching and drills back to the map
   fireEvent.click(screen.getByRole("button", { name: "이전 주소" }));
   expect(screen.getByRole("tab", { name: "구종 배합", selected: true })).toBeTruthy();
   expect(screen.getByLabelText("현재 주소").textContent).not.toContain("pitchType=");
+});
+
+it("loads a direct count-tree link independently of old location filters", async () => {
+  const fetch = mockOutcomes();
+  show("pitcher", "season=2024&competition=unknown&pitcher=hp1&balls=4&outcomeView=arsenal");
+  await screen.findByRole("heading", { name: "카운트별 구종과 전이" });
+  const paths = fetch.mock.calls.map(([input]) => new URL(String(input), "http://localhost"));
+  expect(paths.map((url) => url.pathname).sort()).toEqual([
+    "/api/v2/analysis/pitch-location/hp1/count-flow",
+    "/api/v2/analysis/pitch-shape",
+  ]);
+  expect(paths.every((url) => !url.searchParams.has("balls"))).toBe(true);
+});
+
+it("isolates an old API's missing route even after the count tree has been cached", async () => {
+  let oldApi = false;
+  const fetch = mockOutcomes(undefined, undefined, () =>
+    oldApi
+      ? Response.json(
+          { message: "Route not found", error: "Not Found", statusCode: 404 },
+          { status: 404 },
+        )
+      : undefined,
+  );
+  const client = show("pitcher", "season=2024&competition=unknown&pitcher=hp1&outcomeView=arsenal");
+  await screen.findByRole("heading", { name: "카운트별 구종과 전이" });
+  oldApi = true;
+  void client.invalidateQueries({ queryKey: ["pitch-count-flow"] });
+  await screen.findByText("이 서버에서 구종 전이 자료를 사용할 수 없습니다.");
+  expect(screen.queryByRole("heading", { name: "카운트별 구종과 전이" })).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "코스·반응" }));
+  await screen.findByRole("table", { name: "구종별 반응" });
+  expect(screen.queryByText("이 서버에서 구종 전이 자료를 사용할 수 없습니다.")).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "구종 배합" }));
+  await screen.findByRole("button", { name: "구종 배합 다시 시도" });
+  oldApi = false;
+  fireEvent.click(screen.getByRole("button", { name: "구종 배합 다시 시도" }));
+  await screen.findByRole("heading", { name: "카운트별 구종과 전이" });
+  expect(fetch.mock.calls.some(([input]) => String(input).includes("/hp1/count-flow"))).toBe(true);
 });
 
 it("keeps evidence map selection in the URL while preserving the comparison and fetched data", async () => {

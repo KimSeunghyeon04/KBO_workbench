@@ -1310,6 +1310,100 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     ).toEqual([{ sealed: true }]);
   });
 
+  it("links a legacy ball to a sealed HBP without crossing another pitch event", async () => {
+    const fullCount = ["ball", "called_strike", "ball", "called_strike", "ball"];
+    const scenarios = [
+      {
+        game: "legacy",
+        call: "ball",
+        result: "hit_by_pitch",
+        before: fullCount,
+        intervening: [
+          { kind: "review", payload: { decision: "upheld", reviewedEventId: "e7" } },
+          { kind: "administrative", payload: { code: "announcement" } },
+        ],
+      },
+      { game: "walk", call: "ball", result: "walk", before: fullCount, intervening: [] },
+      {
+        game: "canonical",
+        call: "hit_by_pitch",
+        result: "hit_by_pitch",
+        before: fullCount,
+        intervening: [],
+      },
+      {
+        game: "no-pitch",
+        call: "hit_by_pitch",
+        result: "hit_by_pitch",
+        before: fullCount,
+        intervening: [{ kind: "pitch", payload: { call: "no_pitch" } }],
+      },
+      {
+        game: "automatic",
+        call: "ball",
+        result: "hit_by_pitch",
+        before: [],
+        intervening: [{ kind: "pitch", payload: { call: "automatic_strike" } }],
+      },
+    ];
+    for (const scenario of scenarios) {
+      const original = parseStagingGameDocumentV2(
+        makeDocument([
+          { kind: "half_inning_start", payload: {} },
+          { kind: "batter_start", payload: { batterId: "a1", pitcherId: "hp1" } },
+          ...[...scenario.before, scenario.call].map((call) => ({
+            kind: "pitch",
+            payload: { call },
+          })),
+          ...scenario.intervening,
+          {
+            kind: "plate_result",
+            payload: { result: scenario.result, batterId: "a1", pitcherId: "hp1" },
+          },
+        ]),
+      );
+      const gameId = `hbp-flow-${scenario.game}`;
+      await store.importRevision(
+        parseStagingGameDocumentV2({
+          ...original,
+          metadata: { ...original.metadata, gameId },
+          source: { ...original.source, sourceGameId: gameId },
+        }),
+      );
+    }
+    const location = new PitchLocationRepository(pool);
+    const query = { season: 2026, competition: "unknown" as const };
+    const select = (
+      groups: Awaited<ReturnType<PitchLocationRepository["countFlow"]>>["groups"],
+      balls: number,
+      strikes: number,
+    ) =>
+      groups.find(
+        (group) => group.stance === "all" && group.balls === balls && group.strikes === strikes,
+      );
+    const flow = await location.countFlow(query, "hp1");
+    expect(flow.scopePitches).toBe(25);
+    const full = select(flow.groups, 3, 2);
+    expect(full?.types).toHaveLength(1);
+    expect(full?.types[0]?.pitchType).toBeNull();
+    expect(full?.transitions.filter((step) => step.pitches > 0)).toEqual([
+      { outcome: "walk", pitches: 1, rate: 0.25 },
+      { outcome: "hitByPitch", pitches: 2, rate: 0.5 },
+      { outcome: "unresolved", pitches: 1, rate: 0.25 },
+    ]);
+    expect(select(flow.groups, 0, 0)?.transitions.filter((step) => step.pitches > 0)).toEqual([
+      { outcome: "ball", pitches: 5, rate: 1 },
+    ]);
+    const discipline = await location.countFlow({ ...query, cohort: "discipline" }, "hp1");
+    expect(discipline.excludedSituations).toBe(2);
+    expect(select(discipline.groups, 3, 2)?.transitions.filter((step) => step.pitches > 0)).toEqual(
+      [
+        { outcome: "walk", pitches: 1, rate: 0.5 },
+        { outcome: "hitByPitch", pitches: 1, rate: 0.5 },
+      ],
+    );
+  });
+
   it("keeps pitch outcomes separate from official terminal PA grain and current revision", async () => {
     const source = pitchAnalysisFixture(2024);
     await store.importRevision(source);
@@ -1326,6 +1420,21 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     });
     expect(pitch.coverage).toMatchObject({ locationPitches: 0, missingLocation: 4 });
     expect(pitch.arsenal.reduce((sum, group) => sum + group.pitches, 0)).toBe(4);
+    const flow = await location.countFlow(query, "hp1");
+    expect(
+      flow.groups
+        .filter((group) => group.stance === "all")
+        .map((group) => [
+          group.balls,
+          group.strikes,
+          group.transitions.filter((step) => step.pitches > 0),
+        ]),
+    ).toEqual([
+      [0, 0, [{ outcome: "strike", pitches: 1, rate: 1 }]],
+      [0, 1, [{ outcome: "strike", pitches: 1, rate: 1 }]],
+      [0, 2, [{ outcome: "ball", pitches: 1, rate: 1 }]],
+      [1, 2, [{ outcome: "strikeout", pitches: 1, rate: 1 }]],
+    ]);
     const comparison = await location.compare(
       {
         ...query,

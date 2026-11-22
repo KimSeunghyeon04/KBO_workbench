@@ -938,7 +938,9 @@ try {
   await pitchRateTable.getByRole("button", { name: "Whiff% \uc624\ub984\ucc28\uc21c \uc815\ub82c", exact: true }).click();
   await pitchRateTable.locator('thead th[aria-sort="ascending"]').filter({ hasText: "Whiff%" }).waitFor();
   await assertPlayerDestination("/analysis/pitch-location", { pitcher, pitchType: null, stance: null, balls: null, strikes: null, cohort: null });
+  const flowRequest = page.waitForResponse(res => new URL(res.url()).pathname.endsWith("/count-flow") && res.ok());
   await page.getByRole("tab", { name: "\uad6c\uc885 \ubc30\ud569", exact: true }).click();
+  const flowResponse = await (await flowRequest).json();
   await page.locator(".outcome-arsenal").waitFor();
   const profileArsenal = await page.evaluate(async id => {
     const response = await fetch(`/api/v2/analysis/pitch-location/${encodeURIComponent(id)}?season=2024&competition=all`);
@@ -949,9 +951,22 @@ try {
       !profileArsenal.arsenal.some(group => group.stance === "L" && group.pitches > 0)) {
     throw new Error("Untracked pitches must use declared batter profiles without inventing locations.");
   }
-  await page.locator(".arsenal-state-node:not(:disabled)").first().click();
-  const arsenalChoice = page.locator(".arsenal-pitch-choices button:not(:disabled)").first();
+  const flow = page.locator(".outcome-arsenal");
+  if (await flow.locator(".pitch-flow-tree").count() !== 2) throw new Error("Expected both batting sides in the count flow.");
+  if ("countFlow" in profileArsenal) throw new Error("Legacy location response must retain its original shape.");
+  const overviewPitches = flowResponse.groups.filter(group => group.stance === "all");
+  if (overviewPitches.reduce((total, group) => total + group.pitches, 0) !== flowResponse.scopePitches ||
+      flowResponse.scopePitches !== profileArsenal.coverage.scopePitches) {
+    throw new Error("Pooled count flow must include all actual pitches.");
+  }
+  await flow.getByRole("button", { name: "\uc804\uccb4", exact: true }).click();
+  if (await flow.locator(".pitch-flow-tree").count() !== 1) throw new Error("Expected one pooled count tree.");
+  await flow.getByRole("button", { name: "\uc88c\u00b7\uc6b0 \ube44\uad50", exact: true }).click();
+  const leftCountTree = flow.getByRole("figure", { name: "\uc88c\ud0c0\uc790 \uc0c1\ub300" });
+  await leftCountTree.locator(".pitch-flow-node:not(:disabled)").first().press("Enter");
+  const arsenalChoice = leftCountTree.locator(".pitch-flow-picker button").first();
   await arsenalChoice.click();
+  await flow.getByRole("button", { name: "\uc88c\ud0c0\uc790 \uc0c1\ub300 \ucf54\uc2a4 \ubcf4\uae30", exact: true }).click();
   await page.waitForURL((url) => url.searchParams.has("pitchType") && url.searchParams.has("balls") && url.searchParams.has("strikes") && url.searchParams.has("stance"));
   await pitchRateTable.waitFor();
   await quickFilters.getByRole("button", { name: "\uc0c1\ud669 \uc870\uac74 \ucd08\uae30\ud654", exact: true }).click();

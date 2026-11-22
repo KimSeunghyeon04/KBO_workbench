@@ -22,6 +22,7 @@ import {
   gameBattingProfileJoinSql,
   pitchGeometrySql,
   pitchEligibilitySql,
+  lastPitchesCteSql,
 } from "./analysis-pitch-input.js";
 import { readPitchOutcomeSources } from "./pitch-outcome-sources.js";
 
@@ -164,12 +165,7 @@ export async function readPitchOutcomeRows(
       UNION
       SELECT p.game_id,p.revision,p.plate_appearance_event_id AS pa_id FROM baseball.pitch_facts p
         JOIN selected_games r USING(game_id,revision) WHERE p.${actorColumn}=$5 AND p.plate_appearance_event_id IS NOT NULL
-    ), last_pitches AS (
-      SELECT DISTINCT ON (q.game_id,q.revision,q.plate_appearance_event_id) q.*
-      FROM baseball.pitch_facts q JOIN selected_pas s ON s.game_id=q.game_id AND s.revision=q.revision AND s.pa_id=q.plate_appearance_event_id
-      WHERE q.pitch_call<>'no_pitch'
-      ORDER BY q.game_id,q.revision,q.plate_appearance_event_id,q.pitch_sequence DESC
-    )
+    ), ${lastPitchesCteSql}
     SELECT pa.game_id AS "gameId",pa.revision,to_char(r.game_date,'YYYY-MM-DD') AS "gameDate",pa.start_event_id AS "paId",
       pa.batter_id AS "batterId",pa.pitcher_id AS "pitcherId",pa.completed,pa.counts_as_plate_appearance AS "countsAsPa",
       pa.counts_as_at_bat AS "countsAsAb",pa.counts_as_batter_faced AS "countsAsBf",pa.result,
