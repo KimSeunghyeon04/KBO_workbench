@@ -383,6 +383,68 @@ it("keeps unknown-hand pitches in the pooled view when there are no confirmed op
   expect(screen.getByRole("columnheader", { name: /상대 투수 전체\s*1구/ })).toBeTruthy();
 });
 
+it("draws count wedges by observed use while keeping small wedges selectable and percentages exact", async () => {
+  const pitches = [
+    { type: "직구", count: 75 },
+    { type: "체인지업", count: 23 },
+    { type: "커브", count: 1 },
+    { type: "슬라이더", count: 1 },
+  ];
+  mockOutcomes(
+    pitches.flatMap(({ type, count }) =>
+      Array.from({ length: count }, (_, index) =>
+        outcomeRow({ pitchType: type, pitchId: `${type}-${index}` }),
+      ),
+    ),
+  );
+  show("batter", "season=2024&competition=unknown&batter=b1&outcomeView=count-response");
+  const tree = await screen.findByRole("figure", { name: "상대 투수 전체" });
+  const node = within(tree).getByRole("button", {
+    name: "상대 투수 전체 0볼 0스트라이크 구종 비중",
+  });
+  const wedges = [...node.querySelectorAll("path[data-pitch-index]")];
+  const legend = within(screen.getByRole("list", { name: "구종과 경로 범례" })).getAllByRole(
+    "listitem",
+  );
+  expect(legend.slice(0, 4).map((item) => item.textContent)).toEqual([
+    "슬라이더",
+    "직구",
+    "체인지업",
+    "커브",
+  ]);
+  const angleAt = (x: string | undefined, y: string | undefined) =>
+    (Math.atan2(Number(x) - 22, 22 - Number(y)) * 180) / Math.PI;
+  const arcs = wedges.map((wedge) => {
+    const ends = /^M22 22 L([^ ]+) ([^ ]+) A21 21 0 [01] 1 ([^ ]+) ([^ ]+) Z$/.exec(
+      wedge.getAttribute("d") ?? "",
+    );
+    if (ends === null) throw new Error("Expected a circular wedge");
+    const [, startX, startY, endX, endY] = ends;
+    const start = angleAt(startX, startY);
+    const end = angleAt(endX, endY);
+    return { start, sweep: (end - start + 360) % 360 };
+  });
+  expect(arcs.map(({ sweep }) => sweep)).toEqual([
+    expect.closeTo((340 * 75) / 98),
+    expect.closeTo((340 * 23) / 98),
+    expect.closeTo(10),
+    expect.closeTo(10),
+  ]);
+  expect(arcs[0]?.start).toBeCloseTo(0);
+  fireEvent.click(node);
+  const options = within(tree).getAllByRole("button", { name: /%$/ });
+  expect(options.map((option) => option.getAttribute("aria-label"))).toEqual([
+    "직구 75.0%",
+    "체인지업 23.0%",
+    "슬라이더 1.0%",
+    "커브 1.0%",
+  ]);
+  const rareWedge = wedges[2];
+  if (rareWedge === undefined) throw new Error("Expected a rare pitch wedge");
+  fireEvent.click(rareWedge);
+  expect(screen.getByRole("heading", { name: "0–0 · 슬라이더 한 공 뒤" })).toBeTruthy();
+});
+
 it("shows result counts even when an earlier count-flow API omits terminal details", async () => {
   const legacyQuery = { season: 2024, competition: "unknown", cohort: "all" } as const;
   const legacy = analyzePitchCountFlow(

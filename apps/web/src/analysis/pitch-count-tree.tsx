@@ -165,6 +165,26 @@ function FlowRoutes({
   );
 }
 
+function pieWedges(types: readonly TypeGroup[]) {
+  // When a category reaches the minimum, split the remaining space in the original proportions.
+  const minimumAngle = Math.min(10, 360 / types.length);
+  let remainingAngle = 360;
+  let remainingPitches = types.reduce((sum, type) => sum + type.pitches, 0);
+  let proportionalTypes = types.length;
+  for (const { pitches } of [...types].reverse()) {
+    if (proportionalTypes === 1 || pitches * remainingAngle >= minimumAngle * remainingPitches)
+      break;
+    proportionalTypes--;
+    remainingAngle -= minimumAngle;
+    remainingPitches -= pitches;
+  }
+  return types.map((type, index) => ({
+    type,
+    angle:
+      index < proportionalTypes ? (type.pitches * remainingAngle) / remainingPitches : minimumAngle,
+  }));
+}
+
 function Pie({
   types,
   colors,
@@ -174,15 +194,17 @@ function Pie({
   colors: ReadonlyMap<PitchType, string>;
   selectedPitch: PitchSelection;
 }) {
-  const point = (angle: number) => `${22 + 21 * Math.cos(angle)} ${22 + 21 * Math.sin(angle)}`;
-  let share = 0;
+  const point = (degrees: number) => {
+    const angle = (degrees * Math.PI) / 180 - Math.PI / 2;
+    return `${22 + 21 * Math.cos(angle)} ${22 + 21 * Math.sin(angle)}`;
+  };
+  let end = 0;
   return (
     <svg viewBox="0 0 44 44" className="pitch-flow-pie" aria-hidden="true">
       {types.length === 0 && <circle cx={22} cy={22} r={21} className="pitch-flow-empty-node" />}
-      {types.map((type, index) => {
-        const start = share * Math.PI * 2 - Math.PI / 2;
-        share += type.usageRate;
-        const end = share * Math.PI * 2 - Math.PI / 2;
+      {pieWedges(types).map(({ type, angle }, index) => {
+        const start = end;
+        end = index === types.length - 1 ? 360 : start + angle;
         const props = {
           fill: colors.get(type.pitchType),
           className:
@@ -192,12 +214,12 @@ function Pie({
           "data-pitch-index": index,
         };
         const key = JSON.stringify(type.pitchType);
-        return type.usageRate === 1 ? (
+        return types.length === 1 ? (
           <circle key={key} cx={22} cy={22} r={21} {...props} />
         ) : (
           <path
             key={key}
-            d={`M22 22 L${point(start)} A21 21 0 ${type.usageRate > 0.5 ? 1 : 0} 1 ${point(end)} Z`}
+            d={`M22 22 L${point(start)} A21 21 0 ${angle > 180 ? 1 : 0} 1 ${point(end)} Z`}
             {...props}
           />
         );
@@ -233,7 +255,13 @@ export function PitchCountTree({
     if (open?.mode === "keyboard")
       picker.current?.querySelector("button")?.focus({ preventScroll: true });
   }, [open]);
-  const openTypes = open === null ? undefined : groups.get(open.count.key)?.types;
+  const typesByCount = new Map(
+    [...groups].map(([key, group]) => [
+      key,
+      [...group.types].sort((a, b) => b.pitches - a.pitches),
+    ]),
+  );
+  const openTypes = open === null ? undefined : typesByCount.get(open.count.key);
   const openX = open === null ? 0 : (open.count.x / width) * 100;
   const pickerOnLeft = openX > 50;
   const pickerOffset = pickerOnLeft ? 100 - openX : openX;
@@ -261,7 +289,7 @@ export function PitchCountTree({
       <div className="pitch-flow-canvas">
         <FlowRoutes groups={groups} selectedPitch={selectedPitch} />
         {pitchCounts.map((count) => {
-          const types = groups.get(count.key)?.types ?? [];
+          const types = typesByCount.get(count.key) ?? [];
           const expanded = open?.count.key === count.key;
           const position = {
             left: `${(count.x / width) * 100}%`,
