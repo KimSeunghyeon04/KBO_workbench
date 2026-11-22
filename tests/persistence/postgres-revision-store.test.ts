@@ -1607,6 +1607,12 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       [0, 2, [{ outcome: "ball", pitches: 1, rate: 1 }]],
       [1, 2, [{ outcome: "strikeout", pitches: 1, rate: 1 }]],
     ]);
+    const detailed = await location.countFlow({ ...query, include: "terminal-details" }, "hp1");
+    expect(
+      detailed.groups.find(
+        (group) => group.stance === "all" && group.balls === 1 && group.strikes === 2,
+      )?.terminalDetails,
+    ).toEqual([{ outcome: "swingingStrikeout", pitches: 1, rate: 1 }]);
     const comparison = await location.compare(
       {
         ...query,

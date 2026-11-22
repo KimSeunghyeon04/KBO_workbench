@@ -291,6 +291,26 @@
 .pitch-flow-picker b {
   font-variant-numeric: tabular-nums;
 }
+.pitch-flow-result-rate {
+  color: var(--ui-muted);
+  white-space: nowrap;
+}
+.pitch-flow-result-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  min-height: 24px;
+  font: inherit;
+  cursor: pointer;
+}
+.pitch-flow-details .pitch-flow-result-detail th {
+  padding-inline-start: 22px;
+  font-weight: 400;
+}
 .pitch-flow-evidence {
   justify-content: flex-start;
   margin-top: 8px;

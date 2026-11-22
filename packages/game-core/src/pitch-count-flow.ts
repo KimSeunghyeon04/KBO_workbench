@@ -1,27 +1,40 @@
 import {
   compareCanonicalStrings,
   pitchCountOutcomes,
+  pitchCountTerminalOutcomes,
   type AnalysisScope,
   type PitchCountOutcome,
   type PitchCountFlowGroup,
   type PitchCountFlowQuery,
   type PitchCountFlowResponse,
   type PitchCountFlowRow,
+  type PitchCountTerminalOutcome,
 } from "@kbo/contracts";
 import { hasTerminalPitch } from "./pitch-outcomes.js";
 
 type Stance = PitchCountFlowGroup["stance"];
 type Counts = Record<PitchCountOutcome, number>;
-const emptyCounts = (): Counts => ({
-  ball: 0,
-  strike: 0,
-  foul: 0,
-  walk: 0,
-  strikeout: 0,
-  inPlay: 0,
-  hitByPitch: 0,
-  unresolved: 0,
-});
+function emptyCounts(detailed: boolean) {
+  const transitions: Counts = {
+    ball: 0,
+    strike: 0,
+    foul: 0,
+    walk: 0,
+    strikeout: 0,
+    inPlay: 0,
+    hitByPitch: 0,
+    unresolved: 0,
+  };
+  return {
+    transitions,
+    details: detailed ? new Map<PitchCountTerminalOutcome, number>() : undefined,
+  };
+}
+type SampleCounts = ReturnType<typeof emptyCounts>;
+const terminalOutcomes = [
+  ...pitchCountTerminalOutcomes.strikeout,
+  ...pitchCountTerminalOutcomes.inPlay,
+];
 
 function outcome(row: PitchCountFlowRow): PitchCountOutcome {
   if (row.terminalResult === "hit_by_pitch") return "hitByPitch";
@@ -40,15 +53,65 @@ function outcome(row: PitchCountFlowRow): PitchCountOutcome {
   return "unresolved";
 }
 
-function summary(counts: Counts) {
-  const pitches = pitchCountOutcomes.reduce((total, key) => total + counts[key], 0);
+function terminalOutcome(
+  outcome: PitchCountOutcome,
+  row: PitchCountFlowRow,
+): PitchCountTerminalOutcome | undefined {
+  if (outcome === "strikeout") {
+    if (row.pitchCall === "called_strike") return "lookingStrikeout";
+    if (row.pitchCall === "swinging_strike") return "swingingStrikeout";
+    return "otherStrikeout";
+  }
+  if (outcome !== "inPlay") return undefined;
+  switch (row.terminalResult) {
+    case "single":
+    case "double":
+    case "triple":
+      return row.terminalResult;
+    case "home_run":
+      return "homeRun";
+    case "field_out":
+    case "double_play":
+    case "triple_play":
+      return "battedOut";
+    case "sacrifice_bunt":
+    case "sacrifice_fly":
+      return "sacrifice";
+    case "reached_on_error":
+      return "reachedOnError";
+    case "fielder_choice":
+      return "fielderChoice";
+    default:
+      return "otherInPlay";
+  }
+}
+
+function record(
+  counts: SampleCounts,
+  result: PitchCountOutcome,
+  detail: PitchCountTerminalOutcome | undefined,
+) {
+  counts.transitions[result]++;
+  if (detail !== undefined) counts.details?.set(detail, (counts.details.get(detail) ?? 0) + 1);
+}
+
+function summary({ transitions, details }: SampleCounts) {
+  const pitches = pitchCountOutcomes.reduce((total, key) => total + transitions[key], 0);
   return {
     pitches,
     transitions: pitchCountOutcomes.map((outcome) => ({
       outcome,
-      pitches: counts[outcome],
-      rate: counts[outcome] / pitches,
+      pitches: transitions[outcome],
+      rate: transitions[outcome] / pitches,
     })),
+    ...(details === undefined
+      ? {}
+      : {
+          terminalDetails: terminalOutcomes.flatMap((outcome) => {
+            const count = details.get(outcome);
+            return count === undefined ? [] : [{ outcome, pitches: count, rate: count / pitches }];
+          }),
+        }),
   };
 }
 
@@ -67,23 +130,27 @@ export function analyzePitchCountFlow(
     sourceHash,
     scopePitches: rows.length,
     excludedSituations: rows.length - selected.length,
-    groups: summarizePitchCountFlow(selected),
+    groups: summarizePitchCountFlow(selected, query.include === "terminal-details"),
   };
 }
 
-function summarizePitchCountFlow(rows: readonly PitchCountFlowRow[]): PitchCountFlowGroup[] {
+function summarizePitchCountFlow(
+  rows: readonly PitchCountFlowRow[],
+  detailed: boolean,
+): PitchCountFlowGroup[] {
   const groups = new Map<
     string,
     {
       stance: Stance;
       balls: number;
       strikes: number;
-      counts: Counts;
-      types: Map<string | null, Counts>;
+      counts: SampleCounts;
+      types: Map<string | null, SampleCounts>;
     }
   >();
   for (const row of rows) {
     const result = outcome(row);
+    const detail = detailed ? terminalOutcome(result, row) : undefined;
     const stances: Stance[] =
       row.stance === "L" || row.stance === "R" ? ["all", row.stance] : ["all"];
     for (const stance of stances) {
@@ -94,18 +161,18 @@ function summarizePitchCountFlow(rows: readonly PitchCountFlowRow[]): PitchCount
           stance,
           balls: row.balls,
           strikes: row.strikes,
-          counts: emptyCounts(),
+          counts: emptyCounts(detailed),
           types: new Map(),
         };
         groups.set(key, group);
       }
-      group.counts[result]++;
+      record(group.counts, result, detail);
       let counts = group.types.get(row.pitchType);
       if (!counts) {
-        counts = emptyCounts();
+        counts = emptyCounts(detailed);
         group.types.set(row.pitchType, counts);
       }
-      counts[result]++;
+      record(counts, result, detail);
     }
   }
   return [...groups.values()]

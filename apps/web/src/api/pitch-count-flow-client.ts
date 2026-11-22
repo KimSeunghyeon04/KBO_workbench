@@ -1,9 +1,11 @@
 import {
   canonicalStringify,
   PitchCountFlowResponseSchema,
+  pitchCountTerminalOutcomes,
   pitchOutcomeScope,
   type PitchCountFlowGroup,
   type PitchCountFlowQuery,
+  type PitchCountTerminalOutcome,
 } from "@kbo/contracts";
 import { Value } from "@sinclair/typebox/value";
 import { ApiClientError, requestJson } from "./transport";
@@ -16,17 +18,45 @@ export function isCountFlowUnavailable(error: unknown) {
   );
 }
 
-type FlowSummary = Pick<PitchCountFlowGroup, "pitches" | "transitions">;
+type FlowSummary = Pick<PitchCountFlowGroup, "pitches" | "transitions" | "terminalDetails">;
+const terminalOutcomes = [
+  ...pitchCountTerminalOutcomes.strikeout,
+  ...pitchCountTerminalOutcomes.inPlay,
+];
 
-function validSummary(group: FlowSummary) {
+function terminalPitches(sample: FlowSummary, outcome: PitchCountTerminalOutcome) {
+  return sample.terminalDetails?.find((detail) => detail.outcome === outcome)?.pitches ?? 0;
+}
+
+function sumTerminalPitches(samples: readonly FlowSummary[], outcome: PitchCountTerminalOutcome) {
+  return samples.reduce((total, sample) => total + terminalPitches(sample, outcome), 0);
+}
+
+function validTerminalDetails(group: FlowSummary, detailed: boolean) {
+  const details = group.terminalDetails;
+  if (!detailed) return details === undefined;
+  if (details === undefined) return false;
   return (
-    new Set(group.transitions.map((step) => step.outcome)).size === group.transitions.length &&
-    group.transitions.reduce((total, step) => total + step.pitches, 0) === group.pitches &&
-    group.transitions.every((step) => step.rate === step.pitches / group.pitches)
+    new Set(details.map((step) => step.outcome)).size === details.length &&
+    details.every((step) => step.rate === step.pitches / group.pitches) &&
+    Object.entries(pitchCountTerminalOutcomes).every(
+      ([parent, outcomes]) =>
+        outcomes.reduce((total, outcome) => total + terminalPitches(group, outcome), 0) ===
+        group.transitions.find((step) => step.outcome === parent)?.pitches,
+    )
   );
 }
 
-function validGroups(groups: readonly PitchCountFlowGroup[], pitches: number) {
+function validSummary(group: FlowSummary, detailed: boolean) {
+  return (
+    new Set(group.transitions.map((step) => step.outcome)).size === group.transitions.length &&
+    group.transitions.reduce((total, step) => total + step.pitches, 0) === group.pitches &&
+    group.transitions.every((step) => step.rate === step.pitches / group.pitches) &&
+    validTerminalDetails(group, detailed)
+  );
+}
+
+function validGroups(groups: readonly PitchCountFlowGroup[], pitches: number, detailed: boolean) {
   const counts = new Map<number, Map<PitchCountFlowGroup["stance"], PitchCountFlowGroup>>();
   let pooledPitches = 0;
   for (const group of groups) {
@@ -35,12 +65,16 @@ function validGroups(groups: readonly PitchCountFlowGroup[], pitches: number) {
       counts.get(count) ?? new Map<PitchCountFlowGroup["stance"], PitchCountFlowGroup>();
     if (
       sides.has(group.stance) ||
-      !validSummary(group) ||
+      !validSummary(group, detailed) ||
       new Set(group.types.map((type) => type.pitchType)).size !== group.types.length ||
       group.types.reduce((sum, type) => sum + type.pitches, 0) !== group.pitches ||
       group.types.some(
-        (type) => !validSummary(type) || type.usageRate !== type.pitches / group.pitches,
+        (type) => !validSummary(type, detailed) || type.usageRate !== type.pitches / group.pitches,
       ) ||
+      (detailed &&
+        terminalOutcomes.some(
+          (outcome) => sumTerminalPitches(group.types, outcome) !== terminalPitches(group, outcome),
+        )) ||
       group.transitions.some(
         (step) =>
           group.types.reduce(
@@ -68,6 +102,13 @@ function validGroups(groups: readonly PitchCountFlowGroup[], pitches: number) {
     }
     for (const type of pooled.types) {
       const samples = splitTypes.filter((entry) => entry.pitchType === type.pitchType);
+      if (
+        detailed &&
+        terminalOutcomes.some(
+          (outcome) => sumTerminalPitches(samples, outcome) > terminalPitches(type, outcome),
+        )
+      )
+        return false;
       for (const step of type.transitions) {
         if (
           samples.reduce(
@@ -99,12 +140,16 @@ export async function getPitchCountFlow(
       { signal },
     ),
   );
+  const { include, ...baseQuery } = query;
+  const detailed = result.query.include === "terminal-details";
+  // Earlier servers strip unknown query fields and return the original summary.
+  const expectedQuery = include !== undefined && !detailed ? baseQuery : query;
   if (
     result.pitcherId !== id ||
-    canonicalStringify(result.query) !== canonicalStringify(query) ||
+    canonicalStringify(result.query) !== canonicalStringify(expectedQuery) ||
     canonicalStringify(result.scope) !== canonicalStringify(pitchOutcomeScope(query)) ||
     (query.cohort !== "discipline" && result.excludedSituations !== 0) ||
-    !validGroups(result.groups, result.scopePitches - result.excludedSituations)
+    !validGroups(result.groups, result.scopePitches - result.excludedSituations, detailed)
   )
     throw new Error("카운트 전이의 조회 범위 또는 표본 합계가 다릅니다.");
   return result;

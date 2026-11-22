@@ -163,4 +163,60 @@ describe("count transitions from physical pitches", () => {
       unresolved: 3,
     });
   });
+
+  it("breaks down verified terminal pitches against the full count and pitch-type samples on request", () => {
+    const count = { balls: 2, strikes: 2, stance: "L", pitchType: "직구" };
+    const strikeout = { ...count, terminalResult: "strikeout" as const };
+    const inPlay = { ...count, pitchCall: "in_play" as const, inPlay: true, afterStrikes: 2 };
+    const rows = [
+      countFlowRow({ ...strikeout, pitchId: "called", pitchCall: "called_strike" }),
+      countFlowRow({ ...strikeout, pitchId: "swing", pitchCall: "swinging_strike" }),
+      countFlowRow({
+        ...strikeout,
+        pitchId: "tip",
+        pitchCall: "foul_tip",
+        pitchType: "슬라이더",
+      }),
+      countFlowRow({ ...inPlay, pitchId: "hr", terminalResult: "home_run", stance: "R" }),
+      countFlowRow({ ...inPlay, pitchId: "out", terminalResult: "field_out" }),
+      countFlowRow({ ...inPlay, pitchId: "unlinked" }),
+      countFlowRow({
+        ...count,
+        pitchId: "ball",
+        pitchCall: "ball",
+        afterBalls: 3,
+        afterStrikes: 2,
+      }),
+      countFlowRow({ ...count, pitchId: "foul", pitchCall: "foul", afterStrikes: 2 }),
+    ];
+    const data = analyzePitchCountFlow(
+      { ...query, include: "terminal-details" },
+      "hp1",
+      scope,
+      source,
+      rows,
+    );
+    const all = data.groups.find((g) => g.stance === "all");
+    expect(all?.terminalDetails).toEqual([
+      { outcome: "lookingStrikeout", pitches: 1, rate: 0.125 },
+      { outcome: "swingingStrikeout", pitches: 1, rate: 0.125 },
+      { outcome: "otherStrikeout", pitches: 1, rate: 0.125 },
+      { outcome: "homeRun", pitches: 1, rate: 0.125 },
+      { outcome: "battedOut", pitches: 1, rate: 0.125 },
+    ]);
+    expect(counts(all)).toMatchObject({ strikeout: 3, inPlay: 2, unresolved: 1 });
+    const left = data.groups.find((g) => g.stance === "L");
+    expect(left?.types.find((type) => type.pitchType === "직구")?.terminalDetails).toEqual([
+      { outcome: "lookingStrikeout", pitches: 1, rate: 1 / 6 },
+      { outcome: "swingingStrikeout", pitches: 1, rate: 1 / 6 },
+      { outcome: "battedOut", pitches: 1, rate: 1 / 6 },
+    ]);
+    expect(data.groups.find((g) => g.stance === "R")?.terminalDetails).toEqual([
+      { outcome: "homeRun", pitches: 1, rate: 1 },
+    ]);
+    for (const group of split(rows)) {
+      expect(group).not.toHaveProperty("terminalDetails");
+      expect(group.types.every((type) => !("terminalDetails" in type))).toBe(true);
+    }
+  });
 });

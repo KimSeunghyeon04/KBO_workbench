@@ -152,9 +152,16 @@ export const PitchLocationResponseSchema = Type.Object(
 );
 export type PitchOutcomeQuery = Static<typeof PitchOutcomeQuerySchema>;
 
-export const PitchCountFlowQuerySchema = Type.Pick(
+const CountFlowScopeQuerySchema = Type.Pick(
   PitchOutcomeQuerySchema,
   ["season", "competition", "dateFrom", "dateTo", "cohort"],
+  strict,
+);
+export const PitchCountFlowQuerySchema = Type.Object(
+  {
+    ...CountFlowScopeQuerySchema.properties,
+    include: Type.Optional(Type.Literal("terminal-details")),
+  },
   strict,
 );
 export const PitchCountFlowRowSchema = Type.Object(

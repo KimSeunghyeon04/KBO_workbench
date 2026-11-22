@@ -1,10 +1,6 @@
 import { useState } from "react";
-import {
-  compareCanonicalStrings,
-  type PitchCountFlowGroup,
-  type PitchCountOutcome,
-} from "@kbo/contracts";
-import { outcomePercent } from "./pitch-outcome-presentation";
+import { compareCanonicalStrings, type PitchCountFlowGroup } from "@kbo/contracts";
+import { PitchCountResultsTable } from "./pitch-count-results-table";
 import {
   countFlowSample,
   countText,
@@ -69,20 +65,6 @@ export function PitchArsenalPanel({
     stance,
     sample: countFlowSample(countsBySide[stance].get(count.key), selectedPitch),
   }));
-  const detailRows: { kind: PitchCountOutcome; label: string }[] = [
-    count.balls === 3
-      ? { kind: "walk", label: "볼넷" }
-      : { kind: "ball", label: `${count.balls + 1}–${count.strikes} 이동` },
-    count.strikes === 2
-      ? { kind: "strikeout", label: "삼진" }
-      : { kind: "strike", label: `${count.balls}–${count.strikes + 1} 이동` },
-    ...(count.strikes === 2
-      ? [{ kind: "foul", label: `${countText(count)} 유지 · 일반 파울` } as const]
-      : []),
-    { kind: "inPlay", label: "인플레이" },
-    { kind: "hitByPitch", label: "몸에 맞는 공" },
-    { kind: "unresolved", label: "전이 미확인" },
-  ];
   return (
     <section className="panel outcome-arsenal" aria-labelledby="outcome-arsenal-heading">
       <h2 id="outcome-arsenal-heading">카운트별 구종과 전이</h2>
@@ -174,30 +156,11 @@ export function PitchArsenalPanel({
                 </select>
               </label>
             </div>
-            <table aria-label="선택 카운트의 한 공 뒤 결과">
-              <thead>
-                <tr>
-                  <th scope="col">다음 상태</th>
-                  {samples.map(({ stance, sample }) => (
-                    <th key={stance} scope="col">
-                      {sideLabels[stance]}
-                      {sample !== undefined && <small>{sample.pitches.toLocaleString()}구</small>}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {detailRows.map(({ kind, label }) => (
-                  <tr key={kind}>
-                    <th scope="row">{label}</th>
-                    {samples.map(({ stance, sample }) => {
-                      const result = sample?.transitions.find((row) => row.outcome === kind);
-                      return <td key={stance}>{outcomePercent(result?.rate ?? null)}</td>;
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <PitchCountResultsTable
+              balls={count.balls}
+              strikes={count.strikes}
+              columns={samples.map(({ stance, sample }) => ({ label: sideLabels[stance], sample }))}
+            />
             {typeof selectedPitch === "string" && (
               <div className="pitch-flow-toolbar pitch-flow-evidence">
                 {samples

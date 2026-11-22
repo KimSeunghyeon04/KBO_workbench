@@ -85,13 +85,14 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
     )
       workspace.scrollIntoView({ block: "start" });
   }
-  const flowCandidate = {
+  const commonCandidate = {
     season,
     ...scope.options,
     cohort: params.get("cohort") ?? "all",
   };
+  const flowCandidate = { ...commonCandidate, include: "terminal-details" as const };
   const candidate = {
-    ...flowCandidate,
+    ...commonCandidate,
     ...(params.has("balls") ? { balls: Number(params.get("balls")) } : {}),
     ...(params.has("strikes") ? { strikes: Number(params.get("strikes")) } : {}),
     ...(params.has("pitchType") ? { pitchType: params.get("pitchType") } : {}),

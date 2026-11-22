@@ -8,10 +8,13 @@ import { PitchArsenalPanel } from "../../apps/web/src/analysis/pitch-arsenal-pan
 import { countFlowRow } from "../helpers/pitch-outcomes.js";
 
 afterEach(cleanup);
-const query = { season: 2024 };
+const query = { season: 2024, include: "terminal-details" } as const;
 const scope = pitchOutcomeScope(query);
 const slider = { pitchType: "슬라이더", stance: "L" };
-function show() {
+function show(detailed = false) {
+  const count = { balls: 2, strikes: 2 };
+  const strikeout = { ...count, ...slider, terminalResult: "strikeout" as const };
+  const inPlay = { ...count, pitchCall: "in_play" as const, inPlay: true, afterStrikes: 2 };
   const data = analyzePitchCountFlow(query, "hp1", scope, "a".repeat(64), [
     countFlowRow({
       ...slider,
@@ -70,6 +73,23 @@ function show() {
       afterStrikes: 2,
       pitchCall: "ball",
     }),
+    ...(detailed
+      ? [
+          countFlowRow({ ...strikeout, pitchId: "called", pitchCall: "called_strike" }),
+          countFlowRow({ ...strikeout, pitchId: "swing", pitchCall: "swinging_strike" }),
+          countFlowRow({ ...strikeout, pitchId: "tip", pitchCall: "foul_tip" }),
+          countFlowRow({ ...inPlay, pitchId: "hr", stance: "L", terminalResult: "home_run" }),
+          countFlowRow({ ...inPlay, pitchId: "out", stance: "L", terminalResult: "field_out" }),
+          countFlowRow({ ...inPlay, pitchId: "single", stance: "R", terminalResult: "single" }),
+          countFlowRow({
+            ...count,
+            pitchId: "foul",
+            stance: "R",
+            pitchCall: "foul",
+            afterStrikes: 2,
+          }),
+        ]
+      : []),
   ]);
   const onSelect = vi.fn();
   const view = render(createElement(PitchArsenalPanel, { groups: data.groups, onSelect }));
@@ -165,14 +185,51 @@ it("selects another count across all pitches from its center with the pitch pick
   expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "상세 카운트" }).value).toBe("0");
   const details = screen.getByRole("table", { name: "선택 카운트의 한 공 뒤 결과" });
   expect(within(details).getByRole("columnheader", { name: /좌타자 상대\s*2구/ })).toBeTruthy();
-  const ball = within(details).getByRole("row", { name: /1–0 이동/ });
+  const ball = within(details).getByRole("row", { name: /^볼 / });
   expect(
     within(ball)
       .getAllByRole("cell")
       .map((cell) => cell.textContent),
-  ).toEqual(["50.0%", "0.0%"]);
+  ).toEqual(["1구 (50.0%)", "0구 (0.0%)"]);
   expect(rate(left, "0–0", "ball")).toBe("50.0%");
   expect(start.getAttribute("aria-expanded")).toBe("false");
   expect(document.activeElement).toBe(center);
   expect(onSelect).not.toHaveBeenCalled();
+});
+
+it("shows physical pitch counts and expands strikeout and batted results without the next count", () => {
+  const { left } = show(true);
+  fireEvent.change(screen.getByRole("combobox", { name: "상세 카운트" }), {
+    target: { value: "10" },
+  });
+  expect(screen.getByRole("heading", { name: "2–2 · 전체 구종 한 공 뒤" })).toBeTruthy();
+  const table = within(screen.getByRole("table", { name: "선택 카운트의 한 공 뒤 결과" }));
+  const cells = (label: string) =>
+    within(table.getByRole("row", { name: new RegExp(`^${label} `) }))
+      .getAllByRole("cell")
+      .map((cell) => cell.textContent);
+  expect(table.getByRole("columnheader", { name: "투구 결과" })).toBeTruthy();
+  expect(table.queryByRole("rowheader", { name: /이동|유지/ })).toBeNull();
+  expect(cells("일반 파울")).toEqual(["0구 (0.0%)", "1구 (50.0%)"]);
+  const strikeouts = table.getByRole("button", { name: "삼진", exact: true, expanded: false });
+  expect(table.queryByRole("rowheader", { name: "루킹 삼진" })).toBeNull();
+  fireEvent.click(strikeouts);
+  expect(strikeouts.getAttribute("aria-expanded")).toBe("true");
+  expect(cells("루킹 삼진")).toEqual(["1구 (20.0%)", "0구 (0.0%)"]);
+  expect(cells("헛스윙 삼진")).toEqual(["1구 (20.0%)", "0구 (0.0%)"]);
+  expect(cells("기타 삼진")).toEqual(["1구 (20.0%)", "0구 (0.0%)"]);
+  fireEvent.click(table.getByRole("button", { name: "인플레이" }));
+  expect(cells("홈런")).toEqual(["1구 (20.0%)", "0구 (0.0%)"]);
+  expect(cells("단타")).toEqual(["0구 (0.0%)", "1구 (50.0%)"]);
+  fireEvent.click(strikeouts);
+  expect(table.queryByRole("rowheader", { name: "루킹 삼진" })).toBeNull();
+  expect(cells("타구 아웃")).toEqual(["1구 (20.0%)", "0구 (0.0%)"]);
+
+  fireEvent.click(
+    within(left).getByRole("button", { name: "좌타자 상대 2볼 2스트라이크 구종 비중" }),
+  );
+  fireEvent.click(within(left).getByRole("button", { name: /슬라이더 60.0%/ }));
+  fireEvent.click(table.getByRole("button", { name: "삼진", exact: true }));
+  expect(cells("헛스윙 삼진")).toEqual(["1구 (33.3%)", "—"]);
+  expect(table.queryByRole("rowheader", { name: "홈런" })).toBeNull();
 });

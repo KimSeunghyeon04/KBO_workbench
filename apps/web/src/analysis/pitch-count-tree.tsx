@@ -13,7 +13,7 @@ export type PitchCount = (typeof pitchCounts)[number];
 export type PitchType = string | null;
 export type PitchSelection = PitchType | undefined;
 type TypeGroup = PitchCountFlowGroup["types"][number];
-type Summary = Pick<PitchCountFlowGroup, "pitches" | "transitions">;
+type Summary = Pick<PitchCountFlowGroup, "pitches" | "transitions" | "terminalDetails">;
 const markers = ["ball", "strike", "foul"] as const;
 const endings = {
   walk: { x: 27, y: 429, label: "볼넷", kind: "ball" },

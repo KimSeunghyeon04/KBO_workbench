@@ -9,12 +9,14 @@ import { Value } from "@sinclair/typebox/value";
 import {
   PitchOutcomeQuerySchema,
   PitchCountFlowQuerySchema,
+  pitchOutcomeScope,
   resolveAnalysisScope,
   inAnalysisPeriod,
   type PitchOutcomeRow,
   type TerminalPaRow,
 } from "@kbo/contracts";
 import { analyzeBatterProfile, analyzePitchCountFlow, analyzePitchLocation } from "@kbo/game-core";
+import { getPitchCountFlow } from "../../apps/web/src/api/pitch-count-flow-client.js";
 import { PitchOutcomesPage } from "../../apps/web/src/pages/pitch-outcomes-page.js";
 import { countFlowRow, outcomeRow, terminalPa } from "../helpers/pitch-outcomes.js";
 const clients: QueryClient[] = [];
@@ -33,7 +35,7 @@ function mockOutcomes(
   const fetch = vi.fn(async (input: RequestInfo | URL) => {
     const u = new URL(String(input), "http://localhost");
     if (u.pathname.endsWith("/comparison")) return Response.json(null, { status: 400 });
-    const raw = Object.fromEntries(u.searchParams);
+    const { include, ...raw } = Object.fromEntries(u.searchParams);
     const query = Value.Decode(PitchOutcomeQuerySchema, {
       ...raw,
       season: Number(raw.season),
@@ -69,7 +71,10 @@ function mockOutcomes(
         flowResponse?.() ??
         Response.json(
           analyzePitchCountFlow(
-            Value.Decode(PitchCountFlowQuerySchema, query),
+            Value.Decode(PitchCountFlowQuerySchema, {
+              ...query,
+              ...(include === undefined ? {} : { include }),
+            }),
             "hp1",
             scope,
             "f".repeat(64),
@@ -173,6 +178,7 @@ it("loads the count tree only on its tab and drills back to the map with exact f
     dateFrom: "2024-06-01",
     dateTo: "2024-06-30",
     cohort: "all",
+    include: "terminal-details",
   });
   fireEvent.click(screen.getByRole("button", { name: "좌타자 상대 코스 보기" }));
   await waitFor(() =>
@@ -207,6 +213,50 @@ it("loads a direct count-tree link independently of old location filters", async
     "/api/v2/analysis/pitch-shape",
   ]);
   expect(paths.every((url) => !url.searchParams.has("balls"))).toBe(true);
+});
+
+it("shows result counts even when an earlier count-flow API omits terminal details", async () => {
+  const legacyQuery = { season: 2024, competition: "unknown", cohort: "all" } as const;
+  const legacy = analyzePitchCountFlow(
+    legacyQuery,
+    "hp1",
+    pitchOutcomeScope(legacyQuery),
+    "f".repeat(64),
+    [
+      countFlowRow({
+        pitchCall: "in_play",
+        inPlay: true,
+        afterStrikes: 0,
+        terminalResult: "home_run",
+      }),
+    ],
+  );
+  mockOutcomes(undefined, undefined, () => Response.json(legacy));
+  show("pitcher", "season=2024&competition=unknown&pitcher=hp1&outcomeView=arsenal");
+  const table = await screen.findByRole("table", { name: "선택 카운트의 한 공 뒤 결과" });
+  expect(within(table).getByRole("row", { name: /인플레이.*1구.*100.0%/ })).toBeTruthy();
+  expect(within(table).queryByRole("button", { name: "인플레이" })).toBeNull();
+});
+
+it("rejects terminal details that disagree with their physical-pitch sample or pitch types", async () => {
+  const query = { season: 2024, competition: "unknown", include: "terminal-details" } as const;
+  const data = analyzePitchCountFlow(query, "hp1", pitchOutcomeScope(query), "f".repeat(64), [
+    countFlowRow({ strikes: 2, terminalResult: "strikeout", pitchCall: "swinging_strike" }),
+    countFlowRow({ pitchId: "foul", strikes: 2, afterStrikes: 2, pitchCall: "foul" }),
+  ]);
+  const { signal } = new AbortController();
+  mockOutcomes(undefined, undefined, () => Response.json(data));
+  await expect(getPitchCountFlow(query, "hp1", signal)).resolves.toEqual(data);
+  for (const terminalDetails of [
+    [{ outcome: "swingingStrikeout", pitches: 1, rate: 1 }],
+    [{ outcome: "lookingStrikeout", pitches: 1, rate: 0.5 }],
+  ]) {
+    const groups = data.groups.map((group) =>
+      group.stance === "all" ? { ...group, terminalDetails } : group,
+    );
+    mockOutcomes(undefined, undefined, () => Response.json({ ...data, groups }));
+    await expect(getPitchCountFlow(query, "hp1", signal)).rejects.toThrow("표본 합계가 다릅니다");
+  }
 });
 
 it("isolates an old API's missing route even after the count tree has been cached", async () => {

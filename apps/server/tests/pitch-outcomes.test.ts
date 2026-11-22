@@ -40,6 +40,15 @@ it("serves count flow separately while retaining the old location response keys"
                 terminalResult: "hit_by_pitch",
               }),
               countFlowRow({ pitchId: "second" }),
+              countFlowRow({
+                pitchId: "third",
+                balls: 2,
+                strikes: 2,
+                afterStrikes: 2,
+                pitchCall: "in_play",
+                inPlay: true,
+                terminalResult: "home_run",
+              }),
             ]
           : [],
       ),
@@ -85,6 +94,22 @@ it("serves count flow separately while retaining the old location response keys"
         .find((group) => group.stance === "all")
         ?.transitions.find((step) => step.outcome === "hitByPitch"),
     ).toEqual({ outcome: "hitByPitch", pitches: 1, rate: 0.5 });
+    expect(payload.query).not.toHaveProperty("include");
+    for (const group of payload.groups) {
+      expect(group).not.toHaveProperty("terminalDetails");
+      expect(group.types.every((type) => !("terminalDetails" in type))).toBe(true);
+    }
+    const detailed = await app.inject(`${path}/count-flow?season=2024&include=terminal-details`);
+    expect(detailed.statusCode).toBe(200);
+    const expanded = Value.Decode(PitchCountFlowResponseSchema, detailed.json());
+    expect(expanded.query.include).toBe("terminal-details");
+    expect(expanded.sourceHash).toBe(payload.sourceHash);
+    expect(
+      expanded.groups.find((group) => group.stance === "all" && group.balls === 2),
+    ).toMatchObject({
+      terminalDetails: [{ outcome: "homeRun", pitches: 1, rate: 1 }],
+      types: [{ terminalDetails: [{ outcome: "homeRun", pitches: 1, rate: 1 }] }],
+    });
     const empty = await app.inject(
       "/api/v2/analysis/pitch-location/unlisted/count-flow?season=2024",
     );

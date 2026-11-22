@@ -35,6 +35,26 @@ export const pitchCountOutcomes = [
 ] as const;
 export type PitchCountOutcome = (typeof pitchCountOutcomes)[number];
 
+export const pitchCountTerminalOutcomes = {
+  strikeout: ["lookingStrikeout", "swingingStrikeout", "otherStrikeout"],
+  inPlay: [
+    "single",
+    "double",
+    "triple",
+    "homeRun",
+    "battedOut",
+    "sacrifice",
+    "reachedOnError",
+    "fielderChoice",
+    "otherInPlay",
+  ],
+} as const;
+const terminalOutcomes = [
+  ...pitchCountTerminalOutcomes.strikeout,
+  ...pitchCountTerminalOutcomes.inPlay,
+];
+export type PitchCountTerminalOutcome = (typeof terminalOutcomes)[number];
+
 const summary = {
   pitches: Type.Integer({ minimum: 1 }),
   transitions: Type.Array(
@@ -47,6 +67,19 @@ const summary = {
       strict,
     ),
     { minItems: pitchCountOutcomes.length, maxItems: pitchCountOutcomes.length },
+  ),
+  terminalDetails: Type.Optional(
+    Type.Array(
+      Type.Object(
+        {
+          outcome: Type.Union(terminalOutcomes.map((outcome) => Type.Literal(outcome))),
+          pitches: Type.Integer({ minimum: 1 }),
+          rate: Type.Number({ minimum: 0, maximum: 1 }),
+        },
+        strict,
+      ),
+      { maxItems: terminalOutcomes.length },
+    ),
   ),
 };
 export const PitchCountFlowGroupSchema = Type.Object(

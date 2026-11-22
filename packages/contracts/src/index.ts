@@ -607,9 +607,11 @@ export {
   PitchArsenalGroupSchema,
   PitchCountFlowGroupSchema,
   pitchCountOutcomes,
+  pitchCountTerminalOutcomes,
   type PitchArsenalGroup,
   type PitchCountFlowGroup,
   type PitchCountOutcome,
+  type PitchCountTerminalOutcome,
 } from "./pitch-arsenal.js";
 export {
   PitchLocationComparisonQuerySchema,
