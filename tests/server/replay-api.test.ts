@@ -103,9 +103,13 @@ describe("replay HTTP API", () => {
         compileDocument(computation, document),
       );
       const workspace = await StagingWorkspace.open(temporary.path, undefined, compile);
-      const document = parseStagingGameDocumentV2(
+      const fixtureDocument = parseStagingGameDocumentV2(
         JSON.parse(await readFile(`tests/fixtures/${fixture}`, "utf8")) as unknown,
       );
+      const document = parseStagingGameDocumentV2({
+        ...fixtureDocument,
+        revisionBase: { kind: "sealed_revision", revision: 1, documentHash: "a".repeat(64) },
+      });
       const loadCorrectionDraft = vi.fn(async () => document);
       const app = createApp(testConfig(temporary.path), new Pool(), {
         workspace,
@@ -120,6 +124,7 @@ describe("replay HTTP API", () => {
           loadCompiled: unexpected,
           revisions: unexpected,
           loadCorrectionDraft,
+          withCurrentRevisionBase: async (_gameId, _base, publish) => publish(),
         },
         importJobs: emptyImportJobs(),
         correctionSessions: emptyCorrectionSessions(),
@@ -140,6 +145,7 @@ describe("replay HTTP API", () => {
           season: document.metadata.season,
           document,
           findings: storedCompilerFindings(compileStagingGameDocumentV2(document).findings),
+          independentRecordCorrection: true,
         });
         const currentPath = path.join(
           temporary.path,

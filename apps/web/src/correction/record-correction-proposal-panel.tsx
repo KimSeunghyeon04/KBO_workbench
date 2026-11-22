@@ -20,12 +20,15 @@ export function RecordCorrectionProposalPanel(props: {
 }): React.JSX.Element {
   const queryClient = useQueryClient();
   const correctionCase = useQuery(recordCorrectionCaseQueryOptions(props.noticeId));
-  const proposal = useQuery(
-    recordCorrectionProposalQueryOptions(props.session.sessionId, props.noticeId),
-  );
+  const item = correctionCase.data;
+  const withdrawn = item === null;
+  const proposal = useQuery({
+    ...recordCorrectionProposalQueryOptions(props.session.sessionId, props.noticeId),
+    enabled: !withdrawn,
+  });
   const apply = useMutation({
     mutationFn: async () => {
-      if (proposal.data === undefined) throw new Error("KBO 정정 제안이 없습니다.");
+      if (withdrawn || proposal.data === undefined) throw new Error("KBO 정정 제안이 없습니다.");
       return applyRecordCorrectionProposal(
         props.session.sessionId,
         props.noticeId,
@@ -42,7 +45,7 @@ export function RecordCorrectionProposalPanel(props: {
       ]);
     },
   });
-  const data = proposal.data;
+  const data = withdrawn ? undefined : proposal.data;
   return (
     <section className="panel record-correction-proposal">
       <div className="section-heading">
@@ -62,18 +65,21 @@ export function RecordCorrectionProposalPanel(props: {
           {data?.eligible === true && data.batch === null ? "현재 작업본 재승인" : "제안 적용"}
         </button>
       </div>
-      {proposal.isLoading ? <p className="muted-text">제안을 검증하는 중입니다.</p> : null}
+      {proposal.isLoading && !withdrawn ? (
+        <p className="muted-text">제안을 검증하는 중입니다.</p>
+      ) : null}
       {correctionCase.isLoading ? (
         <p className="muted-text">기록정정 내용을 불러오는 중입니다.</p>
       ) : null}
       {correctionCase.error !== null ? (
         <p className="inline-error">{correctionCase.error.message}</p>
       ) : null}
-      {proposal.error !== null ? <p className="inline-error">{proposal.error.message}</p> : null}
-      {apply.error !== null ? <p className="inline-error">{apply.error.message}</p> : null}
-      {correctionCase.data !== undefined ? (
-        <RecordCorrectionNoticeContext item={correctionCase.data} />
+      {proposal.error !== null && !withdrawn ? (
+        <p className="inline-error">{proposal.error.message}</p>
       ) : null}
+      {apply.error !== null ? <p className="inline-error">{apply.error.message}</p> : null}
+      {withdrawn ? <p className="muted-text">더 이상 검토할 수 없는 공지입니다.</p> : null}
+      {item != null ? <RecordCorrectionNoticeContext item={item} /> : null}
       {data !== undefined ? (
         <>
           {data.reasons.length > 0 ? (

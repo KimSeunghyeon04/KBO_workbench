@@ -402,6 +402,7 @@ async function setup(
   );
   const markProposalApplied = vi.fn(async () => ({ noticeId: notice.noticeId, actionSequence: 1 }));
   const repository = {
+    caseSnapshot: async () => null,
     assess,
     assessmentBasis: async () => ({
       caseVersion: currentCase?.caseVersion ?? 0,

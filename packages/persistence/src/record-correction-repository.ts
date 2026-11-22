@@ -15,10 +15,12 @@ import { RecordCorrectionJobs } from "./record-correction-jobs.js";
 import { RecordCorrectionSources } from "./record-correction-sources.js";
 import type {
   RecordCorrectionApprovalInput,
+  RecordCorrectionApprovalHistory,
   RecordCorrectionApprovalEvidence,
   RecordCorrectionMatchup,
   RecordCorrectionMatchupContext,
   RecordCorrectionAssessmentInput,
+  RecordCorrectionCaseSnapshot,
   RecordCorrectionAssessmentBasis,
   RecordCorrectionGameCandidate,
   RecordCorrectionImportedSeason,
@@ -27,6 +29,8 @@ import type {
 export {
   RecordCorrectionStaleError,
   type RecordCorrectionApprovalEvidence,
+  type RecordCorrectionApprovalHistory,
+  type RecordCorrectionApprovalPlan,
   type RecordCorrectionMatchupContext,
   type RecordCorrectionAssessmentInput,
   type RecordCorrectionAssessmentBasis,
@@ -142,6 +146,14 @@ export class RecordCorrectionRepository {
     return this.cases.approvalEvidence(references);
   }
 
+  public approvalHistory(
+    references: readonly RecordCorrectionApprovalReference[],
+    scope: Pick<RecordCorrectionApprovalEvidence, "gameId" | "revision" | "baseHash">,
+    matchup: RecordCorrectionMatchup,
+  ): Promise<RecordCorrectionApprovalHistory> {
+    return this.cases.approvalHistory(references, scope, matchup);
+  }
+
   public async markProposalApplied(
     input: RecordCorrectionApprovalInput,
   ): Promise<RecordCorrectionApprovalReference> {
@@ -188,6 +200,10 @@ export class RecordCorrectionRepository {
 
   public async case(noticeId: string): Promise<RecordCorrectionCase | null> {
     return this.cases.case(noticeId);
+  }
+
+  public caseSnapshot(noticeId: string): Promise<RecordCorrectionCaseSnapshot | null> {
+    return this.cases.caseSnapshot(noticeId);
   }
 
   public async job(jobId: string): Promise<RecordCorrectionJob> {

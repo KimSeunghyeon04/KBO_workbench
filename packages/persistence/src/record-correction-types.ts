@@ -1,5 +1,6 @@
 import type {
   RecordCorrectionApprovalReference,
+  RecordCorrectionCase,
   RecordCorrectionCaseStatus,
   RecordCorrectionMatchCandidate,
   RecordCorrectionNotice,
@@ -51,6 +52,19 @@ export interface RecordCorrectionApprovalEvidence {
   readonly documentHash: string;
   readonly proposalHash: string;
 }
+export interface RecordCorrectionApprovalHistory {
+  readonly active: readonly RecordCorrectionApprovalEvidence[];
+  readonly recorded: readonly RecordCorrectionApprovalReference[];
+  readonly unknown: boolean;
+}
+
+export interface RecordCorrectionApprovalPlan {
+  readonly kind: "extend" | "rebuild";
+  readonly previousDocumentHash: string;
+  readonly previous: readonly RecordCorrectionApprovalReference[];
+  readonly carry: readonly RecordCorrectionApprovalReference[];
+}
+
 export interface RecordCorrectionApprovalInput {
   readonly noticeId: string;
   readonly caseVersion: number;
@@ -58,9 +72,15 @@ export interface RecordCorrectionApprovalInput {
   readonly proposalHash: string;
   readonly documentHash: string;
   readonly generation?: number;
-  readonly carry?: readonly RecordCorrectionApprovalReference[];
-  readonly previousDocumentHash?: string;
+  readonly plan?: RecordCorrectionApprovalPlan;
 }
+export interface RecordCorrectionCaseSnapshot {
+  readonly item: RecordCorrectionCase;
+  readonly assessmentCurrent: boolean;
+  readonly publication: number;
+  readonly decisionSequence: number;
+}
+
 export interface RecordCorrectionAssessmentBasis {
   readonly caseVersion: number;
   readonly publication: number;

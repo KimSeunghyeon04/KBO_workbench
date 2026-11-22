@@ -154,6 +154,16 @@ export async function advanceMatchupGenerations(
   }
 }
 
+export function recordCorrectionEligibleGames<
+  T extends Pick<RecordCorrectionGameCandidate, "gameId" | "sourceGameId">,
+>(games: readonly T[], doubleheaderNumber: number | null, selectedGameId: string | null): T[] {
+  return games.filter(
+    (game) =>
+      (selectedGameId === null || game.gameId === selectedGameId) &&
+      matchesRecordCorrectionDoubleheader(game.sourceGameId, doubleheaderNumber),
+  );
+}
+
 export function matchesRecordCorrectionDoubleheader(
   sourceGameId: string,
   doubleheaderNumber: number | null,

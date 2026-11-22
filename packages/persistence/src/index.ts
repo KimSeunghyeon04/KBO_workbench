@@ -46,6 +46,7 @@ export {
   RecordCorrectionWorkspace,
   type StoredRecordCorrectionPage,
 } from "./record-correction-workspace.js";
+export { recordCorrectionEligibleGames } from "./record-correction-matchups.js";
 export {
   RecordCorrectionRepository,
   RecordCorrectionStaleError,
@@ -54,6 +55,7 @@ export {
   type RecordCorrectionAssessmentInput,
   type RecordCorrectionGameCandidate,
   type RecordCorrectionApprovalEvidence,
+  type RecordCorrectionApprovalPlan,
   type RecordCorrectionMatchupContext,
   type RecordCorrectionImportedSeason,
 } from "./record-correction-repository.js";

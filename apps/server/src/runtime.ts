@@ -48,6 +48,7 @@ export interface AppRuntime {
     | "currentRevisionBase"
     | "loadCompiled"
     | "loadCorrectionDraft"
+    | "withCurrentRevisionBase"
     | "revisions"
   >;
   readonly importJobs: Pick<
@@ -221,7 +222,7 @@ export async function createRuntime(config: AppConfig, pool: Pool): Promise<AppR
         games,
       ),
     analysisModelJobs,
-    () => importJobs.list().some((job) => job.status === "queued" || job.status === "running"),
+    () => importJobs.hasImportActivity(),
     undefined,
     (error) =>
       process.stderr.write(
@@ -245,7 +246,7 @@ export async function createRuntime(config: AppConfig, pool: Pool): Promise<AppR
     },
     (document, target) => recordCorrectionService.verifyPublication(document, target),
   );
-  await importJobs.restore();
+  await importJobs.restore({ background: true });
   if (config.analysisAutoRefresh) analysisPreparation.start();
   const recordCorrectionJobs = new RecordCorrectionJobManager(
     new KboRecordCorrectionCollector(

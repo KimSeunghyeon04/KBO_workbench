@@ -35,7 +35,7 @@ describe("기록정정 초안의 current revision과 작업본 보존", () => {
     // A stale assessment reloads the revision while assessing, then again when opening the draft.
     fixture.loadCorrectionDraft.mockResolvedValue(document);
     try {
-      await fixture.service.createDraft(fixture.notice.noticeId);
+      await fixture.open();
       const saved = await fixture.workspace.readCurrentDocumentSnapshot(document.metadata.gameId);
       expect(saved?.authority).toBe("staging");
       expect(saved?.findings).toStrictEqual([
@@ -64,7 +64,7 @@ describe("기록정정 초안의 current revision과 작업본 보존", () => {
     const fixture = await setup(temporary.path, 8);
     const compute = vi.spyOn(inlineComputation, "run");
     try {
-      await fixture.service.createDraft(fixture.notice.noticeId);
+      await fixture.open();
       const read = vi.spyOn(fixture.workspace, "readCurrentDocumentSnapshot");
       const list = await fixture.service.listCaseSummaries();
       expect(list).toHaveLength(8);
@@ -89,7 +89,7 @@ describe("기록정정 초안의 current revision과 작업본 보존", () => {
     const fixture = await setup(temporary.path);
     try {
       expect((await fixture.service.case(fixture.notice.noticeId))?.draftProgress).toBeUndefined();
-      const opened = await fixture.service.createDraft(fixture.notice.noticeId);
+      const opened = await fixture.open();
       const before = await fixture.service.case(fixture.notice.noticeId);
       expect(before?.draftProgress?.state).toBe("needs_review");
       const proposal = await fixture.service.proposal(opened.sessionId, opened.noticeId);
@@ -130,7 +130,7 @@ describe("기록정정 초안의 current revision과 작업본 보존", () => {
     await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-notice-progress-"));
     const fixture = await setup(temporary.path);
     try {
-      const opened = await fixture.service.createDraft(fixture.notice.noticeId);
+      const opened = await fixture.open();
       const proposal = await fixture.service.proposal(opened.sessionId, opened.noticeId);
       const applied = await fixture.service.applyProposal(
         opened.sessionId,
@@ -172,10 +172,10 @@ describe("기록정정 초안의 current revision과 작업본 보존", () => {
     await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-notice-draft-"));
     const fixture = await setup(temporary.path);
     try {
-      const opened = await fixture.service.createDraft(fixture.notice.noticeId);
+      const opened = await fixture.open();
       const session = fixture.sessions.get(opened.sessionId);
       expect(session.draftDocument).toEqual(fixture.document);
-      expect(fixture.loadCorrectionDraft.mock.calls.every((call) => call[1] === 2)).toBe(true);
+      expect(fixture.loadCorrectionDraft.mock.lastCall?.[1]).toBe(2);
       expect(fixture.assess).toHaveBeenCalledWith(
         expect.objectContaining({ status: "action_required", gameRevision: 2 }),
       );
@@ -184,7 +184,7 @@ describe("기록정정 초안의 current revision과 작업본 보존", () => {
       expect(proposal.changes.filter((change) => change.state === "change")).toEqual([
         expect.objectContaining({ field: "sacrificeBunts", beforeValue: 0, afterValue: 1 }),
       ]);
-      const repeated = await fixture.service.createDraft(fixture.notice.noticeId);
+      const repeated = await fixture.open();
       expect(fixture.sessions.get(repeated.sessionId).draftDocument).toEqual(fixture.document);
       expect(fixture.assess).toHaveBeenCalledOnce();
     } finally {
@@ -232,7 +232,7 @@ describe("기록정정 초안의 current revision과 작업본 보존", () => {
         if (authority === "quarantine") await fixture.workspace.saveQuarantine(edited, findings);
         else await fixture.workspace.saveReady(edited, findings);
         const before = await fixture.workspace.readCurrentDocumentSnapshot(edited.metadata.gameId);
-        const opened = await fixture.service.createDraft(fixture.notice.noticeId);
+        const opened = await fixture.open();
         const session = fixture.sessions.get(opened.sessionId);
         expect(session.draftDocument).toEqual(edited);
         expect(session.authority).toBe(authority);
@@ -251,6 +251,50 @@ describe("기록정정 초안의 current revision과 작업본 보존", () => {
     },
   );
 
+  it("화면이 본 평가 버전이 다르거나 현재 평가가 보류 중이면 초안 열기를 거부한다", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-notice-version-"));
+    const fixture = await setup(temporary.path);
+    try {
+      await expect(fixture.service.createDraft(fixture.notice.noticeId, 2)).rejects.toThrow(
+        RecordCorrectionConflictError,
+      );
+      fixture.setAssessmentPending();
+      await expect(fixture.service.createDraft(fixture.notice.noticeId, 1)).rejects.toThrow(
+        RecordCorrectionConflictError,
+      );
+      expect(fixture.loadCorrectionDraft).not.toHaveBeenCalled();
+      expect(fixture.assess).not.toHaveBeenCalled();
+    } finally {
+      fixture.sessions.close();
+      await fixture.workspace.close();
+    }
+  });
+
+  it.each(["pitcher", "publication", "decision"] as const)(
+    "새 revision 재시도에서 타석 ID가 같아도 %s 근거가 바뀌면 초안을 발행하지 않는다",
+    async (changed) => {
+      await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-notice-target-"));
+      const fixture = await setup(temporary.path);
+      try {
+        if (changed === "pitcher") fixture.setOldPitcher("former-pitcher");
+        fixture.loadCorrectionDraft.mockImplementationOnce(async () => {
+          if (changed !== "pitcher") fixture.advanceReviewStamp(changed);
+          throw new RevisionConflictError("new revision");
+        });
+        await expect(fixture.open()).rejects.toThrow(RecordCorrectionConflictError);
+        expect(fixture.assess).toHaveBeenCalledWith(
+          expect.objectContaining({ eventId: fixture.eventId, gameRevision: 2 }),
+        );
+        expect(
+          await fixture.workspace.readCurrentDocumentSnapshot(fixture.document.metadata.gameId),
+        ).toBeNull();
+      } finally {
+        fixture.sessions.close();
+        await fixture.workspace.close();
+      }
+    },
+  );
+
   it("새 revision에서 대상 타석이 사라지면 후보를 갱신하고 초안을 만들지 않는다", async () => {
     await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-notice-draft-"));
     const fixture = await setup(temporary.path);
@@ -261,9 +305,7 @@ describe("기록정정 초안의 current revision과 작업본 보존", () => {
           .filter((event) => event.identity.eventId !== fixture.eventId)
           .map((event, sequence) => ({ ...event, sequence })),
       });
-      await expect(fixture.service.createDraft(fixture.notice.noticeId)).rejects.toThrow(
-        RecordCorrectionConflictError,
-      );
+      await expect(fixture.open()).rejects.toThrow(RecordCorrectionConflictError);
       expect(fixture.assess).toHaveBeenCalledWith(
         expect.objectContaining({ status: "manual_review", eventId: null }),
       );
@@ -324,8 +366,23 @@ async function setup(root: string, copies = 1) {
     appliedRevision: null,
     assessedAt: "2026-09-01T00:00:00.000Z",
     notice,
-    candidates: [],
+    candidates: [
+      {
+        candidateId: "old-candidate",
+        gameId: document.metadata.gameId,
+        revision: source.assessedRevision,
+        documentHash: "a".repeat(64),
+        eventId: event.identity.eventId,
+        batterPlayerId: event.payload.batterId,
+        pitcherPlayerId: event.payload.pitcherId,
+        label: "이전 타석",
+        confidenceReason: "비식별 평가 근거",
+      },
+    ],
   };
+  let assessmentCurrent = true;
+  let publication = 1;
+  let decisionSequence = 0;
   const assess = vi.fn(async (input: RecordCorrectionAssessmentInput) => {
     item = {
       ...item,
@@ -361,6 +418,7 @@ async function setup(root: string, copies = 1) {
   const service = new RecordCorrectionService(
     {
       case: async () => item,
+      caseSnapshot: async () => ({ item, assessmentCurrent, publication, decisionSequence }),
       assess,
       pendingNoticeIds: async () => [],
       listCasesForImport: async () => [],
@@ -420,6 +478,7 @@ async function setup(root: string, copies = 1) {
     },
     {
       loadCorrectionDraft,
+      withCurrentRevisionBase: async (_gameId, _base, publish) => publish(),
       currentRevisionBase: async () => ({
         revision: base.revision,
         documentHash: base.documentHash,
@@ -439,5 +498,19 @@ async function setup(root: string, copies = 1) {
     assess,
     loadCorrectionDraft,
     eventId: event.identity.eventId,
+    open: () => service.createDraft(notice.noticeId, item.caseVersion),
+    setAssessmentPending: () => {
+      assessmentCurrent = false;
+    },
+    setOldPitcher: (pitcherPlayerId: string) => {
+      item = {
+        ...item,
+        candidates: item.candidates.map((candidate) => ({ ...candidate, pitcherPlayerId })),
+      };
+    },
+    advanceReviewStamp: (kind: "publication" | "decision") => {
+      if (kind === "publication") publication += 2;
+      else decisionSequence += 1;
+    },
   };
 }

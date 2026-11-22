@@ -82,7 +82,10 @@ export class CorrectionSessionManager {
     this.sessions = new CorrectionSessionStore(now);
   }
 
-  public async create(request: CorrectionSessionCreateRequest): Promise<CorrectionSession> {
+  public async create(
+    request: CorrectionSessionCreateRequest,
+    selected?: NonNullable<Awaited<ReturnType<CorrectionWorkspace["readCurrentDocumentSnapshot"]>>>,
+  ): Promise<CorrectionSession> {
     this.sessions.makeRoom();
     if (request.authority === "superseded") {
       const source = await this.workspace.readSupersededSnapshot(
@@ -116,7 +119,7 @@ export class CorrectionSessionManager {
       this.sessions.add(session);
       return snapshot(session);
     }
-    const current = await this.workspace.readCurrentDocumentSnapshot(request.gameId);
+    const current = selected ?? (await this.workspace.readCurrentDocumentSnapshot(request.gameId));
     if (current === null || current.authority !== request.authority)
       throw new CorrectionSourceNotFoundError(
         `보정할 파일 원장을 찾을 수 없습니다: ${request.gameId}`,
@@ -182,8 +185,7 @@ export class CorrectionSessionManager {
         if (computed.snapshot === undefined) throw new Error("Missing correction snapshot");
         const approval = await beforeApply?.(computed.snapshot.draftDocumentHash);
         const beforeApprovals = session.recordCorrectionApprovals;
-        const afterApprovals =
-          approval === undefined ? beforeApprovals : withApproval(beforeApprovals, approval);
+        const afterApprovals = approval ?? beforeApprovals;
         session.undoStack.push({
           before: session.document,
           after: result.document,
@@ -208,7 +210,7 @@ export class CorrectionSessionManager {
     return this.sessions.withSessionLock(sessionId, expected, async (session) => {
       const approval = await approve(session.prepared.draftDocumentHash);
       const beforeApprovals = session.recordCorrectionApprovals;
-      const afterApprovals = withApproval(beforeApprovals, approval);
+      const afterApprovals = approval;
       session.undoStack.push({
         before: session.document,
         after: session.document,
@@ -459,13 +461,4 @@ function requiredSnapshotId(session: InternalSession): string {
     throw new CorrectionCommitBlockedError("superseded session snapshot ID가 없습니다.");
   }
   return session.snapshotId;
-}
-
-function withApproval(
-  approvals: readonly RecordCorrectionApprovalReference[],
-  next: readonly RecordCorrectionApprovalReference[],
-): readonly RecordCorrectionApprovalReference[] {
-  const merged = new Map(approvals.map((approval) => [approval.noticeId, approval]));
-  for (const approval of next) merged.set(approval.noticeId, approval);
-  return [...merged.values()];
 }

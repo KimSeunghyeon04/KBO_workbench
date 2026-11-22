@@ -98,10 +98,11 @@ export async function getImportJob(jobId: string, signal?: AbortSignal): Promise
     ),
   );
 }
-export async function reconcileImportJob(jobId: string): Promise<ImportJob> {
+export async function reconcileImportJob(jobId: string, scope?: "publication"): Promise<ImportJob> {
+  const query = scope === "publication" ? "?scope=publication" : "";
   return Value.Decode(
     ImportJobSchema,
-    await requestJson(`/api/v2/import-jobs/${encodeURIComponent(jobId)}/reconcile`, {
+    await requestJson(`/api/v2/import-jobs/${encodeURIComponent(jobId)}/reconcile${query}`, {
       method: "POST",
     }),
   );

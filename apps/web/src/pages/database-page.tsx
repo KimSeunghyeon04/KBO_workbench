@@ -216,7 +216,11 @@ export function DatabasePage(): React.JSX.Element {
     },
   });
   const cancel = useMutation({ mutationFn: cancelImportBatch, onSuccess: refresh });
-  const reconcile = useMutation({ mutationFn: reconcileImportJob, onSuccess: refresh });
+  const reconcile = useMutation({
+    mutationFn: (input: { readonly jobId: string; readonly scope?: "publication" }) =>
+      reconcileImportJob(input.jobId, input.scope),
+    onSuccess: refresh,
+  });
   const reopen = useMutation({
     mutationFn: (game: DatabaseGameCatalogItem) =>
       reopenRevisionDraft(game.gameId, game.currentRevision),
@@ -359,7 +363,12 @@ export function DatabasePage(): React.JSX.Element {
                 updateSearch({ scope: "jobs", job: job.jobId, q: null, result: null, page: null })
               }
             >
-              {job.status === "succeeded" ? "저장 후 정리 중" : "처리 중"} {job.gameId}
+              {job.publicationCheckPending === true
+                ? "봉인 확인 대기"
+                : job.status === "succeeded"
+                  ? "저장 후 정리 중"
+                  : "처리 중"}{" "}
+              {job.gameId}
             </button>
           ))}
           {batchId !== null && summary.queued > 0 ? (
@@ -640,6 +649,18 @@ export function DatabasePage(): React.JSX.Element {
                   이 일괄 작업 전체 보기
                 </button>
               )}
+              {selectedJob.publicationCheckPending === true ? (
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={reconcile.isPending}
+                  onClick={() =>
+                    reconcile.mutate({ jobId: selectedJob.jobId, scope: "publication" })
+                  }
+                >
+                  봉인 결과 다시 확인
+                </button>
+              ) : null}
               {selectedJob.status === "succeeded" ? (
                 <div className="operation-detail-actions">
                   <button
@@ -658,7 +679,7 @@ export function DatabasePage(): React.JSX.Element {
                       type="button"
                       className="primary-button"
                       disabled={reconcile.isPending}
-                      onClick={() => reconcile.mutate(selectedJob.jobId)}
+                      onClick={() => reconcile.mutate({ jobId: selectedJob.jobId })}
                     >
                       후속 정리 재시도
                     </button>
@@ -709,7 +730,7 @@ function ImportJobRow({ job }: { readonly job: ImportJob }): React.JSX.Element {
         <span
           className={`authority-mark ${job.status === "failed" ? "source_failure" : "database"}`}
         >
-          {importStatusLabel(job.status)}
+          {importStatusLabel(job)}
         </span>
       </span>
       <span className="operation-row-meta">
@@ -879,7 +900,7 @@ function ImportJobDetail({ job }: { readonly job: ImportJob }): React.JSX.Elemen
         <span
           className={`authority-mark ${job.status === "failed" ? "source_failure" : "database"}`}
         >
-          {importStatusLabel(job.status)}
+          {importStatusLabel(job)}
         </span>
       </header>
       <dl className="operation-detail-fields">
@@ -909,7 +930,8 @@ function ImportJobDetail({ job }: { readonly job: ImportJob }): React.JSX.Elemen
   );
 }
 
-function importStatusLabel(status: ImportJob["status"]): string {
+function importStatusLabel(job: Pick<ImportJob, "status" | "publicationCheckPending">): string {
+  if (job.publicationCheckPending === true) return "봉인 확인 대기";
   return {
     queued: "대기",
     running: "적재 중",
@@ -917,7 +939,7 @@ function importStatusLabel(status: ImportJob["status"]): string {
     cancelled: "취소됨",
     succeeded: "완료",
     failed: "실패",
-  }[status];
+  }[job.status];
 }
 
 function formatDateTime(value: string): string {

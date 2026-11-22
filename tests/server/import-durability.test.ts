@@ -46,6 +46,245 @@ describe("적재 의도와 결과의 영속성", () => {
     expect(manager.history({}).activeJobs).toEqual([]);
     await manager.close();
   });
+  it("같은 경기 정리 때문에 보류된 작업을 취소하면 재시작 후에도 적재하지 않는다", async () => {
+    await using directory = await mkdtempDisposable(path.join(tmpdir(), "kbo-deferred-race-"));
+    const workspace = await StagingWorkspace.open(directory.path);
+    const journal = vi.spyOn(workspace.imports, "saveJob");
+    const holderEntered = Promise.withResolvers<undefined>();
+    const gateRelease = Promise.withResolvers<undefined>();
+    const cleanupEntered = Promise.withResolvers<undefined>();
+    const cleanupRelease = Promise.withResolvers<undefined>();
+    const gateQueued = [1, 2].map(() => Promise.withResolvers<undefined>());
+    let armed = false;
+    let queuedGates = 0;
+    let cleanupCalls = 0;
+    const source = {
+      imports: workspace.imports,
+      catalog: async () => ({ games: [catalogItem(imported.gameId)] }),
+      readDocument: async () => document,
+      withGameOperation<T>(gameId: string, operation: () => Promise<T>) {
+        const queued = workspace.withGameOperation(gameId, operation);
+        if (armed) gateQueued[queuedGates++]?.resolve(undefined);
+        return queued;
+      },
+      async removeImportedStaging() {
+        if (++cleanupCalls === 1) throw new Error("synthetic cleanup failure");
+        cleanupEntered.resolve(undefined);
+        await cleanupRelease.promise;
+      },
+    };
+    const importRevision = vi.fn(async () => imported);
+    const manager = new ImportJobManager(source, { importRevision });
+    let recovery: Promise<unknown> | undefined;
+    try {
+      const first = await manager.create({ gameId: imported.gameId, idempotencyKey: "first-job" });
+      expect(await manager.waitForTerminal(first.jobId)).toMatchObject({
+        status: "succeeded",
+        followUpPending: true,
+      });
+      const holder = workspace.withGameOperation(imported.gameId, async () => {
+        holderEntered.resolve(undefined);
+        await gateRelease.promise;
+      });
+      await holderEntered.promise;
+      armed = true;
+      const second = await manager.create({
+        gameId: imported.gameId,
+        idempotencyKey: "second-job",
+      });
+      await gateQueued[0]?.promise;
+      recovery = manager.reconcile(first.jobId);
+      await gateQueued[1]?.promise;
+      gateRelease.resolve(undefined);
+      await holder;
+      await cleanupEntered.promise;
+      await vi.waitFor(async () => {
+        expect(await manager.cancel(second.jobId)).toMatchObject({ status: "cancelled" });
+      });
+      cleanupRelease.resolve(undefined);
+      await recovery;
+      await manager.close();
+      const restarted = new ImportJobManager(source, { importRevision });
+      try {
+        await restarted.restore();
+        expect(restarted.get(second.jobId).status).toBe("cancelled");
+        expect(importRevision).toHaveBeenCalledTimes(1);
+        expect(
+          journal.mock.calls.filter(
+            ([record]) => record.job.jobId === second.jobId && record.job.status === "queued",
+          ),
+        ).toHaveLength(1);
+      } finally {
+        await restarted.close();
+      }
+    } finally {
+      gateRelease.resolve(undefined);
+      cleanupRelease.resolve(undefined);
+      await recovery;
+      await manager.close();
+      await workspace.close();
+    }
+  });
+
+  it("배치 취소는 경기 잠금을 기다리는 작업도 적재 전에 취소한다", async () => {
+    await using directory = await mkdtempDisposable(path.join(tmpdir(), "kbo-cancel-gated-"));
+    const workspace = await StagingWorkspace.open(directory.path);
+    const gateHeld = Promise.withResolvers<undefined>();
+    const release = Promise.withResolvers<undefined>();
+    const sibling = parseStagingGameDocumentV2({
+      ...document,
+      metadata: { ...document.metadata, gameId: "unblocked-sibling" },
+    });
+    const importRevision = vi.fn(async (input: unknown) => {
+      const candidate = parseStagingGameDocumentV2(input);
+      return {
+        ...imported,
+        gameId: candidate.metadata.gameId,
+        documentHash: stagingDocumentHash(candidate),
+      };
+    });
+    const manager = new ImportJobManager(workspace, { importRevision }, undefined, undefined, 1);
+    let closed = false;
+    await workspace.saveReady(document, []);
+    const holder = workspace.withGameOperation(imported.gameId, async () => {
+      gateHeld.resolve(undefined);
+      await release.promise;
+    });
+    try {
+      await gateHeld.promise;
+      const batch = await manager.createReadyBatch({ idempotencyKey: "cancel-at-game-gate" });
+      const job = batch.jobs[0];
+      if (job === undefined) throw new Error("missing fixture job");
+      expect(manager.get(job.jobId).status).toBe("queued");
+      await manager.cancelBatch(batch.batchId);
+      expect(manager.get(job.jobId).status).toBe("cancelled");
+      await workspace.saveReady(sibling, []);
+      const next = await manager.create({
+        gameId: sibling.metadata.gameId,
+        idempotencyKey: "sibling-while-cancelled-gate-held",
+      });
+      await vi.waitFor(() => {
+        expect(manager.get(next.jobId).status).toBe("succeeded");
+      });
+      await manager.waitForTerminal(next.jobId);
+      const closing = manager.close().then(() => {
+        closed = true;
+      });
+      await vi.waitFor(() => expect(closed).toBe(true));
+      await closing;
+      release.resolve(undefined);
+      await holder;
+      expect(importRevision).toHaveBeenCalledOnce();
+      expect(
+        (await workspace.imports.jobs()).find(({ job: saved }) => saved.jobId === job.jobId)?.job
+          .status,
+      ).toBe("cancelled");
+    } finally {
+      release.resolve(undefined);
+      await holder;
+      await manager.close();
+      await workspace.close();
+    }
+  });
+
+  it.each(["자동", "수동"] as const)(
+    "한 경기의 후속 재평가가 멈춰도 다른 경기의 %s 봉인 확인을 끝낸다",
+    async (mode) => {
+      const otherId = "different-game";
+      const other = parseStagingGameDocumentV2({
+        ...document,
+        metadata: { ...document.metadata, gameId: otherId },
+      });
+      const otherImport = {
+        ...imported,
+        gameId: otherId,
+        documentHash: stagingDocumentHash(other),
+      };
+      const waiting = Promise.withResolvers<undefined>();
+      const release = Promise.withResolvers<undefined>();
+      const attempts = new Map<string, number>();
+      const cleaned: string[] = [];
+      const manager = new ImportJobManager(
+        {
+          catalog: async () => ({ games: [catalogItem(imported.gameId), catalogItem(otherId)] }),
+          removeImportedStaging: async (_season, gameId) => {
+            cleaned.push(gameId);
+          },
+          readDocument: async (_, __, gameId) => (gameId === otherId ? other : document),
+          readImportTarget: async (gameId) => ({
+            gameId,
+            revision: 1,
+            season: document.metadata.season,
+            documentHash: gameId === otherId ? otherImport.documentHash : imported.documentHash,
+            artifact: { generation: 1, contentHash: "c".repeat(64) },
+          }),
+        },
+        {
+          importRevision: async () => {
+            throw new Error("COMMIT 응답 유실");
+          },
+          importPublication: async (_, { gameId }) => {
+            const count = (attempts.get(gameId) ?? 0) + 1;
+            attempts.set(gameId, count);
+            if (count === 1) throw new Error("첫 영수증 조회 실패");
+            return gameId === otherId ? otherImport : imported;
+          },
+        },
+        undefined,
+        undefined,
+        1,
+        async (gameId) => {
+          if (gameId === imported.gameId) {
+            waiting.resolve(undefined);
+            await release.promise;
+          }
+        },
+      );
+      try {
+        const first = await manager.create({
+          gameId: imported.gameId,
+          idempotencyKey: "slow-followup",
+        });
+        expect(await manager.waitForTerminal(first.jobId)).toMatchObject({
+          publicationCheckPending: true,
+        });
+        const second = await manager.create({
+          gameId: otherId,
+          idempotencyKey: "other-publication",
+        });
+        expect(await manager.waitForTerminal(second.jobId)).toMatchObject({
+          publicationCheckPending: true,
+        });
+        await waiting.promise;
+        const confirmed = await Promise.race([
+          manager.reconcile(first.jobId, "publication"),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000)),
+        ]);
+        expect(confirmed).toMatchObject({ status: "succeeded", followUpPending: true });
+        expect(attempts.get(imported.gameId)).toBe(2);
+        if (mode === "수동") {
+          const result = await Promise.race([
+            manager.reconcile(second.jobId),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000)),
+          ]);
+          expect(result).toMatchObject({ status: "succeeded", revision: 1 });
+        }
+        await vi.waitFor(
+          () =>
+            expect(manager.get(second.jobId)).toMatchObject({ status: "succeeded", revision: 1 }),
+          { timeout: 3000 },
+        );
+        await vi.waitFor(() => expect(cleaned).toEqual([imported.gameId, otherId]));
+        expect(manager.get(first.jobId).followUpPending).toBe(true);
+        expect(attempts.get(otherId)).toBe(2);
+      } finally {
+        release.resolve(undefined);
+        await manager.close();
+      }
+    },
+    6000,
+  );
+
   it("rejects a queued import when the same document carries a different approval", async () => {
     const starting = Promise.withResolvers<undefined>();
     const resume = Promise.withResolvers<undefined>();
@@ -150,7 +389,7 @@ describe("적재 의도와 결과의 영속성", () => {
     ).toEqual(["anon-2"]);
     await manager.close();
   });
-  it("이력 저장 실패는 처리되지 않은 promise 오류 없이 새 DB 작업을 중단한다", async () => {
+  it("봉인 뒤 이력 저장이 실패하면 확인 대기를 보존하고 재시작에서 성공을 확정한다", async () => {
     await using directory = await mkdtempDisposable(path.join(tmpdir(), "kbo-import-io-"));
     let writable = true;
     const storage = new ImportWorkspace(directory.path, async () => {
@@ -160,28 +399,59 @@ describe("적재 의도와 결과의 영속성", () => {
       writable = false;
       return imported;
     });
-    const manager = new ImportJobManager(
-      {
-        imports: storage,
-        catalog: async () => ({ games: [catalogItem(imported.gameId)] }),
-        readDocument: async () => document,
-      },
-      { importRevision },
-    );
+    const workspace = {
+      imports: storage,
+      catalog: async () => ({ games: [catalogItem(imported.gameId)] }),
+      readDocument: async () => document,
+      readImportTarget: async () => ({
+        gameId: imported.gameId,
+        revision: imported.revision,
+        documentHash: imported.documentHash,
+        season: document.metadata.season,
+        artifact: { generation: 1, contentHash: "c".repeat(64) },
+      }),
+      removeImportedStaging: vi.fn(async () => undefined),
+    };
+    const manager = new ImportJobManager(workspace, {
+      importRevision,
+      importPublication: async () => imported,
+    });
     const job = await manager.create({
       gameId: imported.gameId,
       idempotencyKey: "io-failure-request",
     });
     expect(await manager.waitForTerminal(job.jobId)).toMatchObject({
-      status: "succeeded",
-      revision: 1,
-      followUpPending: true,
-      error: expect.stringContaining("이력 저장 실패"),
+      status: "running",
+      revision: null,
+      publicationCheckPending: true,
+      error: expect.stringContaining("DB 봉인은 확인됐습니다"),
     });
+    expect((await storage.jobs())[0]).toMatchObject({
+      publicationPending: true,
+      job: { status: "running", revision: null },
+    });
+    expect(workspace.removeImportedStaging).not.toHaveBeenCalled();
     await expect(
       manager.create({ gameId: imported.gameId, idempotencyKey: "after-failure-request" }),
     ).rejects.toThrow("종료 중");
     await manager.close();
+    writable = true;
+    const recovered = new ImportJobManager(workspace, {
+      importRevision,
+      importPublication: async () => imported,
+    });
+    try {
+      await recovered.restore();
+      expect(recovered.get(job.jobId)).toMatchObject({
+        status: "succeeded",
+        revision: 1,
+        followUpPending: false,
+      });
+      expect(importRevision).toHaveBeenCalledTimes(1);
+      expect(workspace.removeImportedStaging).toHaveBeenCalledOnce();
+    } finally {
+      await recovered.close();
+    }
   });
   it("응답 전에 확정 집합을 저장하며 재시작 후 같은 요청은 중복 적재하지 않는다", async () => {
     await using directory = await mkdtempDisposable(path.join(tmpdir(), "kbo-import-durable-"));

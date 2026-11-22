@@ -23,15 +23,21 @@ import {
   matchesRecordCorrectionDoubleheader,
   type Matchup,
 } from "./record-correction-matchups.js";
-import { readApprovalEvidence } from "./record-correction-publication.js";
+import {
+  currentRecordCorrectionSelectionSql,
+  readApprovalEvidence,
+  readApprovalHistory,
+} from "./record-correction-publication.js";
 import { loadNotice } from "./record-correction-sources.js";
 import {
   RecordCorrectionStaleError,
   type RecordCorrectionApprovalEvidence,
   type RecordCorrectionApprovalInput,
+  type RecordCorrectionApprovalHistory,
   type RecordCorrectionMatchup,
   type RecordCorrectionMatchupContext,
   type RecordCorrectionAssessmentInput,
+  type RecordCorrectionCaseSnapshot,
   type RecordCorrectionAssessmentBasis,
   type RecordCorrectionGameCandidate,
 } from "./record-correction-types.js";
@@ -129,6 +135,26 @@ export class RecordCorrectionCases {
   ): Promise<RecordCorrectionApprovalEvidence[]> {
     if (references.length === 0) return [];
     return readApprovalEvidence(this.pool, references);
+  }
+
+  public async approvalHistory(
+    references: readonly RecordCorrectionApprovalReference[],
+    scope: Pick<RecordCorrectionApprovalEvidence, "gameId" | "revision" | "baseHash">,
+    matchup: RecordCorrectionMatchup,
+  ): Promise<RecordCorrectionApprovalHistory> {
+    if (references.length === 0) return { active: [], recorded: [], unknown: false };
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const history = await readApprovalHistory(client, references, scope, noticeMatchup(matchup));
+      await client.query("COMMIT");
+      return history;
+    } catch (error: unknown) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   public async pendingNoticeIds(after: string, limit: number, season?: number): Promise<string[]> {
@@ -434,9 +460,13 @@ export class RecordCorrectionCases {
         before.source_revision,
         before.notice_sequence,
       );
-      await lockMatchupAssessment(client, noticeMatchup(notice));
-      const carry = input.carry ?? [];
-      const ids = [input.noticeId, ...carry.map(({ noticeId }) => noticeId)].sort();
+      const matchup = noticeMatchup(notice);
+      await lockMatchupAssessment(client, matchup);
+      const previous = input.plan?.previous ?? [];
+      const otherReferences = previous.filter(({ noticeId }) => noticeId !== input.noticeId);
+      if (new Set(previous.map(({ noticeId }) => noticeId)).size !== previous.length)
+        throw staleApproval();
+      const ids = [input.noticeId, ...otherReferences.map(({ noticeId }) => noticeId)].sort();
       if (new Set(ids).size !== ids.length) throw staleApproval();
       for (const id of ids) await lockNotice(client, id);
       const row = await activeAssessment(client, input.noticeId);
@@ -455,22 +485,42 @@ export class RecordCorrectionCases {
       )
         throw staleApproval();
 
-      const references = [
+      const history = await readApprovalHistory(
+        client,
+        otherReferences,
+        { gameId: row.game_id, revision: row.game_revision, baseHash: row.document_hash },
+        matchup,
+      );
+      const carried = input.plan?.carry ?? [];
+      const actual = history.active.map(({ noticeId, actionSequence }) => ({
+        noticeId,
+        actionSequence,
+      }));
+      if (
+        history.unknown ||
+        canonicalStringify(actual) !== canonicalStringify(carried) ||
+        history.recorded.length !== otherReferences.length ||
+        (input.plan?.kind === "extend" && actual.length !== otherReferences.length)
+      )
+        throw staleApproval();
+
+      const references = new Map<string, RecordCorrectionApprovalReference>();
+      references.set(
+        input.noticeId,
         await recordApproval(client, input, row, input.proposalHash, row.event_id),
-      ];
-      const evidence = await readApprovalEvidence(client, carry);
-      if (evidence.length !== carry.length) throw staleApproval();
-      for (const proof of evidence) {
+      );
+      for (const proof of history.active) {
         const peer = await activeAssessment(client, proof.noticeId);
         if (
           peer === undefined ||
           proof.gameId !== row.game_id ||
           proof.revision !== row.game_revision ||
           proof.baseHash !== row.document_hash ||
-          proof.documentHash !== input.previousDocumentHash
+          (input.plan?.kind === "extend" && proof.documentHash !== input.plan.previousDocumentHash)
         )
           throw staleApproval();
-        references.push(
+        references.set(
+          proof.noticeId,
           await recordApproval(
             client,
             { ...input, noticeId: proof.noticeId },
@@ -485,8 +535,12 @@ export class RecordCorrectionCases {
           ),
         );
       }
+      const order = [...new Set([...previous.map(({ noticeId }) => noticeId), input.noticeId])];
       await client.query("COMMIT");
-      return references;
+      return order.flatMap((noticeId) => {
+        const reference = references.get(noticeId);
+        return reference === undefined ? [] : [reference];
+      });
     } catch (error: unknown) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
@@ -659,6 +713,10 @@ export class RecordCorrectionCases {
   }
 
   public async case(noticeId: string): Promise<RecordCorrectionCase | null> {
+    return (await this.caseSnapshot(noticeId))?.item ?? null;
+  }
+
+  public async caseSnapshot(noticeId: string): Promise<RecordCorrectionCaseSnapshot | null> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
@@ -675,27 +733,33 @@ export class RecordCorrectionCases {
           : await readAssessmentCandidates(client, noticeId, row.case_version);
       await client.query("COMMIT");
       return {
-        noticeId,
-        season: row.season,
-        sourceRevision: row.source_revision,
-        caseVersion: row.case_version,
-        status: row.effective_status,
-        gameId: pending ? null : row.game_id,
-        gameRevision: pending ? null : row.game_revision,
-        eventId: pending ? null : row.event_id,
-        reasonCode:
-          pending && row.checked_matchup_generation !== null
-            ? "awaiting_assessment"
-            : row.reason_code,
-        reasonMessage:
-          pending && row.checked_matchup_generation !== null
-            ? "현재 경기와 검토 근거를 재평가하고 있습니다."
-            : row.reason_message,
-        proposalHash: pending ? null : row.proposal_hash,
-        appliedRevision: pending ? null : row.applied_revision,
-        assessedAt: iso(row.assessed_at),
-        notice,
-        candidates,
+        assessmentCurrent: row.assessment_current,
+        publication: row.publication,
+        decisionSequence: row.decision_sequence,
+        item: {
+          noticeId,
+          season: row.season,
+          sourceRevision: row.source_revision,
+          caseVersion: row.case_version,
+          status: row.effective_status,
+          gameId: pending ? null : row.game_id,
+          gameRevision: pending ? null : row.game_revision,
+          eventId: pending ? null : row.event_id,
+          reasonCode:
+            pending && row.checked_matchup_generation !== null
+              ? "awaiting_assessment"
+              : row.reason_code,
+          reasonMessage:
+            pending && row.checked_matchup_generation !== null
+              ? "현재 경기와 검토 근거를 재평가하고 있습니다."
+              : row.reason_message,
+          proposalHash: pending ? null : row.proposal_hash,
+          appliedRevision: pending ? null : row.applied_revision,
+          assessedAt: iso(row.assessed_at),
+          notice,
+          candidates,
+          ...(pending ? { assessmentPending: true as const } : {}),
+        },
       };
     } catch (error: unknown) {
       await client.query("ROLLBACK").catch(() => undefined);
@@ -730,8 +794,7 @@ async function readSelection(
   noticeId: string,
 ): Promise<RecordCorrectionMatchCandidate | null> {
   const result = await client.query<{ case_version: number; candidate_id: string }>(
-    `SELECT case_version,candidate_id FROM record_correction.active_review_actions
-     WHERE notice_id=$1 AND action_kind='select_candidate' ORDER BY action_sequence DESC LIMIT 1`,
+    currentRecordCorrectionSelectionSql("$1"),
     [noticeId],
   );
   const selection = result.rows[0];

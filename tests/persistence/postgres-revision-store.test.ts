@@ -93,6 +93,7 @@ import { ComputationPool } from "../../apps/server/src/computation-pool.js";
 import { CorrectionSessionManager } from "../../apps/server/src/correction-session-manager.js";
 import { ImportJobManager } from "../../apps/server/src/jobs/import-job-manager.js";
 import { RecordCorrectionService } from "../../apps/server/src/record-correction-service.js";
+import { recordCorrectionFixture } from "../helpers/record-correction-fixture.js";
 import {
   compileDocument,
   createRevisionProjectionComputation,
@@ -3256,7 +3257,14 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
           candidateId: candidate.candidateId,
           reason: null,
         });
-        const draft = await service.createDraft(manual.noticeId);
+        const pending = await repository.case(manual.noticeId);
+        expect(pending?.assessmentPending).toBe(true);
+        if (pending === null) throw new Error("missing fixture case");
+        await expect(service.createDraft(manual.noticeId, pending.caseVersion)).rejects.toThrow(
+          "최신 경기와 플레이 후보",
+        );
+        await service.assessSeason(2025);
+        const draft = await openCurrentRecordCorrectionDraft(service, manual.noticeId);
         const proposal = await service.proposal(draft.sessionId, manual.noticeId);
         if (proposal.batch === null)
           throw new Error(proposal.reasons.join(" ") || "fixture correction unavailable");
@@ -3394,6 +3402,706 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     }
   }
 
+  it("opens the new sealed revision when another import completes during draft preparation", async () => {
+    await withRecordCorrectionWorkspace(async (repo, workspace, sessions, service) => {
+      const { document, notice } = await recordCorrectionLifecycleFixture();
+      const first = await store.importRevision(document);
+      await seedVenueCorrectionNotice(repo, notice);
+      await service.assessNotice(notice);
+      const loadedOld = Promise.withResolvers<undefined>();
+      const resumeOpen = Promise.withResolvers<undefined>();
+      const prepare = workspace.prepareCorrectionDraft.bind(workspace);
+      vi.spyOn(workspace, "prepareCorrectionDraft").mockImplementationOnce(async (input) => {
+        expect(input.revisionBase).toMatchObject({ kind: "sealed_revision", revision: 1 });
+        const publish = await prepare(input);
+        loadedOld.resolve(undefined);
+        await resumeOpen.promise;
+        return publish;
+      });
+      const opening = openCurrentRecordCorrectionDraft(service, notice.noticeId);
+      const jobs = new ImportJobManager(
+        workspace,
+        store,
+        undefined,
+        undefined,
+        2,
+        (gameId, revision) => service.afterImport(gameId, revision),
+        service.verifyPublication.bind(service),
+      );
+      try {
+        await loadedOld.promise;
+        const ordinary = await store.loadCorrectionDraft(first.gameId, 1);
+        await workspace.withGameOperation(first.gameId, () =>
+          workspace.saveCorrectionDraft(ordinary),
+        );
+        const editing = await sessions.create({ gameId: first.gameId, authority: "staging" });
+        const event = editing.draftDocument.events.find((row) => row.identity.eventId === "e10");
+        if (event === undefined) throw new Error("fixture game event missing");
+        const edited = await sessions.command(
+          editing.sessionId,
+          editing.sessionVersion,
+          {
+            commandId: "audit-independent-edit",
+            kind: "replace_event",
+            eventId: "e10",
+            event: { ...event, relayText: "비식별 수동 문구" },
+          },
+          true,
+        );
+        await sessions.commit(editing.sessionId, {
+          expectedSessionVersion: edited.session.sessionVersion,
+          allowBlockingStaging: false,
+        });
+        const queued = await jobs.create({
+          gameId: first.gameId,
+          idempotencyKey: "audit-newer-seal",
+        });
+        expect(await jobs.waitForTerminal(queued.jobId)).toMatchObject({
+          status: "succeeded",
+          revision: 2,
+          followUpPending: false,
+        });
+        expect(await workspace.readImportTarget(first.gameId)).toBeNull();
+        resumeOpen.resolve(undefined);
+        const opened = await opening;
+        expect(sessions.get(opened.sessionId).draftDocument.revisionBase).toMatchObject({
+          revision: 2,
+        });
+        expect(await workspace.readImportTarget(first.gameId)).toMatchObject({ revision: 3 });
+        expect(await store.currentRevisionBase(first.gameId)).toMatchObject({ revision: 2 });
+        const retry = await openCurrentRecordCorrectionDraft(service, notice.noticeId);
+        expect(sessions.get(retry.sessionId).draftDocument.revisionBase).toMatchObject({
+          revision: 2,
+        });
+        expect(await service.proposal(retry.sessionId, notice.noticeId)).toMatchObject({
+          eligible: true,
+        });
+      } finally {
+        resumeOpen.resolve(undefined);
+        await opening.catch(() => undefined);
+        await jobs.close();
+      }
+    });
+  }, 30000);
+
+  it.each([1, 3])(
+    "renews a reproducible two-notice draft with revised earned runs %s",
+    async (earnedRuns) => {
+      await withRecordCorrectionWorkspace(async (repo, workspace, sessions, service) => {
+        const raw: unknown = JSON.parse(
+          await readFile(
+            "tests/fixtures/correction/record-correction-multiple-pitchers.anonymized.json",
+            "utf8",
+          ),
+        );
+        if (raw === null || typeof raw !== "object" || !("document" in raw) || !("notice" in raw))
+          throw new Error("invalid fixture");
+        const document = parseStagingGameDocumentV2(raw.document);
+        const notice = Value.Decode(RecordCorrectionNoticeSchema, raw.notice);
+        const players = ["away-player-24", "away-player-26"];
+        const first = await store.importRevision({
+          ...document,
+          events: document.events.map((event) =>
+            event.kind === "plate_result" &&
+            event.identity.eventId === "anon-multiple-pitchers:relay_007:6:2"
+              ? { ...event, payload: { ...event.payload, result: "reached_on_error" } }
+              : event,
+          ),
+          officialRecords: {
+            ...document.officialRecords,
+            pitchers: document.officialRecords.pitchers.map((line) =>
+              players.includes(line.playerId) ? { ...line, earnedRuns: 3 } : line,
+            ),
+          },
+        });
+        await store.importRevision(await store.loadCorrectionDraft(first.gameId, 1), {
+          fromIndependentSealedDraft: true,
+        });
+        const a = {
+          ...notice,
+          noticeHash: "a".repeat(64),
+          contentText:
+            "비식별홈\n홈선수4(안타 3→2, 루타수 3→2)\n비식별원정\n원정선수24(피안타 3→2, 자책점 3→0)",
+          statChanges: notice.statChanges.filter(
+            (stat) => stat.statCode !== "earned_runs" || stat.participantIndex === 1,
+          ),
+        };
+        const b = {
+          ...notice,
+          noticeId: "2025:0:978",
+          recordNumber: 978,
+          sourceRowIndex: notice.sourceRowIndex + 1,
+          noticeHash: "b".repeat(64),
+          contentText:
+            "비식별홈\n홈선수4(안타 3→2, 루타수 3→2)\n비식별원정\n원정선수24(피안타 3→2)\n원정선수26(자책점 3→2)",
+          statChanges: notice.statChanges.filter(
+            (stat) => stat.statCode !== "earned_runs" || stat.participantIndex === 2,
+          ),
+        };
+        await seedVenueCorrectionNotice(repo, a, b);
+        await service.assessSeason(2025);
+        await applyAndSaveNotice(service, sessions, a.noticeId);
+        const bundled = await applyAndSaveNotice(service, sessions, b.noticeId);
+        const oldTarget = await workspace.readImportTarget(first.gameId);
+        expect(oldTarget?.recordCorrection?.approvals).toHaveLength(2);
+        const from = earnedRuns === 3 ? 0 : 3;
+        const a2 = {
+          ...a,
+          noticeHash: "c".repeat(64),
+          contentText: a.contentText.replace("자책점 3→0", `자책점 ${from}→${earnedRuns}`),
+          statChanges: a.statChanges.map((stat) =>
+            stat.statCode === "earned_runs"
+              ? { ...stat, beforeValue: from, afterValue: earnedRuns }
+              : stat,
+          ),
+        };
+        await publishVenueNotices(repo, "audit-edited-approval", "c", [a2, b]);
+        await service.assessSeason(2025);
+        const toApprove = earnedRuns === 3 ? b.noticeId : a2.noticeId;
+        const session = await openCurrentRecordCorrectionDraft(service, toApprove);
+        const pitcher = bundled.session.draftDocument.officialRecords.pitchers.find(
+          (row) => row.playerId === players[0],
+        );
+        if (pitcher === undefined) throw new Error("missing fixture pitcher");
+        const adjusted = await sessions.command(
+          session.sessionId,
+          session.sessionVersion,
+          {
+            commandId: "audit-revised-er",
+            kind: "update_official_record",
+            recordType: "pitcher",
+            playerId: pitcher.playerId,
+            record: { ...pitcher, earnedRuns },
+          },
+          true,
+        );
+        await sessions.commit(session.sessionId, {
+          expectedSessionVersion: adjusted.session.sessionVersion,
+          allowBlockingStaging: false,
+        });
+        const staged = await workspace.readImportTarget(first.gameId);
+        expect(staged?.recordCorrection?.approvals).toEqual(oldTarget?.recordCorrection?.approvals);
+        const oldReferences = oldTarget?.recordCorrection?.approvals;
+        expect(await repo.approvalEvidence(oldReferences ?? [])).toMatchObject([
+          { noticeId: b.noticeId, documentHash: oldTarget?.documentHash },
+        ]);
+
+        await using cleanRoot = await mkdtempDisposable(
+          path.join(tmpdir(), "kbo-audit-proven-base-"),
+        );
+        const cleanWorkspace = await StagingWorkspace.open(cleanRoot.path);
+        const cleanSessions = new CorrectionSessionManager(cleanWorkspace);
+        const cleanService = new RecordCorrectionService(
+          repo,
+          store,
+          cleanWorkspace,
+          cleanSessions,
+        );
+        try {
+          if (earnedRuns !== 3) await applyAndSaveNotice(cleanService, cleanSessions, a2.noticeId);
+          const recreated = await applyAndSaveNotice(cleanService, cleanSessions, b.noticeId);
+          expect(recreated.session.draftDocumentHash).toBe(adjusted.session.draftDocumentHash);
+          const control = await cleanWorkspace.readImportTarget(first.gameId);
+          if (!control) throw new Error("missing control artifact");
+          expect(
+            typeof (await cleanService.verifyPublication(recreated.session.draftDocument, control)),
+          ).toBe("number");
+        } finally {
+          await cleanService.close();
+          cleanSessions.close();
+          await cleanWorkspace.close();
+        }
+
+        const reopen = await openCurrentRecordCorrectionDraft(service, toApprove);
+        const proposal = await service.proposal(reopen.sessionId, toApprove);
+        expect(proposal).toMatchObject({ eligible: true, batch: null });
+        const renewed = await service.applyProposal(
+          reopen.sessionId,
+          toApprove,
+          reopen.sessionVersion,
+          proposal.proposalHash,
+        );
+        const prior = sessions.approvalReferences(reopen.sessionId);
+        expect(prior.map(({ noticeId }) => noticeId)).toEqual(
+          earnedRuns === 3 ? [b.noticeId] : [a2.noticeId, b.noticeId],
+        );
+        const undone = await sessions.undo(reopen.sessionId, renewed.session.sessionVersion);
+        expect(sessions.approvalReferences(reopen.sessionId)).toEqual(oldReferences);
+        const redone = await sessions.redo(reopen.sessionId, undone.session.sessionVersion);
+        expect(sessions.approvalReferences(reopen.sessionId)).toEqual(prior);
+        await sessions.commit(reopen.sessionId, {
+          expectedSessionVersion: redone.session.sessionVersion,
+          allowBlockingStaging: false,
+        });
+        const proved = await workspace.readImportTarget(first.gameId);
+        expect(proved?.documentHash).toBe(staged?.documentHash);
+        expect(proved?.recordCorrection?.approvals).toEqual(prior);
+        const jobs = verifiedImportJobs(workspace, store, service);
+        try {
+          const job = await jobs.create({ gameId: first.gameId, idempotencyKey: "renewed-bundle" });
+          expect(await jobs.waitForTerminal(job.jobId)).toMatchObject({
+            status: "succeeded",
+            revision: 3,
+          });
+        } finally {
+          await jobs.close();
+        }
+      });
+    },
+    30000,
+  );
+
+  it("automatically confirms a sealed import after a one-time ownership read failure", async () => {
+    await withRecordCorrectionWorkspace(async (_repo, workspace, _sessions, service) => {
+      const { document } = await recordCorrectionLifecycleFixture();
+      const first = await store.importRevision(document);
+      const base = await store.loadCorrectionDraft(first.gameId, first.revision);
+      await workspace.saveCorrectionDraft(base);
+      const target = await workspace.readImportTarget(first.gameId);
+      if (!target) throw new Error("fixture target missing");
+      const ownershipRead = vi
+        .fn(store.importPublication.bind(store))
+        .mockRejectedValueOnce(new Error("transient read failure"));
+      const finished = vi.fn(async () => undefined);
+      const jobs = new ImportJobManager(
+        workspace,
+        {
+          async importRevision(
+            ...args: Parameters<GameRevisionStore["importRevision"]>
+          ): Promise<never> {
+            await store.importRevision(...args);
+            throw new Error("lost COMMIT reply");
+          },
+          importPublication: ownershipRead,
+        },
+        undefined,
+        undefined,
+        2,
+        finished,
+        service.verifyPublication.bind(service),
+      );
+      try {
+        const queued = await jobs.create({
+          gameId: first.gameId,
+          idempotencyKey: "audit-lost-commit-reply",
+        });
+        const uncertain = await jobs.waitForTerminal(queued.jobId);
+        expect(uncertain).toMatchObject({
+          status: "running",
+          revision: null,
+          errorCategory: "persistence",
+        });
+        expect(uncertain.publicationCheckPending).toBe(true);
+        expect(await store.importPublication(queued.jobId, target)).toMatchObject({ revision: 2 });
+        expect(await store.currentRevisionBase(first.gameId)).toMatchObject({ revision: 2 });
+        for (let i = 0; i < 5; i += 1) expect(jobs.get(queued.jobId)).toEqual(uncertain);
+        expect(ownershipRead).toHaveBeenCalledTimes(1);
+        expect(finished).not.toHaveBeenCalled();
+        expect(await workspace.readImportTarget(first.gameId)).toEqual(target);
+        await vi.waitFor(
+          () =>
+            expect(jobs.get(queued.jobId)).toMatchObject({
+              status: "succeeded",
+              revision: 2,
+              followUpPending: false,
+            }),
+          { timeout: 6000 },
+        );
+        expect(ownershipRead).toHaveBeenCalledTimes(2);
+        expect(await workspace.readImportTarget(first.gameId)).toBeNull();
+      } finally {
+        await jobs.close();
+      }
+    });
+  }, 30000);
+
+  it("coalesces concurrent receipt checks before persisting one success", async () => {
+    await withRecordCorrectionWorkspace(async (_repo, workspace, _sessions, service) => {
+      const { document } = await recordCorrectionLifecycleFixture();
+      const first = await store.importRevision(document);
+      await workspace.saveCorrectionDraft(await store.loadCorrectionDraft(first.gameId, 1));
+      const firstRead = Promise.withResolvers<undefined>();
+      const release = Promise.withResolvers<undefined>();
+      let reads = 0;
+      const jobs = new ImportJobManager(
+        workspace,
+        {
+          async importRevision(
+            ...args: Parameters<GameRevisionStore["importRevision"]>
+          ): Promise<never> {
+            await store.importRevision(...args);
+            throw new Error("lost commit reply test");
+          },
+          async importPublication(jobId, target) {
+            reads += 1;
+            if (reads === 1) {
+              firstRead.resolve(undefined);
+              await release.promise;
+              throw new Error("slow failing lookup");
+            }
+            return store.importPublication(jobId, target);
+          },
+        },
+        undefined,
+        undefined,
+        2,
+        undefined,
+        service.verifyPublication.bind(service),
+      );
+      try {
+        const queued = await jobs.create({
+          gameId: first.gameId,
+          idempotencyKey: "audit-two-recovery-writers",
+        });
+        await firstRead.promise;
+        const intervening = jobs.reconcile(queued.jobId);
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(reads).toBe(1);
+        release.resolve(undefined);
+        expect(await intervening).toMatchObject({
+          status: "running",
+          publicationCheckPending: true,
+        });
+        const [result, duplicate] = await Promise.all([
+          jobs.reconcile(queued.jobId),
+          jobs.reconcile(queued.jobId),
+        ]);
+        expect(result).toMatchObject({ status: "succeeded", revision: 2 });
+        expect(duplicate).toEqual(result);
+        expect(await jobs.waitForTerminal(queued.jobId)).toMatchObject({ followUpPending: false });
+        expect(reads).toBe(2);
+        expect(await workspace.readImportTarget(first.gameId)).toBeNull();
+        expect(
+          (await workspace.imports.jobs()).find(({ job }) => job.jobId === queued.jobId),
+        ).toMatchObject({
+          job: { status: "succeeded", revision: 2 },
+        });
+      } finally {
+        release.resolve(undefined);
+        await jobs.close();
+      }
+    });
+  }, 30000);
+
+  it("keeps already queued imports behind an unconfirmed job for the same game", async () => {
+    await withRecordCorrectionWorkspace(async (_repo, workspace) => {
+      const { document } = await recordCorrectionLifecycleFixture();
+      const sibling = parseStagingGameDocumentV2(makeDocument([]));
+      await workspace.saveReady(document, []);
+      await workspace.saveReady(sibling, []);
+      const entered = Promise.withResolvers<undefined>();
+      const release = Promise.withResolvers<undefined>();
+      let receiptsAvailable = false;
+      const readReceipt = vi.fn(async (id: string, target: ImportTarget) => {
+        if (!receiptsAvailable) throw new Error("temporary receipt lookup failure");
+        return store.importPublication(id, target);
+      });
+      const importRevision = vi.fn(
+        async (input: unknown, options?: Parameters<GameRevisionStore["importRevision"]>[1]) => {
+          const draft = parseStagingGameDocumentV2(input);
+          if (draft.metadata.gameId === document.metadata.gameId) {
+            entered.resolve(undefined);
+            await release.promise;
+            await store.importRevision(draft, options);
+            throw new Error("lost COMMIT reply");
+          }
+          return store.importRevision(draft, options);
+        },
+      );
+      const jobs = new ImportJobManager(workspace, {
+        importRevision,
+        importPublication: readReceipt,
+      });
+      try {
+        const first = await jobs.create({
+          gameId: document.metadata.gameId,
+          idempotencyKey: "pending-first",
+        });
+        await entered.promise;
+        expect(await jobs.reconcile(first.jobId)).toMatchObject({ status: "running" });
+        expect(readReceipt).not.toHaveBeenCalled();
+        const queued = await jobs.create({
+          gameId: document.metadata.gameId,
+          idempotencyKey: "pending-second",
+        });
+        release.resolve(undefined);
+        expect(await jobs.waitForTerminal(first.jobId)).toMatchObject({
+          publicationCheckPending: true,
+        });
+        expect(jobs.get(queued.jobId).status).toBe("queued");
+        expect(jobs.hasImportActivity()).toBe(false);
+        await expect(
+          jobs.create({ gameId: document.metadata.gameId, idempotencyKey: "pending-third" }),
+        ).rejects.toThrow(/선행 적재/);
+        const other = await jobs.create({
+          gameId: sibling.metadata.gameId,
+          idempotencyKey: "pending-other-game",
+        });
+        expect(await jobs.waitForTerminal(other.jobId)).toMatchObject({
+          status: "succeeded",
+          revision: 1,
+        });
+        expect(importRevision).toHaveBeenCalledTimes(2);
+        expect(jobs.get(queued.jobId).status).toBe("queued");
+        receiptsAvailable = true;
+        expect(await jobs.reconcile(first.jobId)).toMatchObject({
+          status: "succeeded",
+          revision: 1,
+        });
+        expect(await jobs.waitForTerminal(queued.jobId)).toMatchObject({
+          status: "cancelled",
+          revision: null,
+        });
+        expect(importRevision).toHaveBeenCalledTimes(2);
+      } finally {
+        release.resolve(undefined);
+        await jobs.close();
+      }
+    });
+  }, 30000);
+
+  it("holds the matching game row through draft publication while allowing another game", async () => {
+    const { document } = await recordCorrectionLifecycleFixture();
+    const first = await store.importRevision(document);
+    const original = await store.currentRevisionBase(first.gameId);
+    if (original === null) throw new Error("missing base fixture");
+    const revised = await store.loadCorrectionDraft(first.gameId, 1);
+    const entered = Promise.withResolvers<undefined>();
+    const release = Promise.withResolvers<undefined>();
+    const publishing = store.withCurrentRevisionBase(first.gameId, original, async () => {
+      entered.resolve(undefined);
+      await release.promise;
+    });
+    await entered.promise;
+    const importing = store.importRevision(revised, { fromIndependentSealedDraft: true });
+    try {
+      await vi.waitFor(
+        async () => {
+          const blocked = await pool.query(`SELECT pid FROM pg_stat_activity
+          WHERE wait_event_type='Lock' AND query='SELECT current_revision FROM workbench.games WHERE game_id=$1 FOR UPDATE'`);
+          expect(blocked.rows.length).toBeGreaterThan(0);
+        },
+        { timeout: 5000 },
+      );
+      expect(await store.currentRevisionBase(first.gameId)).toEqual(original);
+      const sibling = await store.importRevision(parseStagingGameDocumentV2(makeDocument([])));
+      expect(sibling.gameId).not.toBe(first.gameId);
+      release.resolve(undefined);
+      await publishing;
+      expect(await importing).toMatchObject({ revision: 2 });
+      const stale = vi.fn(async () => {});
+      await expect(
+        store.withCurrentRevisionBase(first.gameId, original, stale),
+      ).rejects.toBeInstanceOf(RevisionConflictError);
+      expect(stale).not.toHaveBeenCalled();
+    } finally {
+      release.resolve(undefined);
+      await Promise.allSettled([publishing, importing]);
+    }
+  }, 30000);
+
+  it("rejects draft publication if the PostgreSQL guard connection is terminated during file I/O", async () => {
+    const { document } = await recordCorrectionLifecycleFixture();
+    const first = await store.importRevision(document);
+    const original = await store.currentRevisionBase(first.gameId);
+    if (original === null) throw new Error("missing base fixture");
+    const guardPool = new Pool({
+      connectionString: dsn,
+      application_name: "draft-file-guard-test",
+    });
+    const guardedStore = new GameRevisionStore(guardPool, "0019_regular_model_competition");
+    const opened = Promise.withResolvers<undefined>();
+    const release = Promise.withResolvers<undefined>();
+    const publishing = guardedStore.withCurrentRevisionBase(first.gameId, original, async () => {
+      opened.resolve(undefined);
+      await release.promise;
+      return "prepared file result";
+    });
+    const observed = publishing.catch((error: unknown) => error);
+    try {
+      await opened.promise;
+      const activity = await pool.query<{ pid: number }>(
+        "SELECT pid FROM pg_stat_activity WHERE application_name=$1 AND state='idle in transaction'",
+        ["draft-file-guard-test"],
+      );
+      const pid = activity.rows[0]?.pid;
+      if (pid === undefined) throw new Error("guard backend not found");
+      const terminated = await pool.query<{ terminated: boolean }>(
+        "SELECT pg_terminate_backend($1, 5000) AS terminated",
+        [pid],
+      );
+      expect(terminated.rows[0]?.terminated).toBe(true);
+      const ordinary = await store.loadCorrectionDraft(first.gameId, 1);
+      expect(
+        await store.importRevision(ordinary, { fromIndependentSealedDraft: true }),
+      ).toMatchObject({ revision: 2 });
+      release.resolve(undefined);
+      expect(await observed).toMatchObject({ code: "57P01" });
+      expect(guardPool.totalCount).toBe(0);
+    } finally {
+      release.resolve(undefined);
+      await observed;
+      await guardPool.end();
+    }
+  }, 30000);
+
+  it.each(["effect_removed", "effect_retained", "selected_before_approval"] as const)(
+    "revalidates saved automatic approvals after a second doubleheader game: %s",
+    async (mode) => {
+      await withRecordCorrectionWorkspace(async (repo, workspace, sessions, service) => {
+        const { document, notice } = await recordCorrectionFixture("multiple-pitchers");
+        const pitchers = ["away-player-24", "away-player-26"];
+        const earnedRuns = (draft: typeof document) =>
+          pitchers.map(
+            (id) => draft.officialRecords.pitchers.find((line) => line.playerId === id)?.earnedRuns,
+          );
+        const fixture = parseStagingGameDocumentV2({
+          ...document,
+          source: { ...document.source, sourceGameId: "anon-multiple-DH1" },
+          events: document.events.map((event) =>
+            event.kind === "plate_result" &&
+            event.identity.eventId === "anon-multiple-pitchers:relay_007:6:2"
+              ? { ...event, payload: { ...event.payload, result: "reached_on_error" } }
+              : event,
+          ),
+          officialRecords: {
+            ...document.officialRecords,
+            pitchers: document.officialRecords.pitchers.map((line) =>
+              pitchers.includes(line.playerId) ? { ...line, earnedRuns: 3 } : line,
+            ),
+          },
+        });
+        const first = await store.importRevision(fixture);
+        const a = {
+          ...notice,
+          noticeHash: "a".repeat(64),
+          doubleheaderNumber: 1,
+          contentText:
+            "비식별홈\n홈선수4(안타 3→2, 루타수 3→2)\n비식별원정\n원정선수24(피안타 3→2, 자책점 3→0)",
+          statChanges: notice.statChanges.filter(
+            (stat) => stat.statCode !== "earned_runs" || stat.participantIndex === 1,
+          ),
+        };
+        const b = {
+          ...notice,
+          noticeId: "2025:0:978",
+          recordNumber: 978,
+          sourceRowIndex: notice.sourceRowIndex + 1,
+          noticeHash: "b".repeat(64),
+          doubleheaderNumber: null,
+          contentText:
+            "비식별홈\n홈선수4(안타 3→2, 루타수 3→2)\n비식별원정\n원정선수24(피안타 3→2)\n원정선수26(자책점 3→2)",
+          statChanges: notice.statChanges.filter(
+            (stat) => stat.statCode !== "earned_runs" || stat.participantIndex === 2,
+          ),
+        };
+        await seedVenueCorrectionNotice(repo, a, b);
+        await service.assessSeason(2025);
+        if (mode === "selected_before_approval") {
+          const assessment = await repo.case(b.noticeId);
+          const candidate = assessment?.candidates[0];
+          if (assessment === null || candidate === undefined) throw new Error("fixture candidate");
+          await repo.reviewAction(b.noticeId, {
+            caseVersion: assessment.caseVersion,
+            action: "select_candidate",
+            candidateId: candidate.candidateId,
+            reason: null,
+          });
+          await service.assessSeason(2025);
+        }
+        await applyAndSaveNotice(service, sessions, a.noticeId);
+        const bundle = await applyAndSaveNotice(service, sessions, b.noticeId);
+        expect(earnedRuns(bundle.session.draftDocument)).toEqual([0, 2]);
+        const prior = await workspace.readImportTarget(first.gameId);
+        const approvals = prior?.recordCorrection?.approvals;
+        expect(approvals?.map(({ noticeId }) => noticeId)).toEqual([a.noticeId, b.noticeId]);
+
+        const second = await store.importRevision({
+          ...fixture,
+          source: { ...fixture.source, sourceGameId: "anon-multiple-DH2" },
+          metadata: { ...fixture.metadata, gameId: "anon-multiple-game-dh2" },
+        });
+        await service.afterImport(second.gameId, second.revision);
+        if (mode !== "selected_before_approval") {
+          expect(await repo.case(b.noticeId)).toMatchObject({
+            status: "manual_review",
+            reasonCode: "ambiguous_game_identity",
+          });
+          await expect(
+            store.importRevision(bundle.session.draftDocument, {
+              recordCorrectionApprovals: approvals ?? [],
+              verifiedMatchupGeneration: (await repo.matchupContext(a)).generation,
+            }),
+          ).rejects.toBeInstanceOf(RevisionConflictError);
+        }
+
+        let editing = await openCurrentRecordCorrectionDraft(service, a.noticeId);
+        if (mode === "effect_removed") {
+          const pitcher = bundle.session.draftDocument.officialRecords.pitchers.find(
+            (line) => line.playerId === "away-player-26",
+          );
+          if (pitcher === undefined) throw new Error("fixture pitcher");
+          const corrected = await sessions.command(
+            editing.sessionId,
+            editing.sessionVersion,
+            {
+              commandId: "restore-expired-earnings",
+              kind: "update_official_record",
+              recordType: "pitcher",
+              playerId: pitcher.playerId,
+              record: { ...pitcher, earnedRuns: 3 },
+            },
+            true,
+          );
+          await sessions.commit(editing.sessionId, {
+            expectedSessionVersion: corrected.session.sessionVersion,
+            allowBlockingStaging: false,
+          });
+          editing = await openCurrentRecordCorrectionDraft(service, a.noticeId);
+        }
+        const proposal = await service.proposal(editing.sessionId, a.noticeId);
+        expect(proposal.eligible, proposal.reasons.join(" ")).toBe(mode !== "effect_retained");
+        if (mode === "effect_retained") {
+          expect(
+            (await workspace.readImportTarget(first.gameId))?.recordCorrection?.approvals,
+          ).toEqual(approvals);
+          expect(await store.currentRevisionBase(first.gameId)).toMatchObject({ revision: 1 });
+          return;
+        }
+        const approved = await service.applyProposal(
+          editing.sessionId,
+          a.noticeId,
+          editing.sessionVersion,
+          proposal.proposalHash,
+        );
+        expect(
+          sessions.approvalReferences(editing.sessionId).map(({ noticeId }) => noticeId),
+        ).toEqual(mode === "effect_removed" ? [a.noticeId] : [a.noticeId, b.noticeId]);
+        await sessions.commit(editing.sessionId, {
+          expectedSessionVersion: approved.session.sessionVersion,
+          allowBlockingStaging: false,
+        });
+        const jobs = verifiedImportJobs(workspace, store, service);
+        try {
+          const job = await jobs.create({
+            gameId: first.gameId,
+            idempotencyKey: "after-second-game",
+          });
+          expect(await jobs.waitForTerminal(job.jobId)).toMatchObject({
+            status: "succeeded",
+            revision: 2,
+          });
+          expect(earnedRuns(await store.loadCorrectionDraft(first.gameId, 2))).toEqual(
+            mode === "effect_removed" ? [0, 3] : [0, 2],
+          );
+        } finally {
+          await jobs.close();
+        }
+      });
+    },
+    30000,
+  );
+
   it("checks the whole corrected ledger when a revised notice still has unapplied changes", async () => {
     await withRecordCorrectionWorkspace(async (repo, workspace, sessions, service) => {
       const fixture: unknown = JSON.parse(
@@ -3456,7 +4164,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       const saved = await workspace.readImportTarget(first.gameId);
       await publishVenueNotices(repo, "revised-earnings", "b", [b]);
       await service.assessSeason(2025);
-      const reopened = await service.createDraft(b.noticeId);
+      const reopened = await openCurrentRecordCorrectionDraft(service, b.noticeId);
       const proposal = await service.proposal(reopened.sessionId, b.noticeId);
       expect(proposal.eligible).toBe(false);
       expect(proposal.batch).not.toBeNull();
@@ -3553,7 +4261,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
           status: "manual_review",
           reasonCode: "conflicting_active_notices",
         });
-        const draft = await service.createDraft(input.noticeId);
+        const draft = await openCurrentRecordCorrectionDraft(service, input.noticeId);
         expect(await service.proposal(draft.sessionId, input.noticeId)).toMatchObject({
           eligible: false,
         });
@@ -3598,7 +4306,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       const first = await store.importRevision(document);
       await seedVenueCorrectionNotice(repo, notice);
       await service.assessSeason(2025);
-      const opened = await service.createDraft(notice.noticeId);
+      const opened = await openCurrentRecordCorrectionDraft(service, notice.noticeId);
       const proposal = await service.proposal(opened.sessionId, notice.noticeId);
       if (proposal.batch === null) throw new Error("correction batch fixture");
       const manual = await sessions.command(
@@ -3810,8 +4518,9 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
             candidateId: candidate.candidateId,
             reason: null,
           });
+          await service.assessSeason(2025);
         }
-        const draft = await service.createDraft(notice.noticeId);
+        const draft = await openCurrentRecordCorrectionDraft(service, notice.noticeId);
         const proposal = await service.proposal(draft.sessionId, notice.noticeId);
         const applied = await service.applyProposal(
           draft.sessionId,
@@ -3907,7 +4616,8 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
             candidateId: candidate.candidateId,
             reason: null,
           });
-          const reopened = await service.createDraft(notice.noticeId);
+          await service.assessSeason(2025);
+          const reopened = await openCurrentRecordCorrectionDraft(service, notice.noticeId);
           const renewed = await service.proposal(reopened.sessionId, notice.noticeId);
           expect(renewed).toMatchObject({ eligible: true, batch: null });
           const applied = await service.applyProposal(
@@ -5075,13 +5785,22 @@ function runningImport(jobId: string, target: ImportTarget): ImportJobRecord {
   };
 }
 
+async function openCurrentRecordCorrectionDraft(
+  service: RecordCorrectionService,
+  noticeId: string,
+) {
+  const current = await service.case(noticeId);
+  if (current === null) throw new Error("missing fixture case");
+  return service.createDraft(noticeId, current.caseVersion);
+}
+
 async function applyAndSaveNotice(
   service: RecordCorrectionService,
   sessions: CorrectionSessionManager,
   noticeId: string,
   save = true,
 ) {
-  const opened = await service.createDraft(noticeId);
+  const opened = await openCurrentRecordCorrectionDraft(service, noticeId);
   const proposal = await service.proposal(opened.sessionId, noticeId);
   expect(proposal.eligible, proposal.reasons.join(" ")).toBe(true);
   const applied = await service.applyProposal(

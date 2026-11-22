@@ -46,9 +46,17 @@ export const importRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app,
   app.post(
     "/api/v2/import-jobs/:jobId/reconcile",
     {
-      schema: { params: JobParamsSchema, response: { 200: ImportJobSchema, 404: ApiErrorSchema } },
+      schema: {
+        params: JobParamsSchema,
+        querystring: Type.Object(
+          { scope: Type.Optional(Type.Literal("publication")) },
+          { additionalProperties: false },
+        ),
+        response: { 200: ImportJobSchema, 400: ApiErrorSchema, 404: ApiErrorSchema },
+      },
     },
-    async (request) => context.runtime.importJobs.reconcile(request.params.jobId),
+    async (request) =>
+      context.runtime.importJobs.reconcile(request.params.jobId, request.query.scope),
   );
   app.post(
     "/api/v2/import-batches/:batchId/cancel",

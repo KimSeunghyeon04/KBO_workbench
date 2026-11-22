@@ -231,6 +231,7 @@ export const RecordCorrectionCaseSchema = Type.Object(
     assessedAt: DateTimeSchema,
     notice: RecordCorrectionNoticeSchema,
     candidates: Type.Array(RecordCorrectionMatchCandidateSchema),
+    assessmentPending: Type.Optional(Type.Literal(true)),
     draftProgress: Type.Optional(RecordCorrectionDraftProgressSchema),
   },
   strict,
@@ -354,6 +355,11 @@ export const RecordCorrectionProposalApplyRequestSchema = Type.Object(
     expectedSessionVersion: Type.Integer({ minimum: 0 }),
     proposalHash: HashSchema,
   },
+  strict,
+);
+
+export const RecordCorrectionDraftCreateRequestSchema = Type.Object(
+  { caseVersion: Type.Integer({ minimum: 1 }) },
   strict,
 );
 

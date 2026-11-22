@@ -2,21 +2,34 @@ import type { RecordCorrectionApprovalReference } from "@kbo/contracts";
 import type { Pool, PoolClient } from "pg";
 import {
   readMatchupCandidates,
-  matchesRecordCorrectionDoubleheader,
+  recordCorrectionEligibleGames,
   type Matchup,
 } from "./record-correction-matchups.js";
-import type { RecordCorrectionApprovalEvidence } from "./record-correction-types.js";
+import type {
+  RecordCorrectionApprovalEvidence,
+  RecordCorrectionApprovalHistory,
+  RecordCorrectionGameCandidate,
+} from "./record-correction-types.js";
 import { RevisionConflictError } from "./revision-types.js";
 
 interface VerifiedApproval extends RecordCorrectionApprovalEvidence {
   readonly matchupGeneration: number;
   readonly verifiedGeneration: number;
   readonly doubleheaderNumber: number | null;
-  readonly explicitlySelected: boolean;
+  readonly hasSelection: boolean;
+  readonly selectedGameId: string | null;
+  readonly selectedEventId: string | null;
   readonly season: number;
   readonly gameDate: string;
   readonly awayTeamName: string;
   readonly homeTeamName: string;
+}
+
+export function currentRecordCorrectionSelectionSql(noticeId: "$1" | "a.notice_id"): string {
+  return `SELECT case_version,candidate_id,action_sequence
+    FROM record_correction.active_review_actions
+    WHERE notice_id=${noticeId} AND action_kind='select_candidate'
+    ORDER BY action_sequence DESC LIMIT 1`;
 }
 
 export async function readApprovalEvidence(
@@ -32,25 +45,59 @@ export async function readApprovalEvidence(
        n.doubleheader_number AS "doubleheaderNumber",a.season,
        to_char(n.game_date,'YYYY-MM-DD') AS "gameDate",
        n.away_team_name AS "awayTeamName",n.home_team_name AS "homeTeamName",
-       EXISTS (
-         SELECT 1 FROM record_correction.active_review_actions decision
-         JOIN record_correction.match_candidates candidate
-           ON (candidate.notice_id,candidate.case_version,candidate.candidate_id)=
-              (decision.notice_id,decision.case_version,decision.candidate_id)
-         WHERE decision.notice_id=a.notice_id AND decision.action_kind='select_candidate'
-           AND candidate.game_id=r.target_game_id AND candidate.event_id=r.target_event_id
-       ) AS "explicitlySelected"
+       decision.action_sequence IS NOT NULL AS "hasSelection",
+       candidate.game_id AS "selectedGameId",candidate.event_id AS "selectedEventId"
      FROM unnest($1::text[],$2::integer[]) WITH ORDINALITY AS refs(notice_id,action_sequence,ord)
      JOIN record_correction.active_proposal_approvals r USING (notice_id,action_sequence)
      JOIN record_correction.active_assessments a ON a.notice_id=r.notice_id
        AND a.decision_sequence=r.target_decision_sequence
      JOIN record_correction.notices n ON (n.season,n.revision,n.notice_sequence)=
        (a.season,a.source_revision,a.notice_sequence)
+     LEFT JOIN LATERAL (${currentRecordCorrectionSelectionSql("a.notice_id")}) decision ON true
+     LEFT JOIN record_correction.match_candidates candidate
+       ON (candidate.notice_id,candidate.case_version,candidate.candidate_id)=
+          (a.notice_id,decision.case_version,decision.candidate_id)
      WHERE r.verified_matchup_generation IS NOT NULL AND a.status <> 'dismissed'
      ORDER BY refs.ord`,
     [references.map((ref) => ref.noticeId), references.map((ref) => ref.actionSequence)],
   );
   return result.rows;
+}
+
+export async function readApprovalHistory(
+  client: Pool | PoolClient,
+  references: readonly RecordCorrectionApprovalReference[],
+  scope: Pick<RecordCorrectionApprovalEvidence, "gameId" | "revision" | "baseHash">,
+  matchup: Matchup,
+): Promise<RecordCorrectionApprovalHistory> {
+  if (references.length === 0) return { active: [], recorded: [], unknown: false };
+  const evidence = await readApprovalEvidence(client, references);
+  const games = evidence.length > 0 ? await readMatchupCandidates(client, matchup) : [];
+  const active: VerifiedApproval[] = [];
+  let unknown = false;
+  for (const proof of evidence) {
+    const target = sameMatchup(proof, matchup) ? approvalTarget(proof, games) : "unknown";
+    if (target === "current") active.push(proof);
+    if (target === "unknown") unknown = true;
+  }
+  if (active.length === references.length) return { active, recorded: references, unknown };
+
+  const recorded = await client.query<RecordCorrectionApprovalReference>(
+    `SELECT r.notice_id AS "noticeId", r.action_sequence AS "actionSequence"
+     FROM unnest($1::text[],$2::integer[]) WITH ORDINALITY AS refs(notice_id,action_sequence,ord)
+     JOIN record_correction.review_actions r USING (notice_id,action_sequence)
+     WHERE r.action_kind='proposal_applied' AND r.verified_matchup_generation IS NOT NULL
+       AND r.target_game_id=$3 AND r.target_game_revision=$4 AND r.target_document_hash=$5
+     ORDER BY refs.ord`,
+    [
+      references.map((ref) => ref.noticeId),
+      references.map((ref) => ref.actionSequence),
+      scope.gameId,
+      scope.revision,
+      scope.baseHash,
+    ],
+  );
+  return { active, recorded: recorded.rows, unknown };
 }
 
 /** Called with the game and its publication matchups already locked. */
@@ -85,6 +132,7 @@ export async function validateCorrectionPublication(
   );
   const evidence = await readApprovalEvidence(client, approvals);
   if (evidence.length !== approvals.length) throw staleApproval();
+  const candidates = new Map<Matchup, readonly RecordCorrectionGameCandidate[]>();
   for (const row of evidence) {
     if (
       row.matchupGeneration !== (verifiedMatchupGeneration ?? row.verifiedGeneration) ||
@@ -94,29 +142,52 @@ export async function validateCorrectionPublication(
     ) {
       throw staleApproval();
     }
-    const matchup = matchups.find(
-      (scope) =>
-        scope[0] === row.season &&
-        scope[1] === row.gameDate &&
-        scope[2] === row.awayTeamName &&
-        scope[3] === row.homeTeamName,
-    );
+    const matchup = matchups.find((scope) => sameMatchup(row, scope));
     if (matchup === undefined) throw staleApproval();
-    const games = (await readMatchupCandidates(client, matchup)).filter((game) =>
-      matchesRecordCorrectionDoubleheader(game.sourceGameId, row.doubleheaderNumber),
-    );
-    if (
-      (!row.explicitlySelected && games.length !== 1) ||
-      !games.some(
-        (game) =>
-          game.gameId === gameId &&
-          game.revision === baseRevision &&
-          game.documentHash === row.baseHash,
-      )
-    ) {
-      throw staleApproval();
+    let list = candidates.get(matchup);
+    if (list === undefined) {
+      list = await readMatchupCandidates(client, matchup);
+      candidates.set(matchup, list);
     }
+    if (approvalTarget(row, list) !== "current") throw staleApproval();
   }
+}
+
+function sameMatchup(row: VerifiedApproval, matchup: Matchup): boolean {
+  return (
+    matchup[0] === row.season &&
+    matchup[1] === row.gameDate &&
+    matchup[2] === row.awayTeamName &&
+    matchup[3] === row.homeTeamName
+  );
+}
+
+function approvalTarget(
+  row: VerifiedApproval,
+  games: readonly RecordCorrectionGameCandidate[],
+): "current" | "expired" | "unknown" {
+  if (row.hasSelection && (row.selectedGameId === null || row.selectedEventId === null))
+    return "unknown";
+  if (
+    row.hasSelection &&
+    (row.selectedGameId !== row.gameId || row.selectedEventId !== row.eventId)
+  )
+    return "expired";
+  const candidates = recordCorrectionEligibleGames(
+    games,
+    row.doubleheaderNumber,
+    row.selectedGameId,
+  );
+  if (
+    !candidates.some(
+      (game) =>
+        game.gameId === row.gameId &&
+        game.revision === row.revision &&
+        game.documentHash === row.baseHash,
+    )
+  )
+    return "unknown";
+  return candidates.length === 1 ? "current" : "expired";
 }
 
 function staleApproval(): RevisionConflictError {

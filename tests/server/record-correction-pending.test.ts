@@ -25,7 +25,7 @@ describe("미처리 기록정정 실제 자료 회귀", () => {
     try {
       const item = await fixture.service.assessNotice(fixture.notice);
       expect(item.status).toBe("action_required");
-      const opened = await fixture.service.createDraft(item.noticeId);
+      const opened = await fixture.service.createDraft(item.noticeId, item.caseVersion);
       const proposal = await fixture.service.proposal(opened.sessionId, item.noticeId);
       expect(proposal.eligible).toBe(true);
       expect(proposal.changes).toContainEqual(
@@ -113,7 +113,7 @@ describe("미처리 기록정정 실제 자료 회귀", () => {
         ).toMatchObject({ status: "already_applied", eventId: before.eventId });
       }
       await fixture.workspace.saveReady(corrected, []);
-      const opened = await fixture.service.createDraft(fixture.notice.noticeId);
+      const opened = await fixture.open();
       const proposal = await fixture.service.proposal(opened.sessionId, fixture.notice.noticeId);
       expect(proposal.reasons).toEqual([]);
       const earnedRuns = proposal.changes.filter(
@@ -207,6 +207,10 @@ async function setup(root: string, name: Parameters<typeof recordCorrectionFixtu
       pendingNoticeIds: async () => [],
       listCasesForImport: async () => [],
       case: async () => item,
+      caseSnapshot: async () =>
+        item === null
+          ? null
+          : { item, assessmentCurrent: true, publication: 1, decisionSequence: 0 },
       assessmentBasis: async () => ({
         caseVersion: item?.caseVersion ?? 0,
         publication: 1,
@@ -254,6 +258,7 @@ async function setup(root: string, name: Parameters<typeof recordCorrectionFixtu
     },
     {
       loadCorrectionDraft: async () => document,
+      withCurrentRevisionBase: async (_gameId, _base, publish) => publish(),
       currentRevisionBase: async () => ({
         revision: 1,
         documentHash: "b".repeat(64),
@@ -269,6 +274,10 @@ async function setup(root: string, name: Parameters<typeof recordCorrectionFixtu
     service,
     workspace,
     sessions,
+    open: () => {
+      if (item === null) throw new Error("missing fixture case");
+      return service.createDraft(source.notice.noticeId, item.caseVersion);
+    },
     setDocument(value: StagingGameDocumentV2) {
       document = value;
     },

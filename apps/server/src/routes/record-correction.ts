@@ -2,6 +2,7 @@ import {
   ApiErrorSchema,
   CorrectionMutationResultSchema,
   RecordCorrectionCaseSchema,
+  RecordCorrectionDraftCreateRequestSchema,
   RecordCorrectionDraftCreateResponseSchema,
   RecordCorrectionJobCreateRequestSchema,
   RecordCorrectionJobCreatedSchema,
@@ -135,8 +136,10 @@ export const recordCorrectionRoutes: FastifyPluginAsyncTypebox<RouteContext> = a
     {
       schema: {
         params: NoticeParamsSchema,
+        body: RecordCorrectionDraftCreateRequestSchema,
         response: {
           201: RecordCorrectionDraftCreateResponseSchema,
+          400: ApiErrorSchema,
           503: ApiErrorSchema,
           404: ApiErrorSchema,
           409: ApiErrorSchema,
@@ -144,7 +147,9 @@ export const recordCorrectionRoutes: FastifyPluginAsyncTypebox<RouteContext> = a
       },
     },
     async (request, reply) =>
-      reply.code(201).send(await service.createDraft(request.params.noticeId)),
+      reply
+        .code(201)
+        .send(await service.createDraft(request.params.noticeId, request.body.caseVersion)),
   );
 
   app.get(

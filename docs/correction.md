@@ -459,11 +459,12 @@ session 응답의 `calculatedRecords`는 같은 작업 사본을 서버 compiler
 다시 평가한다. 공지 평가만 갱신하며 기존 원장이나 봉인된 경기 revision은 수정하지 않는다.
 
 `보정 작업대로 이동`은 저장된 staging/quarantine 작업본을 우선해서 연다. 이미 진행 중인 수정,
-finding과 revision base를 DB 사본으로 덮어쓰지 않는다. 작업본이 없고 공지 평가 이후 DB current가
-바뀌었다면 현재 revision에서 경기·타석을 다시 매칭한 뒤 초안을 만든다. 대상이 더 이상 유일하지
-않으면 갱신된 후보를 확인하도록 요청하고 초안은 만들지 않는다. 초안 준비 중 생긴 다른 작업본도
-workspace 저장 경계에서 보존하며, 적용할 때의 session version/hash와 적재할 때의 stale base 검사는
-그대로 유지한다.
+finding과 revision base를 DB 사본으로 덮어쓰지 않는다. 요청에 화면이 조회한 `caseVersion`을 담는다.
+평가가 바뀌었거나 대기 중이면 `409`로 거부한다. 화면은 보고 있는 공지가 평가 대기 중일 때만 상세를 다시
+조회해 최신 후보를 보여 준다. 요청을 받은 뒤 DB revision이
+바뀌었으면 경기·이벤트·타자·투수와 공지 발행·수동 결정이 모두 같은 경우에만 최신 봉인본을 한 번
+다시 읽는다. 초안 준비 중 생긴 작업본은 workspace 저장 경계에서 보존한다. 이후 공식 제안과 승인은
+최신 평가와 session version·hash를 다시 검사한다.
 
 검토함의 목록·상세는 저장된 현재 작업본도 확인한다. 지원 정정 항목이 모두 정정 후 값이고,
 차단 finding이 없으며 DB current와 base가 맞는 staging 작업본은 `수정 완료 · DB 적재 대기`로
@@ -543,7 +544,7 @@ compile 뒤 새 blocking finding이 없고 지원 필드가 정정 후 값과 �
 - `GET /api/v2/record-corrections/summary`
 - `GET /api/v2/record-corrections`와 `GET /api/v2/record-corrections/{noticeId}`
 - `POST /api/v2/record-corrections/{noticeId}/review-actions`
-- `POST /api/v2/record-corrections/{noticeId}/correction-drafts`
+- `POST /api/v2/record-corrections/{noticeId}/correction-drafts`는 `{ caseVersion }`을 받는다.
 - `GET/POST /api/v2/correction-sessions/{sessionId}/record-correction-proposals/{noticeId}`
 
 ## 웹 사용 순서
@@ -573,8 +574,13 @@ compile 뒤 새 blocking finding이 없고 지원 필드가 정정 후 값과 �
 수 없으면 사람이 다시 확인할 때까지 자동 연결을 보류한다. 다른 공지의 수집은 기존 공지의 승인에
 영향을 주지 않는다. 검증된 전체 수집본에서 공지가 사라졌다가 돌아오면 발행을 다시 확인한다.
 
-승인 참조는 저장 사본의 내용 해시와 함께 보존하며, 복원과 적재 재시도에서도 확인한다. 승인한 사본이
-편집됐거나 승인 대상이 달라진 경우에는 현재 봉인 원장과 유효한 공지로 전체 공식 정정 효과를 다시
-만들 수 있을 때 재승인한다. 새 공지로 설명할 수 없는 변경이나 서로 충돌하는 공식 정정 효과가 남으면
-사본을 보존한 채 검토한다. 이전 버전에서 만든 승인 작업본의 출처를 확인할 수 없으면 해당 작업본을
-보존하고 현재 봉인 원장에서 새 사본을 열어 다시 검토할 수 있다.
+기록정정과 재생에서 새 작업본을 만들 때는 준비를 끝낸 뒤 경기별 잠금과 현재 DB revision·해시를
+확인하고 발행한다. 기록정정은 준비 중 생긴 작업본을 그대로 열고, 재생은 요청한 revision이나
+작업본이 달라졌으면 다시 확인하도록 안내한다.
+
+승인 참조는 저장 사본의 내용 해시와 함께 보존한다. 사본이 편집됐거나 공지가 바뀌면 현재 봉인
+원장에 이번 승인과 유효한 이전 승인을 기존 순서대로 적용해 최종 원장 해시를 비교한다. 전체
+결과가 같을 때만 새 해시로 승인 묶음을 저장하고, 그 결과에 근거가 남아 있지 않은 만료 참조를 뺀다.
+재승인과 봉인은 현재 대진 후보와 최신 수동 선택을 같은 기준으로 검사한다. 차전 미지정 자동 선택은
+후보가 둘이 되면 만료된다. 타석 후보나 근거가 불완전하거나 변경 효과가 재현되지 않으면 기존 작업본과
+승인 참조를 보존한다.

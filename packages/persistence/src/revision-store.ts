@@ -255,6 +255,8 @@ export class GameRevisionStore {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+      await client.query("SET LOCAL lock_timeout='2s'");
+      await client.query("SET LOCAL statement_timeout='5s'");
       await lockImportPublication(client, jobId);
       // A prior owner may have committed while we waited. Read in a fresh statement.
       const committed = await readImportPublication(client, jobId, target);
@@ -343,8 +345,49 @@ export class GameRevisionStore {
     }
     return Number(count);
   }
-  public async currentRevisionBase(gameId: string): Promise<CurrentRevisionBase | null> {
-    const result = await this.pool.query(
+  public async withCurrentRevisionBase<T>(
+    gameId: string,
+    expected: Pick<CurrentRevisionBase, "revision" | "documentHash">,
+    publish: () => Promise<T>,
+  ): Promise<T> {
+    const client = await this.pool.connect();
+    let connectionError: Error | undefined;
+    // The checked-out client can lose its connection while the callback performs file I/O.
+    const connectionLost = (error: Error) => {
+      connectionError ??= error;
+    };
+    client.on("error", connectionLost);
+    try {
+      await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+      await client.query("SELECT game_id FROM workbench.games WHERE game_id=$1 FOR SHARE", [
+        gameId,
+      ]);
+      const current = await this.readCurrentRevisionBase(client, gameId);
+      if (current?.revision !== expected.revision || current.documentHash !== expected.documentHash)
+        throw new RevisionConflictError("작업본을 여는 동안 현재 DB revision이 변경되었습니다.");
+      if (connectionError !== undefined) throw connectionError;
+      const result = await publish();
+      if (connectionError !== undefined) throw connectionError;
+      await client.query("COMMIT");
+      return result;
+    } catch (error: unknown) {
+      if (connectionError === undefined) await client.query("ROLLBACK").catch(() => undefined);
+      throw connectionError ?? error;
+    } finally {
+      client.release(connectionError);
+      client.off("error", connectionLost);
+    }
+  }
+
+  public currentRevisionBase(gameId: string): Promise<CurrentRevisionBase | null> {
+    return this.readCurrentRevisionBase(this.pool, gameId);
+  }
+
+  private async readCurrentRevisionBase(
+    executor: Pool | PoolClient,
+    gameId: string,
+  ): Promise<CurrentRevisionBase | null> {
+    const result = await executor.query(
       `SELECT r.revision,r.document_hash,r.source_bundle_hash
        FROM workbench.games g
        JOIN workbench.game_revisions r

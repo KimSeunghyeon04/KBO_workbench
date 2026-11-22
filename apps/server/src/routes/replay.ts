@@ -12,6 +12,8 @@ import type { RouteContext } from "./context.js";
 import { sendCanonicalDocument } from "./http.js";
 import { GameParamsSchema, RevisionParamsSchema } from "./schemas.js";
 
+import { openCorrectionDraft } from "../open-correction-draft.js";
+
 export const replayRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app, context) => {
   app.get(
     "/api/v2/games/:gameId/revisions",
@@ -39,12 +41,12 @@ export const replayRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app,
       },
     },
     async (request, reply) => {
-      const document = await context.runtime.revisionStore.loadCorrectionDraft(
+      const { document } = await openCorrectionDraft(
+        context.runtime.workspace,
+        context.runtime.revisionStore,
         request.params.gameId,
         request.params.revision,
-      );
-      await context.runtime.workspace.withGameOperation(request.params.gameId, () =>
-        context.runtime.workspace.saveCorrectionDraft(document),
+        "replace",
       );
       reply.code(201);
       return sendCanonicalDocument(reply, document);

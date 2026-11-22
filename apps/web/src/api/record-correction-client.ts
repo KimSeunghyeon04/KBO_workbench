@@ -20,7 +20,7 @@ import {
 } from "@kbo/contracts";
 import { Value } from "@sinclair/typebox/value";
 
-import { requestJson, requestNoContent } from "./transport";
+import { ApiClientError, requestJson, requestNoContent } from "./transport";
 
 export async function getRecordCorrectionSummary(): Promise<RecordCorrectionSummary> {
   return Value.Decode(
@@ -48,11 +48,18 @@ export async function getRecordCorrectionCases(filters: {
   ).cases;
 }
 
-export async function getRecordCorrectionCase(noticeId: string): Promise<RecordCorrectionCase> {
-  return Value.Decode(
-    RecordCorrectionCaseSchema,
-    await requestJson(`/api/v2/record-corrections/${encodeURIComponent(noticeId)}`),
-  );
+export async function getRecordCorrectionCase(
+  noticeId: string,
+): Promise<RecordCorrectionCase | null> {
+  try {
+    return Value.Decode(
+      RecordCorrectionCaseSchema,
+      await requestJson(`/api/v2/record-corrections/${encodeURIComponent(noticeId)}`),
+    );
+  } catch (error: unknown) {
+    if (error instanceof ApiClientError && error.status === 404) return null;
+    throw error;
+  }
 }
 
 export async function getRecordCorrectionJobs(): Promise<readonly RecordCorrectionJob[]> {
@@ -96,7 +103,10 @@ export async function submitRecordCorrectionReviewAction(
   );
 }
 
-export async function createRecordCorrectionDraft(noticeId: string): Promise<{
+export async function createRecordCorrectionDraft(
+  noticeId: string,
+  caseVersion: number,
+): Promise<{
   readonly sessionId: string;
   readonly sessionVersion: number;
   readonly noticeId: string;
@@ -105,7 +115,7 @@ export async function createRecordCorrectionDraft(noticeId: string): Promise<{
     RecordCorrectionDraftCreateResponseSchema,
     await requestJson(
       `/api/v2/record-corrections/${encodeURIComponent(noticeId)}/correction-drafts`,
-      { method: "POST" },
+      { method: "POST", body: JSON.stringify({ caseVersion }) },
     ),
   );
 }

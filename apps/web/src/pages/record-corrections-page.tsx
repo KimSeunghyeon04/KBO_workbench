@@ -78,7 +78,10 @@ export function RecordCorrectionsPage(): React.JSX.Element {
   const selected = useQuery({
     ...recordCorrectionCaseQueryOptions(selectedNoticeId ?? "inactive"),
     enabled: selectedNoticeId !== null,
+    refetchInterval: (query) => (query.state.data?.assessmentPending === true ? 2_000 : false),
   });
+  const missing = selected.data === null;
+  const selectedItem = selected.data ?? undefined;
 
   const updateSearch = useCallback(
     (updates: Readonly<Record<string, string | null>>, replace = false): void => {
@@ -140,7 +143,8 @@ export function RecordCorrectionsPage(): React.JSX.Element {
     },
   });
   const draft = useMutation({
-    mutationFn: (noticeId: string) => createRecordCorrectionDraft(noticeId),
+    mutationFn: (item: RecordCorrectionCase) =>
+      createRecordCorrectionDraft(item.noticeId, item.caseVersion),
     onSuccess: async (created) => {
       await invalidate();
       void navigate(
@@ -312,20 +316,25 @@ export function RecordCorrectionsPage(): React.JSX.Element {
               title="검토할 공지를 선택하세요"
               description="공지의 원문과 대상 경기를 확인하고, 반영할 기록을 검토합니다."
             />
-          ) : selected.isLoading || selected.data === undefined ? (
+          ) : missing ? (
+            <OperationEmptyDetail
+              title="더 이상 검토할 수 없는 공지입니다"
+              description="현재 수집된 공지 목록에서 다시 선택하세요."
+            />
+          ) : selectedItem === undefined ? (
             <OperationEmptyDetail
               title="공지 상세를 불러오는 중입니다"
               description="선택한 공지만 조회하고 있습니다."
             />
           ) : (
             <RecordCorrectionDetail
-              item={selected.data}
+              item={selectedItem}
               dismissReason={dismissReason}
               pending={review.isPending || draft.isPending}
               onDismissReason={setDismissReason}
               onSelectCandidate={(candidateId) =>
                 review.mutate({
-                  item: selected.data,
+                  item: selectedItem,
                   action: "select_candidate",
                   candidateId,
                   reason: null,
@@ -333,7 +342,7 @@ export function RecordCorrectionsPage(): React.JSX.Element {
               }
               onDismiss={() =>
                 review.mutate({
-                  item: selected.data,
+                  item: selectedItem,
                   action: "dismiss",
                   candidateId: null,
                   reason: dismissReason.trim() || null,
@@ -341,13 +350,13 @@ export function RecordCorrectionsPage(): React.JSX.Element {
               }
               onReopen={() =>
                 review.mutate({
-                  item: selected.data,
+                  item: selectedItem,
                   action: "reopen",
                   candidateId: null,
                   reason: null,
                 })
               }
-              onDraft={() => draft.mutate(selected.data.noticeId)}
+              onDraft={() => draft.mutate(selectedItem)}
             />
           )
         }

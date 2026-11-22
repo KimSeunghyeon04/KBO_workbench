@@ -27,11 +27,12 @@ import {
   RecordCorrectionStaleError,
   RevisionConflictError,
   matchesRecordCorrectionDoubleheader,
-  storedCompilerFindings,
+  recordCorrectionEligibleGames,
 } from "@kbo/persistence";
 import type {
   GameRevisionStore,
   RecordCorrectionApprovalEvidence,
+  RecordCorrectionApprovalPlan,
   RecordCorrectionGameCandidate,
   RecordCorrectionMatchupContext,
   RecordCorrectionRepository,
@@ -40,25 +41,28 @@ import type {
 
 import type { CorrectionSessionManager } from "./correction-session-manager.js";
 import { mergePersistentSourceFindings } from "./correction-session-manager.js";
+import {
+  openCorrectionDraft,
+  type DraftRevisionStore,
+  type DraftWorkspace,
+} from "./open-correction-draft.js";
 import { BoundedReadCache } from "./bounded-read-cache.js";
 import { compileDocument, inlineComputation, type ComputationRunner } from "./computation.js";
 
-type RevisionStore = Pick<GameRevisionStore, "loadCorrectionDraft" | "currentRevisionBase">;
+type RevisionStore = DraftRevisionStore & Pick<GameRevisionStore, "currentRevisionBase">;
 type SessionManager = Pick<
   CorrectionSessionManager,
   "approvalReferences" | "approveCurrent" | "command" | "create" | "get"
 > &
   Partial<Pick<CorrectionSessionManager, "hasIndependentRecordCorrectionBase">>;
-type Workspace = Pick<
-  StagingWorkspace,
-  "ensureCorrectionDraft" | "readCurrentDocumentSnapshot" | "correctionGameCatalog"
->;
+type Workspace = DraftWorkspace & Pick<StagingWorkspace, "correctionGameCatalog">;
 type Repository = Pick<
   RecordCorrectionRepository,
   | "assess"
   | "assessmentBasis"
   | "pendingNoticeIds"
   | "case"
+  | "caseSnapshot"
   | "listCases"
   | "listCasesForImport"
   | "listCaseSummaries"
@@ -66,7 +70,10 @@ type Repository = Pick<
   | "reviewAction"
 > &
   Partial<
-    Pick<RecordCorrectionRepository, "approvalEvidence" | "markProposalBundle" | "matchupContext">
+    Pick<
+      RecordCorrectionRepository,
+      "approvalEvidence" | "approvalHistory" | "markProposalBundle" | "matchupContext"
+    >
   >;
 
 interface CandidateIntent {
@@ -78,7 +85,7 @@ interface PreparedProposal {
   readonly proposal: RecordCorrectionProposal;
   readonly generation?: number;
   readonly documentHash?: string;
-  readonly carry?: readonly RecordCorrectionApprovalReference[];
+  readonly approvalPlan?: RecordCorrectionApprovalPlan;
 }
 
 const conflictingNotice =
@@ -209,8 +216,10 @@ export class RecordCorrectionService {
         assessedAt: this.now().toISOString(),
       });
 
-    const gameCandidates = exactGameCandidates.filter((game) =>
-      matchesRecordCorrectionDoubleheader(game.sourceGameId, notice.doubleheaderNumber),
+    const gameCandidates = recordCorrectionEligibleGames(
+      exactGameCandidates,
+      notice.doubleheaderNumber,
+      null,
     );
     const eligible = gameCandidates.filter(
       (game) => selection === null || game.gameId === selection.gameId,
@@ -463,40 +472,61 @@ export class RecordCorrectionService {
     return { ...item, draftProgress };
   }
 
-  public async createDraft(noticeId: string): Promise<{
+  public async createDraft(
+    noticeId: string,
+    expectedCaseVersion: number,
+  ): Promise<{
     readonly sessionId: string;
     readonly sessionVersion: number;
     readonly noticeId: string;
   }> {
-    let item = await this.requiredCase(noticeId, true);
-    if (item.status === "out_of_scope" || item.status === "dismissed")
+    const snapshot = await this.repository.caseSnapshot(noticeId);
+    if (snapshot === null)
+      throw new RecordCorrectionNotFoundError("기록정정 공지를 찾을 수 없습니다.");
+    if (!snapshot.assessmentCurrent || snapshot.item.caseVersion !== expectedCaseVersion)
       throw new RecordCorrectionConflictError(
-        "현재 지원 범위 밖의 공지는 보정 작업을 만들 수 없습니다.",
+        "공지 평가가 바뀌었습니다. 최신 경기와 플레이 후보를 다시 확인하세요.",
       );
-    if (item.gameId === null || item.gameRevision === null || item.eventId === null)
+    const selected = selectedDraftTarget(snapshot.item);
+    if (selected === undefined)
       throw new RecordCorrectionConflictError("먼저 경기와 플레이 후보를 확정해야 합니다.");
-    const gameId = item.gameId;
-    let current = await this.workspace.readCurrentDocumentSnapshot(gameId);
-    if (current === null) {
-      const base = await this.revisionStore.currentRevisionBase(gameId);
-      if (base === null)
-        throw new RecordCorrectionConflictError("정정 대상의 현재 DB revision을 찾을 수 없습니다.");
-      if (item.gameRevision !== base.revision) {
-        // Re-match the play as well as the revision: later corrections may remove or move it.
-        item = await this.assessNotice(item.notice);
-        if (item.gameId !== gameId || item.eventId === null || item.gameRevision === null)
-          throw new RecordCorrectionConflictError(
-            "최신 DB revision으로 재검토했습니다. 경기와 플레이 후보를 다시 확인하세요.",
-          );
-      }
-      const document = await this.revisionStore.loadCorrectionDraft(gameId, item.gameRevision);
-      const replay = await compileDocument(this.computation, document);
-      current = await this.workspace.ensureCorrectionDraft(
-        document,
-        storedCompilerFindings(replay.findings),
+    const { gameId } = selected;
+    let current;
+    try {
+      current = await openCorrectionDraft(
+        this.workspace,
+        this.revisionStore,
+        gameId,
+        selected.revision,
+        "resume",
+      );
+    } catch (error: unknown) {
+      if (!(error instanceof RevisionConflictError)) throw error;
+      const assessed = await this.assessForJob(noticeId);
+      const refreshed = await this.repository.caseSnapshot(noticeId);
+      const target = refreshed === null ? undefined : selectedDraftTarget(refreshed.item);
+      if (
+        assessed === null ||
+        refreshed === null ||
+        !refreshed.assessmentCurrent ||
+        refreshed.item.caseVersion !== assessed.caseVersion ||
+        refreshed.publication !== snapshot.publication ||
+        refreshed.decisionSequence !== snapshot.decisionSequence ||
+        target === undefined ||
+        !samePlateAppearance(selected, target)
+      )
+        throw new RecordCorrectionConflictError(
+          "최신 DB revision으로 재검토했습니다. 경기와 플레이 후보를 다시 확인하세요.",
+        );
+      current = await openCorrectionDraft(
+        this.workspace,
+        this.revisionStore,
+        gameId,
+        target.revision,
+        "resume",
       );
     }
-    const session = await this.sessions.create({ gameId, authority: current.authority });
+    const session = await this.sessions.create({ gameId, authority: current.authority }, current);
     return { sessionId: session.sessionId, sessionVersion: session.sessionVersion, noticeId };
   }
 
@@ -520,7 +550,7 @@ export class RecordCorrectionService {
       proposal,
       generation,
       documentHash: provedHash,
-      carry,
+      approvalPlan,
     } = await this.sessionProposal(session, item);
     if (proposal.proposalHash !== proposalHash)
       throw new RecordCorrectionConflictError("KBO 정정 제안이 stale 상태입니다.");
@@ -537,12 +567,16 @@ export class RecordCorrectionService {
         documentHash,
       };
       return this.repository.markProposalBundle === undefined || generation === undefined
-        ? [await this.repository.markProposalApplied(input)]
+        ? [
+            ...this.sessions
+              .approvalReferences(sessionId)
+              .filter((ref) => ref.noticeId !== noticeId),
+            await this.repository.markProposalApplied(input),
+          ]
         : this.repository.markProposalBundle({
             ...input,
             generation,
-            ...(carry === undefined ? {} : { carry }),
-            previousDocumentHash: session.draftDocumentHash,
+            ...(approvalPlan === undefined ? {} : { plan: approvalPlan }),
           });
     };
     if (proposal.batch === null)
@@ -659,21 +693,28 @@ export class RecordCorrectionService {
     if (own === null) return reject(unprovedDraft);
     const prior = approvals.filter((ref) => ref.noticeId !== item.noticeId);
     const evidence = (await this.repository.approvalEvidence?.(approvals)) ?? [];
-    const eligibleEvidence = evidence.filter(
-      (proof) =>
-        proof.documentHash === session.draftDocumentHash &&
-        proof.gameId === game.gameId &&
-        proof.revision === game.revision &&
-        proof.baseHash === game.documentHash,
-    );
-    const approvedIntents = await this.authorizedIntents(
-      base,
-      game,
-      group,
-      eligibleEvidence.filter((proof) => proof.noticeId !== item.noticeId),
-    );
-    if (approvedIntents === null || approvedIntents.length !== prior.length)
+    const history = (await this.repository.approvalHistory?.(
+      prior,
+      { gameId: game.gameId, revision: game.revision, baseHash: game.documentHash },
+      item.notice,
+    )) ?? {
+      active: evidence.filter((proof) => proof.noticeId !== item.noticeId),
+      recorded: evidence.filter((proof) => proof.noticeId !== item.noticeId),
+      unknown: false,
+    };
+    if (
+      history.unknown ||
+      history.recorded.length !== prior.length ||
+      history.active.some(
+        (proof) =>
+          proof.gameId !== game.gameId ||
+          proof.revision !== game.revision ||
+          proof.baseHash !== game.documentHash,
+      )
+    )
       return reject(unprovedDraft);
+    const approvedIntents = await this.authorizedIntents(base, game, group, history.active);
+    if (approvedIntents === null) return reject(unprovedDraft);
 
     const candidate =
       proposal.batch === null
@@ -682,10 +723,32 @@ export class RecordCorrectionService {
     const documentHash = stagingDocumentHash(candidate);
     const independentlyOpened =
       this.sessions.hasIndependentRecordCorrectionBase?.(session.sessionId) === true;
-    const intents = [...approvedIntents, own];
-    if (
-      approvals.length === 0 ? !independentlyOpened : eligibleEvidence.length !== approvals.length
-    ) {
+    const byNotice = new Map(
+      [...approvedIntents, own].map((intent) => [intent.notice.noticeId, intent]),
+    );
+    const order = [
+      ...new Set([...approvals.map((reference) => reference.noticeId), item.noticeId]),
+    ];
+    const intents = order.flatMap((noticeId) => {
+      const intent = byNotice.get(noticeId);
+      return intent === undefined ? [] : [intent];
+    });
+    const canExtend =
+      approvals.length === 0
+        ? independentlyOpened
+        : history.active.length === prior.length &&
+          history.active.every((proof) => proof.documentHash === session.draftDocumentHash) &&
+          (!approvals.some((reference) => reference.noticeId === item.noticeId) ||
+            evidence.some(
+              (proof) =>
+                proof.noticeId === item.noticeId &&
+                proof.gameId === game.gameId &&
+                proof.revision === game.revision &&
+                proof.baseHash === game.documentHash &&
+                proof.eventId === selected.eventId &&
+                proof.documentHash === session.draftDocumentHash,
+            ));
+    if (!canExtend) {
       const reproduced = await this.reproduceEffects(base, intents);
       if (reproduced === null || stagingDocumentHash(reproduced) !== documentHash)
         return reject(unprovedDraft);
@@ -697,7 +760,12 @@ export class RecordCorrectionService {
       proposal: { ...proposal, eligible: true, reasons: [] },
       generation: group.generation,
       documentHash,
-      carry: prior,
+      approvalPlan: {
+        kind: canExtend ? "extend" : "rebuild",
+        previousDocumentHash: session.draftDocumentHash,
+        previous: approvals,
+        carry: history.active.map(({ noticeId, actionSequence }) => ({ noticeId, actionSequence })),
+      },
     };
   }
 
@@ -790,10 +858,10 @@ export class RecordCorrectionService {
   ): Promise<CandidateIntent[]> {
     const notice = normalizeKboRecordCorrectionNotice(entry.notice);
     if (!hasActionableCorrection(notice)) return [];
-    const eligible = group.games.filter(
-      (candidate) =>
-        matchesRecordCorrectionDoubleheader(candidate.sourceGameId, notice.doubleheaderNumber) &&
-        (entry.selection === null || candidate.gameId === entry.selection.gameId),
+    const eligible = recordCorrectionEligibleGames(
+      group.games,
+      notice.doubleheaderNumber,
+      entry.selection?.gameId ?? null,
     );
     if (eligible.length !== 1 || eligible[0]?.gameId !== game.gameId) return [];
     const matches = (await this.matchCandidates(notice, game, base)).filter(
@@ -1002,6 +1070,26 @@ function satisfiesOfficialAfterState(proposal: BuiltRecordCorrectionProposal): b
     proposal.reasons.length === 0 &&
     proposal.changes.some((change) => change.kind !== "evidence_only") &&
     !proposal.changes.some((change) => change.state === "change" || change.state === "conflict")
+  );
+}
+
+function selectedDraftTarget(
+  item: RecordCorrectionCase,
+): RecordCorrectionMatchCandidate | undefined {
+  if (
+    item.status === "dismissed" ||
+    item.status === "out_of_scope" ||
+    item.status === "resolved" ||
+    item.gameId === null ||
+    item.gameRevision === null ||
+    item.eventId === null
+  )
+    return undefined;
+  return item.candidates.find(
+    (candidate) =>
+      candidate.gameId === item.gameId &&
+      candidate.eventId === item.eventId &&
+      candidate.revision === item.gameRevision,
   );
 }
 

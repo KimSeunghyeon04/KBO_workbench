@@ -286,57 +286,65 @@ export class StagingWorkspace {
     );
   }
 
-  /** Compile once before publishing a reopened sealed revision as a correction draft. */
-  public async saveCorrectionDraft(document: StagingGameDocumentV2): Promise<void> {
+  /** Prepare outside the game gate. The returned publisher checks the current file before writing. */
+  public async prepareCorrectionDraft(
+    document: StagingGameDocumentV2,
+    findings?: readonly StoredFinding[],
+  ): Promise<
+    (options?: {
+      readonly preserve?: boolean;
+      readonly expectedToken?: string | null;
+      readonly guard?: (publish: () => Promise<void>) => Promise<void>;
+    }) => Promise<CurrentDocumentSnapshot>
+  > {
     const parsed = parseStagingGameDocumentV2(document);
     const compiled = await this.compile(parsed);
-    const findings = parseStoredFindings(storedCompilerFindings(compiled.findings));
-    const authority = findings.some((finding) => finding.severity === "blocking")
+    const compilerFindings = storedCompilerFindings(compiled.findings);
+    const stored = parseStoredFindings(findings ?? compilerFindings);
+    const authority = [...stored, ...compilerFindings].some(
+      (finding) => finding.severity === "blocking",
+    )
       ? "quarantine"
       : "staging";
-    await this.saveOriginalIfAbsent(parsed, findings);
-    await this.transitionDocument(
-      authority,
-      parsed,
-      findings,
-      false,
-      undefined,
-      parsed.revisionBase.kind === "sealed_revision"
-        ? { fromSealedDraft: true, independentRecordCorrection: true }
-        : undefined,
-    );
+    return async (options) => {
+      await this.transitionDocument(
+        authority,
+        parsed,
+        stored,
+        options?.preserve,
+        options?.expectedToken,
+        parsed.revisionBase.kind === "sealed_revision"
+          ? { fromSealedDraft: true, independentRecordCorrection: true }
+          : undefined,
+        undefined,
+        async (publish) => {
+          const write = async () => {
+            await this.saveOriginalIfAbsent(parsed, stored);
+            await publish();
+          };
+          if (options?.guard === undefined) await write();
+          else await options.guard(write);
+        },
+      );
+      const current = await this.readCurrentDocumentSnapshot(parsed.metadata.gameId);
+      if (current === null)
+        throw new StaleStagingDocumentError("교정 초안을 여는 동안 current 원장이 변경되었습니다.");
+      return current;
+    };
   }
 
-  /** Resume a saved correction without replacing its edits, findings or sealed base. */
+  public async saveCorrectionDraft(document: StagingGameDocumentV2): Promise<void> {
+    await (
+      await this.prepareCorrectionDraft(document)
+    )();
+  }
+
   public async ensureCorrectionDraft(
     document: StagingGameDocumentV2,
     findings: readonly StoredFinding[],
   ): Promise<CurrentDocumentSnapshot> {
     const existing = await this.readCurrentDocumentSnapshot(document.metadata.gameId);
-    if (existing !== null) return existing;
-    const parsed = parseStagingGameDocumentV2(document);
-    const storedFindings = parseStoredFindings(findings);
-    const compiled = await this.compile(parsed);
-    const authority = [...storedFindings, ...compiled.findings].some(
-      (finding) => finding.severity === "blocking",
-    )
-      ? "quarantine"
-      : "staging";
-    await this.saveOriginalIfAbsent(parsed, storedFindings);
-    await this.transitionDocument(
-      authority,
-      parsed,
-      storedFindings,
-      true,
-      undefined,
-      parsed.revisionBase.kind === "sealed_revision"
-        ? { fromSealedDraft: true, independentRecordCorrection: true }
-        : undefined,
-    );
-    const current = await this.readCurrentDocumentSnapshot(parsed.metadata.gameId);
-    if (current === null)
-      throw new StaleStagingDocumentError("교정 초안을 여는 동안 current 원장이 변경되었습니다.");
-    return current;
+    return existing ?? (await this.prepareCorrectionDraft(document, findings))({ preserve: true });
   }
 
   public async saveSourceFailure(
@@ -740,6 +748,7 @@ export class StagingWorkspace {
       transition: NonNullable<CorrectionJournal["transition"]>,
       publish: (operationId?: string) => Promise<void>,
     ) => Promise<void>,
+    guardDraft?: (publish: () => Promise<void>) => Promise<void>,
   ): Promise<void> {
     this.assertOpen();
     const { gameId, season } = document.metadata;
@@ -758,8 +767,10 @@ export class StagingWorkspace {
       previous?.authority === currentDocumentAuthority(authority) &&
       previous.documentHash === documentHash &&
       previous.contentHash === contentHash
-    )
+    ) {
+      await guardDraft?.(async () => {});
       return;
+    }
     const reusable = await this.reusableActiveDocument(gameId, contentHash);
     const generation =
       reusable?.generation ?? (await this.currentStorage.nextGeneration(gameId, previous));
@@ -784,8 +795,10 @@ export class StagingWorkspace {
       if (reusable === null) await this.writeDocumentArtifact(target, document, envelope);
       await this.transitionCurrent(previous, target, operationId);
     };
-    if (withCorrectionJournal === undefined) await publish();
-    else await withCorrectionJournal({ previous, target }, publish);
+    if (withCorrectionJournal !== undefined)
+      await withCorrectionJournal({ previous, target }, publish);
+    else if (guardDraft !== undefined) await guardDraft(publish);
+    else await publish();
   }
 
   private async writeDocumentArtifact(

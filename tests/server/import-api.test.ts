@@ -111,6 +111,15 @@ describe("import HTTP API", () => {
       status: "succeeded",
       revision: 1,
     });
+    const reconciliation = vi.spyOn(manager, "reconcile");
+    const confirmed = await app.inject({
+      method: "POST",
+      url: `/api/v2/import-jobs/${jobId}/reconcile?scope=publication`,
+    });
+    expect(confirmed.statusCode).toBe(200);
+    expect(confirmed.json()).toMatchObject({ status: "succeeded", revision: 1 });
+    expect(reconciliation.mock.lastCall).toEqual([jobId, "publication"]);
+
     const revisions = await app.inject({
       method: "GET",
       url: `/api/v2/games/${document.metadata.gameId}/revisions`,

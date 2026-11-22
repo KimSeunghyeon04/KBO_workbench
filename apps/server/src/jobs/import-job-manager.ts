@@ -55,15 +55,36 @@ interface InternalImportJob {
   sourceSeason: number | null;
   target: ImportTarget | null;
   snapshot: ImportJob;
-  execution: Promise<void> | null;
+  execution: ImportReservation | null;
+  settlement?: Promise<void>;
+  cancellation?: Promise<void>;
+  followUp?: Promise<void>;
+  cleaningArtifact?: true;
   publicationPending?: true;
+  publicationFailure?: ImportJobRecord["publicationFailure"];
+  retryDelay?: number;
 }
+interface ImportReservation {
+  phase: "waiting" | "running";
+  completion?: Promise<void>;
+}
+interface ImportFollowUpQueue {
+  readonly pending: (() => Promise<void>)[];
+  active: number;
+}
+type ImportExecution =
+  | { readonly kind: "sealed"; readonly result: ImportedRevision }
+  | { readonly kind: "failed"; readonly error: unknown }
+  | { readonly kind: "deferred" }
+  | { readonly kind: "storageFailure"; readonly error: unknown };
+
 export class ImportJobNotFoundError extends Error {}
 export class ImportIdempotencyConflictError extends Error {}
 export class ImportSourceNotReadyError extends Error {}
 
 export class ImportJobManager {
   private readonly jobs = new Map<string, InternalImportJob>();
+  private readonly jobIdsByGame = new Map<string, Set<string>>();
   private readonly retainedJobs = new Map<string, ImportJob>();
   private orderedIds: readonly string[] | undefined;
   private readonly pendingJobIds: string[] = [];
@@ -74,7 +95,13 @@ export class ImportJobManager {
   >();
   private readonly selections = new Map<string, ImportSelectionRecord>();
   private creationTail: Promise<unknown> = Promise.resolve();
-  private runningJobs = 0;
+  private cancellationTail: Promise<unknown> = Promise.resolve();
+  private readonly executingGames = new Set<string>();
+  private readonly retries = new Map<InternalImportJob, number>();
+  private readonly fileCleanups: ImportFollowUpQueue = { pending: [], active: 0 };
+  private readonly reevaluations: ImportFollowUpQueue = { pending: [], active: 0 };
+  private retryTimer: ReturnType<typeof setTimeout> | undefined;
+  private retrying = false;
   private closed = false;
 
   public constructor(
@@ -97,7 +124,7 @@ export class ImportJobManager {
       throw new Error("동시 적재 작업 수는 1 이상의 정수여야 합니다.");
   }
 
-  public async restore(): Promise<void> {
+  public async restore({ background = false } = {}): Promise<void> {
     const storage = this.workspace.imports;
     if (storage === undefined) return;
     this.orderedIds = undefined;
@@ -117,46 +144,164 @@ export class ImportJobManager {
         job.snapshot.followUpPending !== true
       )
         continue;
-      await this.restoreJob(job);
+      if (job.snapshot.status === "succeeded") {
+        const followUp = this.queueFollowUp(job);
+        if (!background) await followUp;
+      } else if (background) this.enqueueCheck(job, 0);
+      else {
+        await this.settle(job);
+        await job.followUp;
+      }
     }
   }
 
-  private async restoreJob(job: InternalImportJob): Promise<void> {
-    await this.withGame(job.snapshot.gameId, async () => {
-      if (
-        job.snapshot.status === "succeeded" &&
-        job.snapshot.revision !== null &&
-        job.snapshot.documentHash !== null
-      ) {
-        await this.followUpUnlocked(job);
-        await this.save(job);
-        return;
-      }
-      let committed: ImportedRevision | null;
+  private settle(job: InternalImportJob, outcome?: ImportExecution): Promise<void> {
+    if (job.execution !== null) return Promise.resolve();
+    if (job.cancellation !== undefined) return job.cancellation;
+    if (job.settlement !== undefined) return job.settlement;
+    this.retries.delete(job);
+    const pending = Promise.resolve()
+      .then(() => this.settleJob(job, outcome))
+      .catch((error: unknown) => this.storageFailed(job, error))
+      .finally(() => {
+        delete job.settlement;
+        if (job.snapshot.status === "succeeded" && job.snapshot.followUpPending === true)
+          void this.queueFollowUp(job);
+        this.armRetryTimer();
+        this.schedule();
+      });
+    job.settlement = pending;
+    return pending;
+  }
+
+  private async settleJob(job: InternalImportJob, outcome?: ImportExecution): Promise<void> {
+    if (job.snapshot.status === "succeeded") return;
+    if (outcome?.kind === "storageFailure") {
+      this.storageFailed(job, outcome.error);
+      return;
+    }
+    if (outcome?.kind === "sealed") {
+      await this.recordPublication(job, outcome.result);
+      return;
+    }
+    if (isTerminal(job.snapshot.status) && job.publicationPending !== true) return;
+    const failure =
+      outcome?.kind === "failed"
+        ? this.describeFailure(job, outcome.error)
+        : job.publicationFailure;
+    // Queued records never entered the database. Older running records may still need a receipt lookup.
+    if (
+      job.publicationPending === true ||
+      (outcome === undefined && job.snapshot.status === "running")
+    ) {
+      let receipt: ImportedRevision | null;
       try {
-        committed = await this.committedPublication(job);
-      } catch {
-        this.keepPublicationPending(job);
-        await this.save(job);
+        receipt = await this.committedPublication(job);
+      } catch (error: unknown) {
+        if (error instanceof RevisionConflictError) {
+          await this.fail(job, {
+            status: "failed",
+            error: error.message,
+            errorCategory: "persistence",
+          });
+          return;
+        }
+        await this.writeState(
+          job,
+          {
+            ...job.snapshot,
+            status: "running",
+            publicationCheckPending: true,
+            revision: null,
+            documentHash: null,
+            projectionHash: null,
+            finishedAt: null,
+            error: "DB 봉인 결과를 아직 확인하지 못했습니다. 결과를 다시 확인합니다.",
+            errorCategory: "persistence",
+          },
+          true,
+          failure,
+        );
+        const delay = job.retryDelay ?? 1000;
+        job.retryDelay = Math.min(delay * 2, 30000);
+        this.enqueueCheck(job, delay);
         return;
       }
-      if (committed !== null) {
-        this.recordPublication(job, committed);
-        await this.save(job);
-        await this.followUpUnlocked(job);
-      } else {
-        delete job.publicationPending;
-        job.snapshot = {
-          ...job.snapshot,
+      if (receipt !== null) {
+        await this.recordPublication(job, receipt);
+        return;
+      }
+    }
+    if (failure !== undefined) await this.fail(job, failure);
+    else
+      await this.fail(
+        job,
+        {
           status: "cancelled",
-          interrupted: true,
-          finishedAt: this.now().toISOString(),
           error: "봉인 기록이 확인되지 않은 중단 작업입니다. 현재 상태를 확인해 다시 선택하세요.",
           errorCategory: "persistence",
-        };
-      }
-      await this.save(job);
-    });
+        },
+        true,
+      );
+  }
+
+  private enqueueCheck(job: InternalImportJob, delay: number): void {
+    if (this.closed) return;
+    this.retries.set(job, Date.now() + delay);
+    this.armRetryTimer();
+  }
+
+  private armRetryTimer(): void {
+    clearTimeout(this.retryTimer);
+    this.retryTimer = undefined;
+    if (this.closed || this.retrying || this.retries.size === 0) return;
+    const first = [...this.retries].reduce((earliest, item) =>
+      item[1] < earliest[1] ? item : earliest,
+    );
+    this.retryTimer = setTimeout(
+      () => {
+        this.retryTimer = undefined;
+        this.retrying = true;
+        void this.settle(first[0]).finally(() => {
+          this.retrying = false;
+          this.armRetryTimer();
+        });
+      },
+      Math.max(0, first[1] - Date.now()),
+    );
+    this.retryTimer.unref();
+  }
+
+  private storageFailed(job: InternalImportJob, error: unknown): void {
+    this.closed = true;
+    this.armRetryTimer();
+    job.snapshot = {
+      ...job.snapshot,
+      ...(job.snapshot.status === "succeeded"
+        ? {}
+        : job.publicationPending === true
+          ? { status: "running" as const, publicationCheckPending: true as const }
+          : { status: "failed" as const, finishedAt: this.now().toISOString() }),
+      error: `적재 이력 저장 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`,
+      errorCategory: "persistence",
+    };
+    for (const pending of this.jobs.values()) {
+      if (
+        pending.snapshot.status !== "queued" ||
+        pending.execution !== null ||
+        pending.settlement !== undefined ||
+        pending.cancellation !== undefined
+      )
+        continue;
+      pending.snapshot = {
+        ...pending.snapshot,
+        status: "cancelled",
+        interrupted: true,
+        finishedAt: this.now().toISOString(),
+        error: "이력 저장 장치 오류로 실행하지 않았습니다. 서버 복구 후 다시 선택하세요.",
+        errorCategory: "persistence",
+      };
+    }
   }
 
   private async committedPublication(job: InternalImportJob): Promise<ImportedRevision | null> {
@@ -174,23 +319,16 @@ export class ImportJobManager {
     return committed === undefined ? null : { ...committed, gameId: target.gameId };
   }
 
-  private keepPublicationPending(job: InternalImportJob): void {
-    job.publicationPending = true;
-    job.snapshot = {
-      ...job.snapshot,
-      status: "running",
-      finishedAt: null,
-      error: "DB 봉인 결과를 아직 확인하지 못했습니다. 복구 시 다시 확인합니다.",
-      errorCategory: "persistence",
-    };
-  }
-
-  private recordPublication(job: InternalImportJob, imported: ImportedRevision): void {
-    delete job.publicationPending;
-    job.snapshot = {
-      ...job.snapshot,
+  private async recordPublication(
+    job: InternalImportJob,
+    imported: ImportedRevision,
+  ): Promise<void> {
+    const previous = { ...job.snapshot };
+    delete previous.publicationCheckPending;
+    const confirmed: ImportJob = {
+      ...previous,
       status: "succeeded",
-      finishedAt: job.snapshot.finishedAt ?? this.now().toISOString(),
+      finishedAt: previous.finishedAt ?? this.now().toISOString(),
       revision: imported.revision,
       documentHash: imported.documentHash,
       projectionHash: imported.projectionHash,
@@ -198,6 +336,74 @@ export class ImportJobManager {
       error: null,
       errorCategory: null,
     };
+    try {
+      await this.writeState(job, confirmed);
+    } catch (error: unknown) {
+      // Keep the dispatch journal until the confirmed result can be persisted for restart.
+      this.storageFailed(
+        job,
+        new Error("DB 봉인은 확인됐습니다. 서버 복구 후 적재 이력을 다시 확인하세요.", {
+          cause: error,
+        }),
+      );
+    }
+  }
+
+  private describeFailure(
+    job: InternalImportJob,
+    error: unknown,
+  ): NonNullable<ImportJobRecord["publicationFailure"]> {
+    return {
+      status:
+        error instanceof ImportSourceNotReadyError && job.target !== null ? "cancelled" : "failed",
+      error: error instanceof Error ? error.message : "알 수 없는 적재 오류",
+      errorCategory:
+        error instanceof ImportSourceNotReadyError ||
+        error instanceof BlockingImportError ||
+        error instanceof GameAlreadyImportedError ||
+        error instanceof RevisionConflictError
+          ? "domain"
+          : "persistence",
+    };
+  }
+
+  private fail(
+    job: InternalImportJob,
+    failure: NonNullable<ImportJobRecord["publicationFailure"]>,
+    interrupted = false,
+  ): Promise<void> {
+    const previous = { ...job.snapshot };
+    delete previous.publicationCheckPending;
+    return this.writeState(job, {
+      ...previous,
+      ...failure,
+      ...(interrupted ? { interrupted: true } : {}),
+      revision: null,
+      documentHash: null,
+      projectionHash: null,
+      finishedAt: this.now().toISOString(),
+    });
+  }
+
+  private async writeState(
+    job: InternalImportJob,
+    snapshot: ImportJob,
+    publicationPending?: true,
+    publicationFailure?: ImportJobRecord["publicationFailure"],
+  ): Promise<void> {
+    await this.workspace.imports?.saveJob({
+      request: job.request,
+      sourceSeason: job.sourceSeason,
+      target: job.target,
+      job: snapshot,
+      ...(publicationPending ? { publicationPending } : {}),
+      ...(publicationFailure === undefined ? {} : { publicationFailure }),
+    });
+    job.snapshot = snapshot;
+    if (publicationPending) job.publicationPending = true;
+    else delete job.publicationPending;
+    if (publicationFailure !== undefined) job.publicationFailure = publicationFailure;
+    else delete job.publicationFailure;
   }
 
   public create(request: ImportJobCreateRequest): Promise<ImportJob> {
@@ -211,8 +417,12 @@ export class ImportJobManager {
           );
         return this.get(existing.jobId);
       }
-      const target = await this.workspace.readImportTarget?.(request.gameId);
-      const job = this.prepare(request, target ?? null);
+      const target = (await this.workspace.readImportTarget?.(request.gameId)) ?? null;
+      if (this.hasUnconfirmedGame(request.gameId, undefined, true))
+        throw new ImportSourceNotReadyError("같은 경기의 선행 적재 결과를 확인하고 있습니다.");
+      if (this.isCleaningTarget(request.gameId, target))
+        throw new ImportSourceNotReadyError("같은 작업본의 적재 후 정리가 진행 중입니다.");
+      const job = this.prepare(request, target);
       await this.save(job);
       this.register(this.record(job));
       this.pendingJobIds.push(job.snapshot.jobId);
@@ -250,13 +460,6 @@ export class ImportJobManager {
     const included = criteria.gameIds === undefined ? null : new Set(criteria.gameIds);
     const excluded = new Set(criteria.excludedGameIds ?? []);
     const search = (criteria.search ?? "").trim().toLocaleLowerCase("ko-KR");
-    const active = new Set(
-      this.list()
-        .filter(
-          (job) => !isTerminal(job.status) || (job.followUpPending === true && job.error === null),
-        )
-        .map((job) => job.gameId),
-    );
     const candidates = catalog.games
       .filter(
         (game) =>
@@ -264,7 +467,7 @@ export class ImportJobManager {
           (criteria.season === undefined || game.season === criteria.season) &&
           (included === null || included.has(game.gameId)) &&
           !excluded.has(game.gameId) &&
-          !active.has(game.gameId) &&
+          !this.hasActiveJob(game.gameId) &&
           (search === "" ||
             `${game.gameId} ${"gameDate" in game ? game.gameDate : ""} ${"teams" in game ? `${game.teams.away.name} ${game.teams.home.name}` : ""}`
               .toLocaleLowerCase("ko-KR")
@@ -284,13 +487,17 @@ export class ImportJobManager {
         targets.push(targetOf(document));
       }
     }
+    const available = targets.filter(
+      (target) =>
+        !this.hasActiveJob(target.gameId) && !this.isCleaningTarget(target.gameId, target),
+    );
     const selection: ImportSelection = {
       selectionId: this.newId(),
       createdAt: this.now().toISOString(),
-      count: targets.length,
+      count: available.length,
       criteria,
     };
-    const record = { selection, targets };
+    const record = { selection, targets: available };
     await this.workspace.imports?.saveSelection(record);
     this.selections.set(selection.selectionId, record);
     return selection;
@@ -317,16 +524,11 @@ export class ImportJobManager {
       if (selected === undefined || selected === null)
         throw new ImportSourceNotReadyError("확정한 적재 대상을 찾을 수 없습니다.");
       const batchId = this.newId();
-      const active = new Set(
-        this.list()
-          .filter(
-            (job) =>
-              !isTerminal(job.status) || (job.followUpPending === true && job.error === null),
-          )
-          .map((job) => job.gameId),
-      );
       const jobs = selected.targets
-        .filter((target) => !active.has(target.gameId))
+        .filter(
+          (target) =>
+            !this.hasActiveJob(target.gameId) && !this.isCleaningTarget(target.gameId, target),
+        )
         .map((target) =>
           this.prepare(
             {
@@ -433,55 +635,104 @@ export class ImportJobManager {
   }
   public async cancel(jobId: string): Promise<ImportJob> {
     const job = this.internal(jobId);
-    if (job.snapshot.status === "queued") {
-      job.snapshot = {
-        ...job.snapshot,
-        status: "cancelled",
-        finishedAt: this.now().toISOString(),
-        error: "대기 중 취소했습니다.",
-        errorCategory: null,
-      };
-      await this.save(job);
-    }
+    await this.cancelQueued(job);
     return this.get(jobId);
   }
+
   public async cancelBatch(batchId: string): Promise<void> {
-    const pending = [...this.jobs.values()].filter(
-      (job) => job.snapshot.batchId === batchId && job.snapshot.status === "queued",
+    await Promise.all(
+      [...this.jobs.values()]
+        .filter((job) => job.snapshot.batchId === batchId)
+        .map((job) => this.cancelQueued(job)),
     );
-    for (const job of pending)
-      job.snapshot = {
-        ...job.snapshot,
-        status: "cancelled",
-        finishedAt: this.now().toISOString(),
-        error: "대기 중 취소했습니다.",
-        errorCategory: null,
-      };
-    for (const job of pending) await this.save(job);
   }
-  public async reconcile(jobId: string): Promise<ImportJob> {
+
+  private cancelQueued(job: InternalImportJob): Promise<void> | undefined {
+    if (job.cancellation !== undefined) return job.cancellation;
+    if (
+      job.snapshot.status !== "queued" ||
+      job.execution?.phase === "running" ||
+      job.settlement !== undefined
+    )
+      return undefined;
+    const cancellation = this.cancellationTail
+      .then(() =>
+        this.writeState(job, {
+          ...job.snapshot,
+          status: "cancelled",
+          finishedAt: this.now().toISOString(),
+          error: "대기 중 취소했습니다.",
+          errorCategory: null,
+        }),
+      )
+      .catch((error: unknown) => {
+        this.storageFailed(job, error);
+        throw error;
+      })
+      .finally(() => {
+        delete job.cancellation;
+        this.schedule();
+      });
+    job.cancellation = cancellation;
+    if (job.execution !== null) this.releaseReservation(job);
+    this.cancellationTail = cancellation.catch(() => undefined);
+    return cancellation;
+  }
+
+  public async reconcile(jobId: string, scope?: "publication"): Promise<ImportJob> {
     const job = this.internal(jobId);
-    if (job.publicationPending === true) {
-      await this.restoreJob(job);
-    } else if (job.snapshot.status === "succeeded" && job.snapshot.followUpPending === true) {
-      await this.followUp(job);
-      await this.save(job);
+    if (!this.closed) {
+      if (job.publicationPending === true || job.snapshot.publicationCheckPending === true)
+        await this.settle(job);
+      else if (
+        scope !== "publication" &&
+        job.snapshot.status === "succeeded" &&
+        job.snapshot.followUpPending === true
+      )
+        await this.queueFollowUp(job);
     }
     return this.get(jobId);
   }
+
   public async waitForTerminal(jobId: string): Promise<ImportJob> {
     const job = this.internal(jobId);
-    while (!isTerminal(job.snapshot.status) && job.execution === null)
+    while (job.snapshot.status === "queued" && job.execution === null && !this.closed)
       await new Promise<void>((resolve) => setImmediate(resolve));
-    await job.execution;
+    await job.execution?.completion;
+    await job.settlement;
+    await job.followUp;
     return this.get(jobId);
   }
+
+  public hasImportActivity(): boolean {
+    return (
+      this.executingGames.size > 0 ||
+      this.pendingJobIds.some((id) => {
+        const job = this.jobs.get(id);
+        return (
+          job?.snapshot.status === "queued" &&
+          job.cancellation === undefined &&
+          !this.hasUnconfirmedGame(job.snapshot.gameId, id) &&
+          !this.isCleaningTarget(job.snapshot.gameId, job.target, id)
+        );
+      })
+    );
+  }
+
   public async close(): Promise<void> {
     this.closed = true;
+    this.armRetryTimer();
+    this.retries.clear();
+    this.runFollowUps(this.fileCleanups);
+    this.runFollowUps(this.reevaluations);
     await this.creationTail;
-    for (const job of this.jobs.values()) await this.cancel(job.snapshot.jobId);
+    await Promise.allSettled([...this.jobs.values()].map((job) => this.cancelQueued(job)));
     await Promise.allSettled(
-      [...this.jobs.values()].flatMap((job) => (job.execution === null ? [] : [job.execution])),
+      [...this.jobs.values()].flatMap((job) => [
+        job.execution?.completion,
+        job.settlement,
+        job.followUp,
+      ]),
     );
   }
 
@@ -520,8 +771,14 @@ export class ImportJobManager {
       target: record.target,
       snapshot: record.job,
       ...(record.publicationPending ? { publicationPending: true as const } : {}),
+      ...(record.publicationFailure === undefined
+        ? {}
+        : { publicationFailure: record.publicationFailure }),
       execution: null,
     });
+    const gameIds = this.jobIdsByGame.get(record.job.gameId) ?? new Set<string>();
+    gameIds.add(record.job.jobId);
+    this.jobIdsByGame.set(record.job.gameId, gameIds);
     this.idempotency.set(record.request.idempotencyKey, {
       fingerprint: jobFingerprint(record.request),
       jobId: record.job.jobId,
@@ -534,6 +791,9 @@ export class ImportJobManager {
       target: job.target,
       job: job.snapshot,
       ...(job.publicationPending ? { publicationPending: true as const } : {}),
+      ...(job.publicationFailure === undefined
+        ? {}
+        : { publicationFailure: job.publicationFailure }),
     };
   }
   private async save(job: InternalImportJob): Promise<void> {
@@ -552,48 +812,118 @@ export class ImportJobManager {
     this.creationTail = pending.catch(() => undefined);
     return pending;
   }
+  private *gameJobs(gameId: string, exclude?: string): Iterable<InternalImportJob> {
+    for (const id of this.jobIdsByGame.get(gameId) ?? []) {
+      const job = this.jobs.get(id);
+      if (id !== exclude && job !== undefined) yield job;
+    }
+  }
+
+  private hasActiveJob(gameId: string): boolean {
+    for (const job of this.gameJobs(gameId)) if (!isTerminal(job.snapshot.status)) return true;
+    return false;
+  }
+
+  private hasUnconfirmedGame(gameId: string, exclude?: string, inactiveOnly = false): boolean {
+    for (const job of this.gameJobs(gameId, exclude)) {
+      if (job.publicationPending === true && (!inactiveOnly || job.execution === null)) return true;
+      if (!inactiveOnly && job.settlement !== undefined && job.snapshot.status === "running")
+        return true;
+    }
+    return false;
+  }
+
+  private isCleaningTarget(gameId: string, target: ImportTarget | null, exclude?: string): boolean {
+    for (const job of this.gameJobs(gameId, exclude)) {
+      if (job.cleaningArtifact !== true) continue;
+      if (target === null || job.target === null) return true;
+      if (
+        target.documentHash === job.target.documentHash &&
+        target.artifact?.generation === job.target.artifact?.generation &&
+        target.artifact?.contentHash === job.target.artifact?.contentHash
+      )
+        return true;
+    }
+    return false;
+  }
+
   private schedule(): void {
     if (this.closed) return;
-    while (this.runningJobs < this.maxConcurrentJobs) {
+    let remaining = this.pendingJobIds.length;
+    while (remaining-- > 0 && this.executingGames.size < this.maxConcurrentJobs) {
       const id = this.pendingJobIds.shift();
       if (id === undefined) return;
       const job = this.jobs.get(id);
-      if (job === undefined || job.execution !== null || job.snapshot.status !== "queued") continue;
-      this.runningJobs += 1;
-      job.execution = this.run(job)
-        .catch((error: unknown) => {
-          // 기록 장치가 실패하면 새 적재를 시작하지 않는다. 다음 시작에서 저장된 의도와 DB를 대조한다.
-          this.closed = true;
-          job.snapshot = {
-            ...job.snapshot,
-            status: job.snapshot.revision === null ? "failed" : "succeeded",
-            finishedAt: job.snapshot.finishedAt ?? this.now().toISOString(),
-            error: `적재 이력 저장 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`,
-            errorCategory: "persistence",
-          };
-          for (const pending of this.jobs.values()) {
-            if (pending.snapshot.status !== "queued") continue;
-            pending.snapshot = {
-              ...pending.snapshot,
-              status: "cancelled",
-              interrupted: true,
-              finishedAt: this.now().toISOString(),
-              error: "이력 저장 장치 오류로 실행하지 않았습니다. 서버 복구 후 다시 선택하세요.",
-              errorCategory: "persistence",
-            };
+      if (
+        job === undefined ||
+        job.execution !== null ||
+        job.settlement !== undefined ||
+        job.cancellation !== undefined ||
+        job.snapshot.status !== "queued"
+      )
+        continue;
+      const gameId = job.snapshot.gameId;
+      if (
+        this.executingGames.has(gameId) ||
+        this.hasUnconfirmedGame(gameId, id) ||
+        this.isCleaningTarget(gameId, job.target, id)
+      ) {
+        this.pendingJobIds.push(id);
+        continue;
+      }
+      this.executingGames.add(gameId);
+      const reservation: ImportReservation = { phase: "waiting" };
+      job.execution = reservation;
+      reservation.completion = this.run(job, reservation).then(
+        (outcome) => {
+          if (job.execution !== reservation) return;
+          this.releaseReservation(job);
+          if (outcome.kind === "deferred") {
+            if (this.closed) return this.cancelQueued(job);
+            if (job.cancellation === undefined && job.snapshot.status === "queued")
+              this.pendingJobIds.push(id);
+            this.schedule();
+            return;
           }
-        })
-        .finally(() => {
-          this.runningJobs -= 1;
+          const settlement = this.settle(job, outcome);
           this.schedule();
-        });
+          return settlement;
+        },
+        (error: unknown) => {
+          if (job.execution !== reservation) return;
+          this.releaseReservation(job);
+          this.storageFailed(job, error);
+        },
+      );
     }
   }
-  private async run(job: InternalImportJob): Promise<void> {
-    job.snapshot = { ...job.snapshot, status: "running", startedAt: this.now().toISOString() };
-    try {
-      await this.save(job);
-      await this.withGame(job.snapshot.gameId, async () => {
+
+  private releaseReservation(job: InternalImportJob): void {
+    job.execution = null;
+    this.executingGames.delete(job.snapshot.gameId);
+  }
+
+  private async run(
+    job: InternalImportJob,
+    reservation: ImportReservation,
+  ): Promise<ImportExecution> {
+    const gameId = job.snapshot.gameId;
+    return this.withGame(gameId, async () => {
+      if (
+        this.closed ||
+        job.execution !== reservation ||
+        job.snapshot.status !== "queued" ||
+        this.hasUnconfirmedGame(gameId, job.snapshot.jobId) ||
+        this.isCleaningTarget(gameId, job.target, job.snapshot.jobId)
+      )
+        return { kind: "deferred" };
+      reservation.phase = "running";
+      await this.writeState(job, {
+        ...job.snapshot,
+        status: "running",
+        startedAt: this.now().toISOString(),
+      });
+      try {
         if (job.target === null && this.workspace.readImportTarget !== undefined)
           throw new ImportSourceNotReadyError("접수 시 적재 가능 작업본이 없었습니다.");
         const catalog = await this.workspace.catalog();
@@ -626,8 +956,11 @@ export class ImportJobManager {
         const publication = this.importer.importPublication !== undefined;
         if (publication && target.artifact === undefined)
           throw new ImportSourceNotReadyError("저장된 작업본의 적재 식별자가 없습니다.");
-        if (publication) job.publicationPending = true;
-        await this.save(job);
+        try {
+          await this.writeState(job, job.snapshot, publication ? true : undefined);
+        } catch (error: unknown) {
+          return { kind: "storageFailure", error };
+        }
         const options: ImportOptions = {
           ...(publication ? { publication: { jobId: job.snapshot.jobId, target } } : {}),
           ...(target.recordCorrection === undefined
@@ -644,91 +977,111 @@ export class ImportJobManager {
           Object.keys(options).length === 0
             ? await this.importer.importRevision(document)
             : await this.importer.importRevision(document, options);
-        this.recordPublication(job, imported);
-        await this.save(job);
-        await this.followUpUnlocked(job);
-      });
-    } catch (error: unknown) {
-      if (job.publicationPending === true) {
-        let committed: ImportedRevision | null;
-        try {
-          committed = await this.committedPublication(job);
-        } catch {
-          this.keepPublicationPending(job);
-          await this.save(job);
-          return;
-        }
-        if (committed !== null) {
-          this.recordPublication(job, committed);
-          await this.save(job);
-          await this.followUp(job);
-          await this.save(job);
-          return;
-        }
-        delete job.publicationPending;
-      }
-      job.snapshot = {
-        ...job.snapshot,
-        status:
-          job.snapshot.revision !== null
-            ? "succeeded"
-            : error instanceof ImportSourceNotReadyError && job.target !== null
-              ? "cancelled"
-              : "failed",
-        finishedAt: this.now().toISOString(),
-        error: error instanceof Error ? error.message : "알 수 없는 적재 오류",
-        errorCategory:
-          error instanceof ImportSourceNotReadyError ||
-          error instanceof BlockingImportError ||
-          error instanceof GameAlreadyImportedError ||
-          error instanceof RevisionConflictError
-            ? "domain"
-            : "persistence",
-      };
-    }
-    await this.save(job);
-  }
-  private async followUp(job: InternalImportJob): Promise<void> {
-    await this.withGame(job.snapshot.gameId, () => this.followUpUnlocked(job));
-  }
-  private async followUpUnlocked(job: InternalImportJob): Promise<void> {
-    const { revision, documentHash } = job.snapshot;
-    if (revision === null || documentHash === null || job.sourceSeason === null) return;
-    try {
-      let cleanup: unknown;
-      try {
-        if (job.target?.artifact !== undefined) {
-          await this.workspace.removeImportedStaging?.(
-            job.sourceSeason,
-            job.snapshot.gameId,
-            documentHash,
-            job.target.artifact,
-          );
-        } else if (this.importer.importPublication === undefined) {
-          const current = (await this.workspace.catalog()).games.find(
-            (game) => game.gameId === job.snapshot.gameId,
-          );
-          if (current?.authority === "staging")
-            await this.workspace.removeImportedStaging?.(
-              job.sourceSeason,
-              job.snapshot.gameId,
-              documentHash,
-            );
-        }
+        return { kind: "sealed", result: imported };
       } catch (error: unknown) {
-        cleanup = error;
+        return { kind: "failed", error };
       }
-      await this.onSucceeded(job.snapshot.gameId, revision, documentHash);
-      if (cleanup !== undefined) throw cleanup;
-      job.snapshot = { ...job.snapshot, followUpPending: false, error: null, errorCategory: null };
-    } catch (error: unknown) {
-      job.snapshot = {
-        ...job.snapshot,
-        followUpPending: true,
-        error: `DB 저장 완료 · 후속 정리 필요: ${error instanceof Error ? error.message : "알 수 없는 오류"}`,
-        errorCategory: "persistence",
-      };
+    });
+  }
+
+  private queueFollowUp(job: InternalImportJob): Promise<void> | undefined {
+    if (this.closed) return job.followUp;
+    if (job.followUp !== undefined) return job.followUp;
+    job.cleaningArtifact = true;
+    const followUp = this.finishFollowUp(job)
+      .catch((error: unknown) => this.storageFailed(job, error))
+      .finally(() => {
+        delete job.followUp;
+        delete job.cleaningArtifact;
+        this.schedule();
+      });
+    job.followUp = followUp;
+    return followUp;
+  }
+
+  private followUpStage(
+    queue: ImportFollowUpQueue,
+    operation: () => Promise<void>,
+  ): Promise<boolean> {
+    const scheduled = new Promise<boolean>((resolve, reject) => {
+      queue.pending.push(async () => {
+        if (this.closed) {
+          resolve(false);
+          return;
+        }
+        try {
+          await operation();
+          resolve(true);
+        } catch (error: unknown) {
+          reject(error);
+        }
+      });
+    });
+    this.runFollowUps(queue);
+    return scheduled;
+  }
+
+  private runFollowUps(queue: ImportFollowUpQueue): void {
+    while (this.closed || queue.active < this.maxConcurrentJobs) {
+      const start = queue.pending.shift();
+      if (start === undefined) return;
+      queue.active += 1;
+      void start().finally(() => {
+        queue.active -= 1;
+        this.runFollowUps(queue);
+      });
     }
+  }
+
+  private async finishFollowUp(job: InternalImportJob): Promise<void> {
+    const { revision, documentHash, followUpPending, gameId } = job.snapshot;
+    const season = job.sourceSeason;
+    if (revision === null || documentHash === null || season === null || followUpPending !== true)
+      return;
+    let failure: unknown;
+    const cleaned = await this.followUpStage(this.fileCleanups, async () => {
+      try {
+        await this.withGame(gameId, async () => {
+          if (job.target?.artifact !== undefined) {
+            await this.workspace.removeImportedStaging?.(
+              season,
+              gameId,
+              documentHash,
+              job.target.artifact,
+            );
+          } else if (this.importer.importPublication === undefined) {
+            const current = (await this.workspace.catalog()).games.find(
+              (game) => game.gameId === gameId,
+            );
+            if (current?.authority === "staging")
+              await this.workspace.removeImportedStaging?.(season, gameId, documentHash);
+          }
+        });
+      } catch (error: unknown) {
+        failure = error;
+      }
+    });
+    delete job.cleaningArtifact;
+    this.schedule();
+    if (!cleaned) return;
+    const reevaluated = await this.followUpStage(this.reevaluations, async () => {
+      try {
+        await this.onSucceeded(gameId, revision, documentHash);
+      } catch (error: unknown) {
+        failure ??= error;
+      }
+    });
+    if (!reevaluated) return;
+    await this.writeState(job, {
+      ...job.snapshot,
+      followUpPending: failure !== undefined,
+      error:
+        failure === undefined
+          ? null
+          : "DB 저장 완료 · 후속 정리 필요: " +
+            (failure instanceof Error ? failure.message : "알 수 없는 오류"),
+      errorCategory: failure === undefined ? null : "persistence",
+    });
   }
   private withGame<T>(gameId: string, operation: () => Promise<T>): Promise<T> {
     return this.workspace.withGameOperation === undefined

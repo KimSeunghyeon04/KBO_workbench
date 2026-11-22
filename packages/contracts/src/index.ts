@@ -290,6 +290,7 @@ export {
   RecordCorrectionDraftProgressSchema,
   RecordCorrectionCaseStatusSchema,
   RecordCorrectionDecisionSchema,
+  RecordCorrectionDraftCreateRequestSchema,
   RecordCorrectionDraftCreateResponseSchema,
   RecordCorrectionJobCreateRequestSchema,
   RecordCorrectionJobCreatedSchema,

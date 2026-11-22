@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createRequestKey } from "../api/request-key";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { createImportForDocument, getImportJob } from "../api/import-client";
+import { createImportForDocument, getImportJob, reconcileImportJob } from "../api/import-client";
 import { queryKeys } from "../api/query-options";
 import type { CorrectionCommitCompletion } from "./use-correction-session-controller";
 
@@ -37,6 +37,12 @@ export function CommitCompletionPanel({
         ? 1_000
         : false,
   });
+  const reconcile = useMutation({
+    mutationFn: (jobId: string) => reconcileImportJob(jobId, "publication"),
+    onSuccess: (result) =>
+      queryClient.setQueryData([...queryKeys.jobs.import, "completion", result.jobId], result),
+  });
+  const checking = job.data?.publicationCheckPending === true;
   useEffect(() => {
     if (job.data?.status !== "succeeded" || job.data.followUpPending === true) return;
     void Promise.all(
@@ -61,12 +67,24 @@ export function CommitCompletionPanel({
           ? job.data?.followUpPending === true
             ? "DB 저장을 마쳤습니다. 작업 파일 정리 상태를 확인하고 있습니다."
             : "검증된 경기 기록을 DB에 저장했습니다."
-          : ready
-            ? "적재 가능한 원장으로 저장했습니다. 이 경기만 바로 DB에 적재할 수 있습니다."
-            : "검토가 필요한 항목과 함께 작업 내용을 저장했습니다."}
+          : checking
+            ? "봉인 결과를 확인하고 있습니다."
+            : ready
+              ? "적재 가능한 원장으로 저장했습니다. 이 경기만 바로 DB에 적재할 수 있습니다."
+              : "검토가 필요한 항목과 함께 작업 내용을 저장했습니다."}
       </p>
       <div className="operation-detail-actions">
-        {ready && !stored ? (
+        {checking && jobId !== undefined ? (
+          <button
+            type="button"
+            className="primary-button"
+            disabled={reconcile.isPending}
+            onClick={() => reconcile.mutate(jobId)}
+          >
+            봉인 결과 다시 확인
+          </button>
+        ) : null}
+        {ready && !stored && !checking ? (
           <button
             type="button"
             className="primary-button"
@@ -109,9 +127,15 @@ export function CommitCompletionPanel({
       ) : (
         <small>다음: {nextLabel}</small>
       )}
-      {create.error === null && job.error === null && job.data?.error == null ? null : (
+      {create.error === null &&
+      job.error === null &&
+      reconcile.error === null &&
+      job.data?.error == null ? null : (
         <p className="inline-error" role="alert">
-          {create.error?.message ?? job.error?.message ?? job.data?.error}
+          {create.error?.message ??
+            job.error?.message ??
+            reconcile.error?.message ??
+            job.data?.error}
         </p>
       )}
       <details>

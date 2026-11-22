@@ -48,6 +48,7 @@ export const ImportJobSchema = Type.Object(
     batchId: Type.Optional(IdSchema),
     interrupted: Type.Optional(Type.Boolean()),
     followUpPending: Type.Optional(Type.Boolean()),
+    publicationCheckPending: Type.Optional(Type.Literal(true)),
   },
   strict,
 );
@@ -192,6 +193,16 @@ export const ImportJobRecordSchema = Type.Object(
     sourceSeason: Type.Union([Type.Integer({ minimum: 1982, maximum: 9999 }), Type.Null()]),
     target: Type.Union([ImportTargetSchema, Type.Null()]),
     publicationPending: Type.Optional(Type.Literal(true)),
+    publicationFailure: Type.Optional(
+      Type.Object(
+        {
+          status: Type.Union([Type.Literal("failed"), Type.Literal("cancelled")]),
+          error: Type.String(),
+          errorCategory: ErrorCategorySchema,
+        },
+        strict,
+      ),
+    ),
   },
   strict,
 );
