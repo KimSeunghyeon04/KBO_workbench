@@ -123,7 +123,7 @@ export function PitchArsenalPanel({
                 colors={colors}
                 selectedPitch={selectedPitch}
                 onInspect={setInspected}
-                onPitch={(key, pitch) => {
+                onSelect={(key, pitch) => {
                   setInspected(key);
                   setFilter(pitch);
                 }}
@@ -223,9 +223,9 @@ export function PitchArsenalPanel({
         </>
       )}
       <p className="analysis-caption">
-        원은 카운트별 전체 구종 구성입니다. 원을 확대해 구종을 고르면 모든 화살표가 그 구종의 관측
-        전이율로 바뀝니다. 전체에는 양타석과 방향 미확인 기록도 포함합니다. 인플레이·사구·미확인은
-        상세 표에서 봅니다.
+        원 가운데를 누르면 해당 카운트의 전체 구종 상세를 봅니다. 바깥 조각에서 구종을 고르면 모든
+        화살표가 그 구종의 관측 전이율로 바뀝니다. 전체에는 양타석과 방향 미확인 기록도 포함합니다.
+        인플레이·사구·미확인은 상세 표에서 봅니다.
       </p>
     </section>
   );

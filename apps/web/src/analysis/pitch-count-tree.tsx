@@ -208,35 +208,40 @@ export function PitchCountTree({
   colors,
   selectedPitch,
   onInspect,
-  onPitch,
+  onSelect,
 }: {
   label: string;
   groups: ReadonlyMap<number, PitchCountFlowGroup>;
   colors: ReadonlyMap<PitchType, string>;
   selectedPitch: PitchSelection;
   onInspect: (key: number) => void;
-  onPitch: (key: number, pitch: PitchType) => void;
+  onSelect: (key: number, pitch: PitchSelection) => void;
 }) {
-  const [open, setOpen] = useState<{ count: PitchCount; focus: boolean } | null>(null);
+  const [open, setOpen] = useState<{
+    count: PitchCount;
+    mode: "hover" | "tap" | "keyboard";
+  } | null>(null);
+  const pointerType = useRef("mouse");
   const trigger = useRef<HTMLButtonElement | null>(null);
   const picker = useRef<HTMLDivElement>(null);
   const pickerId = useId();
   useLayoutEffect(() => {
-    if (open?.focus) picker.current?.querySelector("button")?.focus({ preventScroll: true });
+    if (open?.mode === "keyboard")
+      picker.current?.querySelector("button")?.focus({ preventScroll: true });
   }, [open]);
   const openTypes = open === null ? undefined : groups.get(open.count.key)?.types;
-  function selectPitch(key: number, pitch: PitchType) {
+  const openX = open === null ? 0 : (open.count.x / width) * 100;
+  const pickerOnLeft = openX > 50;
+  const pickerOffset = pickerOnLeft ? 100 - openX : openX;
+  function select(key: number, pitch: PitchSelection) {
     trigger.current?.focus({ preventScroll: true });
     setOpen(null);
-    onPitch(key, pitch);
+    onSelect(key, pitch);
   }
   return (
     <figure
       className="pitch-flow-tree"
       aria-label={label}
-      onPointerLeave={() => {
-        if (!picker.current?.contains(document.activeElement)) setOpen(null);
-      }}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setOpen(null);
       }}
@@ -254,43 +259,86 @@ export function PitchCountTree({
         {pitchCounts.map((count) => {
           const types = groups.get(count.key)?.types ?? [];
           const expanded = open?.count.key === count.key;
+          const position = {
+            left: `${(count.x / width) * 100}%`,
+            top: `${(count.y / height) * 100}%`,
+          };
+          const countLabel = `${label} ${count.balls}볼 ${count.strikes}스트라이크`;
           return (
-            <button
+            <div
               key={count.key}
-              type="button"
-              className="pitch-flow-node"
-              style={{ left: `${(count.x / width) * 100}%`, top: `${(count.y / height) * 100}%` }}
-              aria-label={`${label} ${count.balls}볼 ${count.strikes}스트라이크 구종 비중`}
-              aria-expanded={expanded}
-              aria-controls={expanded ? pickerId : undefined}
-              disabled={types.length === 0}
+              className="pitch-flow-node-target"
               onPointerEnter={(event) => {
-                if (event.pointerType === "touch") return;
-                trigger.current = event.currentTarget;
-                setOpen({ count, focus: false });
+                if (
+                  event.pointerType === "touch" ||
+                  types.length === 0 ||
+                  (expanded && open.mode !== "hover")
+                )
+                  return;
+                const button =
+                  event.target instanceof Element ? event.target.closest("button") : null;
+                if (!(button instanceof HTMLButtonElement)) return;
+                trigger.current = button;
+                setOpen({ count, mode: "hover" });
               }}
-              onClick={(event) => {
-                trigger.current = event.currentTarget;
-                const wedge =
-                  event.target instanceof Element
-                    ? event.target.closest("[data-pitch-index]")
-                    : null;
-                const index = wedge?.getAttribute("data-pitch-index");
-                const type =
-                  index === undefined || index === null ? undefined : types[Number(index)];
-                if (expanded && type) {
-                  selectPitch(count.key, type.pitchType);
-                } else {
-                  onInspect(count.key);
-                  setOpen({ count, focus: event.detail === 0 });
-                }
+              onPointerLeave={() => {
+                setOpen((current) =>
+                  current?.mode === "hover" && current.count.key === count.key ? null : current,
+                );
               }}
             >
-              <span className="pitch-flow-count" aria-hidden="true">
-                {countText(count)}
-              </span>
-              <Pie types={types} colors={colors} selectedPitch={selectedPitch} />
-            </button>
+              <button
+                type="button"
+                className="pitch-flow-node"
+                style={position}
+                aria-label={`${countLabel} 구종 비중`}
+                aria-expanded={expanded}
+                aria-controls={expanded ? pickerId : undefined}
+                disabled={types.length === 0}
+                onPointerDown={(event) => {
+                  pointerType.current = event.pointerType;
+                }}
+                onClick={(event) => {
+                  trigger.current = event.currentTarget;
+                  const wedge =
+                    event.target instanceof Element
+                      ? event.target.closest("[data-pitch-index]")
+                      : null;
+                  const index = wedge?.getAttribute("data-pitch-index");
+                  const type =
+                    index === undefined || index === null ? undefined : types[Number(index)];
+                  if (expanded && type) {
+                    select(count.key, type.pitchType);
+                  } else {
+                    onInspect(count.key);
+                    const mode =
+                      event.detail === 0
+                        ? "keyboard"
+                        : pointerType.current === "touch"
+                          ? "tap"
+                          : "hover";
+                    setOpen({ count, mode });
+                  }
+                }}
+              >
+                <span className="pitch-flow-count" aria-hidden="true">
+                  {countText(count)}
+                </span>
+                <Pie types={types} colors={colors} selectedPitch={selectedPitch} />
+              </button>
+              {types.length > 0 && (
+                <button
+                  type="button"
+                  className="pitch-flow-node-center"
+                  style={position}
+                  aria-label={`${countLabel} 전체 구종 상세`}
+                  onClick={(event) => {
+                    trigger.current = event.currentTarget;
+                    select(count.key, undefined);
+                  }}
+                />
+              )}
+            </div>
           );
         })}
         {open !== null && openTypes !== undefined && (
@@ -298,8 +346,11 @@ export function PitchCountTree({
             ref={picker}
             id={pickerId}
             className="pitch-flow-picker"
+            inert={open.mode === "hover"}
             style={{
-              left: `clamp(0px, calc(${(open.count.x / width) * 100}% ${open.count.x > width / 2 ? "- 186px" : "+ 30px"}), calc(100% - 155px))`,
+              [pickerOnLeft ? "right" : "left"]:
+                `calc(${pickerOffset}% + var(--pitch-flow-picker-gap))`,
+              maxWidth: `calc(${100 - pickerOffset}% - var(--pitch-flow-picker-gap))`,
               top: `clamp(0px, calc(${(open.count.y / height) * 100}% - 32px), calc(100% - 210px))`,
             }}
           >
@@ -310,7 +361,7 @@ export function PitchCountTree({
                 type="button"
                 aria-label={`${type.pitchType ?? "구종 미상"} ${outcomePercent(type.usageRate)}`}
                 aria-pressed={type.pitchType === selectedPitch}
-                onClick={() => selectPitch(open.count.key, type.pitchType)}
+                onClick={() => select(open.count.key, type.pitchType)}
               >
                 <i aria-hidden="true" style={{ background: colors.get(type.pitchType) }} />
                 <span>{type.pitchType ?? "구종 미상"}</span>
