@@ -26,6 +26,7 @@ import {
 } from "@kbo/game-core";
 import { getPitchCountFlow } from "../../apps/web/src/api/pitch-count-flow-client.js";
 import { PitchOutcomesPage } from "../../apps/web/src/pages/pitch-outcomes-page.js";
+import { PlayerAnalysisFrame } from "../../apps/web/src/analysis/player-analysis-frame.js";
 import { countFlowRow, outcomeRow, terminalPa } from "../helpers/pitch-outcomes.js";
 const clients: QueryClient[] = [];
 afterEach(() => {
@@ -143,7 +144,7 @@ function show(role: "pitcher" | "batter", search = "season=2024&competition=unkn
             `/analysis/${role === "pitcher" ? "pitch-location" : "batter-profile"}?${search}`,
           ],
         },
-        createElement(PitchOutcomesPage, { role }),
+        createElement(PlayerAnalysisFrame, null, createElement(PitchOutcomesPage, { role })),
         createElement(Location),
       ),
     ),
@@ -704,7 +705,7 @@ it("restores advanced filters, preserves URL scope through disclosure and compar
     }),
   );
   expect(screen.getByLabelText("현재 주소").textContent).toBe(`?${current}`);
-  fireEvent.change(screen.getByLabelText("투구 결과 시즌"), { target: { value: "2025" } });
+  fireEvent.change(screen.getByLabelText("분석 시즌"), { target: { value: "2025" } });
   const next = new URLSearchParams(screen.getByLabelText("현재 주소").textContent ?? "");
   expect(next.get("season")).toBe("2025");
   expect(next.get("competition")).toBe("regular");
@@ -742,7 +743,7 @@ it.each(["pitcher", "batter"] as const)(
     mockOutcomes();
     show(role);
     await screen.findByRole("table", { name: "구종별 반응" });
-    fireEvent.change(screen.getByLabelText("투구 결과 시즌"), { target: { value: "2025" } });
+    fireEvent.change(screen.getByLabelText("분석 시즌"), { target: { value: "2025" } });
     const params = new URLSearchParams(screen.getByLabelText("현재 주소").textContent ?? "");
     expect(params.get(role)).toBe(role === "pitcher" ? "hp1" : "b1");
   },

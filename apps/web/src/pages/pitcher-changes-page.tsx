@@ -47,14 +47,7 @@ export function PitcherChangesPage() {
           </p>
         </div>
       </header>
-      <PitcherScopeFields
-        season={season}
-        params={selected}
-        pitchers={catalog.data?.pitchers ?? []}
-        pitcherId={id}
-        catalogLoaded={catalog.isSuccess}
-        onChange={change}
-      />
+      <PitcherScopeFields params={selected} onChange={change} />
       {!valid && <p role="alert">{scope.error ?? "종료일을 확인해 주세요."}</p>}
       <AnalysisQueryError queries={[result, catalog]} enabled={valid} />
       {result.isFetching && <p role="status">종료일 기준 자료를 계산하고 있습니다.</p>}

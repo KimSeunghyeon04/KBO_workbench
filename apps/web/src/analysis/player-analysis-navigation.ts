@@ -1,5 +1,11 @@
 import type { AnalysisScopeOptions, DisciplineCatalog, PitchAnalysisCatalog } from "@kbo/contracts";
-import { analysisScopeParams, analysisScopeSearch, scopeFromParams } from "./analysis-scope";
+import {
+  analysisScopeParams,
+  analysisScopeSearch,
+  changeAnalysisParams,
+  scopeFromParams,
+  type AnalysisPlayerSelection,
+} from "./analysis-scope";
 import { periodUrlKeys } from "./period-selection";
 
 export type PlayerAnalysisRole = "pitcher" | "batter";
@@ -22,12 +28,16 @@ export const playerAnalysisSections = {
   ],
 } as const;
 
+export function selectedPlayerRole(params: URLSearchParams): PlayerAnalysisRole {
+  return params.get("playerRole") === "batter" ? "batter" : "pitcher";
+}
+
 export function playerRoleForPath(
   path: string,
   params: URLSearchParams,
 ): PlayerAnalysisRole | null {
   if (path === "/analysis/matchups" || path === "/analysis/player-statistics")
-    return params.get("playerRole") === "batter" ? "batter" : "pitcher";
+    return selectedPlayerRole(params);
   if (playerAnalysisSections.pitcher.some((section) => section.path === path)) return "pitcher";
   if (playerAnalysisSections.batter.some((section) => section.path === path)) return "batter";
   return null;
@@ -49,6 +59,27 @@ export function playerNavigationScope(
   if (path === "/analysis/pitcher-changes" && !selected.has("dateTo"))
     selected.set("dateTo", `${season}-12-31`);
   return { season, ...scopeFromParams(season, selected) };
+}
+
+export function changePlayerAnalysisTarget(
+  path: string,
+  params: URLSearchParams,
+  key: "season" | PlayerAnalysisRole,
+  value: string,
+  currentPlayers: AnalysisPlayerSelection,
+): URLSearchParams {
+  const next = changeAnalysisParams(params, key, value, currentPlayers);
+  if (path === "/analysis/pitch-shape") {
+    for (const filter of ["clusterCount", "cluster", "type"]) next.delete(filter);
+  }
+  if (path === "/analysis/batter-discipline") {
+    next.delete("pitchType");
+    if (key === "season") {
+      next.delete("compareFrom");
+      next.delete("compareTo");
+    }
+  }
+  return next;
 }
 
 export function playerAnalysisHref(
@@ -96,8 +127,25 @@ export function playerDirectoryForLocation(
   return `/analysis/players?${directory}`;
 }
 
-export function analysisCatalogPlayers(catalog: PitchAnalysisCatalog | DisciplineCatalog) {
+export interface AnalysisCatalogPlayer {
+  id: string;
+  name: string;
+  pitches: number;
+}
+
+export function analysisCatalogPlayers(
+  catalog: PitchAnalysisCatalog | DisciplineCatalog,
+): AnalysisCatalogPlayer[] {
   return "pitchers" in catalog
     ? catalog.pitchers.map((p) => ({ id: p.pitcherId, name: p.name, pitches: p.pitches }))
     : catalog.batters.map((p) => ({ id: p.batterId, name: p.name, pitches: p.pitches }));
+}
+
+export function filterAnalysisPlayers(players: readonly AnalysisCatalogPlayer[], query: string) {
+  const needle = query.trim().normalize("NFC").toLowerCase();
+  return players.filter(
+    ({ name, id }) =>
+      name.normalize("NFC").toLowerCase().includes(needle) ||
+      id.normalize("NFC").toLowerCase().includes(needle),
+  );
 }

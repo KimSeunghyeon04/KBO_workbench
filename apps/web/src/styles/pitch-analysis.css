@@ -77,7 +77,7 @@
   margin: -12px 0 0;
 }
 .pitch-analysis-page .analysis-primary-filters {
-  grid-template-columns: 100px minmax(160px, 1fr) minmax(170px, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 @media (min-width: 1300px) {
   .pitch-analysis-page {

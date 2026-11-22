@@ -125,7 +125,7 @@
 .analysis-report-filters[open] > summary {
   border-bottom: 1px solid var(--ui-line);
 }
-.analysis-report-filters > .analysis-filter-fields {
+.analysis-report-filters > .analysis-primary-filters + .analysis-filter-fields {
   border-top: 1px solid var(--ui-line);
 }
 .analysis-primary-filters,
@@ -142,9 +142,6 @@
 .analysis-primary-filters > button,
 .analysis-filter-fields > button {
   min-height: 38px;
-}
-.pitch-outcomes-page .analysis-primary-filters {
-  grid-template-columns: minmax(90px, 130px) minmax(0, 1fr);
 }
 .analysis-filter-bar label {
   display: grid;
@@ -677,8 +674,7 @@
     font-size: 9px;
     padding: 5px;
   }
-  .analysis-primary-filters,
-  .pitch-outcomes-page .analysis-primary-filters {
+  .analysis-primary-filters {
     grid-template-columns: minmax(70px, 0.7fr) minmax(100px, 1.3fr);
     padding: 15px;
   }

@@ -10,6 +10,7 @@ import { Value } from "@sinclair/typebox/value";
 import { PitchSequenceQuerySchema, resolveAnalysisScope } from "@kbo/contracts";
 import { analyzePitchSequences } from "@kbo/game-core";
 import { PitchSequencesPage } from "../../apps/web/src/pages/pitch-sequences-page.js";
+import { PlayerAnalysisFrame } from "../../apps/web/src/analysis/player-analysis-frame.js";
 
 const clients: QueryClient[] = [];
 afterEach(() => {
@@ -73,7 +74,7 @@ function show(search: string) {
       createElement(
         MemoryRouter,
         { initialEntries: [`/analysis/pitch-sequences?${search}`] },
-        createElement(PitchSequencesPage),
+        createElement(PlayerAnalysisFrame, null, createElement(PitchSequencesPage)),
         createElement(Location),
       ),
     ),
@@ -119,10 +120,10 @@ it("reveals restored situation filters outside the disclosure and clears them in
 it("pins an implicit pitcher on season change and keeps its ID when the next catalog lacks it", async () => {
   const fetch = show("season=2024&dateFrom=2024-06-01&strikes=2");
   await screen.findByRole("table", { name: "두 구종 조합" });
-  expect(screen.getByLabelText("투수")).toHaveProperty("value", "p1");
-  fireEvent.change(screen.getByLabelText("시즌", { exact: true }), { target: { value: "2025" } });
-  await screen.findByText("선택한 투수(ID p1)의 실제 투구가 이 조회 범위에 없습니다.");
-  expect(screen.getByLabelText("투수")).toHaveProperty("value", "p1");
+  expect(screen.getByText("p1", { exact: true })).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("분석 시즌"), { target: { value: "2025" } });
+  await screen.findByText("해당 범위 기록 없음");
+  expect(screen.getByText("p1", { exact: true })).toBeTruthy();
   expect(
     Object.fromEntries(new URLSearchParams(screen.getByLabelText("현재 주소").textContent ?? "")),
   ).toEqual({ season: "2025", strikes: "2", pitcher: "p1" });

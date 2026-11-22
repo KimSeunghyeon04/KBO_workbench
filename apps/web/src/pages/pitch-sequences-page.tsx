@@ -58,11 +58,7 @@ export function PitchSequencesPage() {
         </div>
       </header>
       <PitcherScopeFields
-        season={season}
         params={selected}
-        pitchers={catalog.data?.pitchers ?? []}
-        pitcherId={id}
-        catalogLoaded={catalog.isSuccess}
         summary={[analysisScopeSummary(selected), ...conditions.map((c) => c.label)].join(" · ")}
         onChange={change}
       >

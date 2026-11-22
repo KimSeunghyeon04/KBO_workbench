@@ -16,8 +16,19 @@ import {
   summarizePitchQuality,
 } from "@kbo/game-core";
 import { PitchAnalysisPage } from "../../apps/web/src/pages/pitch-analysis-page.js";
+import { PlayerAnalysisFrame } from "../../apps/web/src/analysis/player-analysis-frame.js";
 import { getPitchAnalysis } from "../../apps/web/src/api/pitch-analysis-client.js";
 import { calibrationSummary } from "../helpers/pitch-calibration.js";
+
+function FramedPitchAnalysisPage() {
+  return createElement(PlayerAnalysisFrame, null, createElement(PitchAnalysisPage));
+}
+
+async function selectPitcher(user: ReturnType<typeof userEvent.setup>, id: string) {
+  const search = screen.getByRole("searchbox", { name: "선수 검색" });
+  await user.type(search, id);
+  await user.keyboard("{Enter}");
+}
 
 afterEach(() => {
   cleanup();
@@ -393,7 +404,7 @@ describe("투구 움직임 화면", () => {
       createElement(
         MemoryRouter,
         { initialEntries: ["/analysis/pitch-shape?season=2024&pitcher=hp1&color=cluster"] },
-        createElement(QueryClientProvider, { client }, createElement(PitchAnalysisPage)),
+        createElement(QueryClientProvider, { client }, createElement(FramedPitchAnalysisPage)),
       ),
     );
     expect(await screen.findByLabelText("군집 수")).toHaveProperty("value", "2");
@@ -436,7 +447,7 @@ describe("투구 움직임 화면", () => {
       true,
     );
     await user.selectOptions(screen.getByLabelText("군집 수"), "2");
-    await user.selectOptions(screen.getByLabelText("분석 투수"), "hp2");
+    await selectPitcher(user, "hp2");
     expect(await screen.findByLabelText("군집 수")).toHaveProperty("value", "2");
     expect(screen.getByRole("button", { name: "중계 구종 수로 초기화" })).toHaveProperty(
       "disabled",
@@ -525,7 +536,7 @@ describe("투구 움직임 화면", () => {
       createElement(
         MemoryRouter,
         { initialEntries: ["/analysis/pitch-shape?season=2024"] },
-        createElement(QueryClientProvider, { client }, createElement(PitchAnalysisPage)),
+        createElement(QueryClientProvider, { client }, createElement(FramedPitchAnalysisPage)),
       ),
     );
     expect(await screen.findByText("400.0")).toBeTruthy();
@@ -554,7 +565,7 @@ describe("투구 움직임 화면", () => {
     expect(
       within(screen.getByRole("region", { name: "선택한 투구" })).getByText("+25.0 ms"),
     ).toBeTruthy();
-    await user.selectOptions(screen.getByLabelText("분석 투수"), "hp2");
+    await selectPitcher(user, "hp2");
     expect(await screen.findByText("400.0")).toBeTruthy();
     await user.selectOptions(screen.getByLabelText("분석 시즌"), "2025");
     expect(await screen.findByText("380.0")).toBeTruthy();
@@ -665,7 +676,7 @@ it.each([true, false])(
         {
           initialEntries: [`/analysis/pitch-shape?season=2024${explicit ? "&pitcher=hp1" : ""}`],
         },
-        createElement(QueryClientProvider, { client }, createElement(PitchAnalysisPage)),
+        createElement(QueryClientProvider, { client }, createElement(FramedPitchAnalysisPage)),
         createElement(CurrentSearch),
       ),
     );
@@ -674,9 +685,9 @@ it.each([true, false])(
     await waitFor(() =>
       expect(screen.getByLabelText("현재 주소").textContent).toContain("pitcher=hp1"),
     );
-    await waitFor(() => expect(screen.getByLabelText("분석 투수")).toHaveProperty("value", "hp1"));
     expect(await screen.findByText(/대상 실제 투구 0구/)).toBeTruthy();
-    expect(screen.getByRole("option", { name: "ID hp1 · 해당 범위 기록 없음" })).toBeTruthy();
+    expect(await screen.findByText("해당 범위 기록 없음")).toBeTruthy();
+    expect(screen.getByText("ID hp1", { exact: true })).toBeTruthy();
     expect(fetch.mock.calls.some(([url]) => String(url).includes("/hp2?"))).toBe(false);
     client.clear();
   },

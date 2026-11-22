@@ -15,7 +15,7 @@
 }
 .player-analysis-context-heading {
   display: flex;
-  align-items: center;
+  align-items: start;
   gap: 20px;
   justify-content: space-between;
   padding: 0 0 16px;
@@ -28,6 +28,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
+  min-height: 40px;
 }
 .player-analysis-name > strong {
   font-size: 30px;
@@ -56,22 +57,32 @@
   line-height: 1.7;
 }
 .player-analysis-actions {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.player-analysis-inputs {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 8px;
 }
 .player-catalog-sample {
-  display: grid;
-  gap: 5px;
-  text-align: right;
-  white-space: nowrap;
+  display: flex;
+  align-items: baseline;
+  justify-content: end;
+  flex-wrap: wrap;
+  gap: 0 7px;
 }
-.player-catalog-sample > span {
+.player-catalog-sample > span,
+.player-catalog-missing {
   color: var(--ui-muted);
   font-size: 12px;
 }
+.player-catalog-missing {
+  justify-self: end;
+}
 .player-catalog-sample strong {
-  font-size: 24px;
+  font-size: 17px;
   font-variant-numeric: tabular-nums;
   color: var(--ui-ink);
 }
@@ -80,17 +91,89 @@
   font-size: 12px;
   font-weight: 400;
 }
-.player-directory-link {
-  display: flex;
-  gap: 12px;
-  white-space: nowrap;
-  color: var(--ui-accent);
-  font-size: 13px;
-  border: 1px solid var(--ui-line);
-  padding: 9px 12px;
-  border-radius: var(--ui-radius);
+.player-analysis-search {
+  position: relative;
+  min-width: 0;
+  flex: 1 1 230px;
 }
-.player-directory-link:hover {
+.player-analysis-search input,
+.player-analysis-season {
+  min-height: 40px;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius);
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  font-size: 13px;
+}
+.player-analysis-search input {
+  display: block;
+  padding: 7px 10px 7px 36px;
+  width: 100%;
+}
+.player-analysis-search input::placeholder {
+  color: var(--ui-muted);
+  opacity: 1;
+}
+.player-analysis-search-icon {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  color: var(--ui-accent);
+  pointer-events: none;
+}
+.player-analysis-season {
+  padding: 7px 10px;
+  font-weight: 650;
+}
+.player-analysis-search-results {
+  position: absolute;
+  z-index: 2;
+  inset: calc(100% + 5px) 0 auto;
+  overflow-y: auto;
+  max-height: 280px;
+  max-height: min(280px, 40dvh);
+  padding: 5px;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius);
+  background: var(--ui-surface);
+}
+.player-analysis-search-results ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.player-analysis-search-results button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--ui-radius);
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.player-analysis-search-results button:focus-visible {
+  outline-offset: -2px;
+}
+.player-analysis-search-results :is(button span, p) {
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+.player-analysis-search-results p {
+  margin: 0;
+  padding: 8px;
+}
+.player-analysis-search-results button:is(:hover, [aria-current="true"]) {
   background: var(--ui-selected);
 }
 .player-analysis-links {
@@ -136,20 +219,17 @@
   }
   .player-analysis-actions {
     width: 100%;
-    justify-content: space-between;
   }
-  .player-catalog-sample {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
+  .player-analysis-search input,
+  .player-analysis-season,
+  .player-analysis-search-results button {
+    min-height: 44px;
   }
-  .player-catalog-sample strong {
-    font-size: 18px;
+  .player-analysis-search input {
+    font-size: 16px;
   }
-  .player-directory-link {
-    padding: 7px 9px;
-    gap: 5px;
-    font-size: 12px;
+  .player-analysis-search-icon {
+    top: 14px;
   }
   .player-analysis-links {
     flex-wrap: nowrap;
@@ -163,5 +243,17 @@
     padding: 12px 2px;
     font-size: 12px;
     text-align: center;
+  }
+}
+@media (max-width: 440px) {
+  .player-analysis-actions {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+  }
+  .player-analysis-inputs {
+    display: contents;
+  }
+  .player-analysis-search {
+    grid-column: 1 / -1;
   }
 }

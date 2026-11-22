@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-/** Player reports may fold repeated selectors while keeping the applied scope visible. */
+/** Player reports may fold secondary filters while keeping the applied scope visible. */
 export function AnalysisFilterBar({
   label,
   summary,
@@ -10,7 +10,7 @@ export function AnalysisFilterBar({
 }: {
   label: string;
   summary: string;
-  children: ReactNode;
+  children?: ReactNode;
   advanced: ReactNode;
   collapsible?: boolean;
 }) {
@@ -21,7 +21,7 @@ export function AnalysisFilterBar({
           <strong>조회 조건 변경</strong>
           <span>{summary}</span>
         </summary>
-        <div className="analysis-primary-filters">{children}</div>
+        {children != null && <div className="analysis-primary-filters">{children}</div>}
         <div className="analysis-filter-fields">{advanced}</div>
       </details>
     );

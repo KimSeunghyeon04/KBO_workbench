@@ -1,5 +1,4 @@
 import { analysisQueryMeta } from "../analysis/analysis-query-meta";
-import { AnalysisSeasonOptions } from "../analysis/analysis-seasons";
 import { useQuery } from "@tanstack/react-query";
 import { PlayerPeriodComparison } from "../analysis/player-period-comparison";
 import { Value } from "@sinclair/typebox/value";
@@ -13,7 +12,7 @@ import { Link } from "react-router-dom";
 import { AnalysisEmptyState } from "../analysis/analysis-empty-state";
 import { analysisScopeSearch } from "../analysis/analysis-scope";
 import { AnalysisScopeFields, analysisScopeSummary } from "../analysis/analysis-scope-fields";
-import { analysisCatalogPlayers } from "../analysis/player-analysis-navigation";
+import { analysisCatalogPlayers, selectedPlayerRole } from "../analysis/player-analysis-navigation";
 import { BattingTable, PitchingTable } from "../analysis/player-statistics-tables";
 import { BattingRecordSummary, PitchingRecordSummary } from "../analysis/player-record-summary";
 import { useAnalysisScope } from "../analysis/use-analysis-scope";
@@ -27,7 +26,7 @@ import "../styles/player-basic-statistics.css";
 
 export function PlayerBasicStatisticsPage() {
   const { params, selected, season, scope, change } = useAnalysisScope();
-  const role = params.get("playerRole") === "batter" ? "batter" : "pitcher";
+  const role = selectedPlayerRole(params);
   const roleLabel = role === "pitcher" ? "투수" : "타자";
   const catalog = useQuery<
     PitchAnalysisCatalog | DisciplineCatalog,
@@ -68,9 +67,6 @@ export function PlayerBasicStatisticsPage() {
     (playerId && !(role === "pitcher" ? validPitching : validBatting)
       ? "선수 조회 조건이 올바르지 않습니다."
       : null);
-  const missingCatalogPlayer =
-    playerId !== "" && !catalog.data?.some((player) => player.id === playerId);
-
   return (
     <div className="page-stack player-basic-statistics-page">
       <header className="page-header">
@@ -87,32 +83,6 @@ export function PlayerBasicStatisticsPage() {
           </span>
         </summary>
         <div className="player-report-filter-fields">
-          <label>
-            시즌
-            <select
-              aria-label="성적 시즌"
-              value={season}
-              onChange={(event) => change("season", event.target.value, { [role]: playerId })}
-            >
-              <AnalysisSeasonOptions season={season} />
-            </select>
-          </label>
-          <label>
-            {roleLabel}
-            <select
-              aria-label={roleLabel}
-              value={playerId}
-              onChange={(event) => change(role, event.target.value)}
-            >
-              {!playerId && <option value="">선수를 선택하세요</option>}
-              {missingCatalogPlayer && <option value={playerId}>선수 {playerId}</option>}
-              {catalog.data?.map((player) => (
-                <option key={player.id} value={player.id}>
-                  {player.name} · {player.id}
-                </option>
-              ))}
-            </select>
-          </label>
           <AnalysisScopeFields params={selected} onChange={change} />
         </div>
         <p className="analysis-caption">

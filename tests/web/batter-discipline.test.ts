@@ -9,6 +9,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { analyzeBatterDiscipline, prepareDisciplineSeason } from "@kbo/game-core";
 import { BatterDisciplinePage } from "../../apps/web/src/pages/batter-discipline-page.js";
+import { PlayerAnalysisFrame } from "../../apps/web/src/analysis/player-analysis-frame.js";
 import {
   getBatterDiscipline,
   validateDisciplineResponse,
@@ -40,7 +41,7 @@ function show(url = "/analysis/batter-discipline?season=2024") {
       createElement(
         MemoryRouter,
         { initialEntries: [url] },
-        createElement(BatterDisciplinePage),
+        createElement(PlayerAnalysisFrame, null, createElement(BatterDisciplinePage)),
         createElement(Location),
       ),
     ),
@@ -72,14 +73,14 @@ describe("batter discipline view", () => {
         `/analysis/batter-discipline?season=2024&dateFrom=2024-06-01&dateTo=2024-06-30${explicit ? "&batter=b1" : ""}`,
       );
       await screen.findByLabelText("코스별 스윙 지도");
-      fireEvent.change(screen.getByLabelText("선구안 시즌"), { target: { value: "2025" } });
-      await waitFor(() => expect(screen.getByLabelText("분석 타자").textContent).toContain("b2"));
-      expect(screen.getByLabelText("분석 타자")).toHaveProperty("value", "b1");
+      fireEvent.change(screen.getByLabelText("분석 시즌"), { target: { value: "2025" } });
+      await screen.findByLabelText("코스별 스윙 지도");
+      expect(screen.getByText("b1", { exact: true })).toBeTruthy();
       let current = new URLSearchParams(screen.getByLabelText("현재 주소").textContent ?? "");
       expect(Object.fromEntries(current)).toEqual({ season: "2025", batter: "b1" });
-      fireEvent.change(screen.getByLabelText("선구안 시즌"), { target: { value: "2023" } });
+      fireEvent.change(screen.getByLabelText("분석 시즌"), { target: { value: "2023" } });
       await screen.findByText("선택한 타자(ID b1)의 실제 투구가 이 조회 범위에 없습니다.");
-      expect(screen.getByLabelText("분석 타자")).toHaveProperty("value", "b1");
+      expect(screen.getByText("b1", { exact: true })).toBeTruthy();
       expect(screen.queryByLabelText("코스별 스윙 지도")).toBeNull();
       current = new URLSearchParams(screen.getByLabelText("현재 주소").textContent ?? "");
       expect(current.get("batter")).toBe("b1");
@@ -227,12 +228,15 @@ describe("batter discipline view", () => {
     );
     show();
     await waitFor(() => expect(first).toBeDefined());
-    fireEvent.change(screen.getByLabelText("분석 타자"), { target: { value: "b2" } });
+    fireEvent.change(screen.getByRole("searchbox", { name: "선수 검색" }), {
+      target: { value: "b2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "b2 ID b2" }));
     await screen.findByLabelText("코스별 스윙 지도");
     await act(async () => {
       first?.(new Response(JSON.stringify(response())));
     });
-    expect((screen.getByLabelText("분석 타자") as HTMLSelectElement).value).toBe("b2");
+    expect(screen.getByText("b2", { exact: true })).toBeTruthy();
     expect(screen.getByText("b2 · 선택 조건")).toBeTruthy();
   });
   it("rejects response/target mismatches, invalid denominators and absent strict fields", async () => {

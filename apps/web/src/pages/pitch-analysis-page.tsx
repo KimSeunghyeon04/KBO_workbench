@@ -1,5 +1,5 @@
 import { analysisQueryMeta } from "../analysis/analysis-query-meta";
-import { AnalysisSeasonOptions, useAnalysisSeason } from "../analysis/analysis-seasons";
+import { useAnalysisSeason } from "../analysis/analysis-seasons";
 import { AnalysisEvidenceLink } from "../analysis/analysis-evidence-link";
 import { PitchQualityPanel } from "../analysis/pitch-quality-panel";
 import { PitchAnglesPanel } from "../analysis/pitch-angles-panel";
@@ -11,7 +11,7 @@ import { AnalysisFilterBar } from "../analysis/analysis-filter-bar";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import { changeAnalysisParams, scopeFromParams } from "../analysis/analysis-scope";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { PitchAnalysisPoint } from "@kbo/contracts";
 
@@ -65,6 +65,7 @@ export function PitchAnalysisPage(): React.JSX.Element {
   const clusterFilter = params.get("cluster") ?? "";
   const filter = colorMode === "cluster" ? clusterFilter : pitchType;
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  useEffect(() => setSelectedKey(null), [season, pitcherId]);
   const types = useMemo(
     () =>
       [
@@ -111,17 +112,16 @@ export function PitchAnalysisPage(): React.JSX.Element {
     ...(filter === "" ? [] : [colorMode === "cluster" ? `표시: ${filter}` : `구종: ${filter}`]),
   ].join(" · ");
   function change(key: string, value: string): void {
-    const next = changeAnalysisParams(params, key, value, { pitcher: pitcherId });
+    const next = changeAnalysisParams(params, key, value);
     if (key === "clusterCount") {
       if (value === "") next.delete("clusterCount");
       next.delete("cluster");
     }
-    if (key === "season" || key === "pitcher") next.delete("clusterCount");
     if (["competition", "dateFrom", "dateTo"].includes(key)) {
       next.delete("clusterCount");
       next.delete("cluster");
     }
-    if (key === "season" || key === "pitcher" || key === "color") {
+    if (key === "color") {
       next.delete("type");
       next.delete("cluster");
     }
@@ -143,34 +143,6 @@ export function PitchAnalysisPage(): React.JSX.Element {
         summary={scopeSummary}
         advanced={<AnalysisScopeFields params={params} onChange={change} />}
       >
-        <label>
-          시즌
-          <select
-            aria-label="분석 시즌"
-            value={season}
-            onChange={(event) => change("season", event.target.value)}
-          >
-            <AnalysisSeasonOptions season={season} />
-          </select>
-        </label>
-        <label>
-          투수
-          <select
-            aria-label="분석 투수"
-            value={pitcherId}
-            onChange={(event) => change("pitcher", event.target.value)}
-            disabled={catalog.isPending}
-          >
-            {requestedPitcher && !pitcher && (
-              <option value={requestedPitcher}>ID {requestedPitcher} · 해당 범위 기록 없음</option>
-            )}
-            {catalog.data?.pitchers.map((item) => (
-              <option key={item.pitcherId} value={item.pitcherId}>
-                {item.name} · {item.pitches.toLocaleString()}구
-              </option>
-            ))}
-          </select>
-        </label>
         <label>
           산점도·기대 차이 표 {colorMode === "cluster" ? "클러스터" : "구종"}
           <select

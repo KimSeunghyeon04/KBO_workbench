@@ -1,12 +1,12 @@
 import { analysisQueryMeta } from "../analysis/analysis-query-meta";
-import { AnalysisSeasonOptions, useAnalysisSeason } from "../analysis/analysis-seasons";
+import { useAnalysisSeason } from "../analysis/analysis-seasons";
 import { AnalysisScopeFields, analysisScopeSummary } from "../analysis/analysis-scope-fields";
 import { AnalysisFilterBar } from "../analysis/analysis-filter-bar";
 import { changeAnalysisParams, scopeFromParams } from "../analysis/analysis-scope";
 import { DisciplinePeriodComparison } from "../analysis/discipline-period-comparison";
 import { useQuery } from "@tanstack/react-query";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { DisciplineQuerySchema, type DisciplinePoint } from "@kbo/contracts";
 import { Value } from "@sinclair/typebox/value";
@@ -63,6 +63,11 @@ export function BatterDisciplinePage() {
   const [cell, setCell] = useState<number | null>(null);
   const [selection, setSelection] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  useEffect(() => {
+    setCell(null);
+    setSelection(null);
+    setPage(0);
+  }, [season, batterId]);
   const axis = params.get("axis") === "x" ? "x" : params.get("axis") === "timing" ? "timing" : "z";
   const difference = params.get("map") === "difference";
   const data = analysis.data;
@@ -91,7 +96,7 @@ export function BatterDisciplinePage() {
       : "리그 비교: 시즌 전체",
   ].join(" · ");
   function change(key: string, value: string) {
-    const next = changeAnalysisParams(params, key, value, { batter: batterId });
+    const next = changeAnalysisParams(params, key, value);
     if (key === "reset") {
       next.delete("reset");
       for (const k of ["balls", "strikes", "pitchType", "stance"]) next.delete(k);
@@ -105,11 +110,6 @@ export function BatterDisciplinePage() {
         if (strikes !== undefined && strikes !== "*") next.set("strikes", strikes);
       }
     }
-    if (key === "season") {
-      next.delete("compareFrom");
-      next.delete("compareTo");
-    }
-    if (key === "season" || key === "batter") next.delete("pitchType");
     if (key !== "axis" && key !== "map") {
       setCell(null);
       setSelection(null);
@@ -202,36 +202,6 @@ export function BatterDisciplinePage() {
           </>
         }
       >
-        <label>
-          시즌
-          <select
-            aria-label="선구안 시즌"
-            value={season}
-            onChange={(e) => change("season", e.target.value)}
-          >
-            <AnalysisSeasonOptions season={season} />
-          </select>
-        </label>
-        <label>
-          타자
-          <select
-            aria-label="분석 타자"
-            value={batterId}
-            disabled={catalog.isPending}
-            onChange={(e) => change("batter", e.target.value)}
-          >
-            {!batter && (
-              <option value={batterId}>
-                {batterId ? `선택 타자 ${batterId}` : "타자를 선택하세요"}
-              </option>
-            )}
-            {catalog.data?.batters.map((b) => (
-              <option key={b.batterId} value={b.batterId}>
-                {b.name} · {b.pitches.toLocaleString()}구
-              </option>
-            ))}
-          </select>
-        </label>
         <label>
           중계 구종
           <select

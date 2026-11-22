@@ -2,13 +2,14 @@ import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { AnalysisEvidenceLink } from "../analysis/analysis-evidence-link";
 import { useQuery } from "@tanstack/react-query";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SampleRate } from "../analysis/sample-rate";
 import { plateResultLabel } from "../events/relay-text";
 import { replayEvidenceUrl } from "../replay/evidence-target";
 import { useAnalysisScope } from "../analysis/use-analysis-scope";
 import { AnalysisEmptyState } from "../analysis/analysis-empty-state";
 import { PitcherScopeFields } from "../analysis/pitcher-scope-fields";
+import { analysisCatalogPlayers, selectedPlayerRole } from "../analysis/player-analysis-navigation";
 import {
   pitcherCatalogQueryOptions,
   batterCatalogQueryOptions,
@@ -33,6 +34,15 @@ export function MatchupPage() {
   const pitcherId = params.get("pitcher") ?? catalog.data?.pitchers[0]?.pitcherId ?? "",
     batterId = params.get("batter") ?? batters.data?.batters[0]?.batterId ?? "",
     query = { season, ...scope.options, pitcherId, batterId };
+  const opponentIsPitcher = selectedPlayerRole(params) === "batter";
+  const opponentRole = opponentIsPitcher ? "pitcher" : "batter";
+  const opponentLabel = opponentIsPitcher ? "상대 투수" : "상대 타자";
+  const opponentId = opponentIsPitcher ? pitcherId : batterId;
+  const opponentCatalog = opponentIsPitcher ? catalog : batters;
+  const opponents = opponentCatalog.data ? analysisCatalogPlayers(opponentCatalog.data) : [];
+  const opponentMissing =
+    opponentId !== "" && !opponents.some((player) => player.id === opponentId);
+  useEffect(() => setPage(0), [season, pitcherId, batterId]);
   const result = useQuery({
     queryKey: ["matchup", query],
     meta: analysisQueryMeta(query),
@@ -41,7 +51,7 @@ export function MatchupPage() {
   });
   function change(key: string, value: string) {
     setPage(0);
-    changeScope(key, value, { pitcher: pitcherId, batter: batterId });
+    changeScope(key, value);
   }
   const data = result.data;
   return (
@@ -53,33 +63,29 @@ export function MatchupPage() {
         </div>
       </header>
       <PitcherScopeFields
-        season={season}
         params={selected}
-        pitchers={catalog.data?.pitchers ?? []}
-        catalogLoaded={catalog.isSuccess}
-        pitcherId={pitcherId}
         onChange={change}
         primary={
           <label>
-            타자
-            <select value={batterId} onChange={(e) => change("batter", e.target.value)}>
-              {batterId && !batters.data?.batters.some((b) => b.batterId === batterId) && (
-                <option value={batterId}>ID {batterId} · 해당 범위 기록 없음</option>
+            {opponentLabel}
+            <select value={opponentId} onChange={(e) => change(opponentRole, e.target.value)}>
+              {opponentMissing && (
+                <option value={opponentId}>ID {opponentId} · 해당 범위 기록 없음</option>
               )}
-              {batters.data?.batters.map((b) => (
-                <option key={b.batterId} value={b.batterId}>
-                  {b.name}
+              {opponents.map((player) => (
+                <option key={player.id} value={player.id}>
+                  {player.name}
                 </option>
               ))}
             </select>
           </label>
         }
       />
-      {batters.isSuccess &&
-        batterId &&
-        !batters.data.batters.some((b) => b.batterId === batterId) && (
-          <p role="status">선택한 타자 ID {batterId}의 실제 투구가 이 범위에 없습니다.</p>
-        )}
+      {opponentCatalog.isSuccess && opponentMissing && (
+        <p role="status">
+          {opponentLabel}(ID {opponentId})의 실제 투구가 이 조회 범위에 없습니다.
+        </p>
+      )}
       {scope.error && <p role="alert">{scope.error}</p>}
       <AnalysisQueryError queries={[result, catalog, batters]} enabled={scope.error === null} />
       {(catalog.isLoading || batters.isLoading || result.isFetching) && (

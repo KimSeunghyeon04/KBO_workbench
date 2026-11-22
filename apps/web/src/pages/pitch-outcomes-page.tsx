@@ -1,6 +1,5 @@
 import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { useRef } from "react";
-import { AnalysisSeasonOptions } from "../analysis/analysis-seasons";
 import { useQuery } from "@tanstack/react-query";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import { Link } from "react-router-dom";
@@ -274,31 +273,7 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
             </label>
           </>
         }
-      >
-        <label>
-          시즌
-          <select
-            aria-label="투구 결과 시즌"
-            value={season}
-            onChange={(e) => change("season", e.target.value, { [role]: id })}
-          >
-            <AnalysisSeasonOptions season={season} />
-          </select>
-        </label>
-        <label>
-          {role === "pitcher" ? "투수" : "타자"}
-          <select aria-label="분석 선수" value={id} onChange={(e) => change(role, e.target.value)}>
-            {id !== "" && !players?.some((p) => p.id === id) && (
-              <option value={id}>선택 선수 {id}</option>
-            )}
-            {players?.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      </AnalysisFilterBar>
+      />
       <div className="outcome-workspace" ref={workspaceRef}>
         <div className="outcome-workspace-tabs">
           <WorkspaceTabs

@@ -33,9 +33,11 @@ export function useAnalysisSeason(requested: string | null) {
 export function AnalysisSeasonOptions({
   season,
   minimum = 1982,
+  labelSuffix = "",
 }: {
   season: number;
   minimum?: number;
+  labelSuffix?: string;
 }) {
   const result = useAnalysisSeasons();
   const years = [...new Set([...(result.data?.seasons ?? []), season])]
@@ -46,6 +48,7 @@ export function AnalysisSeasonOptions({
       {years.map((year) => (
         <option key={year} value={year}>
           {year}
+          {labelSuffix}
         </option>
       ))}
     </>

@@ -1,7 +1,7 @@
 import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { useQuery } from "@tanstack/react-query";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAnalysisScope } from "../analysis/use-analysis-scope";
 import { AnalysisEmptyState } from "../analysis/analysis-empty-state";
@@ -27,6 +27,7 @@ export function PitcherWorkloadPage() {
     enabled: scope.error === null,
   });
   const id = params.get("pitcher") ?? catalog.data?.pitchers[0]?.pitcherId ?? "";
+  useEffect(() => setGame(null), [season, id]);
   const result = useQuery({
     queryKey: ["pitcher-workload", id, query],
     meta: analysisQueryMeta(query),
@@ -35,7 +36,7 @@ export function PitcherWorkloadPage() {
   });
   function change(key: string, value: string) {
     setGame(null);
-    changeScope(key, value, { pitcher: id });
+    changeScope(key, value);
   }
   const data = result.data,
     detail = data?.appearances.find((r) => r.gameId === game) ?? data?.appearances.at(-1);
@@ -47,14 +48,7 @@ export function PitcherWorkloadPage() {
           <p>수집 기록 기준 누적 투구·대면·승계주자입니다.</p>
         </div>
       </header>
-      <PitcherScopeFields
-        season={season}
-        params={selected}
-        pitchers={catalog.data?.pitchers ?? []}
-        pitcherId={id}
-        catalogLoaded={catalog.isSuccess}
-        onChange={change}
-      />
+      <PitcherScopeFields params={selected} onChange={change} />
       {scope.error && <p role="alert">{scope.error}</p>}
       <AnalysisQueryError queries={[result, catalog]} enabled={scope.error === null} />
       {(catalog.isLoading || result.isFetching) && <p role="status">등판 기록을 읽고 있습니다.</p>}

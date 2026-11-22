@@ -157,8 +157,9 @@ it("leads with team records and ERA coverage while conditions and detailed recor
   fireEvent.click(screen.getByText("상세 기록", { exact: true }));
   expect(screen.getByText("상세 기록", { exact: true }).closest("details")?.open).toBe(false);
   expect(within(summary).getByText("20.0%")).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: "분석 시즌" })).toBeTruthy();
+  expect(screen.getByRole("searchbox", { name: "선수 검색" })).toBeTruthy();
   openConditions();
-  expect(screen.getByRole("combobox", { name: "성적 시즌" })).toBeTruthy();
   expect(screen.getByRole("combobox", { name: "경기 종류" })).toBeTruthy();
   expect(screen.getByLabelText("분석 시작일")).toBeTruthy();
   expect(fetch).toHaveBeenCalledTimes(2);
@@ -219,8 +220,7 @@ it.each(["pitcher", "batter"] as const)(
     mockRecords();
     show(`season=2024&playerRole=${role}&dateFrom=2024-04-01&dateTo=2024-04-30`);
     await findRecordTable({ name: role === "pitcher" ? "투구 성적" : "타격 성적" });
-    openConditions();
-    fireEvent.change(screen.getByLabelText("성적 시즌"), { target: { value: "2025" } });
+    fireEvent.change(screen.getByLabelText("분석 시즌"), { target: { value: "2025" } });
     const location = new URL(
       screen.getByLabelText("현재 주소").textContent ?? "",
       "http://localhost",
@@ -283,8 +283,7 @@ it("keeps a requested ID absent from the pitch catalog and reports a loaded empt
   expect(await screen.findByText(/선택한 범위에 이 선수의 기본 기록이 없습니다/)).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
   expect(screen.queryByRole("table")).toBeNull();
-  openConditions();
-  expect(screen.getByRole("option", { name: "선수 outside" })).toHaveProperty("selected", true);
+  expect(screen.getByText("선수 outside", { exact: true })).toBeTruthy();
   expect(fetch.mock.calls.some(([input]) => String(input).includes("playerId=outside"))).toBe(true);
   expect(fetch).toHaveBeenCalledTimes(2);
 });
@@ -341,8 +340,10 @@ it("changes only the selected player and requests that player's statistics in th
       ],
     }),
   );
-  openConditions();
-  fireEvent.change(screen.getByRole("combobox", { name: "투수" }), { target: { value: "hp2" } });
+  fireEvent.change(screen.getByRole("searchbox", { name: "선수 검색" }), {
+    target: { value: "hp2" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "투수 B ID hp2" }));
   const table = await findRecordTable({ name: "투구 성적" });
   expect(within(table).getByRole("rowheader", { name: "투수 B" })).toBeTruthy();
   expect(screen.getByLabelText("현재 주소").textContent).toBe(
@@ -371,8 +372,7 @@ it("preserves the player and role when changing season and removes dates from th
     "season=2024&playerRole=pitcher&pitcher=hp1&competition=allstar&dateFrom=2024-04-01&dateTo=2024-04-30",
   );
   await findRecordTable({ name: "투구 성적" });
-  openConditions();
-  fireEvent.change(screen.getByRole("combobox", { name: "성적 시즌" }), {
+  fireEvent.change(screen.getByRole("combobox", { name: "분석 시즌" }), {
     target: { value: "2025" },
   });
   await findRecordTable({ name: "투구 성적" });

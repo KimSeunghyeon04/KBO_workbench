@@ -9,6 +9,7 @@ import { changeAnalysisParams, scopeFromParams } from "../analysis/analysis-scop
 import { AnalysisScopeFields, analysisScopeSummary } from "../analysis/analysis-scope-fields";
 import {
   analysisCatalogPlayers,
+  filterAnalysisPlayers,
   playerAnalysisHref,
   type PlayerAnalysisRole,
 } from "../analysis/player-analysis-navigation";
@@ -43,16 +44,10 @@ export function AnalysisPlayersPage() {
     enabled: error === null,
     select: analysisCatalogPlayers,
   });
-  const matches = useMemo(() => {
-    const needle = search.trim().normalize("NFC").toLowerCase();
-    return (
-      catalog.data?.filter(
-        (player) =>
-          player.name.normalize("NFC").toLowerCase().includes(needle) ||
-          player.id.normalize("NFC").toLowerCase().includes(needle),
-      ) ?? []
-    );
-  }, [catalog.data, search]);
+  const matches = useMemo(
+    () => filterAnalysisPlayers(catalog.data ?? [], search),
+    [catalog.data, search],
+  );
   const pageCount = Math.max(1, Math.ceil(matches.length / pageSize));
   const requestedPage = Number(params.get("page") ?? 1);
   const page =
