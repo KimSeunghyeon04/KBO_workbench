@@ -256,17 +256,21 @@ export class GameCompetitionRepository {
           )
         ).rows,
       )[0]?.hash;
-      const removed = await client.query<Record<string, unknown>>(
+      // The current view also classifies exact matches imported after schedule adoption.
+      const previouslyClassified = await client.query<Record<string, unknown>>(
         `
         SELECT c.game_id AS "gameId" FROM reference.game_competitions c
         JOIN reference.current_competition_datasets d USING(dataset_hash)
-        WHERE d.season=$1 AND c.game_id IS NOT NULL`,
+        WHERE d.season=$1 AND c.game_id IS NOT NULL
+        UNION
+        SELECT game_id FROM analytics.current_analysis_games
+        WHERE season=$1 AND competition<>'unknown'`,
         [dataset.season],
       );
       const newIds = new Set(matched.map((row) => row.gameId));
       const previousGames = Value.Decode(
         Type.Array(Type.Object({ gameId: Type.String() }, { additionalProperties: false })),
-        removed.rows,
+        previouslyClassified.rows,
       );
       if (previousGames.some((row) => !newIds.has(row.gameId)))
         throw new Error("기존에 분류한 경기의 공식 일정이 누락되어 새 자료를 채택하지 않습니다.");

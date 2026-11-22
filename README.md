@@ -281,3 +281,4 @@ UI 작업은 [설계 도구·작업 기준](docs/analysis/ui-design-workflow.md)
 | 유지보수    | [스트라이크존·신장](docs/strike-zone.md) · [구속·구종 보완](docs/pitch-metadata-enrichment.md) · [테스트·성능](docs/testing-and-performance.md)                           |
 
 새 경기·시즌을 적재하면 공식 경기 분류와 필요한 분석 모델을 자동 갱신한다. 분류 정책이 바뀌면 첫 자동 점검에서 공식 일정을 다시 대조한다. 열린 분석 화면은 조회에 사용하는 시즌의 변경을 반영하고, 서버는 변경이 없을 때 시즌별 상태 요약을 재사용한다. 기존 수동 교정 원장과 sealed 기록은 보존한다. [자동 반영·복구·지원 범위](docs/analysis/automatic-preparation.md)를 따른다.
+이미 분류된 경기가 빠진 새 일정은 채택을 거부하고 기존 일정을 유지한다.

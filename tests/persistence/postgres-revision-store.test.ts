@@ -945,6 +945,76 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(pitchAfter.actualPitchCount).toBe(0);
   });
 
+  it("rejects omission of a late exact match and accepts a complete reclassification", async () => {
+    const first = pitchAnalysisFixture(2026);
+    const makeGame = (gameId: string, sourceGameId: string, gameDate: string) =>
+      parseStagingGameDocumentV2({
+        ...first,
+        source: { ...first.source, sourceGameId },
+        metadata: { ...first.metadata, gameId, gameDate },
+      });
+    const late = makeGame("late-exact-game", "20260602LGKT0", "2026-06-02");
+    const unknown = makeGame("unclassified-game", "20260603LGKT0", "2026-06-03");
+    const entry = (game: typeof first) => ({
+      sourceGameId: game.source.sourceGameId,
+      gameDate: game.metadata.gameDate,
+      competition: "regular" as const,
+    });
+    const firstEntry = entry(first);
+    const lateEntry = entry(late);
+    const dataset = competitionFixture(2026, [firstEntry, lateEntry]);
+    const repository = new GameCompetitionRepository(pool);
+    await store.importRevision(first);
+    const adopted = await repository.adopt(dataset);
+    expect(adopted.matched).toBe(1);
+    await store.importRevision(late);
+    await store.importRevision(unknown);
+    const current = async () =>
+      (
+        await pool.query(
+          `SELECT game_id AS "gameId",competition FROM analytics.current_analysis_games
+         WHERE season=2026 ORDER BY game_date`,
+        )
+      ).rows;
+    const expected = [
+      { gameId: first.metadata.gameId, competition: "regular" },
+      { gameId: late.metadata.gameId, competition: "regular" },
+      { gameId: unknown.metadata.gameId, competition: "unknown" },
+    ];
+    expect(await current()).toEqual(expected);
+    const models = new AnalysisModelSourceRepository(pool);
+    const previousModels = await models.read(2025);
+
+    const incomplete = competitionFixture(2026, [firstEntry]);
+    for (const dryRun of [true, false]) {
+      await expect(repository.adopt(incomplete, dryRun)).rejects.toThrow(
+        "기존에 분류한 경기의 공식 일정이 누락",
+      );
+    }
+    expect(await repository.current(2026)).toEqual(dataset);
+    expect(await repository.seasons()).toMatchObject([
+      { season: 2026, competitionHash: adopted.datasetHash, unclassified: 1 },
+    ]);
+    expect(await current()).toEqual(expected);
+    expect(await models.read(2025)).toEqual(previousModels);
+
+    const complete = competitionFixture(2026, [
+      firstEntry,
+      { ...lateEntry, competition: "postseason" },
+    ]);
+    expect(await repository.adopt(complete)).toMatchObject({
+      changed: true,
+      matched: 2,
+      unclassified: 1,
+    });
+    expect(await current()).toEqual([
+      expected[0],
+      { gameId: late.metadata.gameId, competition: "postseason" },
+      expected[2],
+    ]);
+    expect((await models.read(2025)).re24).not.toBe(previousModels.re24);
+  });
+
   it("classifies a later import from sealed schedule evidence without changing manually corrected game facts", async () => {
     const original = pitchAnalysisFixture(2026);
     const source = parseStagingGameDocumentV2({
