@@ -3,7 +3,7 @@ import type { CoverageInspection } from "@kbo/persistence";
 import { AnalysisCoverageJobManager } from "../../apps/server/src/jobs/analysis-coverage-job-manager.js";
 const inspection = (key: string): CoverageInspection => ({
   sourceKey: key,
-  scope: { season: 2025, competition: "all", dateFrom: null, dateTo: null },
+  scope: { season: 2025, competition: "regular", dateFrom: null, dateTo: null },
   response: null,
 });
 

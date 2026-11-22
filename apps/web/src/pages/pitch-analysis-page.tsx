@@ -546,16 +546,10 @@ export function PitchAnalysisPage(): React.JSX.Element {
         </>
       )}
       {data && !updating && (
-        <PitchAnglesPanel
-          pitcherId={pitcherId}
-          query={{ season, competition: "all", ...scope.options }}
-        />
+        <PitchAnglesPanel pitcherId={pitcherId} query={{ season, ...scope.options }} />
       )}
       {data && !updating && (
-        <PitchQualityPanel
-          pitcherId={pitcherId}
-          query={{ season, competition: "all", ...scope.options }}
-        />
+        <PitchQualityPanel pitcherId={pitcherId} query={{ season, ...scope.options }} />
       )}
     </div>
   );

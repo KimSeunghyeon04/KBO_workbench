@@ -1,15 +1,18 @@
+import { defaultAnalysisCompetition, type AnalysisScope } from "@kbo/contracts";
+import { selectedAnalysisCompetition } from "./analysis-scope";
+
 export const competitionLabels = {
-  all: "수집 경기 전체",
-  regular: "확인된 정규시즌",
-  preseason: "시범경기",
+  regular: "정규시즌",
   postseason: "포스트시즌",
+  allstar: "올스타전",
+  preseason: "시범경기",
   unknown: "경기 종류 미상",
-};
+} satisfies Record<AnalysisScope["competition"], string>;
 
 export function analysisScopeSummary(params: URLSearchParams): string {
   const competition =
     Object.entries(competitionLabels).find(
-      ([key]) => key === (params.get("competition") ?? "all"),
+      ([key]) => key === (selectedAnalysisCompetition(params) ?? defaultAnalysisCompetition),
     )?.[1] ?? "경기 종류 미상";
   const period =
     params.has("dateFrom") || params.has("dateTo")
@@ -30,7 +33,7 @@ export function AnalysisScopeFields({
         경기 종류
         <select
           aria-label="경기 종류"
-          value={params.get("competition") ?? "all"}
+          value={selectedAnalysisCompetition(params) ?? defaultAnalysisCompetition}
           onChange={(event) => onChange("competition", event.target.value)}
         >
           {Object.entries(competitionLabels).map(([key, label]) => (

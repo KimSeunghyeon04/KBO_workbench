@@ -530,11 +530,13 @@ export {
   AnalysisCoverageCountsSchema,
   AnalysisCoverageResponseSchema,
   validAnalysisCoverage,
+  coverageCompetitions,
   type AnalysisCoverageCounts,
   type AnalysisCoverageResponse,
 } from "./analysis-coverage.js";
 export {
   GameCompetitionSchema,
+  gameCompetitions,
   CompetitionPageSchema,
   CompetitionEntrySchema,
   GameCompetitionDatasetSchema,
@@ -545,6 +547,7 @@ export {
 } from "./game-competition.js";
 export {
   AnalysisCompetitionSchema,
+  defaultAnalysisCompetition,
   AnalysisScopeQuerySchema,
   AnalysisScopeSchema,
   InvalidAnalysisScopeError,

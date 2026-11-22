@@ -1,8 +1,9 @@
 import { type Static, Type } from "@sinclair/typebox";
 import { AnalysisScopeQuerySchema, AnalysisScopeSchema } from "./analysis-scope.js";
-import { GameCompetitionSchema } from "./game-competition.js";
+import { gameCompetitions, GameCompetitionSchema } from "./game-competition.js";
 
 const strict = { additionalProperties: false } as const;
+export const coverageCompetitions = [...gameCompetitions, "unknown"] as const;
 const count = Type.Integer({ minimum: 0 });
 const nullableDate = Type.Union([Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" }), Type.Null()]);
 
@@ -37,7 +38,7 @@ export const AnalysisCoverageResponseSchema = Type.Object(
         { competition: Type.Union([GameCompetitionSchema, Type.Literal("unknown")]), games: count },
         strict,
       ),
-      { minItems: 4, maxItems: 4 },
+      { minItems: coverageCompetitions.length, maxItems: coverageCompetitions.length },
     ),
     unclassifiedGames: count,
     firstGameDate: nullableDate,
@@ -81,7 +82,7 @@ export function validAnalysisCoverage(value: AnalysisCoverageResponse): boolean 
   return (
     valid(value.total) &&
     value.unclassifiedGames <= value.total.games &&
-    new Set(value.competitions.map((c) => c.competition)).size === 4 &&
+    new Set(value.competitions.map((c) => c.competition)).size === coverageCompetitions.length &&
     value.competitions.reduce((n, c) => n + c.games, 0) === value.total.games &&
     value.competitions.find((c) => c.competition === "unknown")?.games ===
       value.unclassifiedGames &&

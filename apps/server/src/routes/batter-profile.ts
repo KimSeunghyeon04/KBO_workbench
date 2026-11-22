@@ -29,17 +29,12 @@ export const batterProfileRoutes: FastifyPluginAsyncTypebox<Options> = async (ap
       const playerId = request.params.batterId;
       const pair = await repository.compare(first, second, playerId);
       const snapshot = (d: typeof pair.first) =>
-        periodSnapshot(
-          d.query,
-          d.sourceHash,
-          [
-            { label: "실제 투구", count: d.total.pitches },
-            { label: "코스 확인", count: d.coverage.locationPitches },
-            { label: "완료 PA", count: d.plateAppearances.total.pa },
-            { label: "종결 구종 미귀속", count: d.plateAppearances.unattributed },
-          ],
-          "regular",
-        );
+        periodSnapshot(d.query, d.sourceHash, [
+          { label: "실제 투구", count: d.total.pitches },
+          { label: "코스 확인", count: d.coverage.locationPitches },
+          { label: "완료 PA", count: d.plateAppearances.total.pa },
+          { label: "종결 구종 미귀속", count: d.plateAppearances.unattributed },
+        ]);
       return {
         query: request.query,
         playerId,

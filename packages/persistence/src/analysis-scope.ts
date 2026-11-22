@@ -2,11 +2,11 @@ import { createHash } from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type { Pool, PoolClient } from "pg";
-import { canonicalStringify, type AnalysisScope } from "@kbo/contracts";
+import { canonicalStringify, resolveAnalysisScope, type AnalysisScope } from "@kbo/contracts";
 
 // Only game selection is shared. Each consumer owns its grain, eligibility and reference period.
 // This fragment always uses alias r and parameters 1–4; feature parameters start at 5.
-export const ANALYSIS_GAME_WHERE = `r.season=$1 AND ($2='all' OR r.competition=$2)
+export const ANALYSIS_GAME_WHERE = `r.season=$1 AND r.competition=$2
   AND ($3::date IS NULL OR r.game_date >= $3::date) AND ($4::date IS NULL OR r.game_date <= $4::date)`;
 export function analysisScopeParameters(scope: AnalysisScope) {
   return [scope.season, scope.competition, scope.dateFrom, scope.dateTo];
@@ -44,6 +44,31 @@ export async function analysisSourceHash(
     scope.season,
   ]);
   return analysisManifestHash(scope, result.rows, dataset.rows);
+}
+
+/** Keep the v1 fingerprint for existing regular-season models across nonregular adoption. */
+export async function regularModelScopeHash(client: PoolClient, season: number): Promise<string> {
+  const scope = resolveAnalysisScope({ season, competition: "regular" });
+  const { rows } = await client.query<Record<string, unknown>>(
+    `${analysisSourcesSql} ORDER BY r.game_id COLLATE "C"`,
+    analysisScopeParameters(scope),
+  );
+  const dataset = Value.Decode(
+    datasetListSchema,
+    (
+      await client.query<Record<string, unknown>>(
+        `SELECT regular_model_dataset_hash AS hash FROM reference.current_competition_datasets
+       WHERE season=$1 AND regular_model_dataset_hash IS NOT NULL`,
+        [season],
+      )
+    ).rows,
+  );
+  const anchor = dataset[0]?.hash ?? null;
+  const sources = Value.Decode(sourceListSchema, rows).map((row) => ({
+    ...row,
+    datasetHash: anchor,
+  }));
+  return analysisManifestHash(scope, sources, dataset);
 }
 
 export async function recheckAnalysisSourceHash(

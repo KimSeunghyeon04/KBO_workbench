@@ -131,7 +131,7 @@ it("keeps raw facts unchanged, conserves coverage and declines sparse/unvalidate
   expect(
     summarizeMatchupModel(
       query,
-      { ...scope, competition: "all" },
+      { ...scope, competition: "allstar" },
       "a".repeat(64),
       pitches,
       batter,

@@ -216,7 +216,7 @@ it.each(["season=2024&dateFrom=2024-09-01&dateTo=2024-04-01", "season=2201"])(
 it("retries a failed catalog request and clears obsolete dates when the season changes", async () => {
   const fetch = mockCatalogs();
   fetch.mockResolvedValueOnce(Response.json({}, { status: 503 }));
-  show("season=2024&competition=all&dateFrom=2024-04-01&dateTo=2024-04-30&page=2");
+  show("season=2024&competition=allstar&dateFrom=2024-04-01&dateTo=2024-04-30&page=2");
   expect(await screen.findByRole("alert")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
   await screen.findByRole("link", { name: "가상 투수 분석 보기" });
@@ -227,7 +227,7 @@ it("retries a failed catalog request and clears obsolete dates when the season c
   const player = await screen.findByRole("link", { name: "가상 투수 분석 보기" });
   expect(Object.fromEntries(destination(player).searchParams)).toEqual({
     season: "2025",
-    competition: "all",
+    competition: "allstar",
     pitcher: "p1",
   });
   expect(screen.getByLabelText("현재 주소").textContent).not.toMatch(/dateFrom|dateTo|page=/);
@@ -238,7 +238,7 @@ it.each(["pitcher", "batter"])(
   "loads a newly imported 2026 %s catalog without changing the requested season",
   async (role) => {
     const fetch = mockCatalogs();
-    show(`season=2026&competition=all&role=${role}`);
+    show(`season=2026&competition=allstar&role=${role}`);
     const link = await screen.findByRole("link", {
       name: role === "pitcher" ? "가상 투수 분석 보기" : "가상 타자 분석 보기",
     });

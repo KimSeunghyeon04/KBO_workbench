@@ -25,6 +25,11 @@ async function main() {
   try {
     if (!dryRun) workspace = await StagingWorkspace.open(config.workspacePath);
     const seasonValue = season;
+    const repository = new GameCompetitionRepository(pool);
+    const source =
+      workspace === undefined
+        ? undefined
+        : (await repository.seasons()).find((row) => row.season === season);
     const dataset = await new KboScheduleCollector().collect(
       season,
       async (page) => {
@@ -34,11 +39,18 @@ async function main() {
           : workspace.competitionSources.save(seasonValue, page);
       },
       controller.signal,
+      await repository.games(season),
     );
     controller.signal.throwIfAborted();
-    const repository = new GameCompetitionRepository(pool);
     const links = linkKboCompetitionGames(dataset, await repository.games(season));
+    controller.signal.throwIfAborted();
     const result = await repository.adopt(dataset, dryRun, links);
+    controller.signal.throwIfAborted();
+    if (workspace !== undefined && source !== undefined)
+      await workspace.analysisPreparation.writeClassification(
+        { ...source, competitionHash: result.datasetHash },
+        new Date().toISOString(),
+      );
     process.stdout.write(JSON.stringify({ season, ...result }) + "\n");
   } finally {
     process.removeListener("SIGINT", abort);

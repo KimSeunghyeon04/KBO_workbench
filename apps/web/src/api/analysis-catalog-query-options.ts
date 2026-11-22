@@ -1,5 +1,5 @@
 import { analysisQueryMeta } from "../analysis/analysis-query-meta";
-import type { AnalysisScopeOptions } from "@kbo/contracts";
+import { defaultAnalysisCompetition, type AnalysisScopeOptions } from "@kbo/contracts";
 import { getDisciplineCatalog } from "./batter-discipline-client";
 import { getPitchAnalysisCatalog } from "./pitch-analysis-client";
 
@@ -8,11 +8,9 @@ function catalogQueryOptions<Role extends "pitchers" | "batters">(
   season: number,
   options: AnalysisScopeOptions,
 ) {
-  // Both catalog endpoints default to all games. Explicit and implicit defaults
-  // identify the same catalog; each page still validates its URL before fetching.
   const scope = {
     season,
-    competition: options.competition ?? "all",
+    competition: options.competition ?? defaultAnalysisCompetition,
     dateFrom: options.dateFrom ?? null,
     dateTo: options.dateTo ?? null,
   };

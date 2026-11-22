@@ -148,4 +148,8 @@ export { trainPitchQualityFromFacts } from "./pitch-quality-training.js";
 export { MatchupModelRepository } from "./matchup-model-repository.js";
 export { MatchupModelWorkspace } from "./matchup-model-workspace.js";
 export { PitchAnglesRepository } from "./pitch-angles-repository.js";
-export { AnalysisPreparationWorkspace } from "./analysis-preparation-workspace.js";
+export {
+  AnalysisPreparationWorkspace,
+  COMPETITION_CLASSIFICATION_POLICY_VERSION,
+  type CompetitionClassificationCheckpoint,
+} from "./analysis-preparation-workspace.js";

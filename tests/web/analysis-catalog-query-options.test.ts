@@ -53,13 +53,13 @@ it("shares one catalog request between outcome and sequence pages with the same 
   client.clear();
 });
 
-it("deduplicates implicit and explicit all-game scopes without changing freshness", async () => {
+it("deduplicates implicit and explicit regular-season scopes without changing freshness", async () => {
   const fetch = vi.fn(async (input: RequestInfo | URL) => Response.json(catalogResponse(input)));
   vi.stubGlobal("fetch", fetch);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const [implicit, explicit] = await Promise.all([
     client.fetchQuery(pitcherCatalogQueryOptions(2024, {})),
-    client.fetchQuery(pitcherCatalogQueryOptions(2024, { competition: "all" })),
+    client.fetchQuery(pitcherCatalogQueryOptions(2024, { competition: "regular" })),
   ]);
   expect(explicit).toBe(implicit);
   expect(fetch).toHaveBeenCalledTimes(1);
@@ -75,7 +75,7 @@ it("keeps season, date, competition and player role isolated", async () => {
   const responses = await Promise.all([
     client.fetchQuery(pitcherCatalogQueryOptions(2024, {})),
     client.fetchQuery(pitcherCatalogQueryOptions(2025, {})),
-    client.fetchQuery(pitcherCatalogQueryOptions(2024, { competition: "regular" })),
+    client.fetchQuery(pitcherCatalogQueryOptions(2024, { competition: "allstar" })),
     client.fetchQuery(pitcherCatalogQueryOptions(2024, { dateFrom: "2024-04-01" })),
     client.fetchQuery(pitcherCatalogQueryOptions(2024, { dateTo: "2024-08-31" })),
     client.fetchQuery(batterCatalogQueryOptions(2024, {})),
@@ -85,7 +85,7 @@ it("keeps season, date, competition and player role isolated", async () => {
   expect(responses.map((response) => response.scope)).toEqual([
     resolveAnalysisScope({ season: 2024 }),
     resolveAnalysisScope({ season: 2025 }),
-    resolveAnalysisScope({ season: 2024, competition: "regular" }),
+    resolveAnalysisScope({ season: 2024, competition: "allstar" }),
     resolveAnalysisScope({ season: 2024, dateFrom: "2024-04-01" }),
     resolveAnalysisScope({ season: 2024, dateTo: "2024-08-31" }),
     resolveAnalysisScope({ season: 2024 }),

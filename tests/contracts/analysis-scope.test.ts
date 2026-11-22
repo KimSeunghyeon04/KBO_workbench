@@ -1,14 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { resolveAnalysisScope, inAnalysisPeriod } from "@kbo/contracts";
+import { AnalysisScopeQuerySchema, resolveAnalysisScope, inAnalysisPeriod } from "@kbo/contracts";
+import { Value } from "@sinclair/typebox/value";
 describe("analysis scope", () => {
-  it("keeps the established collected scope explicit and permits a regular-only default", () => {
+  it("defaults to the regular season and accepts only one competition", () => {
     expect(resolveAnalysisScope({ season: 2025 })).toEqual({
       season: 2025,
-      competition: "all",
+      competition: "regular",
       dateFrom: null,
       dateTo: null,
     });
-    expect(resolveAnalysisScope({ season: 2025 }, "regular").competition).toBe("regular");
+    expect(resolveAnalysisScope({ season: 2025, competition: "postseason" }).competition).toBe(
+      "postseason",
+    );
+    expect(resolveAnalysisScope({ season: 2025, competition: "allstar" }).competition).toBe(
+      "allstar",
+    );
+    expect(Value.Check(AnalysisScopeQuerySchema, { season: 2025, competition: "all" })).toBe(false);
   });
   it("rejects impossible, reversed and cross-season dates; both boundaries are included", () => {
     for (const dates of [

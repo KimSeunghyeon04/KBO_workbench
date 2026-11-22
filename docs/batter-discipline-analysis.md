@@ -3,7 +3,7 @@
 ## 경기 종류와 두 기간 비교
 
 `competition`, `dateFrom`, `dateTo`, `leaguePeriod=season|target`을 기존 query에 추가했다.
-기본은 수집 경기 전체와 시즌 리그 비교군이다. 공식 경기 분류가 바뀌면 reference 및 준비된
+기본은 확인된 정규시즌과 같은 경기 종류의 시즌 리그 비교군이다. 공식 경기 분류가 바뀌면 reference 및 준비된
 시즌의 원천 해시가 바뀐다. 날짜는 대상 투구에 적용하고, `leaguePeriod=target`을 선택하면
 다른 타자 비교군도 같은 기간으로 좁힌다. 포심 기준은 같은 시즌·경기 종류 전체로 유지한다.
 

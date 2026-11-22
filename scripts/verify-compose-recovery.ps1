@@ -739,10 +739,11 @@ try {
   }
   Assert-BrowserUi
   $analysisSeed = @'
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Pool } from "pg";
 import { parseStagingGameDocumentV2 } from "@kbo/contracts";
-import { GameRevisionStore } from "@kbo/persistence";
+import { GameCompetitionRepository, GameRevisionStore } from "@kbo/persistence";
 import { extractNaverPlayerHeights, extractNaverPlayerBattingProfiles } from "@kbo/collection";
 const fixture = JSON.parse(await readFile("/var/lib/kbo/original/2026/golden-game-1.json", "utf8"));
 const pool = new Pool();
@@ -757,7 +758,8 @@ try {
         fullLineUp:document.rosters.away.players.map(p=>({playerCode:p.playerId,batsThrows:"\uc88c\ud0c0"}))
       }}}}}}));
   // Season selectors now come from imported facts, including historical model-period examples.
-  for (const season of [2020, 2023, 2024, 2025]) {
+  const competitions = new GameCompetitionRepository(pool);
+  for (const season of [2020, 2021, 2022, 2023, 2024, 2025]) {
     const document = structuredClone(fixture);
     document.revisionBase = { kind: "new_game" };
     document.metadata = { ...document.metadata, gameId: `analysis-${season}`, season, gameDate: `${season}-06-01` };
@@ -773,6 +775,40 @@ try {
       ax: -8, ay: 25, az: -15, crossPlateX: 0.1, crossPlateY: 1.4167,
       stance: "R",
     });
+    const entries = [];
+    async function importClassified(kind, suffix, date) {
+      const extra = structuredClone(document);
+      const gameId = `fixture-${season}-${kind}-${suffix}`;
+      extra.metadata = { ...extra.metadata, gameId, gameDate: date };
+      extra.source.sourceGameId = gameId;
+      await store.importRevision(parseStagingGameDocumentV2(extra));
+      entries.push({ sourceGameId: gameId, gameDate: date, competition: kind });
+    }
+    for (let sample = 0; sample < 5; sample++) await importClassified("regular", sample, document.metadata.gameDate);
+    if (season === 2024) {
+      await importClassified("allstar", 1, "2024-07-06");
+      await importClassified("postseason", 1, "2024-10-01");
+    }
+    const page = (month, competition, day) => ({
+      month, competition, ...(day === undefined ? {} : { day }),
+      sourceUrl: "https://fixture.invalid/competition",
+      contentHash: createHash("sha256").update(`${season}:${month}:${competition}:${day ?? 0}`).digest("hex"),
+      artifactKey: `test/${season}/${month}/${competition}/${day ?? 0}`,
+      collectedAt: "2026-01-01T00:00:00Z",
+    });
+    const pages = Array.from({ length: 12 }, (_, i) => i + 1).flatMap((month) =>
+      ["regular", "preseason", "postseason"].map((kind) => page(month, kind)),
+    );
+    if (season === 2024) pages.push(page(7, "allstar", 6));
+    await competitions.adopt({
+      version: season === 2024 ? 2 : 1,
+      season, pages,
+      entries: entries.map((entry) => ({
+        ...entry, pageHash: pages.find((p) => p.month === Number(entry.gameDate.slice(5, 7))
+          && p.competition === entry.competition).contentHash,
+      })),
+    });
+    if (season === 2021 || season === 2022) continue;
     await store.importRevision(parseStagingGameDocumentV2(document));
     for (let sample = 1; sample <= 4; sample++) {
       const extra = structuredClone(document);
@@ -804,7 +840,7 @@ try {
   page.on("pageerror", (error) => errors.push(error.message));
   const menu = page.getByRole("navigation", { name: "\uc8fc \uba54\ub274" });
   const playerNavigation = page.getByRole("navigation", { name: "\uc120\uc218 \ubd84\uc11d \ud56d\ubaa9" });
-  const playerScope = { season: "2024", competition: "all", dateFrom: "2024-06-01", dateTo: "2024-06-01" };
+  const playerScope = { season: "2024", competition: "unknown", dateFrom: "2024-06-01", dateTo: "2024-06-01" };
   async function openReportFilters() {
     const filters = page.locator("details.analysis-report-filters");
     if (await filters.count() > 0 && await filters.getAttribute("open") === null) {
@@ -879,7 +915,19 @@ try {
   await page.getByLabel("\uc120\uc218 \ubd84\uc11d \uc2dc\uc98c", { exact: true }).selectOption("2024");
   await page.waitForURL((url) => url.searchParams.get("season") === playerScope.season);
   await page.locator(".analysis-advanced-filters > summary").click();
-  await page.getByLabel("\uacbd\uae30 \uc885\ub958", { exact: true }).selectOption("all");
+  const competitionPicker = page.getByLabel("\uacbd\uae30 \uc885\ub958", { exact: true });
+  if (await competitionPicker.inputValue() !== "regular") throw new Error("Default competition was not regular.");
+  for (const competition of ["allstar", "postseason"]) {
+    const response = page.waitForResponse((res) => {
+      const url = new URL(res.url());
+      return url.pathname === "/api/v2/analysis/pitch-shape" && url.searchParams.get("competition") === competition;
+    });
+    await competitionPicker.selectOption(competition);
+    const result = await (await response).json();
+    if (result.scope.competition !== competition || !result.pitchers.length) throw new Error(`Missing ${competition} catalog.`);
+    await page.waitForURL((url) => url.searchParams.get("competition") === competition);
+  }
+  await competitionPicker.selectOption(playerScope.competition);
   await page.waitForURL((url) => url.searchParams.get("competition") === playerScope.competition);
   await page.getByLabel("\ubd84\uc11d \uc2dc\uc791\uc77c", { exact: true }).fill(playerScope.dateFrom);
   await page.waitForURL((url) => url.searchParams.get("dateFrom") === playerScope.dateFrom);
@@ -943,7 +991,7 @@ try {
   const flowResponse = await (await flowRequest).json();
   await page.locator(".outcome-arsenal").waitFor();
   const profileArsenal = await page.evaluate(async id => {
-    const response = await fetch(`/api/v2/analysis/pitch-location/${encodeURIComponent(id)}?season=2024&competition=all`);
+    const response = await fetch(`/api/v2/analysis/pitch-location/${encodeURIComponent(id)}?season=2024&competition=unknown`);
     if (!response.ok) throw new Error("Profile arsenal API failed.");
     return response.json();
   }, pitcher);
@@ -1036,7 +1084,7 @@ try {
   await page.getByRole("list", { name: "\ud0c0\uc790 \ubaa9\ub85d" }).waitFor();
   if (await playerRoles.getByRole("button", { name: "\ud0c0\uc790", exact: true }).getAttribute("aria-pressed") !== "true") throw new Error("Player change lost the selected player role.");
 
-  await page.goto("http://localhost/analysis/pitch-shape?season=2024", { waitUntil: "networkidle" });
+  await page.goto("http://localhost/analysis/pitch-shape?season=2024&competition=unknown", { waitUntil: "networkidle" });
   const chart = page.getByRole("img", { name: /\ud3c9\uade0 \ud3ec\uc2ec/ });
   await chart.waitFor();
   const shapeSettings = page.locator(".pitch-view-settings");
@@ -1133,7 +1181,7 @@ try {
   const menuTop = await menu.evaluate((node) => node.getBoundingClientRect().top);
   if (menuTop < headerBottom - 1) throw new Error("Mobile navigation overlaps workspace selector.");
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("http://localhost/analysis/batter-discipline?season=2024", { waitUntil: "networkidle" });
+  await page.goto("http://localhost/analysis/batter-discipline?season=2024&competition=unknown", { waitUntil: "networkidle" });
   await page.locator(".discipline-map").waitFor();
   if (await page.locator(".discipline-map button").count() !== 25) throw new Error("Swing map cells missing.");
   if (await page.locator(".discipline-bars .discipline-bar-row").count() !== 6) throw new Error("Deviation bands missing.");
@@ -1165,18 +1213,18 @@ try {
   }
   if (errors.length > 0) throw new Error(errors.join(" | "));
   for (const [url, selector] of [
-    ["http://localhost/analysis/coverage?season=2024", ".coverage-overview"],
+    ["http://localhost/analysis/coverage?season=2024&competition=unknown", ".coverage-overview"],
     ["http://localhost/analysis/models", "table"],
-    ["http://localhost/analysis/park-environment?season=2024&competition=all", ".park-rate-chart"],
-    ["http://localhost/analysis/statistics?season=2024&competition=all", "table"],
-    ["http://localhost/analysis/statistics?season=2024&competition=all&kind=pitching", "table"],
-    ["http://localhost/analysis/pitch-location?season=2024&competition=all", "table:visible"],
-    ["http://localhost/analysis/batter-profile?season=2024&competition=all", "table:visible"],
-    ["http://localhost/analysis/pitcher-changes?season=2024&competition=all", ".pitch-change-summary"],
-    ["http://localhost/analysis/pitch-sequences?season=2024&competition=all", ".sequence-groups"],
-    ["http://localhost/analysis/pitcher-workload?season=2024&competition=all", ".workload-timeline"],
-    ["http://localhost/analysis/baserunning?season=2024&competition=all", "table"],
-    ["http://localhost/analysis/matchups?season=2024&competition=all", ".matchup-observed-summary"],
+    ["http://localhost/analysis/park-environment?season=2024&competition=unknown", ".park-rate-chart"],
+    ["http://localhost/analysis/statistics?season=2024&competition=unknown", "table"],
+    ["http://localhost/analysis/statistics?season=2024&competition=unknown&kind=pitching", "table"],
+    ["http://localhost/analysis/pitch-location?season=2024&competition=unknown", "table:visible"],
+    ["http://localhost/analysis/batter-profile?season=2024&competition=unknown", "table:visible"],
+    ["http://localhost/analysis/pitcher-changes?season=2024&competition=unknown", ".pitch-change-summary"],
+    ["http://localhost/analysis/pitch-sequences?season=2024&competition=unknown", ".sequence-groups"],
+    ["http://localhost/analysis/pitcher-workload?season=2024&competition=unknown", ".workload-timeline"],
+    ["http://localhost/analysis/baserunning?season=2024&competition=unknown", "table"],
+    ["http://localhost/analysis/matchups?season=2024&competition=unknown", ".matchup-observed-summary"],
   ]) {
     await page.goto(url, {waitUntil:"networkidle"});
     await page.locator(selector).first().waitFor();
@@ -1230,6 +1278,24 @@ try {
       await page.getByRole("combobox", {name: "\uc6b4\uc6a9 \ube44\uad50 \uc131\uacfc",exact:true}).selectOption("whiff");
       await page.getByRole("combobox", {name: "\uc6b4\uc6a9 \ube44\uad50 \ud56d\ubaa9",exact:true}).selectOption("rest");
       if (await page.getByRole("table", {name: "\uc870\uac74\uc744 \ub9de\ucd98 \uc6b4\uc6a9 \uc131\uacfc",exact:true}).getByText("\uacf5\ud1b5 \ud45c\ubcf8 \ubd80\uc871", {exact:true}).count() !== 2) throw new Error("Sparse workload comparison was published.");
+      const workloadPath = `/api/v2/analysis/pitcher-workload/${encodeURIComponent(pitcher)}`;
+      const selectedScope = new URLSearchParams({ season: "2024", competition: "allstar", pitcher });
+      const workloadResponse = page.waitForResponse(res => new URL(res.url()).pathname === workloadPath);
+      await page.goto(`http://localhost/analysis/pitcher-workload?${selectedScope}`, { waitUntil: "networkidle" });
+      const workload = await (await workloadResponse).json();
+      if (workload.scope.competition !== "allstar" || workload.lookbackCompetition !== "all" ||
+          workload.appearances.length !== 1 || workload.appearances[0].gameDate !== "2024-07-06" ||
+          workload.appearances[0].previousObservedDate !== "2024-06-01" || workload.appearances[0].observedRestDays !== 34) {
+        throw new Error("All-Star workload did not retain regular-season appearance history.");
+      }
+      const notes = page.getByText("\ub204\uc801 \ud22c\uad6c\uc640 \ud734\uc2dd\uc77c\uc744 \uc77d\ub294 \uae30\uc900", { exact: true });
+      await notes.press("Enter");
+      await page.getByText(/\uacbd\uae30 \uc885\ub958\uc5d0 \uad00\uacc4\uc5c6\uc774/).waitFor();
+      const comparisonResponse = page.waitForResponse(res => new URL(res.url()).pathname === `${workloadPath}/comparison`);
+      await page.getByRole("button", { name: "\uc870\uac74\uc744 \ub9de\ucd98 \uc6b4\uc6a9 \ube44\uad50 \ubcf4\uae30", exact: true }).click();
+      const comparison = await (await comparisonResponse).json();
+      if (comparison.scope.competition !== "allstar" || comparison.lookbackCompetition !== "all" ||
+          comparison.actualPitches !== workload.appearances[0].pitches) throw new Error("All-Star comparison included pitches from other competitions.");
     }
     if (url.includes("matchups")) {
       await page.getByRole("button", {name: "\uAD6C\uC9C8 \uC720\uC0AC\uB3C4\u00B7\uAE30\uB300 \uBC18\uC751 \uBCF4\uAE30",exact:true}).click();
@@ -1246,7 +1312,7 @@ try {
     ["pitch-shape", "pitcher", pitcher], ["pitcher-changes", "pitcher", pitcher],
     ["batter-profile", "batter", batter], ["batter-discipline", "batter", batter],
   ]) {
-    const params = new URLSearchParams({ season: "2025", competition: "all", playerRole: role, [role]: id });
+    const params = new URLSearchParams({ season: "2025", competition: "unknown", playerRole: role, [role]: id });
     let comparisonRequests = 0;
     const countComparison = request => { if (new URL(request.url()).pathname.endsWith("/comparison")) comparisonRequests++; };
     page.on("request", countComparison);

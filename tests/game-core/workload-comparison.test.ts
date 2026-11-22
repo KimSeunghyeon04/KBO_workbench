@@ -8,7 +8,7 @@ import {
   workloadCell,
   workloadComparisonFixture,
 } from "../helpers/workload-comparison.js";
-const query = { season: 2024, competition: "all" as const },
+const query = { season: 2024, competition: "allstar" as const },
   scope = resolveAnalysisScope(query),
   hash = "a".repeat(64);
 const run = (input = workloadComparisonFixture()) =>

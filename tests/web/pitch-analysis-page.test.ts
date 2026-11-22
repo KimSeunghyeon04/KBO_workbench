@@ -682,16 +682,16 @@ it.each([true, false])(
   },
 );
 
-it("keeps the parent all-games scope when opening the quality panel", async () => {
+it("keeps the parent all-star scope when opening the quality panel", async () => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
-  const scope = resolveAnalysisScope({ season: 2025 }),
+  const scope = resolveAnalysisScope({ season: 2025, competition: "allstar" }),
     quality = summarizePitchQuality([], scope, "hp1", "a".repeat(64), null, null);
   const fetch = vi.fn(async (input: string | URL | Request) =>
     Response.json(
       String(input).includes("pitch-quality")
         ? quality
         : String(input).includes("/hp1?")
-          ? response(2025, "hp1")
+          ? { ...response(2025, "hp1"), scope }
           : { season: 2025, scope, pitchers: [{ pitcherId: "hp1", name: "투수 A", pitches: 4 }] },
     ),
   );
@@ -700,7 +700,7 @@ it("keeps the parent all-games scope when opening the quality panel", async () =
   render(
     createElement(
       MemoryRouter,
-      null,
+      { initialEntries: ["/analysis/pitch-shape?season=2025&competition=allstar"] },
       createElement(QueryClientProvider, { client }, createElement(PitchAnalysisPage)),
     ),
   );
@@ -708,7 +708,7 @@ it("keeps the parent all-games scope when opening the quality panel", async () =
   expect(await screen.findByText("기대 확률은 확인된 정규시즌에서만 제공합니다.")).toBeTruthy();
   expect(
     fetch.mock.calls.some(([url]) =>
-      String(url).includes("pitch-quality/hp1?season=2025&competition=all"),
+      String(url).includes("pitch-quality/hp1?season=2025&competition=allstar"),
     ),
   ).toBe(true);
   client.clear();

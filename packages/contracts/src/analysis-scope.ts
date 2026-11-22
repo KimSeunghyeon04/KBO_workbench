@@ -4,10 +4,10 @@ import { isCalendarDate } from "./calendar-date.js";
 import { GameCompetitionSchema } from "./game-competition.js";
 
 const strict = { additionalProperties: false } as const;
+export const defaultAnalysisCompetition = "regular";
 export const AnalysisCompetitionSchema = Type.Union([
   GameCompetitionSchema,
   Type.Literal("unknown"),
-  Type.Literal("all"),
 ]);
 const date = Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" });
 export const AnalysisScopeQuerySchema = Type.Object(
@@ -35,7 +35,7 @@ export class InvalidAnalysisScopeError extends Error {}
 
 export function resolveAnalysisScope(
   query: AnalysisScopeQuery,
-  defaultCompetition: AnalysisScope["competition"] = "all",
+  defaultCompetition: AnalysisScope["competition"] = defaultAnalysisCompetition,
 ): AnalysisScope {
   if (!Value.Check(AnalysisScopeQuerySchema, query))
     throw new InvalidAnalysisScopeError("분석 범위 형식이 올바르지 않습니다.");

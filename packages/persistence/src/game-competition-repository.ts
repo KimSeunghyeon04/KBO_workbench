@@ -25,6 +25,14 @@ const pointerHashesSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+const storedPageProperties = {
+  ...Type.Omit(CompetitionPageSchema, ["day"]).properties,
+  dayOfMonth: Type.Integer({ minimum: 0, maximum: 31 }),
+};
+const storedPageSchema = Type.Object(storedPageProperties, { additionalProperties: false });
+function hydratePage({ dayOfMonth, ...page }: typeof storedPageSchema.static) {
+  return { ...page, ...(dayOfMonth === 0 ? {} : { day: dayOfMonth }) };
+}
 const storedEntrySchema = Type.Object(
   { ...CompetitionEntrySchema.properties, gameId: Type.Union([Type.String(), Type.Null()]) },
   { additionalProperties: false },
@@ -103,46 +111,45 @@ export class GameCompetitionRepository {
     // One SQL snapshot keeps the pointer, pages and entries from the same sealed dataset.
     const pageRows = await this.pool.query<Record<string, unknown>>(
       `
-      SELECT p.month,p.competition,p.source_url AS "sourceUrl",p.content_hash AS "contentHash",
-        p.artifact_key AS "artifactKey",p.collected_at AS "collectedAt",p.dataset_hash AS "datasetHash"
+      SELECT p.month,p.day_of_month AS "dayOfMonth",p.competition,p.source_url AS "sourceUrl",p.content_hash AS "contentHash",
+        p.artifact_key AS "artifactKey",p.collected_at AS "collectedAt",p.dataset_hash AS "datasetHash", ds.parser_version AS version
       FROM reference.competition_pages p JOIN reference.current_competition_datasets d USING(dataset_hash)
-      WHERE d.season=$1 ORDER BY p.month,p.competition COLLATE "C"`,
+      JOIN reference.competition_datasets ds USING(dataset_hash)
+      WHERE d.season=$1 ORDER BY p.month,p.competition COLLATE "C",p.day_of_month`,
       [season],
     );
     const pages = Value.Decode(
       Type.Array(
         Type.Object(
-          { ...CompetitionPageSchema.properties, datasetHash: Type.String() },
+          {
+            ...storedPageProperties,
+            datasetHash: Type.String(),
+            version: GameCompetitionDatasetSchema.properties.version,
+          },
           { additionalProperties: false },
         ),
       ),
       pageRows.rows,
     );
-    const datasetHash = pages[0]?.datasetHash;
-    if (datasetHash === undefined) return null;
+    const first = pages[0];
+    if (first === undefined) return null;
+    const { datasetHash, version } = first;
     const entries = await this.pool.query<Record<string, unknown>>(
       `
       SELECT source_game_id AS "sourceGameId",to_char(game_date,'YYYY-MM-DD') AS "gameDate",competition,page_hash AS "pageHash"
       FROM reference.game_competitions WHERE dataset_hash=$1 ORDER BY source_game_id COLLATE "C"`,
       [datasetHash],
     );
-    return parseGameCompetitionDataset(
-      Value.Decode(GameCompetitionDatasetSchema, {
-        version: 1,
-        season,
-        pages: pages.map(
-          ({ month, competition, sourceUrl, contentHash, artifactKey, collectedAt }) => ({
-            month,
-            competition,
-            sourceUrl,
-            contentHash,
-            artifactKey,
-            collectedAt,
-          }),
-        ),
-        entries: entries.rows,
+    return parseGameCompetitionDataset({
+      version,
+      season,
+      pages: pages.map(({ datasetHash, version, ...page }) => {
+        void datasetHash;
+        void version;
+        return hydratePage(page);
       }),
-    );
+      entries: entries.rows,
+    });
   }
   public async games(season: number) {
     return Value.Decode(
@@ -228,8 +235,9 @@ export class GameCompetitionRepository {
           canonicalStringify({
             version: dataset.version,
             season: dataset.season,
-            pages: dataset.pages.map(({ month, competition, sourceUrl, contentHash }) => ({
+            pages: dataset.pages.map(({ month, day, competition, sourceUrl, contentHash }) => ({
               month,
+              ...(day === undefined ? {} : { day }),
               competition,
               sourceUrl,
               contentHash,
@@ -277,15 +285,15 @@ export class GameCompetitionRepository {
         );
         if (exists.rowCount === 0) {
           await client.query(
-            "INSERT INTO reference.competition_datasets(dataset_hash,season,parser_version) VALUES($1,$2,1)",
-            [datasetHash, dataset.season],
+            "INSERT INTO reference.competition_datasets(dataset_hash,season,parser_version) VALUES($1,$2,$3)",
+            [datasetHash, dataset.season, dataset.version],
           );
           for (const page of dataset.pages)
             await client.query(
               `
             INSERT INTO reference.competition_pages
-              (dataset_hash,month,competition,source_url,content_hash,artifact_key,collected_at)
-            VALUES($1,$2,$3,$4,$5,$6,$7)`,
+              (dataset_hash,month,competition,source_url,content_hash,artifact_key,collected_at,day_of_month)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
               [
                 datasetHash,
                 page.month,
@@ -294,6 +302,7 @@ export class GameCompetitionRepository {
                 page.contentHash,
                 page.artifactKey,
                 page.collectedAt,
+                page.day ?? 0,
               ],
             );
           for (const row of rows)
@@ -333,16 +342,16 @@ export class GameCompetitionRepository {
             [datasetHash],
           );
           const storedPages = await client.query<Record<string, unknown>>(
-            `SELECT month,competition,
+            `SELECT month,competition,day_of_month AS "dayOfMonth",
             source_url AS "sourceUrl",content_hash AS "contentHash",artifact_key AS "artifactKey",collected_at AS "collectedAt"
-            FROM reference.competition_pages WHERE dataset_hash=$1 ORDER BY month,competition COLLATE "C"`,
+            FROM reference.competition_pages WHERE dataset_hash=$1 ORDER BY month,competition COLLATE "C",day_of_month`,
             [datasetHash],
           );
           if (
             canonicalStringify(Value.Decode(Type.Array(storedEntrySchema), stored.rows)) !==
               canonicalStringify(rows) ||
             canonicalStringify(
-              Value.Decode(Type.Array(CompetitionPageSchema), storedPages.rows),
+              Value.Decode(Type.Array(storedPageSchema), storedPages.rows).map(hydratePage),
             ) !== canonicalStringify(dataset.pages)
           )
             throw new Error("경기 분류 저장 무결성 오류");
@@ -351,11 +360,22 @@ export class GameCompetitionRepository {
             [datasetHash],
           );
         }
+        const priorRegular = await regularGameIds(client, dataset.season);
         await client.query(
           `INSERT INTO reference.current_competition_datasets(season,dataset_hash) VALUES($1,$2)
           ON CONFLICT(season) DO UPDATE SET dataset_hash=EXCLUDED.dataset_hash`,
           [dataset.season, datasetHash],
         );
+        // Use the same view as model selection, including direct matches for late imports.
+        const nextRegular = await regularGameIds(client, dataset.season);
+        if (
+          priorRegular.length !== nextRegular.length ||
+          priorRegular.some((id, index) => id !== nextRegular[index])
+        )
+          await client.query(
+            "UPDATE reference.current_competition_datasets SET regular_model_dataset_hash=$2 WHERE season=$1",
+            [dataset.season, datasetHash],
+          );
       }
       await client.query(dryRun ? "ROLLBACK" : "COMMIT");
       return result;
@@ -366,6 +386,18 @@ export class GameCompetitionRepository {
       client.release();
     }
   }
+}
+
+async function regularGameIds(client: PoolClient, season: number) {
+  const { rows } = await client.query<Record<string, unknown>>(
+    `SELECT game_id AS "gameId" FROM analytics.current_analysis_games
+     WHERE season=$1 AND competition='regular' ORDER BY game_id COLLATE "C"`,
+    [season],
+  );
+  return Value.Decode(
+    Type.Array(Type.Object({ gameId: Type.String() }, { additionalProperties: false })),
+    rows,
+  ).map(({ gameId }) => gameId);
 }
 
 async function readPointerHash(client: Pick<Pool, "query"> | Pick<PoolClient, "query">) {

@@ -17,7 +17,7 @@ function key(id: string, date: string, naver: boolean): string | null {
 }
 
 export function linkKboCompetitionGames(
-  dataset: GameCompetitionDataset,
+  dataset: Pick<GameCompetitionDataset, "entries">,
   games: readonly { sourceGameId: string; gameDate: string }[],
 ): CompetitionGameLink[] {
   const byKey = new Map<string, (typeof games)[number][]>();

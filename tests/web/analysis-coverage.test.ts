@@ -28,7 +28,7 @@ it("shows distinct denominators and restores the selected season", async () => {
       ),
     ),
   );
-  expect(await screen.findByText(/경기 종류 미분류 1경기/)).toBeTruthy();
+  expect(await screen.findByText(/경기 종류 미분류 0경기/)).toBeTruthy();
   expect(screen.getByText("트래킹 누락")).toBeTruthy();
   expect(screen.getByText("궤적 부적합")).toBeTruthy();
   expect(screen.getByRole("link", { name: "투수별 구질 보기" }).getAttribute("href")).toContain(
@@ -83,7 +83,7 @@ it("polls preparation to completion and offers an explicit retry after failure",
   ).toBeTruthy();
   fetcher.mockImplementation(async () => new Response(JSON.stringify(fixture)));
   fireEvent.click(screen.getByRole("button", { name: "다시 준비" }));
-  expect(await screen.findByText(/경기 종류 미분류 1경기/)).toBeTruthy();
+  expect(await screen.findByText(/경기 종류 미분류 0경기/)).toBeTruthy();
   expect(fetcher).toHaveBeenLastCalledWith(
     expect.stringContaining("/coverage/prepare?"),
     expect.objectContaining({ method: "POST" }),

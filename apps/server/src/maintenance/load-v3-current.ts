@@ -13,7 +13,7 @@ import { parseStagingGameDocumentV2 } from "@kbo/contracts";
 import { compileStagingGameDocumentV2, stagingDocumentHash } from "@kbo/game-core";
 import { Pool } from "pg";
 
-const V3_MIGRATION = "0018_record_correction_proofs";
+const V3_MIGRATION = "0019_regular_model_competition";
 
 async function main(): Promise<void> {
   const options = parseOptions(process.argv.slice(2));

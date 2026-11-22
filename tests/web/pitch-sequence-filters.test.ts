@@ -83,7 +83,7 @@ function show(search: string) {
 
 it("reveals restored situation filters outside the disclosure and clears them individually by keyboard", async () => {
   const initial =
-    "season=2024&competition=all&dateFrom=2024-06-01&dateTo=2024-06-30&pitcher=p2&previousType=직구&pitchType=슬라이더&balls=0&strikes=2&stance=L&cohort=discipline";
+    "season=2024&competition=unknown&dateFrom=2024-06-01&dateTo=2024-06-30&pitcher=p2&previousType=직구&pitchType=슬라이더&balls=0&strikes=2&stance=L&cohort=discipline";
   show(initial);
   await screen.findByRole("table", { name: "두 구종 조합" });
   const details = screen.getByText("조회 조건 변경").closest("details");
@@ -105,7 +105,7 @@ it("reveals restored situation filters outside the disclosure and clears them in
   params = new URLSearchParams(screen.getByLabelText("현재 주소").textContent ?? "");
   expect(Object.fromEntries(params)).toEqual({
     season: "2024",
-    competition: "all",
+    competition: "unknown",
     dateFrom: "2024-06-01",
     dateTo: "2024-06-30",
     pitcher: "p2",

@@ -12,6 +12,7 @@ import {
 } from "@kbo/contracts";
 import {
   analysisSourceHash,
+  regularModelScopeHash,
   analysisScopeParameters,
   ANALYSIS_GAME_WHERE,
 } from "./analysis-scope.js";
@@ -80,8 +81,7 @@ async function manifest(
     cache?.save(heightHashes);
   }
   for (let season = 2020; season <= through + 1; season++) {
-    const scope = resolveAnalysisScope({ season }, "regular"),
-      sourceHash = await analysisSourceHash(client, scope);
+    const sourceHash = await regularModelScopeHash(client, season);
     seasons.push({
       season,
       sourceHash,

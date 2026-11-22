@@ -64,7 +64,7 @@ it("opens player discovery when analysis has no remembered destination", async (
 it("remembers a batter detail outside the sidebar and returns to player discovery with its scope", async () => {
   const user = userEvent.setup();
   const destination =
-    "/analysis/matchups?season=2024&competition=all&dateFrom=2024-04-01&dateTo=2024-04-30&batter=ab1&playerRole=batter#comparison";
+    "/analysis/matchups?season=2024&competition=unknown&dateFrom=2024-04-01&dateTo=2024-04-30&batter=ab1&playerRole=batter#comparison";
   sessionStorage.setItem("kbo.workspace.analysis", destination);
   render(createElement(MemoryRouter, null, createElement(AppShell, null, createElement(Location))));
   await user.click(screen.getByRole("link", { name: "분석", exact: true }));
@@ -81,7 +81,7 @@ it("remembers a batter detail outside the sidebar and returns to player discover
   expect(directory.pathname).toBe("/analysis/players");
   expect(Object.fromEntries(directory.searchParams)).toEqual({
     season: "2024",
-    competition: "all",
+    competition: "unknown",
     dateFrom: "2024-04-01",
     dateTo: "2024-04-30",
     role: "batter",

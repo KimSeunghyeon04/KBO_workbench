@@ -13,6 +13,7 @@ import {
   analysisScopeSearch,
   changeAnalysisParams,
   scopeFromParams,
+  selectedAnalysisCompetition,
 } from "../analysis/analysis-scope";
 import { getBattingStatistics, getPitchingStatistics } from "../api/player-statistics-client";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
@@ -204,7 +205,7 @@ export function PlayerStatisticsPage() {
           경기 종류
           <select
             aria-label="경기 종류"
-            value={selected.get("competition") ?? "regular"}
+            value={selectedAnalysisCompetition(selected) ?? "regular"}
             onChange={(event) => change("competition", event.target.value)}
           >
             {Object.entries(competitionLabels).map(([key, label]) => (

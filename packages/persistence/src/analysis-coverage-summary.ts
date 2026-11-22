@@ -8,6 +8,7 @@ import {
   AnalysisCoverageResponseSchema,
   AnalysisScopeSchema,
   canonicalStringify,
+  coverageCompetitions,
   inAnalysisPeriod,
   validAnalysisCoverage,
   type AnalysisCoverageCounts,
@@ -160,12 +161,10 @@ export function coverageResponse(
     sourceHash: coverageHash({ version: 1, scope, referenceHash: summary.referenceHash, games }),
     calibrationHash: summary.calibrationHash,
     unclassifiedGames: games.filter((g) => g.competition === "unknown").length,
-    competitions: (["preseason", "regular", "postseason", "unknown"] as const).map(
-      (competition) => ({
-        competition,
-        games: games.filter((g) => g.competition === competition).length,
-      }),
-    ),
+    competitions: coverageCompetitions.map((competition) => ({
+      competition,
+      games: games.filter((g) => g.competition === competition).length,
+    })),
     firstGameDate: dates[0] ?? null,
     lastGameDate: dates.at(-1) ?? null,
     total,
@@ -185,7 +184,7 @@ export function validCoverageSeason(value: CoverageSeason): boolean {
       game.gameId <= previous ||
       counts.games !== 1 ||
       !game.gameDate.startsWith(`${value.scope.season}-`) ||
-      (value.scope.competition !== "all" && game.competition !== value.scope.competition) ||
+      game.competition !== value.scope.competition ||
       (
         [
           "actualPitches",

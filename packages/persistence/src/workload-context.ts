@@ -8,7 +8,7 @@ import {
   analysisSourceHash,
 } from "./analysis-scope.js";
 
-/** Both workload consumers use the same cross-season history and current-only selection. */
+/** Both workload consumers use all collected appearance history and the scoped target games. */
 export async function readWorkloadContext(
   client: PoolClient,
   scope: AnalysisScope,

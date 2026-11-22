@@ -71,7 +71,7 @@ function show(url: string) {
 
 it("carries the selected player and explicit scope across features, drops feature filters and restores them on back", async () => {
   const original =
-    "/analysis/pitch-shape?season=2024&pitcher=p2&competition=all&dateFrom=2024-04-01&dateTo=2024-04-30&color=cluster&cluster=2";
+    "/analysis/pitch-shape?season=2024&pitcher=p2&competition=allstar&dateFrom=2024-04-01&dateTo=2024-04-30&color=cluster&cluster=2";
   const fetch = show(original);
   const user = userEvent.setup();
   const nav = screen.getByRole("navigation", { name: "선수 분석 항목" });
@@ -88,7 +88,7 @@ it("carries the selected player and explicit scope across features, drops featur
   expect(location.pathname).toBe("/analysis/pitch-sequences");
   expect(Object.fromEntries(location.searchParams)).toEqual({
     season: "2024",
-    competition: "all",
+    competition: "allstar",
     dateFrom: "2024-04-01",
     dateTo: "2024-04-30",
     pitcher: "p2",
@@ -103,7 +103,7 @@ it("carries the selected player and explicit scope across features, drops featur
   expect(directory.pathname).toBe("/analysis/players");
   expect(Object.fromEntries(directory.searchParams)).toEqual({
     season: "2024",
-    competition: "all",
+    competition: "allstar",
     dateFrom: "2024-04-01",
     dateTo: "2024-04-30",
     role: "pitcher",
@@ -142,7 +142,7 @@ it.each([
   "keeps the %s and common scope when opening basic statistics",
   async (role, id, path, label) => {
     const fetch = show(
-      `${path}?season=2024&${role}=${id}&competition=all&dateFrom=2024-04-01&dateTo=2024-04-30&balls=2`,
+      `${path}?season=2024&${role}=${id}&competition=allstar&dateFrom=2024-04-01&dateTo=2024-04-30&balls=2`,
     );
     const user = userEvent.setup();
     await user.click(screen.getByRole("link", { name: "기본 기록" }));
@@ -153,7 +153,7 @@ it.each([
     expect(location.pathname).toBe("/analysis/player-statistics");
     expect(Object.fromEntries(location.searchParams)).toEqual({
       season: "2024",
-      competition: "all",
+      competition: "allstar",
       dateFrom: "2024-04-01",
       dateTo: "2024-04-30",
       [role]: id,
@@ -164,7 +164,7 @@ it.each([
     );
     await user.click(screen.getByRole("link", { name: label }));
     expect(screen.getByLabelText("현재 주소").textContent).toBe(
-      `${path}?season=2024&competition=all&dateFrom=2024-04-01&dateTo=2024-04-30&${role}=${id}`,
+      `${path}?season=2024&competition=allstar&dateFrom=2024-04-01&dateTo=2024-04-30&${role}=${id}`,
     );
     expect(fetch).not.toHaveBeenCalled();
   },
@@ -175,7 +175,7 @@ it("uses the first shape player only when no player is requested", () => {
   expect(screen.getByText("첫 투수")).toBeTruthy();
   const link = screen.getByRole("link", { name: "코스·결정구" }).getAttribute("href");
   expect(link).toContain("pitcher=p1");
-  expect(link).toContain("competition=all");
+  expect(link).toContain("competition=regular");
 });
 
 it("keeps a requested player missing from the catalog in the frame and outgoing links", () => {
@@ -189,11 +189,11 @@ it("keeps a requested player missing from the catalog in the frame and outgoing 
 });
 
 it.each([
-  ["/analysis/pitch-shape", "all"],
-  ["/analysis/batter-discipline", "all"],
+  ["/analysis/pitch-shape", "regular"],
+  ["/analysis/batter-discipline", "regular"],
   ["/analysis/pitch-location", "regular"],
   ["/analysis/pitch-sequences", "regular"],
-])("preserves the legacy %s scope in outgoing links", (path, competition) => {
+])("preserves the %s default scope in outgoing links", (path, competition) => {
   const scope = playerNavigationScope(path, new URLSearchParams("season=2024"));
   expect(scope.options.competition).toBe(competition);
   const link = playerAnalysisHref(
@@ -244,7 +244,7 @@ it("carries explicit A/B periods between analysis tabs without leaking situation
   expect(params.has("sort")).toBe(false);
 });
 it("preserves new season scope across shape and discipline navigation", () => {
-  const params = new URLSearchParams("season=2026&competition=all&pitcher=anonymous");
+  const params = new URLSearchParams("season=2026&competition=allstar&pitcher=anonymous");
   expect(playerNavigationScope("/analysis/pitch-shape", params).season).toBe(2026);
   expect(
     playerNavigationScope("/analysis/batter-discipline", new URLSearchParams("season=2027")).season,

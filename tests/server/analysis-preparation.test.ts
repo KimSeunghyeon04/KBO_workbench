@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, it, vi } from "vitest";
 import { parseStagingGameDocumentV2 } from "@kbo/contracts";
-import { StagingWorkspace } from "@kbo/persistence";
+import { COMPETITION_CLASSIFICATION_POLICY_VERSION, StagingWorkspace } from "@kbo/persistence";
 import { AnalysisPreparationManager } from "../../apps/server/src/jobs/analysis-preparation-manager.js";
 import { competitionFixture } from "../helpers/game-competition.js";
 import { makeDocument } from "../helpers/game-document.js";
@@ -37,6 +37,21 @@ it("refreshes prepared status after writes and protects cached records from call
     const ready = { ...row, state: "ready", updatedAt: "2026-11-21T00:00:01Z" } as const;
     await store.write(ready);
     expect(await store.read(2026)).toEqual(ready);
+    expect(await store.readClassification(2026)).toBeNull();
+    await store.writeClassification(row, row.updatedAt, "schedule unavailable");
+    const checkpoint = await store.readClassification(2026);
+    expect(checkpoint).toEqual({
+      season: 2026,
+      sourceHash: hash,
+      competitionHash: null,
+      completedAt: row.updatedAt,
+      policyVersion: COMPETITION_CLASSIFICATION_POLICY_VERSION,
+      error: "schedule unavailable",
+    });
+    if (checkpoint === null) throw new Error("Missing classification checkpoint");
+    checkpoint.error = null;
+    await store.write(ready);
+    expect((await store.readClassification(2026))?.error).toBe("schedule unavailable");
   } finally {
     await workspace.close();
   }
@@ -72,14 +87,7 @@ it("keeps unmatched games explicit while updating verified facts and models for 
   const workspace = await StagingWorkspace.open(dir.path);
   try {
     const h = harness(workspace);
-    h.repository.adopt.mockImplementation(async () => ({
-      datasetHash: changedHash,
-      matched: 1,
-      unclassified: 1,
-      unmatched: 0,
-      changed: true,
-      dryRun: false,
-    }));
+    h.leaveUnclassified(1);
     await h.manager.check();
     expect(h.models.afterImport.mock.calls.map(([season]) => season)).toEqual([2025, 2026]);
     expect(await workspace.analysisPreparation.read(2026)).toMatchObject({
@@ -93,7 +101,7 @@ it("keeps unmatched games explicit while updating verified facts and models for 
     await workspace.close();
   }
 });
-function harness(workspace: StagingWorkspace) {
+function harness(workspace: StagingWorkspace, now?: () => Date) {
   let sources = [2025, 2026].map((season) => ({
     season,
     sourceHash: hash,
@@ -101,10 +109,13 @@ function harness(workspace: StagingWorkspace) {
     unclassified: 1,
   }));
   let busy = false;
+  let unclassified = 0;
   const order: string[] = [];
   const repository = {
     seasons: async () => structuredClone(sources),
-    current: vi.fn(async () => null),
+    current: vi.fn<(season: number) => Promise<ReturnType<typeof competitionFixture> | null>>(
+      async () => null,
+    ),
     games: async (season: number) => [
       {
         gameId: `anonymous-${season}`,
@@ -116,13 +127,13 @@ function harness(workspace: StagingWorkspace) {
       order.push(`classify:${dataset.season}`);
       sources = sources.map((source) =>
         source.season === dataset.season
-          ? { ...source, competitionHash: changedHash, unclassified: 0 }
+          ? { ...source, competitionHash: changedHash, unclassified }
           : source,
       );
       return {
         datasetHash: changedHash,
         matched: 1,
-        unclassified: 0,
+        unclassified,
         unmatched: 0,
         changed: true,
         dryRun: false,
@@ -145,6 +156,7 @@ function harness(workspace: StagingWorkspace) {
     collect,
     models,
     () => busy,
+    now,
   );
   return {
     manager,
@@ -152,6 +164,9 @@ function harness(workspace: StagingWorkspace) {
     models,
     collect,
     order,
+    leaveUnclassified: (count: number) => {
+      unclassified = count;
+    },
     setBusy: (value: boolean) => {
       busy = value;
     },
@@ -230,6 +245,134 @@ it("isolates classification errors and resumes interrupted work without blocking
   }
 });
 
+it("refreshes legacy ready seasons immediately and preserves manual mode", async () => {
+  await using dir = await mkdtempDisposable(path.join(tmpdir(), "kbo-preparation-legacy-"));
+  const workspace = await StagingWorkspace.open(dir.path);
+  const now = () => new Date("2026-11-21T00:00:01Z");
+  const h = harness(workspace, now);
+  const disabled = new AnalysisPreparationManager(
+    h.repository,
+    workspace.analysisPreparation,
+    h.collect,
+    h.models,
+    () => false,
+    now,
+    undefined,
+    false,
+  );
+  try {
+    for (const season of [2025, 2026]) {
+      await h.repository.adopt(competitionFixture(season, []));
+      await workspace.analysisPreparation.write({
+        version: 1,
+        season,
+        sourceHash: hash,
+        competitionHash: changedHash,
+        unclassified: 0,
+        state: "ready",
+        error: null,
+        updatedAt: "2026-11-21T00:00:00Z",
+      });
+    }
+    h.repository.current.mockImplementation((season) => h.collect(season));
+    await disabled.check();
+    expect((await disabled.status()).preparation.map((row) => row.state)).toEqual([
+      "ready",
+      "ready",
+    ]);
+    expect(h.collect).not.toHaveBeenCalled();
+    expect((await h.manager.status()).preparation.map((row) => row.state)).toEqual([
+      "pending",
+      "pending",
+    ]);
+    await h.manager.check();
+    expect(h.repository.current).not.toHaveBeenCalled();
+    expect(h.collect.mock.calls.map(([season]) => season)).toEqual([2026, 2025]);
+    await h.manager.check();
+    expect(h.collect).toHaveBeenCalledTimes(2);
+    expect((await h.manager.status()).preparation.map((row) => row.state)).toEqual([
+      "ready",
+      "ready",
+    ]);
+  } finally {
+    await disabled.close();
+    await h.manager.close();
+    await workspace.close();
+  }
+});
+
+it("keeps classification retries independent of later model work and restarts", async () => {
+  await using dir = await mkdtempDisposable(path.join(tmpdir(), "kbo-preparation-retry-"));
+  const workspace = await StagingWorkspace.open(dir.path);
+  let time = "2026-11-21T00:00:00Z";
+  const now = () => new Date(time);
+  const h = harness(workspace, now);
+  const store = workspace.analysisPreparation;
+  const restarted = new AnalysisPreparationManager(
+    h.repository,
+    store,
+    h.collect,
+    h.models,
+    () => false,
+    now,
+  );
+  try {
+    h.collect.mockRejectedValueOnce(new Error("official schedule unavailable"));
+    await h.manager.check();
+    expect(await store.readClassification(2026)).toMatchObject({
+      completedAt: now().toISOString(),
+      error: "official schedule unavailable",
+    });
+    await h.manager.close();
+    const failed = await store.readClassification(2026);
+    h.change(2025);
+    h.collect.mockClear();
+    time = "2026-11-21T05:59:59Z";
+    const modelStarted = Promise.withResolvers<undefined>();
+    const finishModel = Promise.withResolvers<undefined>();
+    h.models.afterImport.mockImplementation(async (season) => {
+      if (season !== 2026) return;
+      modelStarted.resolve(undefined);
+      await finishModel.promise;
+    });
+    const checking = restarted.check();
+    try {
+      await modelStarted.promise;
+      expect(
+        (await restarted.status()).preparation.find((row) => row.season === 2026),
+      ).toMatchObject({ state: "models" });
+    } finally {
+      finishModel.resolve(undefined);
+      await checking;
+    }
+    expect(h.collect.mock.calls.map(([season]) => season)).toEqual([2025]);
+    expect(await store.readClassification(2026)).toEqual(failed);
+    expect((await restarted.status()).preparation.find((row) => row.season === 2026)).toMatchObject(
+      {
+        state: "failed",
+        error: "official schedule unavailable",
+        updatedAt: "2026-11-21T05:59:59.000Z",
+      },
+    );
+    time = "2026-11-21T06:00:00Z";
+    h.collect.mockRejectedValueOnce(new Error("official schedule still unavailable"));
+    await restarted.check();
+    expect(h.collect.mock.calls.map(([season]) => season)).toEqual([2025, 2026]);
+    h.change(2026);
+    await restarted.check();
+    expect(h.collect.mock.calls.map(([season]) => season)).toEqual([2025, 2026, 2026]);
+    expect(await store.readClassification(2026)).toMatchObject({
+      sourceHash: changedHash,
+      competitionHash: changedHash,
+      error: null,
+    });
+  } finally {
+    await h.manager.close();
+    await restarted.close();
+    await workspace.close();
+  }
+});
+
 it("resumes later model refreshes after the older changed season is already ready", async () => {
   await using dir = await mkdtempDisposable(path.join(tmpdir(), "kbo-preparation-interrupted-"));
   const workspace = await StagingWorkspace.open(dir.path);
@@ -246,6 +389,8 @@ it("resumes later model refreshes after the older changed season is already read
       h.repository,
       {
         read: (season) => store.read(season),
+        readClassification: (season) => store.readClassification(season),
+        writeClassification: (...args) => store.writeClassification(...args),
         async write(value) {
           if (interrupted) throw failure;
           await store.write(value);
@@ -265,8 +410,10 @@ it("resumes later model refreshes after the older changed season is already read
     expect(h.models.afterImport.mock.calls.map(([season]) => season)).toEqual([2025]);
 
     h.models.afterImport.mockClear();
+    h.collect.mockClear();
     await h.manager.check();
     expect(h.models.afterImport.mock.calls.map(([season]) => season)).toEqual([2026]);
+    expect(h.collect).not.toHaveBeenCalled();
     expect((await store.read(2026))?.state).toBe("ready");
     await h.manager.close();
   } finally {
@@ -297,6 +444,7 @@ it("finishes shutdown while the official schedule request is being cancelled", a
     expect(await check).toEqual([{ status: "fulfilled", value: undefined }]);
     expect(h.repository.adopt).not.toHaveBeenCalled();
     expect(h.models.afterImport).not.toHaveBeenCalled();
+    expect(await workspace.analysisPreparation.readClassification(2026)).toBeNull();
     await h.manager.close();
   } finally {
     await workspace.close();

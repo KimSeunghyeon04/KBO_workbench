@@ -1,14 +1,21 @@
 import {
   AnalysisScopeQuerySchema,
+  defaultAnalysisCompetition,
   resolveAnalysisScope,
   type AnalysisScopeOptions,
 } from "@kbo/contracts";
 import { Value } from "@sinclair/typebox/value";
 
+export function selectedAnalysisCompetition(params: URLSearchParams) {
+  const value = params.get("competition");
+  // Older analysis links used the combined scope. Reopen them with the current default.
+  return value === "all" ? defaultAnalysisCompetition : value;
+}
+
 export function analysisScopeParams(params: URLSearchParams): URLSearchParams {
   const scope = new URLSearchParams();
   for (const key of ["competition", "dateFrom", "dateTo"]) {
-    const value = params.get(key);
+    const value = key === "competition" ? selectedAnalysisCompetition(params) : params.get(key);
     if (value !== null && (value !== "" || key === "competition")) scope.set(key, value);
   }
   return scope;

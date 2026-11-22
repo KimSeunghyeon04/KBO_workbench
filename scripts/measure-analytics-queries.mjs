@@ -92,7 +92,7 @@ try {
   if (typeof pitcher !== "string") throw new Error("Missing fixture pitcher");
   captured.clear();
   const results = [],
-    scope = { season: validation ? 2025 : 2024, competition: validation ? "regular" : "all" },
+    scope = { season: validation ? 2025 : 2024, competition: validation ? "regular" : "unknown" },
     statistics = new PlayerStatisticsRepository(pool),
     quality = new PitchQualityRepository(pool),
     parks = new ParkEnvironmentRepository(pool),

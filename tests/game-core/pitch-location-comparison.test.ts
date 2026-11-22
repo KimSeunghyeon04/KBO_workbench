@@ -12,7 +12,7 @@ import { analyzePitchLocation, comparePitchLocations } from "@kbo/game-core";
 import { outcomeRow, terminalPa } from "../helpers/pitch-outcomes.js";
 
 const hash = "a".repeat(64);
-const query: PitchOutcomeQuery = { season: 2024, competition: "all" };
+const query: PitchOutcomeQuery = { season: 2024, competition: "unknown" };
 const scope = resolveAnalysisScope(query);
 it("preserves every actual pitch in count/stance/type composition, including unknown and unlocated pitches", () => {
   fc.assert(

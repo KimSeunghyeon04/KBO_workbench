@@ -4,14 +4,17 @@ import { isCalendarDate } from "./calendar-date.js";
 
 const strict = { additionalProperties: false } as const;
 const hash = Type.String({ pattern: "^[0-9a-f]{64}$" });
+export const gameCompetitions = ["preseason", "regular", "postseason", "allstar"] as const;
 export const GameCompetitionSchema = Type.Union([
   Type.Literal("preseason"),
   Type.Literal("regular"),
   Type.Literal("postseason"),
+  Type.Literal("allstar"),
 ]);
 export const CompetitionPageSchema = Type.Object(
   {
     month: Type.Integer({ minimum: 1, maximum: 12 }),
+    day: Type.Optional(Type.Integer({ minimum: 1, maximum: 31 })),
     competition: GameCompetitionSchema,
     sourceUrl: Type.String({ minLength: 1 }),
     contentHash: hash,
@@ -31,9 +34,9 @@ export const CompetitionEntrySchema = Type.Object(
 );
 export const GameCompetitionDatasetSchema = Type.Object(
   {
-    version: Type.Literal(1),
+    version: Type.Union([Type.Literal(1), Type.Literal(2)]),
     season: Type.Integer({ minimum: 1982, maximum: 2200 }),
-    pages: Type.Array(CompetitionPageSchema, { minItems: 36, maxItems: 36 }),
+    pages: Type.Array(CompetitionPageSchema, { minItems: 36 }),
     entries: Type.Array(CompetitionEntrySchema),
   },
   strict,
@@ -53,9 +56,25 @@ export type CompetitionGameLink = Static<typeof CompetitionGameLinkSchema>;
 
 export function parseGameCompetitionDataset(input: unknown): GameCompetitionDataset {
   const value = Value.Decode(GameCompetitionDatasetSchema, input);
-  const keys = new Set(value.pages.map((p) => `${p.month}:${p.competition}`));
-  if (keys.size !== 36)
+  const monthly = value.pages.filter((p) => p.day === undefined);
+  const keys = new Set(value.pages.map((p) => `${p.month}:${p.competition}:${p.day ?? 0}`));
+  if (
+    monthly.length !== 36 ||
+    keys.size !== value.pages.length ||
+    monthly.some((p) => p.competition === "allstar")
+  )
     throw new Error("경기 분류는 12개월·세 경기 종류의 응답이 모두 필요합니다.");
+  for (const page of value.pages) {
+    if (page.day === undefined) continue;
+    if (
+      value.version === 1 ||
+      (page.competition !== "allstar" && page.competition !== "postseason") ||
+      !isCalendarDate(
+        `${value.season}-${String(page.month).padStart(2, "0")}-${String(page.day).padStart(2, "0")}`,
+      )
+    )
+      throw new Error("일별 경기 분류의 날짜 또는 경기 종류가 올바르지 않습니다.");
+  }
   const ids = new Set<string>();
   for (const row of value.entries) {
     if (
@@ -66,7 +85,8 @@ export function parseGameCompetitionDataset(input: unknown): GameCompetitionData
         (p) =>
           p.contentHash === row.pageHash &&
           p.competition === row.competition &&
-          p.month === Number(row.gameDate.slice(5, 7)),
+          p.month === Number(row.gameDate.slice(5, 7)) &&
+          (p.day === undefined || p.day === Number(row.gameDate.slice(8, 10))),
       )
     )
       throw new Error(`경기 분류의 날짜·출처·중복이 올바르지 않습니다: ${row.sourceGameId}`);
@@ -77,7 +97,8 @@ export function parseGameCompetitionDataset(input: unknown): GameCompetitionData
     pages: [...value.pages].sort(
       (a, b) =>
         a.month - b.month ||
-        (a.competition < b.competition ? -1 : a.competition > b.competition ? 1 : 0),
+        (a.competition < b.competition ? -1 : a.competition > b.competition ? 1 : 0) ||
+        (a.day ?? 0) - (b.day ?? 0),
     ),
     entries: [...value.entries].sort((a, b) =>
       a.sourceGameId < b.sourceGameId ? -1 : a.sourceGameId > b.sourceGameId ? 1 : 0,

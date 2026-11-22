@@ -180,7 +180,7 @@ it("requests one bounded player page with only common scope and preserves team r
     ],
   });
   show(
-    "season=2024&playerRole=pitcher&pitcher=hp1&competition=all&dateFrom=2024-04-01&dateTo=2024-04-30&pitchType=slider&balls=2&minimum=999&page=4",
+    "season=2024&playerRole=pitcher&pitcher=hp1&competition=allstar&dateFrom=2024-04-01&dateTo=2024-04-30&pitchType=slider&balls=2&minimum=999&page=4",
   );
   const table = await findRecordTable({ name: "투구 성적" });
   const rows = within(table).getAllByRole("row");
@@ -202,7 +202,7 @@ it("requests one bounded player page with only common scope and preserves team r
     .find((url) => url.pathname.endsWith("/statistics/pitching"));
   expect(Object.fromEntries(request?.searchParams ?? [])).toEqual({
     season: "2024",
-    competition: "all",
+    competition: "allstar",
     dateFrom: "2024-04-01",
     dateTo: "2024-04-30",
     playerId: "hp1",
@@ -303,12 +303,12 @@ it("does not fall back to an unfiltered statistics request when no player can be
 it("changes only the selected player and requests that player's statistics in the same scope", async () => {
   const fetch = mockRecords();
   show(
-    "season=2024&playerRole=pitcher&pitcher=hp1&competition=all&dateFrom=2024-04-01&dateTo=2024-04-30",
+    "season=2024&playerRole=pitcher&pitcher=hp1&competition=allstar&dateFrom=2024-04-01&dateTo=2024-04-30",
   );
   await findRecordTable({ name: "투구 성적" });
   const query = {
     season: 2024,
-    competition: "all",
+    competition: "allstar",
     dateFrom: "2024-04-01",
     dateTo: "2024-04-30",
     playerId: "hp2",
@@ -322,7 +322,7 @@ it("changes only the selected player and requests that player's statistics in th
       query,
       scope: resolveAnalysisScope({
         season: 2024,
-        competition: "all",
+        competition: "allstar",
         dateFrom: "2024-04-01",
         dateTo: "2024-04-30",
       }),
@@ -346,7 +346,7 @@ it("changes only the selected player and requests that player's statistics in th
   const table = await findRecordTable({ name: "투구 성적" });
   expect(within(table).getByRole("rowheader", { name: "투수 B" })).toBeTruthy();
   expect(screen.getByLabelText("현재 주소").textContent).toBe(
-    "/analysis/player-statistics?season=2024&playerRole=pitcher&pitcher=hp2&competition=all&dateFrom=2024-04-01&dateTo=2024-04-30",
+    "/analysis/player-statistics?season=2024&playerRole=pitcher&pitcher=hp2&competition=allstar&dateFrom=2024-04-01&dateTo=2024-04-30",
   );
   expect(fetch).toHaveBeenCalledTimes(3);
   expect(String(fetch.mock.calls[2]?.[0])).toContain("playerId=hp2");
@@ -368,7 +368,7 @@ it("distinguishes a failed record request from no records and retries the select
 it("preserves the player and role when changing season and removes dates from the old season", async () => {
   const fetch = mockRecords();
   show(
-    "season=2024&playerRole=pitcher&pitcher=hp1&competition=all&dateFrom=2024-04-01&dateTo=2024-04-30",
+    "season=2024&playerRole=pitcher&pitcher=hp1&competition=allstar&dateFrom=2024-04-01&dateTo=2024-04-30",
   );
   await findRecordTable({ name: "투구 성적" });
   openConditions();
@@ -377,7 +377,7 @@ it("preserves the player and role when changing season and removes dates from th
   });
   await findRecordTable({ name: "투구 성적" });
   expect(screen.getByLabelText("현재 주소").textContent).toBe(
-    "/analysis/player-statistics?season=2025&playerRole=pitcher&pitcher=hp1&competition=all",
+    "/analysis/player-statistics?season=2025&playerRole=pitcher&pitcher=hp1&competition=allstar",
   );
   expect(fetch).toHaveBeenCalledTimes(4);
 });

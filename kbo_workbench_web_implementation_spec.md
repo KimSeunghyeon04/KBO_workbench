@@ -349,7 +349,7 @@ typed 행으로 교체하거나 명시적으로 삭제한 행의 finding은 immu
 ## 8. PostgreSQL V3
 
 활성 DB는 PostgreSQL 16에 `database/v3/0001_v3_initial.sql`을 적용하고 migration head
-`database/v3/0018_record_correction_proofs.sql`까지 올린다.
+`database/v3/0019_regular_model_competition.sql`까지 올린다.
 analytics/projection/registry/record correction contract는 `4/4/1/2`이다. V2 SQL은
 `database/migrations`에 복구용 legacy로
 보존하며 V2 DB에 V3 DDL을 적용하지 않는다. JSON, JSONB, ARRAY와 tracking EAV 컬럼은 사용하지 않는다.
@@ -848,4 +848,8 @@ writer lock·current token 검증·versioned transition 경로를 사용하고 �
 2024-01-01부터 2024-12-31까지 다시 수집한다. blocking 경기는 quarantine에 남고 교정이 끝난
 경기만 revision 1로 적재한다.
 
-새 경기·시즌을 적재하면 공식 경기 분류와 필요한 분석 모델을 자동 갱신한다. 모델 작업 전 영향받는 각 시즌의 진행 상태를 저장해 재시작 후 이어서 처리한다. 웹은 15초 상태 확인 응답을 조회에 사용하는 시즌별로 대조한다. 서버는 현재 경기와 분류 포인터가 그대로인 동안 시즌별 요약을 재사용한다. 기존 수동 교정 원장과 sealed 기록은 보존한다. [자동 반영·복구·지원 범위](docs/analysis/automatic-preparation.md)를 따른다.
+분석은 확인된 정규시즌을 기본으로 하며 경기 종류를 한 번에 하나씩 조회한다.
+KBO 공식 경기 ID로 확인한 순위 결정전은 포스트시즌 범위에 포함하고, 올스타전은 독립 범위로 조회한다.
+모델 학습에는 확인된 정규시즌 경기를 사용한다.
+
+새 경기·시즌을 적재하면 공식 경기 분류와 필요한 분석 모델을 자동 갱신한다. 분류 정책 버전과 공식 일정 확인 결과를 시즌마다 별도로 기록해 정책 변경은 즉시 점검하고 실패는 각 시도의 완료 시각을 기준으로 재시도한다. 모델 작업 전 영향받는 각 시즌의 진행 상태를 저장해 재시작 후 이어서 처리한다. 웹은 15초 상태 확인 응답을 조회에 사용하는 시즌별로 대조한다. 서버는 현재 경기와 분류 포인터가 그대로인 동안 시즌별 요약을 재사용한다. 기존 수동 교정 원장과 sealed 기록은 보존한다. [자동 반영·복구·지원 범위](docs/analysis/automatic-preparation.md)를 따른다.

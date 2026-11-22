@@ -35,18 +35,14 @@ export async function getAnalysisPeriodComparison(
           ? Value.Decode(BatterPeriodResponseSchema, raw)
           : Value.Decode(DisciplinePeriodResponseSchema, raw);
   const expected = analysisPeriodQueries(query);
-  const defaultCompetition = kind === "statistics" || kind === "batter-profile" ? "regular" : "all";
   const scopes = [expected.first, expected.second].map(
     ({ season, competition, dateFrom, dateTo }) =>
-      resolveAnalysisScope(
-        {
-          season,
-          ...(competition === undefined ? {} : { competition }),
-          ...(dateFrom === undefined ? {} : { dateFrom }),
-          ...(dateTo === undefined ? {} : { dateTo }),
-        },
-        defaultCompetition,
-      ),
+      resolveAnalysisScope({
+        season,
+        ...(competition === undefined ? {} : { competition }),
+        ...(dateFrom === undefined ? {} : { dateFrom }),
+        ...(dateTo === undefined ? {} : { dateTo }),
+      }),
   );
   if (
     data.playerId !== id ||

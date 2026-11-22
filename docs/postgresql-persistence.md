@@ -31,7 +31,7 @@ PostgreSQL은 검증된 `StagingGameDocumentV2`를 typed fact로 투영해 봉�
 
 - PostgreSQL 16
 - fresh baseline: `database/v3/0001_v3_initial.sql`
-- migration head: `database/v3/0018_record_correction_proofs.sql`
+- migration head: `database/v3/0019_regular_model_competition.sql`
 - analytics/projection/registry/record correction contract: `4/4/1/2`
 - schema: `catalog`, `workbench`, `baseball`, `registry`, `record_correction`, `analytics`
 - JSON, JSONB, ARRAY, tracking EAV 컬럼 없음

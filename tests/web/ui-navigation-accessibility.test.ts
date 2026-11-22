@@ -43,7 +43,7 @@ it("keeps player details out of the seven workspace destinations and closes the 
     "page",
   );
   expect(within(menu).getByRole("link", { name: "선수 분석" }).getAttribute("href")).toBe(
-    "/analysis/players?competition=all&role=pitcher",
+    "/analysis/players?competition=regular&role=pitcher",
   );
   const button = screen.getByRole("button", { name: "메뉴" });
   await user.click(button);

@@ -91,8 +91,10 @@ PUT `model-policy`는 `enabled`, `applicationSeason`으로 해당 시즌만 변�
 
 유효 신장 hash만 pool별 최대 다섯 학습 기간에 재사용한다. 매 요청의 동일 repeatable-read snapshot에서
 현재 revision/document/source bundle, sealed 신장 dataset, 선수별 고정 신장 선택의 SHA-256 지문을 읽는다.
-게임 facts·봉인 dataset·신장 선택의 불변성과 이 지문을 함께 이용한다. 경기 분류와 분류 dataset hash는
-기존 manifest 경로에서 매번 확인한다. TTL만으로 최신성을 판단하지 않으며 원천·모델·응답 hash 계약은 그대로다.
+게임 facts·봉인 dataset·신장 선택의 불변성과 이 지문을 함께 이용한다. 학습 manifest에는 정규시즌으로
+선택된 현재 경기·revision과 그 경기 집합이 마지막으로 바뀌었을 때 채택한 분류 dataset hash를 사용한다.
+올스타전이나 포스트시즌의 분류만 갱신되면 기존 정규시즌 모델을 재사용한다. 분석 조회에는 현재 채택한
+분류 dataset을 사용한다. 기존 DB는 `0019_regular_model_competition`에서 현재 분류 hash를 학습 기준으로 보존한다.
 각 모델은 필요한 기간만 읽는다. 카운트 모델의 같은 학습 기간에 대한 RE24 사전표는 후보 사이에서
 재사용하며 한 학습 호출 안에서 최대 세 개의 24상태 표만 보관한다. 후보 검증 자료가 없어도 날짜만
 옮겨 기존 계수를 복사하지 않는다. 다른 시즌 파일 공개는 기존 2025 포인터를 변경하지 않는다.

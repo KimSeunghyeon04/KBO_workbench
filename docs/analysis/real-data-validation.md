@@ -10,14 +10,14 @@ pnpm analysis:validate --source-container kbo-workbench-db-1 --source-user kbo -
 
 원본 container/user/database는 반드시 명시한다. 도구가 고유 container·anonymous volume과
 localhost 임시 포트를 만들고, `analysis/validation/<UUID>/`에 실행 상태·원문 증거·모델·보고서를
-저장한다. DB에는 `0018_record_correction_proofs`까지 migration을 적용한다. 기존 DB나 비어 있지
+저장한다. DB에는 `0019_regular_model_competition`까지 migration을 적용한다. 기존 DB나 비어 있지
 않은 DB에 snapshot을 덮어쓰지 않는다. 원본의 비밀번호나 `.env`를 읽어 출력하지 않는다.
 
 ## 단계와 재개
 
 1. 동일 snapshot으로 전체 DB를 복사하고 migration·planner 통계를 준비한다.
-2. 2020–2025 공식 일정 36페이지씩을 기존 제한된 HTTP adapter로 수집하고 원문 hash와 분류를 보존한다.
-3. 미분류·시범·정규·포스트시즌을 집계한다. 6개 시즌 모두 확인된 정규시즌 표본이 있어야 학습한다.
+2. 2020–2025 월별 공식 일정 36페이지씩과 필요한 일별 게임센터 응답을 기존 제한된 HTTP adapter로 수집하고 원문 hash와 분류를 보존한다.
+3. 미분류·시범·정규·포스트시즌·올스타전을 집계한다. 6개 시즌 모두 확인된 정규시즌 표본이 있어야 학습한다.
 4. RE24, 카운트 RE, 승리확률, 구장 효과, 구종 기대 효과를 **한 작업씩** 기존 maintenance CLI로 학습한다.
 5. 모델 파일을 다시 strict decode하고 동일 repository·worker로 30회 조회 및 SQL 실행계획을 측정한다.
 6. `report.md`, `benchmark.json`, 모델별 `.log`, 불변 모델 파일에 결과를 남긴다.
@@ -50,7 +50,7 @@ strict decode하고 현재 원천 manifest를 다시 검증한다. 학습 당시
 KBO 일정의 ID와 수집된 Naver ID는 형식이 다르다. `collection/kbo-game-links.ts`가 명시적인
 제공자 ID 형식을 해석한다. 실제 경기일, 원문 ID의 월일·원정/홈 팀 코드·더블헤더 순번,
 Naver의 시즌 suffix가 모두 일치하고 후보가 하나일 때만 연결한다. 특수 prefix로 경기 종류를
-추정하지 않는다. 종류는 공식 일정 페이지에서만 얻는다. 알 수 없는 형식·연결 없는 경기는 미분류다.
+추정하지 않는다. 종류는 공식 월별 일정, 일별 게임센터 유형, 순위 결정전 공지와 공식 경기 ID의 대조로 확정한다. 알 수 없는 형식·연결 없는 경기는 미분류다.
 
 `reference.competition_game_links`에 두 원본 ID를 함께 보존하고 dataset hash에 연결을 포함한다.
 저장소는 현재 경기 목록으로 날짜·대상·중복을 다시 검증한다. 봉인한 분류와 연결은 불변이며 기존

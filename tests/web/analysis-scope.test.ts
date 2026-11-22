@@ -12,6 +12,13 @@ import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { useAnalysisScope } from "../../apps/web/src/analysis/use-analysis-scope.js";
 
 afterEach(cleanup);
+it("opens a legacy combined URL with the regular season", () => {
+  const params = new URLSearchParams("competition=all&dateFrom=2024-06-01");
+  expect(scopeFromParams(2024, params)).toEqual({
+    options: { competition: "regular", dateFrom: "2024-06-01" },
+    error: null,
+  });
+});
 function scopeWrapper(initial: string) {
   const client = createAnalysisQueryClient();
   return ({ children }: PropsWithChildren) =>
@@ -52,12 +59,12 @@ it("restores URL scope through history and resets dates while preserving both pl
 
 it("preserves explicit scope choices and leaves legacy default resolution separate", () => {
   const params = new URLSearchParams(
-    "season=2024&competition=all&pitcher=p&batter=b&pitchType=직구",
+    "season=2024&competition=unknown&pitcher=p&batter=b&pitchType=직구",
   );
   const next = changeAnalysisParams(params, "season", "2025");
   expect(Object.fromEntries(next)).toEqual({
     season: "2025",
-    competition: "all",
+    competition: "unknown",
     pitcher: "p",
     batter: "b",
     pitchType: "직구",

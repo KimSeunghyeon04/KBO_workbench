@@ -81,13 +81,13 @@ GET 요청이나 새 서비스로 전체 학습을 옮기지 않는다. 코드 h
 
 ## 운영 반영
 
-migration head는 `0018_record_correction_proofs`이다. sealed facts/analytics contract 4는 그대로다.
-공식 일정은 시즌별 12개월 × 3종류 응답을 검증한다. collection에서 두 제공자의 경기 ID를
+migration head는 `0019_regular_model_competition`이다. sealed facts/analytics contract 4는 그대로다.
+공식 일정은 시즌별 12개월 × 3종류 응답과 올스타전·순위 결정전의 일별 증거를 검증한다. collection에서 두 제공자의 경기 ID를
 실제 날짜·팀 코드·더블헤더 순번으로 유일하게 연결하고 두 원본 ID를 별도로 보존한다.
 취소 등 링크 없는 행은 원문에 보존하며 전체 일정 확보율로 과장하지 않는다. 일부 실패·충돌·
 기존 분류 누락은 current dataset을 바꾸지 않는다.
 
-새 화면의 기본은 확인된 정규시즌이고 기존 구질/선구안·품질은 수집 전체다. 미분류 자료를
+분석 화면과 API의 기본은 확인된 정규시즌이며 경기 종류를 하나씩 선택한다. 미분류 자료를
 정규시즌으로 추정하지 않는다. 모델이 준비되지 않은 상태도 정상 응답이며 기술 통계는 유지한다.
 [오프라인 CLI 실행 명령](model-management.md#오프라인-cli)을 사용하고, 학습의 실제 평가 보고서로
 채택 여부를 판단한다. 운영 반영 전 paired backup을 만들었고, 공식 분류·파생 모델을 추가했다.

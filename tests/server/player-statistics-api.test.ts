@@ -45,7 +45,7 @@ it.each(["batting", "pitching"] as const)(
     await app.register(playerStatisticsRoutes, { pool: db.pool });
     try {
       const response = await app.inject(
-        `/api/v2/analysis/statistics/${kind}?season=2025&competition=all&dateFrom=2025-04-01&dateTo=2025-05-01&playerId=anon-player&limit=200`,
+        `/api/v2/analysis/statistics/${kind}?season=2025&competition=allstar&dateFrom=2025-04-01&dateTo=2025-05-01&playerId=anon-player&limit=200`,
       );
       expect(response.statusCode, response.body).toBe(200);
       const body = response.json<BattingStatisticsResponse | PitchingStatisticsResponse>();
@@ -57,7 +57,7 @@ it.each(["batting", "pitching"] as const)(
       ).toBe(true);
       expect(body.query).toEqual({
         season: 2025,
-        competition: "all",
+        competition: "allstar",
         dateFrom: "2025-04-01",
         dateTo: "2025-05-01",
         playerId: "anon-player",
@@ -65,14 +65,14 @@ it.each(["batting", "pitching"] as const)(
       });
       expect(body.scope).toEqual({
         season: 2025,
-        competition: "all",
+        competition: "allstar",
         dateFrom: "2025-04-01",
         dateTo: "2025-05-01",
       });
       expect(body.rows).toEqual([]);
       expect(db.query).toHaveBeenCalledWith(expect.stringContaining("f.player_id=$6"), [
         2025,
-        "all",
+        "allstar",
         "2025-04-01",
         "2025-05-01",
         "player",
@@ -107,6 +107,10 @@ it.each(["batting", "pitching"] as const)(
         );
         expect(invalid.statusCode).toBe(400);
       }
+      const combined = await app.inject(
+        `/api/v2/analysis/statistics/${kind}?season=2025&competition=all`,
+      );
+      expect(combined.statusCode).toBe(400);
       expect(db.connect).not.toHaveBeenCalled();
     } finally {
       await app.close();

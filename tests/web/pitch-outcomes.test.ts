@@ -108,7 +108,7 @@ function Location() {
   );
 }
 
-function show(role: "pitcher" | "batter", search = "season=2024&competition=all") {
+function show(role: "pitcher" | "batter", search = "season=2024&competition=unknown") {
   const client = createAnalysisQueryClient();
   clients.push(client);
   render(
@@ -240,7 +240,7 @@ it("keeps evidence map selection in the URL while preserving the comparison and 
   const fetch = mockOutcomes();
   show(
     "pitcher",
-    "season=2024&competition=all&pitcher=hp1&periodCompare=1&periodASeason=2023&locationCell=12",
+    "season=2024&competition=unknown&pitcher=hp1&periodCompare=1&periodASeason=2023&locationCell=12",
   );
   const map = await screen.findByRole("group", { name: "실제 코스 지도" });
   expect(within(map).getByRole("button", { name: /^코스 12:/, pressed: true })).toBeTruthy();
@@ -261,7 +261,7 @@ it("keeps evidence map selection in the URL while preserving the comparison and 
 
 it("keeps pitch and PA denominators distinct while disclosing detailed metrics and revision-bound evidence", async () => {
   mockOutcomes();
-  show("batter", "season=2024&competition=all&batter=b1");
+  show("batter", "season=2024&competition=unknown&batter=b1");
   fireEvent.click(screen.getByRole("tab", { name: "종결 성적" }));
   await screen.findByRole("table", { name: "종결 구종 성적" });
   expect(screen.queryByRole("tab", { name: "구종 배합" })).toBeNull();
@@ -288,7 +288,7 @@ it("keeps pitch and PA denominators distinct while disclosing detailed metrics a
 
 it("restores selected tabs from the URL and opens A/B controls without issuing a comparison request", async () => {
   const fetch = mockOutcomes();
-  show("pitcher", "season=2024&competition=all&pitcher=hp1&outcomeView=sample");
+  show("pitcher", "season=2024&competition=unknown&pitcher=hp1&outcomeView=sample");
   const sampleTab = screen.getByRole("tab", { name: "표본 기준", selected: true });
   await screen.findByRole("heading", { name: "표본과 계산 기준" });
   expect(screen.queryByRole("group", { name: "실제 코스 지도" })).toBeNull();
@@ -311,7 +311,7 @@ it.each([
     fetch.mock.calls
       .map(([url]) => new URL(String(url), "http://localhost").pathname)
       .filter((pathname) => pathname === path || pathname === `${path}/comparison`);
-  show(role, "season=2025&competition=all&outcomeView=period");
+  show(role, "season=2025&competition=unknown&outcomeView=period");
 
   const apply = await screen.findByRole("button", { name: "두 기간 비교 적용" });
   expect(analysisRequests()).toEqual([]);
@@ -507,7 +507,7 @@ it("applies quick count presets atomically and clears only situation filters", a
   const fetch = mockOutcomes();
   show(
     "pitcher",
-    "season=2024&competition=all&pitcher=hp1&dateFrom=2024-06-01&dateTo=2024-06-30&balls=0&strikes=0&stance=R",
+    "season=2024&competition=unknown&pitcher=hp1&dateFrom=2024-06-01&dateTo=2024-06-30&balls=0&strikes=0&stance=R",
   );
   await screen.findByRole("table", { name: "구종별 반응" });
   const before = fetch.mock.calls.length;
@@ -532,7 +532,7 @@ it("applies quick count presets atomically and clears only situation filters", a
   const actual = new URLSearchParams(screen.getByLabelText("현재 주소").textContent ?? "");
   expect(Object.fromEntries(actual)).toEqual({
     season: "2024",
-    competition: "all",
+    competition: "unknown",
     pitcher: "hp1",
     dateFrom: "2024-06-01",
     dateTo: "2024-06-30",

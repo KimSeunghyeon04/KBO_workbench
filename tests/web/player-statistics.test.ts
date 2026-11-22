@@ -97,7 +97,7 @@ it.each(["batting", "pitching"] as const)(
     vi.stubGlobal("fetch", fetch);
     const client = createAnalysisQueryClient();
     const sort = kind === "batting" ? "avg" : "era";
-    const search = `?season=2025&competition=all&kind=${kind}&dateFrom=2025-04-01&dateTo=2025-10-01&group=player&minimum=1000&sort=${sort}&page=2`;
+    const search = `?season=2025&competition=allstar&kind=${kind}&dateFrom=2025-04-01&dateTo=2025-10-01&group=player&minimum=1000&sort=${sort}&page=2`;
     render(
       createElement(
         QueryClientProvider,
@@ -133,7 +133,7 @@ it.each(["batting", "pitching"] as const)(
     vi.stubGlobal("fetch", fetch);
     const sort = kind === "batting" ? "avg" : "era";
     const sortLabel = kind === "batting" ? "타율" : "ERA";
-    const search = `?season=2024&competition=all&kind=${kind}&dateFrom=2024-04-01&dateTo=2024-04-30&group=team&minimum=25&sort=${sort}&page=2`;
+    const search = `?season=2024&competition=allstar&kind=${kind}&dateFrom=2024-04-01&dateTo=2024-04-30&group=team&minimum=25&sort=${sort}&page=2`;
     const client = createAnalysisQueryClient();
     render(
       createElement(
@@ -182,7 +182,7 @@ it.each(["batting", "pitching"] as const)(
     const changed = new URLSearchParams(screen.getByLabelText("현재 주소").textContent ?? "");
     expect(changed.get("page")).toBeNull();
     expect(changed.get("season")).toBe("2024");
-    expect(changed.get("competition")).toBe("all");
+    expect(changed.get("competition")).toBe("allstar");
     expect(changed.get("dateFrom")).toBe("2024-04-01");
     expect(changed.get("dateTo")).toBe("2024-04-30");
     expect(changed.get("group")).toBe("team");

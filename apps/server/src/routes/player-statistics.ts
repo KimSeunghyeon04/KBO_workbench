@@ -51,18 +51,12 @@ export const playerStatisticsRoutes: FastifyPluginAsyncTypebox<Pick<RouteContext
         return {
           playerId,
           query: request.query,
-          first: periodSnapshot(
-            first,
-            pair.first.sourceHash,
-            [{ label: "팀별 기록", count: pair.first.total }],
-            "regular",
-          ),
-          second: periodSnapshot(
-            second,
-            pair.second.sourceHash,
-            [{ label: "팀별 기록", count: pair.second.total }],
-            "regular",
-          ),
+          first: periodSnapshot(first, pair.first.sourceHash, [
+            { label: "팀별 기록", count: pair.first.total },
+          ]),
+          second: periodSnapshot(second, pair.second.sourceHash, [
+            { label: "팀별 기록", count: pair.second.total },
+          ]),
           metrics: compareBattingPeriods(pair.first.rows, pair.second.rows),
           warnings: [
             "수집 경기 기준입니다. 이적 전후 기록의 분자·분모를 합산하며 구종·카운트·코스 조건은 적용하지 않습니다.",
@@ -80,18 +74,12 @@ export const playerStatisticsRoutes: FastifyPluginAsyncTypebox<Pick<RouteContext
       return {
         playerId,
         query: request.query,
-        first: periodSnapshot(
-          first,
-          pair.first.sourceHash,
-          [{ label: "팀별 기록", count: pair.first.total }],
-          "regular",
-        ),
-        second: periodSnapshot(
-          second,
-          pair.second.sourceHash,
-          [{ label: "팀별 기록", count: pair.second.total }],
-          "regular",
-        ),
+        first: periodSnapshot(first, pair.first.sourceHash, [
+          { label: "팀별 기록", count: pair.first.total },
+        ]),
+        second: periodSnapshot(second, pair.second.sourceHash, [
+          { label: "팀별 기록", count: pair.second.total },
+        ]),
         metrics: comparePitchingPeriods(pair.first.rows, pair.second.rows),
         warnings: [
           "자책점 미제공 경기가 있으면 전체 ERA는 미확정입니다. ER 확인 경기 ERA는 확인된 경기의 자책점·아웃만 사용합니다.",

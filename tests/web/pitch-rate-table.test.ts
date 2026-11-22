@@ -11,7 +11,7 @@ import {
 } from "../../apps/web/src/analysis/pitch-rate-table.js";
 import { outcomeRow } from "../helpers/pitch-outcomes.js";
 
-const query = { season: 2024, competition: "all" as const };
+const query = { season: 2024, competition: "unknown" as const };
 const scope = resolveAnalysisScope(query);
 const sourceHash = "a".repeat(64);
 const baseGroup = analyzePitchLocation(query, "hp1", scope, sourceHash, [], []).total;

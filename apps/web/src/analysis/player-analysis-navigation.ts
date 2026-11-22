@@ -33,12 +33,9 @@ export function playerRoleForPath(
   return null;
 }
 
-function playerScopeParams(path: string, params: URLSearchParams) {
-  const legacyShape = path === "/analysis/pitch-shape";
-  const legacyDiscipline = path === "/analysis/batter-discipline";
+function playerScopeParams(params: URLSearchParams) {
   const selected = new URLSearchParams(params);
-  if (!selected.has("competition"))
-    selected.set("competition", legacyShape || legacyDiscipline ? "all" : "regular");
+  if (!selected.has("competition")) selected.set("competition", "regular");
   return selected;
 }
 
@@ -48,7 +45,7 @@ export function playerNavigationScope(
   defaultSeason?: number,
 ) {
   const season = Number(params.get("season") ?? defaultSeason);
-  const selected = playerScopeParams(path, params);
+  const selected = playerScopeParams(params);
   if (path === "/analysis/pitcher-changes" && !selected.has("dateTo"))
     selected.set("dateTo", `${season}-12-31`);
   return { season, ...scopeFromParams(season, selected) };
@@ -94,7 +91,7 @@ export function playerDirectoryForLocation(
       ? playerDirectoryHref(role, scope.season, scope.options)
       : "/analysis/players";
   }
-  const directory = analysisScopeParams(playerScopeParams(path, params));
+  const directory = analysisScopeParams(playerScopeParams(params));
   directory.set("role", role);
   return `/analysis/players?${directory}`;
 }

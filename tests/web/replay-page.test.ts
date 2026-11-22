@@ -76,7 +76,7 @@ describe("경기 재생 UI", () => {
       vi.stubGlobal("fetch", replayFetchMock());
       const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       const origin =
-        "/analysis/pitch-shape?season=2025&pitcher=anon-p1&competition=all&dateFrom=2025-06-01&team=home&pitchType=slider#comparison";
+        "/analysis/pitch-shape?season=2025&pitcher=anon-p1&competition=unknown&dateFrom=2025-06-01&team=home&pitchType=slider#comparison";
       function Origin() {
         const location = useLocation();
         return createElement(

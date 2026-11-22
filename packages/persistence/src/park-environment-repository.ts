@@ -16,6 +16,7 @@ import {
 import { analyzeParkEnvironment } from "@kbo/game-core";
 import {
   analysisSourceHash,
+  regularModelScopeHash,
   ANALYSIS_GAME_WHERE,
   analysisScopeParameters,
 } from "./analysis-scope.js";
@@ -68,10 +69,7 @@ export async function parkManifest(client: PoolClient, through: number) {
   for (let season = 2020; season <= through + 1; season++)
     seasons.push({
       season,
-      hash: await analysisSourceHash(
-        client,
-        resolveAnalysisScope({ season, competition: "regular" }),
-      ),
+      hash: await regularModelScopeHash(client, season),
     });
   const games = Value.Decode(
     Type.Array(

@@ -7,7 +7,6 @@ import {
   RunTrainingGameSchema,
   RunValueResponseSchema,
   canonicalStringify,
-  resolveAnalysisScope,
   type RunObservation,
   type RunExpectancyModel,
   type CountRunObservation,
@@ -27,7 +26,7 @@ import {
   winInningLimit,
 } from "@kbo/game-core";
 import { readAnalysisPlays } from "./analysis-plays.js";
-import { analysisSourceHash } from "./analysis-scope.js";
+import { regularModelScopeHash } from "./analysis-scope.js";
 const gameColumns = `r.game_id AS "gameId",r.revision,r.season,to_char(r.game_date,'YYYY-MM-DD') AS "gameDate",r.scheduled_innings AS "scheduledInnings",r.game_status AS status,r.document_hash AS "documentHash",
  (r.game_status='final' AND r.scheduled_innings=9 AND f.final_inning>=9
   AND NOT EXISTS(SELECT 1 FROM workbench.relay_administrative a WHERE a.game_id=r.game_id AND a.revision=r.revision AND a.administrative_code IN ('called_game','forfeit'))
@@ -201,10 +200,7 @@ export async function readRunManifest(client: PoolClient, through: number) {
   for (let season = 2020; season <= through + 1; season++)
     scopeHashes.push({
       season,
-      hash: await analysisSourceHash(
-        client,
-        resolveAnalysisScope({ season, competition: "regular" }),
-      ),
+      hash: await regularModelScopeHash(client, season),
     });
   return { version: 1 as const, through, games, scopeHashes };
 }

@@ -107,7 +107,7 @@ describe("time-split pitch quality", () => {
     expect(
       summarizePitchQuality(
         rows,
-        resolveAnalysisScope({ season: 2020, competition: "all" }),
+        resolveAnalysisScope({ season: 2020, competition: "allstar" }),
         "p",
         "a".repeat(64),
         model,

@@ -209,11 +209,17 @@ export async function createRuntime(config: AppConfig, pool: Pool): Promise<AppR
   );
   await analysisModelJobs.start();
   const schedule = new KboScheduleCollector();
+  const competitionRepository = new GameCompetitionRepository(pool);
   const analysisPreparation = new AnalysisPreparationManager(
-    new GameCompetitionRepository(pool),
+    competitionRepository,
     workspace.analysisPreparation,
-    (season, signal) =>
-      schedule.collect(season, (page) => workspace.competitionSources.save(season, page), signal),
+    (season, signal, games) =>
+      schedule.collect(
+        season,
+        (page) => workspace.competitionSources.save(season, page),
+        signal,
+        games,
+      ),
     analysisModelJobs,
     () => importJobs.list().some((job) => job.status === "queued" || job.status === "running"),
     undefined,
@@ -225,6 +231,7 @@ export async function createRuntime(config: AppConfig, pool: Pool): Promise<AppR
           message: error instanceof Error ? error.message : "Unknown refresh error",
         }) + "\n",
       ),
+    config.analysisAutoRefresh,
   );
   const importJobs = new ImportJobManager(
     workspace,

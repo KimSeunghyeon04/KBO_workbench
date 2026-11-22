@@ -9,15 +9,14 @@ export function periodSnapshot(
   query: AnalysisScopeQuery,
   sourceHash: string,
   samples: PeriodSnapshot["samples"],
-  competition: "all" | "regular" = "all",
 ): PeriodSnapshot {
-  const { season, dateFrom, dateTo } = query;
+  const { season, competition, dateFrom, dateTo } = query;
   return {
     sourceHash,
     samples,
     scope: resolveAnalysisScope({
       season,
-      competition: query.competition ?? competition,
+      ...(competition === undefined ? {} : { competition }),
       ...(dateFrom === undefined ? {} : { dateFrom }),
       ...(dateTo === undefined ? {} : { dateTo }),
     }),
