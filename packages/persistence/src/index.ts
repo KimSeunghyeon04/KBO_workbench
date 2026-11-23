@@ -121,6 +121,12 @@ export {
   CompetitionScheduleNoMatchesError,
 } from "./game-competition-repository.js";
 export { PlayerStatisticsRepository } from "./player-statistics-repository.js";
+export { PlayerDirectoryRepository } from "./player-directory-repository.js";
+export {
+  OfficialCareerWorkspace,
+  readOfficialPlayerCareers,
+  readOfficialPlayerBirthYears,
+} from "./official-career-workspace.js";
 export { PitchLocationRepository } from "./pitch-location-repository.js";
 export { BatterProfileRepository } from "./batter-profile-repository.js";
 export { type PitchOutcomeCache, type PitchOutcomeSnapshot } from "./pitch-outcomes.js";

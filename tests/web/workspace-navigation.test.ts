@@ -61,7 +61,7 @@ it("opens player discovery when analysis has no remembered destination", async (
   expect(screen.getByRole("link", { name: "선수 분석" }).getAttribute("aria-current")).toBe("page");
 });
 
-it("remembers a batter detail outside the sidebar and returns to player discovery with its scope", async () => {
+it("remembers a batter detail outside the sidebar and returns to the global player directory", async () => {
   const user = userEvent.setup();
   const destination =
     "/analysis/matchups?season=2024&competition=unknown&dateFrom=2024-04-01&dateTo=2024-04-30&batter=ab1&playerRole=batter#comparison";
@@ -79,12 +79,6 @@ it("remembers a batter detail outside the sidebar and returns to player discover
     "http://localhost",
   );
   expect(directory.pathname).toBe("/analysis/players");
-  expect(Object.fromEntries(directory.searchParams)).toEqual({
-    season: "2024",
-    competition: "unknown",
-    dateFrom: "2024-04-01",
-    dateTo: "2024-04-30",
-    role: "batter",
-  });
+  expect(directory.search).toBe("");
   expect(directory.hash).toBe("");
 });

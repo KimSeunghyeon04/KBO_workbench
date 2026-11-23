@@ -52,6 +52,7 @@ export function createApp(
   app.register(replayRoutes, context);
   app.register(analysisRoutes, {
     pool: context.pool,
+    careerRoot: context.config.workspacePath,
     references: context.runtime.workspace.pitchReferences,
     calibrations: context.runtime.workspace.pitchCalibrations,
     summaries: context.runtime.workspace.analysisCoverage,

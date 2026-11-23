@@ -13,6 +13,7 @@ import {
   resolveAnalysisScope,
   type BattingStatisticsRow,
   type PitchingStatisticsRow,
+  type PlayerDirectoryEntry,
 } from "@kbo/contracts";
 import { battingStatistics, pitchingStatistics } from "@kbo/game-core";
 import { PlayerBasicStatisticsPage } from "../../apps/web/src/pages/player-basic-statistics-page.js";
@@ -114,8 +115,11 @@ function Location() {
   );
 }
 
-function show(search = "season=2025&playerRole=pitcher&pitcher=hp1") {
-  const client = createAnalysisQueryClient();
+function show(
+  search = "season=2025&playerRole=pitcher&pitcher=hp1",
+  directory: PlayerDirectoryEntry[] = [],
+) {
+  const client = createAnalysisQueryClient(directory);
   clients.push(client);
   render(
     createElement(
@@ -303,6 +307,16 @@ it("changes only the selected player and requests that player's statistics in th
   const fetch = mockRecords();
   show(
     "season=2024&playerRole=pitcher&pitcher=hp1&competition=allstar&dateFrom=2024-04-01&dateTo=2024-04-30",
+    [
+      {
+        identity: "naver:hp2",
+        name: "투수 B",
+        sourceIds: ["hp2"],
+        primaryPosition: "투수",
+        teams: ["가상 팀"],
+        seasons: [{ season: 2024, battingPlayerId: null, pitchingPlayerId: "hp2" }],
+      },
+    ],
   );
   await findRecordTable({ name: "투구 성적" });
   const query = {
@@ -343,14 +357,61 @@ it("changes only the selected player and requests that player's statistics in th
   fireEvent.change(screen.getByRole("searchbox", { name: "선수 검색" }), {
     target: { value: "hp2" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "투수 B ID hp2" }));
+  fireEvent.click(screen.getByRole("button", { name: /^투수 B, 출생연도 미확인, 투수/ }));
   const table = await findRecordTable({ name: "투구 성적" });
   expect(within(table).getByRole("rowheader", { name: "투수 B" })).toBeTruthy();
-  expect(screen.getByLabelText("현재 주소").textContent).toBe(
-    "/analysis/player-statistics?season=2024&playerRole=pitcher&pitcher=hp2&competition=allstar&dateFrom=2024-04-01&dateTo=2024-04-30",
+  const location = new URL(
+    screen.getByLabelText("현재 주소").textContent ?? "",
+    "http://localhost",
   );
+  expect(location.pathname).toBe("/analysis/player-statistics");
+  expect(Object.fromEntries(location.searchParams)).toEqual({
+    season: "2024",
+    competition: "allstar",
+    dateFrom: "2024-04-01",
+    dateTo: "2024-04-30",
+    player: "naver:hp2",
+  });
   expect(fetch).toHaveBeenCalledTimes(3);
   expect(String(fetch.mock.calls[2]?.[0])).toContain("playerId=hp2");
+});
+
+it("shows both basic record groups for a player with batting and pitching records in a season", async () => {
+  const fetch = mockRecords({
+    batting: [
+      battingStatistics({
+        ...battingTotals,
+        identity: "naver:hp1",
+        playerId: "hp1",
+        name: "겸업 선수",
+      }),
+    ],
+    pitching: [
+      pitchingStatistics({
+        ...pitchingTotals,
+        name: "겸업 선수",
+        knownErGames: 2,
+        knownErOuts: 27,
+      }),
+    ],
+  });
+  show("player=naver%3Ahp1&season=2025", [
+    {
+      identity: "naver:hp1",
+      sourceIds: ["hp1"],
+      name: "겸업 선수",
+      primaryPosition: "투수",
+      teams: ["홈"],
+      seasons: [{ season: 2025, battingPlayerId: "hp1", pitchingPlayerId: "hp1" }],
+    },
+  ]);
+  const batting = await screen.findByRole("region", { name: "타자 기본 기록" });
+  const pitching = await screen.findByRole("region", { name: "투수 기본 기록" });
+  expect(within(batting).getByText("0.400", { selector: "dd" })).toBeTruthy();
+  expect(within(pitching).getByText("1.00", { selector: "dd" })).toBeTruthy();
+  expect(
+    fetch.mock.calls.map(([input]) => new URL(String(input), "http://localhost").pathname).sort(),
+  ).toEqual(["/api/v2/analysis/statistics/batting", "/api/v2/analysis/statistics/pitching"]);
 });
 
 it("distinguishes a failed record request from no records and retries the selected player's query", async () => {

@@ -1,5 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { filterAnalysisPlayers, type AnalysisCatalogPlayer } from "./player-analysis-navigation";
+import type { PlayerDirectoryEntry } from "@kbo/contracts";
+import {
+  filterDirectoryPlayers,
+  playerBirthYearLabel,
+  playerCareer,
+  playerPosition,
+} from "./player-directory";
 
 const resultLimit = 12;
 
@@ -7,12 +13,14 @@ export function PlayerAnalysisSearch({
   players,
   selectedId,
   unavailable,
+  retry,
   onSelect,
 }: {
-  players: readonly AnalysisCatalogPlayer[] | undefined;
+  players: readonly PlayerDirectoryEntry[] | undefined;
   selectedId: string | null;
   unavailable: string;
-  onSelect: (player: AnalysisCatalogPlayer) => void;
+  retry: (() => void) | undefined;
+  onSelect: (player: PlayerDirectoryEntry) => void;
 }) {
   const resultsId = useId();
   const root = useRef<HTMLDivElement>(null);
@@ -21,7 +29,7 @@ export function PlayerAnalysisSearch({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const showResults = open && query.trim() !== "";
-  const matches = showResults && players ? filterAnalysisPlayers(players, query) : [];
+  const matches = showResults && players ? filterDirectoryPlayers(players, query) : [];
 
   useEffect(() => {
     if (!showResults) return;
@@ -32,11 +40,11 @@ export function PlayerAnalysisSearch({
     return () => document.removeEventListener("pointerdown", dismiss);
   }, [showResults]);
 
-  function choose(player: AnalysisCatalogPlayer) {
+  function choose(player: PlayerDirectoryEntry) {
     input.current?.focus();
     setOpen(false);
     setQuery("");
-    if (player.id !== selectedId) onSelect(player);
+    if (player.identity !== selectedId) onSelect(player);
   }
 
   return (
@@ -68,7 +76,8 @@ export function PlayerAnalysisSearch({
         }
         if (event.key === "Enter" && event.target === input.current && matches[0]) {
           event.preventDefault();
-          choose(matches[0]);
+          if (matches.length === 1) choose(matches[0]);
+          else results.current?.querySelector("button")?.focus();
           return;
         }
         if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
@@ -105,7 +114,7 @@ export function PlayerAnalysisSearch({
         type="search"
         aria-label="선수 검색"
         aria-controls={resultsId}
-        placeholder="선수 이름 또는 ID"
+        placeholder="전체 선수 이름 또는 ID"
         autoComplete="off"
         spellCheck={false}
         value={query}
@@ -119,29 +128,43 @@ export function PlayerAnalysisSearch({
       <div id={resultsId} className="player-analysis-search-results" hidden={!showResults}>
         {showResults &&
           (matches.length === 0 ? (
-            <p role="status">
-              {players === undefined
-                ? unavailable
-                : players.length === 0
-                  ? "이 조회 범위에 검색할 선수가 없습니다."
-                  : "일치하는 선수가 없습니다."}
-            </p>
+            <>
+              <p role="status">
+                {players === undefined
+                  ? unavailable
+                  : players.length === 0
+                    ? "검색할 선수가 없습니다."
+                    : "일치하는 선수가 없습니다."}
+              </p>
+              {players === undefined && retry && (
+                <button type="button" className="analysis-button" onClick={retry}>
+                  다시 시도
+                </button>
+              )}
+            </>
           ) : (
             <>
               <ul ref={results} aria-label="선수 검색 결과">
-                {matches.slice(0, resultLimit).map((player) => (
-                  <li key={player.id}>
-                    <button
-                      type="button"
-                      aria-label={`${player.name} ID ${player.id}`}
-                      aria-current={player.id === selectedId ? true : undefined}
-                      onClick={() => choose(player)}
-                    >
-                      <strong>{player.name}</strong>
-                      <span>ID {player.id}</span>
-                    </button>
-                  </li>
-                ))}
+                {matches.slice(0, resultLimit).map((player) => {
+                  const { teams } = playerCareer(player);
+                  const birthYear = playerBirthYearLabel(player);
+                  const position = playerPosition(player);
+                  return (
+                    <li key={player.identity}>
+                      <button
+                        type="button"
+                        aria-label={`${player.name}, ${birthYear}, ${position}, ${teams}`}
+                        aria-current={player.identity === selectedId ? true : undefined}
+                        onClick={() => choose(player)}
+                      >
+                        <span className="player-search-result-name">
+                          <strong>{player.name}</strong> · {birthYear} · {position}
+                        </span>
+                        <span className="player-search-result-teams">{teams}</span>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
               {matches.length > resultLimit && (
                 <p role="status">검색 결과 {matches.length}명. 이름 또는 ID를 더 입력해 주세요.</p>

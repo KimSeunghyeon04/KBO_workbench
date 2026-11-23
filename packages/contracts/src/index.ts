@@ -583,6 +583,22 @@ export {
   type PitchingStatisticsResponse,
 } from "./player-statistics.js";
 export {
+  PlayerDirectorySchema,
+  type PlayerDirectoryEntry,
+  type PlayerDirectorySeason,
+} from "./player-directory.js";
+export {
+  PlayerBirthYearSchema,
+  parseOfficialPlayerBirthYears,
+  type OfficialPlayerBirthYear,
+} from "./official-player-birth-year.js";
+export {
+  OfficialPlayerCareerSchema,
+  parseOfficialPlayerCareerDataset,
+  type OfficialPlayerCareer,
+  type OfficialPlayerCareerRecord,
+} from "./official-player-career.js";
+export {
   PitchOutcomeQuerySchema,
   PitchCountFlowQuerySchema,
   PitchCountFlowRowSchema,

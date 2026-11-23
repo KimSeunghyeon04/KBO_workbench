@@ -51,6 +51,7 @@ import {
   GameCompetitionRepository,
   CompetitionScheduleNoMatchesError,
   PlayerStatisticsRepository,
+  PlayerDirectoryRepository,
   PitchLocationRepository,
   type PitchOutcomeSnapshot,
   RunValueRepository,
@@ -750,6 +751,121 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(
       (await repository.batting({ season: 2024, competition: "unknown", minPA: 2 })).rows,
     ).toEqual([]);
+  });
+
+  it("builds one career per player, keeps return stints, and counts only official PA and actual pitches", async () => {
+    for (const season of [2024, 2025]) {
+      const game = pitchAnalysisFixture(season);
+      await store.importRevision({
+        ...game,
+        rosters: {
+          away: {
+            ...game.rosters.away,
+            players: game.rosters.away.players.map((player) =>
+              player.playerId === "a1"
+                ? { ...player, name: "동명 선수", positions: ["유격수"] }
+                : player,
+            ),
+          },
+          home: {
+            ...game.rosters.home,
+            players: game.rosters.home.players.map((player) =>
+              player.playerId === "hp1" ? { ...player, name: "동명 선수" } : player,
+            ),
+          },
+        },
+      });
+    }
+    const partial = parseStagingGameDocumentV2(
+      makeDocument([
+        { kind: "half_inning_start", payload: {} },
+        { kind: "batter_start", payload: { batterId: "a2", pitcherId: "a1" } },
+        { kind: "pitch", payload: { call: "called_strike" } },
+      ]),
+    );
+    await store.importRevision({
+      ...partial,
+      metadata: { ...partial.metadata, season: 2024, gameDate: "2024-08-01" },
+      rosters: {
+        away: {
+          ...partial.rosters.away,
+          players: partial.rosters.away.players.filter((player) => player.playerId !== "a1"),
+        },
+        home: {
+          ...partial.rosters.home,
+          players: partial.rosters.home.players.map((player) =>
+            player.playerId === "hp1" ? { ...player, playerId: "a1", name: "동명 선수" } : player,
+          ),
+        },
+      },
+    });
+
+    const allstar = pitchAnalysisFixture(2025);
+    await store.importRevision({
+      ...allstar,
+      source: { ...allstar.source, sourceGameId: "analysis-directory-allstar" },
+      metadata: {
+        ...allstar.metadata,
+        gameId: "analysis-directory-allstar",
+        gameDate: "2025-07-12",
+      },
+      teams: {
+        away: { ...allstar.teams.away, name: "나눔" },
+        home: { ...allstar.teams.home, name: "드림" },
+      },
+      rosters: {
+        away: {
+          ...allstar.rosters.away,
+          players: allstar.rosters.away.players.map((player) =>
+            player.playerId === "a1"
+              ? { ...player, name: "동명 선수", positions: ["유격수"] }
+              : player,
+          ),
+        },
+        home: {
+          ...allstar.rosters.home,
+          players: allstar.rosters.home.players.map((player) =>
+            player.playerId === "hp1" ? { ...player, name: "동명 선수" } : player,
+          ),
+        },
+      },
+    });
+    await new GameCompetitionRepository(pool).adopt(
+      competitionFixture(2025, [
+        {
+          sourceGameId: "analysis-directory-allstar",
+          gameDate: "2025-07-12",
+          competition: "allstar",
+        },
+      ]),
+    );
+
+    const directory = await new PlayerDirectoryRepository(pool).list();
+    expect(directory.map((player) => player.sourceIds)).toEqual([["a1"], ["hp1"]]);
+    expect(directory).toEqual([
+      {
+        identity: "naver:a1",
+        sourceIds: ["a1"],
+        name: "동명 선수",
+        primaryPosition: "유격수",
+        teams: ["원정", "홈", "원정"],
+        seasons: [
+          { season: 2025, battingPlayerId: "a1", pitchingPlayerId: null },
+          { season: 2024, battingPlayerId: "a1", pitchingPlayerId: "a1" },
+        ],
+      },
+      {
+        identity: "naver:hp1",
+        sourceIds: ["hp1"],
+        name: "동명 선수",
+        primaryPosition: "투수",
+        teams: ["홈"],
+        seasons: [
+          { season: 2025, battingPlayerId: null, pitchingPlayerId: "hp1" },
+          { season: 2024, battingPlayerId: null, pitchingPlayerId: "hp1" },
+        ],
+      },
+    ]);
   });
 
   it("filters the selected player's game facts before aggregation without changing PA/BF denominators", async () => {

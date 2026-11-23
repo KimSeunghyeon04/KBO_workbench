@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import {
   ApiErrorSchema,
+  PlayerDirectorySchema,
   BattingStatisticsQuerySchema,
   PitchingStatisticsQuerySchema,
   BattingStatisticsResponseSchema,
@@ -12,13 +13,33 @@ import {
 import { Type } from "@sinclair/typebox";
 import { compareBattingPeriods, comparePitchingPeriods } from "@kbo/game-core";
 import { readAnalysisPeriodPair, periodSnapshot } from "../analysis-period-pair.js";
-import { PlayerStatisticsRepository } from "@kbo/persistence";
+import {
+  PlayerDirectoryRepository,
+  PlayerStatisticsRepository,
+  readOfficialPlayerBirthYears,
+  readOfficialPlayerCareers,
+} from "@kbo/persistence";
 import type { RouteContext } from "./context.js";
-export const playerStatisticsRoutes: FastifyPluginAsyncTypebox<Pick<RouteContext, "pool">> = async (
-  app,
-  context,
-) => {
+export const playerStatisticsRoutes: FastifyPluginAsyncTypebox<
+  Pick<RouteContext, "pool"> & { careerRoot?: string }
+> = async (app, context) => {
   const repository = new PlayerStatisticsRepository(context.pool);
+  const root = context.careerRoot;
+  const directory = new PlayerDirectoryRepository(
+    context.pool,
+    root === undefined ? undefined : () => readOfficialPlayerCareers(root),
+    root === undefined ? undefined : () => readOfficialPlayerBirthYears(root),
+  );
+  app.get(
+    "/api/v2/analysis/players",
+    {
+      schema: {
+        querystring: Type.Object({}, { additionalProperties: false }),
+        response: { 200: PlayerDirectorySchema, 500: ApiErrorSchema },
+      },
+    },
+    () => directory.list(),
+  );
   app.get(
     "/api/v2/analysis/statistics/:playerId/comparison",
     {

@@ -17,9 +17,18 @@ export {
 export { NaverHttpClient, type NaverHttpOptions } from "./http-client.js";
 export {
   KboRegistryHttpClient,
+  kboPlayerProfileUrl,
+  kboPlayerSearchUrl,
   type KboRegistryHttpOptions,
   type KboRegistryRawPage,
 } from "./kbo-registry/client.js";
+export {
+  parseKboPlayerCareerProfile,
+  parseCareerMovement,
+  careerClubKey,
+  careerCoversObservedClubs,
+} from "./kbo-registry/player-career.js";
+export { parseKboPlayerBirthYear, hasKboPlayerSearchMatch } from "./kbo-registry/player-profile.js";
 export {
   KBO_REGISTRY_TEAMS,
   KboRegistryCollector,

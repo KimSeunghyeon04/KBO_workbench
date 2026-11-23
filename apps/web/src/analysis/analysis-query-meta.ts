@@ -1,6 +1,6 @@
 interface AnalysisQueryMeta extends Record<string, unknown> {
   analysis?: {
-    seasons: readonly number[];
+    seasons: readonly number[] | "all";
     usesModels: boolean;
   };
 }

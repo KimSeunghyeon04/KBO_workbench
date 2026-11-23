@@ -1,29 +1,12 @@
 .analysis-players-page .analysis-primary-filters {
-  grid-template-columns: minmax(90px, 120px) minmax(130px, 160px) minmax(0, 1fr);
-}
-.analysis-player-role {
-  display: grid;
-  gap: 7px;
-  min-width: 0;
-}
-.analysis-player-role > span {
-  color: var(--ui-muted);
-  font-size: 12px;
-  font-weight: 500;
-}
-.analysis-player-role > div {
-  display: flex;
-  gap: 6px;
-}
-.analysis-player-role button {
-  flex: 1;
-  min-height: 40px;
+  grid-template-columns: minmax(0, 1fr);
 }
 .analysis-player-results-heading {
   display: flex;
-  align-items: end;
+  align-items: baseline;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 16px;
+  gap: 4px 16px;
 }
 .analysis-player-results-heading h2 {
   margin: 0;
@@ -31,13 +14,9 @@
   letter-spacing: -0.025em;
 }
 .analysis-player-results-heading p {
-  margin: 7px 0 0;
-  color: #536f75;
+  margin: 0;
+  color: var(--ui-muted);
   font-size: 12px;
-}
-.analysis-player-results-heading > span {
-  color: #61767d;
-  font-size: 11px;
 }
 .analysis-player-list {
   display: grid;
@@ -58,7 +37,7 @@
   padding: 18px 4px;
   border-bottom: 1px solid var(--ui-line);
   color: var(--ui-ink);
-  background: #fff;
+  background: var(--ui-surface);
   text-decoration: none;
 }
 .analysis-player-list a:hover {
@@ -69,8 +48,7 @@
   outline: 2px solid #137e69;
   outline-offset: 3px;
 }
-.analysis-player-identity,
-.analysis-player-pitches {
+.analysis-player-identity {
   display: grid;
   gap: 4px;
   min-width: 0;
@@ -87,23 +65,13 @@
   color: var(--ui-muted);
   font-size: 12px;
 }
-.analysis-player-pitches {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.analysis-player-pitches strong {
-  font-size: 14px;
-  font-weight: 600;
-}
 .analysis-player-arrow {
   color: var(--ui-accent);
   flex-shrink: 0;
   width: 20px;
   height: 20px;
 }
-.analysis-players-page .analysis-pagination,
-.analysis-player-catalog-note {
+.analysis-players-page .analysis-pagination {
   margin-top: 0;
 }
 .analysis-player-error p,
@@ -119,12 +87,6 @@
 @media (max-width: 640px) {
   .analysis-player-list {
     grid-template-columns: 1fr;
-  }
-  .analysis-players-page .analysis-primary-filters {
-    grid-template-columns: minmax(80px, 1fr) minmax(130px, 1fr);
-  }
-  .analysis-player-search {
-    grid-column: 1 / -1;
   }
   .analysis-player-results-heading {
     align-items: start;

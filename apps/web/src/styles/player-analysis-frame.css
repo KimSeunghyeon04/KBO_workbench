@@ -37,14 +37,6 @@
   overflow-wrap: anywhere;
   color: var(--ui-ink);
 }
-.player-role-label {
-  padding: 3px 7px;
-  border: 1px solid var(--ui-line);
-  border-radius: var(--ui-radius);
-  color: var(--ui-muted);
-  background: var(--ui-surface-subtle);
-  font-size: 12px;
-}
 .player-analysis-id {
   color: var(--ui-muted);
   font-size: 12px;
@@ -57,44 +49,23 @@
   line-height: 1.7;
 }
 .player-analysis-actions {
-  display: grid;
-  gap: 6px;
+  width: min(100%, 330px);
   min-width: 0;
 }
-.player-analysis-inputs {
+.player-analysis-scope {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-.player-catalog-sample {
-  display: flex;
-  align-items: baseline;
-  justify-content: end;
   flex-wrap: wrap;
-  gap: 0 7px;
+  gap: 6px 12px;
+  margin-bottom: 8px;
 }
-.player-catalog-sample > span,
-.player-catalog-missing {
+.player-analysis-scope-summary {
   color: var(--ui-muted);
-  font-size: 12px;
-}
-.player-catalog-missing {
-  justify-self: end;
-}
-.player-catalog-sample strong {
-  font-size: 17px;
-  font-variant-numeric: tabular-nums;
-  color: var(--ui-ink);
-}
-.player-catalog-sample small {
-  margin-left: 5px;
-  font-size: 12px;
-  font-weight: 400;
+  font-size: 13px;
 }
 .player-analysis-search {
   position: relative;
   min-width: 0;
-  flex: 1 1 230px;
 }
 .player-analysis-search input,
 .player-analysis-season {
@@ -145,10 +116,7 @@
   list-style: none;
 }
 .player-analysis-search-results button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
+  display: grid;
   gap: 2px 8px;
   width: 100%;
   min-height: 40px;
@@ -168,6 +136,14 @@
 .player-analysis-search-results :is(button span, p) {
   color: var(--ui-muted);
   font-size: 12px;
+}
+.player-search-result-name strong {
+  color: var(--ui-ink);
+  font-size: 14px;
+}
+.player-search-result-teams,
+.player-analysis-period {
+  overflow-wrap: anywhere;
 }
 .player-analysis-search-results p {
   margin: 0;
@@ -196,6 +172,13 @@
 .player-analysis-links a:hover:not(.selected) {
   color: var(--ui-accent);
   border-color: var(--ui-line);
+}
+.player-analysis-primary a {
+  color: var(--ui-ink);
+  font-weight: 650;
+}
+.player-analysis-secondary {
+  border-top: 1px solid var(--ui-line);
 }
 .player-analysis-frame .page-header {
   min-height: 0;
@@ -243,17 +226,5 @@
     padding: 12px 2px;
     font-size: 12px;
     text-align: center;
-  }
-}
-@media (max-width: 440px) {
-  .player-analysis-actions {
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-  }
-  .player-analysis-inputs {
-    display: contents;
-  }
-  .player-analysis-search {
-    grid-column: 1 / -1;
   }
 }

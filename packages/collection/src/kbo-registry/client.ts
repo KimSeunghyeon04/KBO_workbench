@@ -99,6 +99,22 @@ export class KboRegistryHttpClient {
     );
   }
 
+  public async playerProfilePage(
+    playerId: string,
+    role: "batter" | "pitcher",
+    signal?: AbortSignal,
+  ): Promise<KboRegistryRawPage> {
+    return this.request(
+      kboPlayerProfileUrl(playerId, role),
+      { method: "GET", redirect: "error" },
+      signal,
+    );
+  }
+
+  public async playerSearchPage(name: string, signal?: AbortSignal): Promise<KboRegistryRawPage> {
+    return this.request(kboPlayerSearchUrl(name), { method: "GET", redirect: "error" }, signal);
+  }
+
   private async request(
     url: string,
     init: RequestInit,
@@ -122,6 +138,18 @@ export class KboRegistryHttpClient {
     });
     return { ...result.value, collectedAt: result.receivedAt };
   }
+}
+
+export function kboPlayerProfileUrl(playerId: string, role: "batter" | "pitcher"): string {
+  if (!/^\d{5}$/.test(playerId)) throw new Error("KBO 선수 ID 형식이 올바르지 않습니다.");
+  const detail = role === "pitcher" ? "PitcherDetail" : "HitterDetail";
+  return `https://www.koreabaseball.com/Record/Player/${detail}/Basic.aspx?playerId=${playerId}`;
+}
+
+export function kboPlayerSearchUrl(name: string): string {
+  const url = new URL("https://www.koreabaseball.com/Player/Search.aspx");
+  url.searchParams.set("searchWord", name);
+  return url.href;
 }
 
 function hiddenFields(html: string): Record<string, string> {

@@ -24,6 +24,21 @@ function FramedPitchAnalysisPage() {
   return createElement(PlayerAnalysisFrame, null, createElement(PitchAnalysisPage));
 }
 
+function pitchingDirectory() {
+  return ["hp1", "hp2"].map((id) => ({
+    identity: `naver:${id}`,
+    sourceIds: [id],
+    name: id,
+    primaryPosition: "투수",
+    teams: ["가상 팀"],
+    seasons: [2025, 2024].map((season) => ({
+      season,
+      battingPlayerId: null,
+      pitchingPlayerId: id,
+    })),
+  }));
+}
+
 async function selectPitcher(user: ReturnType<typeof userEvent.setup>, id: string) {
   const search = screen.getByRole("searchbox", { name: "선수 검색" });
   await user.type(search, id);
@@ -293,7 +308,7 @@ describe("투구 움직임 화면", () => {
         ),
     );
     vi.stubGlobal("fetch", fetcher);
-    const client = createAnalysisQueryClient();
+    const client = createAnalysisQueryClient(pitchingDirectory());
     const user = userEvent.setup();
     render(
       createElement(
@@ -398,7 +413,7 @@ describe("투구 움직임 화면", () => {
       );
     });
     vi.stubGlobal("fetch", fetcher);
-    const client = createAnalysisQueryClient();
+    const client = createAnalysisQueryClient(pitchingDirectory());
     const user = userEvent.setup();
     render(
       createElement(

@@ -1,11 +1,16 @@
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
+import { mkdtempDisposable } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { Client, Pool } from "pg";
 import { afterEach, expect, it, vi } from "vitest";
 import { Value } from "@sinclair/typebox/value";
+import { OfficialCareerWorkspace } from "@kbo/persistence";
 import {
   BattingStatisticsResponseSchema,
   PitchingStatisticsResponseSchema,
+  PlayerDirectorySchema,
   canonicalStringify,
   type BattingStatisticsResponse,
   type PitchingStatisticsResponse,
@@ -35,6 +40,105 @@ function connection() {
   });
   return { pool, connect, query };
 }
+
+it("serves the unscoped player directory with identity, history and season availability", async () => {
+  const db = connection();
+  await using temporary = await mkdtempDisposable(path.join(tmpdir(), "official-careers-"));
+  const career = {
+    firstSeason: 2010,
+    lastSeason: 2026,
+    clubs: [
+      { name: "이전 팀", joinedOn: null },
+      { name: "현재 팀", joinedOn: "2016-12-22" },
+    ],
+  };
+  await new OfficialCareerWorkspace(temporary.path, "fixture").publish({
+    version: 1,
+    records: [
+      {
+        playerId: "10101",
+        name: "가상 선수",
+        career,
+        sources: [
+          {
+            url: "https://www.koreabaseball.com/Record/Player/HitterDetail/Basic.aspx?playerId=10101",
+            artifactKey: "registry/player-careers/source/fixture/profile/10101-batter.html.gz",
+            contentHash: "a".repeat(64),
+          },
+          {
+            url: "https://www.koreabaseball.com/Player/Trade.aspx",
+            artifactKey: "registry/player-careers/source/fixture/movement/2016-1.json.gz",
+            contentHash: "b".repeat(64),
+          },
+        ],
+      },
+    ],
+  });
+  await new OfficialCareerWorkspace(temporary.path, "fixture").publishBirthYears({
+    version: 1,
+    records: [
+      {
+        playerId: "10101",
+        name: "가상 선수",
+        officialName: "등록 선수",
+        birthYear: 1991,
+        profile: {
+          url: "https://www.koreabaseball.com/Record/Player/HitterDetail/Basic.aspx?playerId=10101",
+          artifactKey: "registry/player-careers/source/fixture/profile/10101-batter.html.gz",
+          contentHash: "c".repeat(64),
+        },
+        alias: {
+          url: `https://www.koreabaseball.com/Player/Search.aspx?searchWord=${encodeURIComponent("가상 선수")}`,
+          artifactKey: "registry/player-careers/source/fixture/alias/10101-sample.html.gz",
+          contentHash: "d".repeat(64),
+        },
+      },
+    ],
+  });
+  const query = db.query.getMockImplementation();
+  db.query.mockImplementation((...args) => {
+    if (String(args[0]).startsWith("WITH appearances")) {
+      return Promise.resolve({
+        rows: ["10101", "10102"].map((id) => ({
+          identity: `player:${id}`,
+          sourceId: id,
+          season: 2024,
+          name: "가상 선수",
+          teams: ["이전 팀", "현재 팀"],
+          pa: 2,
+          pitches: 0,
+          primaryPosition: "포수",
+        })),
+        command: "SELECT",
+        rowCount: 2,
+        fields: [],
+        oid: 0,
+      });
+    }
+    return query?.(...args);
+  });
+  const app = Fastify();
+  installHttpErrorHandler(app);
+  await app.register(playerStatisticsRoutes, { pool: db.pool, careerRoot: temporary.path });
+  try {
+    const result = await app.inject("/api/v2/analysis/players");
+    expect(result.statusCode, result.body).toBe(200);
+    expect(Value.Decode(PlayerDirectorySchema, result.json())).toEqual(
+      ["10101", "10102"].map((id) => ({
+        identity: `player:${id}`,
+        sourceIds: [id],
+        name: "가상 선수",
+        teams: ["이전 팀", "현재 팀"],
+        primaryPosition: "포수",
+        seasons: [{ season: 2024, battingPlayerId: id, pitchingPlayerId: null }],
+        ...(id === "10101" ? { career, birthYear: 1991 } : {}),
+      })),
+    );
+  } finally {
+    await app.close();
+    await db.pool.end();
+  }
+});
 
 it.each(["batting", "pitching"] as const)(
   "%s forwards a selected player into the snapshot SQL and preserves the requested scope",

@@ -15,7 +15,7 @@ import {
   validateDisciplineResponse,
 } from "../../apps/web/src/api/batter-discipline-client.js";
 import { disciplineRow, disciplineSnapshot } from "../helpers/batter-discipline.js";
-import type { DisciplineQuery } from "@kbo/contracts";
+import type { DisciplineQuery, PlayerDirectoryEntry } from "@kbo/contracts";
 
 afterEach(() => {
   cleanup();
@@ -33,11 +33,14 @@ const response = (query: DisciplineQuery = { season: 2024 }, batter = "b1") =>
 function Location() {
   return createElement("output", { "aria-label": "현재 주소" }, useLocation().search);
 }
-function show(url = "/analysis/batter-discipline?season=2024") {
+function show(
+  url = "/analysis/batter-discipline?season=2024",
+  directory: PlayerDirectoryEntry[] = [],
+) {
   render(
     createElement(
       QueryClientProvider,
-      { client: createAnalysisQueryClient() },
+      { client: createAnalysisQueryClient(directory) },
       createElement(
         MemoryRouter,
         { initialEntries: [url] },
@@ -226,12 +229,21 @@ describe("batter discipline view", () => {
         return new Response(JSON.stringify(response({ season: 2024 }, "b2")));
       }),
     );
-    show();
+    show(undefined, [
+      {
+        identity: "naver:b2",
+        sourceIds: ["b2"],
+        name: "b2",
+        primaryPosition: null,
+        teams: ["가상 팀"],
+        seasons: [{ season: 2024, battingPlayerId: "b2", pitchingPlayerId: null }],
+      },
+    ]);
     await waitFor(() => expect(first).toBeDefined());
     fireEvent.change(screen.getByRole("searchbox", { name: "선수 검색" }), {
       target: { value: "b2" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "b2 ID b2" }));
+    fireEvent.click(screen.getByRole("button", { name: /^b2, 출생연도 미확인, 포지션 미확인/ }));
     await screen.findByLabelText("코스별 스윙 지도");
     await act(async () => {
       first?.(new Response(JSON.stringify(response())));

@@ -1,11 +1,7 @@
 import { useEffect, useRef, useState, type PropsWithChildren } from "react";
 import { Link, useLocation } from "react-router-dom";
 
-import {
-  playerAnalysisSections,
-  playerDirectoryForLocation,
-  playerRoleForPath,
-} from "../analysis/player-analysis-navigation";
+import { playerAnalysisSections, playerRoleForPath } from "../analysis/player-analysis-navigation";
 
 const managementNavigation = [
   { to: "/", label: "대시보드", end: true },
@@ -70,9 +66,7 @@ export function AppShell({ children }: PropsWithChildren): React.JSX.Element {
   const playerDestination =
     location.pathname === "/analysis/players" || location.pathname === "/analysis"
       ? location.pathname + location.search
-      : playerRole
-        ? playerDirectoryForLocation(location.pathname, params, playerRole)
-        : "/analysis/players";
+      : "/analysis/players";
   const groups =
     workspace === "analysis"
       ? analysisGroups

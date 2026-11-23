@@ -30,6 +30,7 @@ import { pitchLocationRoutes } from "./pitch-location.js";
 import { pitchAnglesRoutes } from "./pitch-angles.js";
 
 type Options = Pick<RouteContext, "pool"> & {
+  careerRoot?: string;
   summaries: Pick<AnalysisCoverageWorkspace, "read" | "write">;
   references: Pick<PitchReferenceWorkspace, "getOrCreate">;
   calibrations: Pick<PitchCalibrationWorkspace, "getOrCreate">;
@@ -55,7 +56,10 @@ export const analysisRoutes: FastifyPluginAsyncTypebox<Options> = async (app, co
     calibrate: computation.calibration,
     summaries: context.summaries,
   });
-  await app.register(playerStatisticsRoutes, { pool: context.pool });
+  await app.register(playerStatisticsRoutes, {
+    pool: context.pool,
+    ...(context.careerRoot === undefined ? {} : { careerRoot: context.careerRoot }),
+  });
   await app.register(pitchLocationRoutes, { pool: context.pool, outcomeSamples });
   await app.register(pitchAnglesRoutes, { pool: context.pool, computation: workers });
   await app.register(runValueRoutes, { pool: context.pool, models: context.runModels });

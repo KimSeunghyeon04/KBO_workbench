@@ -1,4 +1,10 @@
-import type { AnalysisScopeOptions, DisciplineCatalog, PitchAnalysisCatalog } from "@kbo/contracts";
+import type {
+  AnalysisScopeOptions,
+  DisciplineCatalog,
+  PitchAnalysisCatalog,
+  PlayerDirectoryEntry,
+  PlayerDirectorySeason,
+} from "@kbo/contracts";
 import {
   analysisScopeParams,
   analysisScopeSearch,
@@ -9,6 +15,11 @@ import {
 import { periodUrlKeys } from "./period-selection";
 
 export type PlayerAnalysisRole = "pitcher" | "batter";
+export const playerBasicPath = "/analysis/player-statistics";
+export const playerRolePath = {
+  batter: "/analysis/batter-profile",
+  pitcher: "/analysis/pitch-location",
+};
 
 export const playerAnalysisSections = {
   pitcher: [
@@ -89,6 +100,7 @@ export function playerAnalysisHref(
   season: number,
   options: AnalysisScopeOptions,
   comparison?: URLSearchParams,
+  identity?: string,
 ): string {
   const params = new URLSearchParams(analysisScopeSearch(season, options));
   params.set(role, id);
@@ -98,33 +110,55 @@ export function playerAnalysisHref(
   }
   if (path === "/analysis/matchups" || path === "/analysis/player-statistics")
     params.set("playerRole", role);
+  if (identity !== undefined) params.set("player", identity);
   return `${path}?${params}`;
 }
 
-export function playerDirectoryHref(
-  role: PlayerAnalysisRole,
+export function playerBasicHref(
+  identity: string,
   season: number,
-  options: AnalysisScopeOptions,
+  params?: URLSearchParams,
 ): string {
-  const params = new URLSearchParams(analysisScopeSearch(season, options));
-  params.set("role", role);
-  return `/analysis/players?${params}`;
+  const next = params ? analysisScopeParams(params) : new URLSearchParams();
+  next.set("season", String(season));
+  next.set("player", identity);
+  for (const key of periodUrlKeys) {
+    const value = params?.get(key);
+    if (value != null) next.set(key, value);
+  }
+  return `${playerBasicPath}?${next}`;
 }
 
-export function playerDirectoryForLocation(
+export function playerRecordId(
+  record: PlayerDirectorySeason | undefined,
+  role: PlayerAnalysisRole,
+) {
+  return (role === "batter" ? record?.battingPlayerId : record?.pitchingPlayerId) ?? null;
+}
+
+export function changePlayerReport(
   path: string,
   params: URLSearchParams,
-  role: PlayerAnalysisRole,
-): string {
-  if (params.has("season")) {
-    const scope = playerNavigationScope(path, params);
-    return scope.error === null
-      ? playerDirectoryHref(role, scope.season, scope.options)
-      : "/analysis/players";
+  player: PlayerDirectoryEntry,
+  season: number,
+  previousSeason: number,
+  currentPlayers: AnalysisPlayerSelection,
+) {
+  let next =
+    season === previousSeason
+      ? new URLSearchParams(params)
+      : changePlayerAnalysisTarget(path, params, "season", String(season), currentPlayers);
+  const role = playerRoleForPath(path, params);
+  const record = player.seasons.find((entry) => entry.season === season);
+  const id = role === null ? null : playerRecordId(record, role);
+  if (path === playerBasicPath || role === null || id === null)
+    return playerBasicHref(player.identity, season, next);
+  if (next.get(role) !== id) {
+    next = changePlayerAnalysisTarget(path, next, role, id, currentPlayers);
   }
-  const directory = analysisScopeParams(playerScopeParams(params));
-  directory.set("role", role);
-  return `/analysis/players?${directory}`;
+  next.set("season", String(season));
+  next.set("player", player.identity);
+  return `${path}?${next}`;
 }
 
 export interface AnalysisCatalogPlayer {
@@ -139,13 +173,4 @@ export function analysisCatalogPlayers(
   return "pitchers" in catalog
     ? catalog.pitchers.map((p) => ({ id: p.pitcherId, name: p.name, pitches: p.pitches }))
     : catalog.batters.map((p) => ({ id: p.batterId, name: p.name, pitches: p.pitches }));
-}
-
-export function filterAnalysisPlayers(players: readonly AnalysisCatalogPlayer[], query: string) {
-  const needle = query.trim().normalize("NFC").toLowerCase();
-  return players.filter(
-    ({ name, id }) =>
-      name.normalize("NFC").toLowerCase().includes(needle) ||
-      id.normalize("NFC").toLowerCase().includes(needle),
-  );
 }

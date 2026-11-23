@@ -59,10 +59,13 @@ export function AnalysisRefreshBoundary({ children }: PropsWithChildren) {
   const client = useQueryClient();
   const [params] = useSearchParams();
   const replay = useMatch("/replay") !== null;
+  const directory = useMatch("/analysis/players") !== null;
+  const analysisHome = useMatch("/analysis") !== null;
+  const independent = replay || directory || analysisHome;
   const requested = params.get("season");
-  const needsLatest = !replay && requested === null;
+  const needsLatest = !independent && requested === null;
   const usingSeasonWithoutStatus =
-    !replay && requested !== null && result.data === undefined && result.errorUpdateCount > 0;
+    !independent && requested !== null && result.data === undefined && result.errorUpdateCount > 0;
   // Revalidate a stale list on entry. Later background refreshes keep the open page mounted.
   const captureEntry = () => ({
     needsLatest,
@@ -112,10 +115,12 @@ export function AnalysisRefreshBoundary({ children }: PropsWithChildren) {
       return (
         scope !== undefined &&
         (refreshUnconfirmed ||
-          scope.seasons.some(
-            (season) =>
-              sourcesChanged.has(season) || (scope.usesModels && modelsSettled.has(season)),
-          ))
+          (scope.seasons === "all"
+            ? sourcesChanged.size > 0
+            : scope.seasons.some(
+                (season) =>
+                  sourcesChanged.has(season) || (scope.usesModels && modelsSettled.has(season)),
+              )))
       );
     };
     // Invalidation alone reuses an in-flight first fetch when there is no cached data.
@@ -134,7 +139,7 @@ export function AnalysisRefreshBoundary({ children }: PropsWithChildren) {
         }),
       );
   }, [preparationRows, usingSeasonWithoutStatus, client]);
-  if (replay) return children;
+  if (independent) return children;
   const seasonsConfirmed = result.data !== undefined && result.dataUpdatedAt > entry.unconfirmedAt;
   const season = analysisSeason(
     seasonsConfirmed || usingSeasonWithoutStatus ? requested : null,

@@ -1,12 +1,23 @@
 // @vitest-environment jsdom
 import { createElement } from "react";
-import { focusManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
+import { focusManager, QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { Link, MemoryRouter, Outlet, Route, Routes, useSearchParams } from "react-router-dom";
 import { act, cleanup, render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { resolveAnalysisScope, type AnalysisPreparation } from "@kbo/contracts";
 import { modelTrainingPeriod } from "@kbo/game-core";
 import { App } from "../../apps/web/src/app.js";
+import { analysisCatalogPlayers } from "../../apps/web/src/analysis/player-analysis-navigation.js";
+import {
+  AnalysisRefreshBoundary,
+  AnalysisSeasonOptions,
+  useAnalysisSeason,
+} from "../../apps/web/src/analysis/analysis-seasons.js";
+import {
+  pitcherCatalogQueryOptions,
+  batterCatalogQueryOptions,
+} from "../../apps/web/src/api/analysis-catalog-query-options.js";
+import type { PitchAnalysisCatalog, DisciplineCatalog } from "@kbo/contracts";
 
 const playerCatalogs = [
   { role: "pitcher", endpoint: "pitch-shape", list: "pitchers", id: "pitcherId" },
@@ -22,7 +33,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function show(url = "/analysis/players", options: { stale?: boolean; staleTime?: number } = {}) {
+function show(url = "/catalog", options: { stale?: boolean; staleTime?: number } = {}) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: options.staleTime ?? 0 } },
   });
@@ -37,10 +48,80 @@ function show(url = "/analysis/players", options: { stale?: boolean; staleTime?:
     createElement(
       QueryClientProvider,
       { client },
-      createElement(MemoryRouter, { initialEntries: [url] }, createElement(App)),
+      createElement(
+        MemoryRouter,
+        { initialEntries: [url] },
+        url.startsWith("/catalog")
+          ? createElement(
+              Routes,
+              null,
+              createElement(
+                Route,
+                {
+                  element: createElement(AnalysisRefreshBoundary, null, createElement(Outlet)),
+                },
+                createElement(Route, { path: "/catalog", element: createElement(ScopedCatalog) }),
+                createElement(Route, { path: "/probe-models", element: createElement(ModelProbe) }),
+              ),
+            )
+          : createElement(App),
+      ),
     ),
   );
   return client;
+}
+
+function ScopedCatalog() {
+  const [params, setParams] = useSearchParams();
+  const season = useAnalysisSeason(params.get("season"));
+  const options = { competition: "regular" as const };
+  const catalog = useQuery<
+    PitchAnalysisCatalog | DisciplineCatalog,
+    Error,
+    ReturnType<typeof analysisCatalogPlayers>
+  >({
+    ...(params.get("role") === "batter"
+      ? batterCatalogQueryOptions(season, options)
+      : pitcherCatalogQueryOptions(season, options)),
+    select: analysisCatalogPlayers,
+  });
+  return createElement(
+    "div",
+    null,
+    createElement(
+      "select",
+      {
+        "aria-label": "선수 분석 시즌",
+        value: season,
+        onChange: (event: React.ChangeEvent<HTMLSelectElement>) => {
+          const next = new URLSearchParams(params);
+          next.set("season", event.target.value);
+          setParams(next);
+        },
+      },
+      createElement(AnalysisSeasonOptions, { season }),
+    ),
+    ...(catalog.data ?? []).map((player) =>
+      createElement(
+        Link,
+        {
+          key: player.id,
+          to: `/analysis/player-statistics?season=${season}`,
+        },
+        `${player.name} 분석 보기`,
+      ),
+    ),
+    createElement(Link, { to: "/probe-models" }, "분석 모델 관리"),
+  );
+}
+
+function ModelProbe() {
+  const season = useAnalysisSeason(null);
+  useQuery({
+    queryKey: ["probe-models", season],
+    queryFn: () => fetch(`/api/v2/analysis/models?season=${season}`),
+  });
+  return null;
 }
 
 function prepared(season: number, source: string, overrides: Partial<AnalysisPreparation> = {}) {
@@ -132,7 +213,7 @@ it.each(playerCatalogs)(
       });
     });
 
-    show(`/analysis/players?season=${season}&role=${catalog.role}`);
+    show(`/catalog?season=${season}&role=${catalog.role}`);
     await waitFor(() => {
       expect(
         screen.queryByText("적재 시즌을 확인하고 있습니다.") !== null ||
@@ -189,7 +270,7 @@ it.each(playerCatalogs)("keeps $role usable when the first season check fails", 
   });
 
   try {
-    const client = show(`/analysis/players?season=2024&role=${catalog.role}`);
+    const client = show(`/catalog?season=2024&role=${catalog.role}`);
     await screen.findByText(/적재 시즌과 자동 반영 상태를 확인하지 못했습니다/u);
     await waitFor(() => expect(requestedSeasons).toEqual(["2024"]));
     if (!holdOld) await screen.findByRole("link", { name: "장애 중 명단 분석 보기" });
@@ -235,7 +316,7 @@ it.each(playerCatalogs)("refreshes $role for season changes", async (catalog) =>
     });
   });
 
-  const client = show(`/analysis/players?season=${season}&role=${catalog.role}`, {
+  const client = show(`/catalog?season=${season}&role=${catalog.role}`, {
     staleTime: 2_000,
   });
   await screen.findByRole("option", { name: "2025" });
@@ -287,7 +368,7 @@ it("rechecks a stale season list when navigating from an explicit season to a se
     throw new Error(`Unexpected request: ${url.pathname}`);
   });
 
-  show("/analysis/players?season=2025");
+  show("/catalog?season=2025");
   await screen.findByRole("option", { name: "2024" });
   await screen.findByRole("link", { name: "가상 투수 분석 보기" });
   const now = Date.now;
@@ -397,7 +478,7 @@ it("restarts a pending first catalog request only when its season changes", asyn
     return signals.length === 1 ? firstResponse.promise : catalog("새 기록의 선수");
   });
 
-  const client = show("/analysis/players?season=2024");
+  const client = show("/catalog?season=2024");
   await screen.findByRole("option", { name: "2025" });
   expect(signals).toHaveLength(1);
 
@@ -467,4 +548,77 @@ it("refreshes model status when automatic training for the viewed season settles
   current = prepared(2025, "a", { updatedAt: "2026-11-21T00:01:00Z" });
   await refreshSeasons(client);
   await waitFor(() => expect(modelCalls).toEqual(["2025", "2025"]));
+});
+
+it("loads the global directory independently of season readiness and refreshes after an older season changes", async () => {
+  const firstStatus = Promise.withResolvers<Response>();
+  const seasonStatus = (hash: string) =>
+    Response.json({
+      sourceHash: hash.repeat(64),
+      seasons: [2026, 2024],
+      preparation: [prepared(2026, "a"), prepared(2024, hash)],
+    });
+  let status: Promise<Response> | undefined = firstStatus.promise;
+  let olderHash = "a";
+  let name = "가상 선수";
+  const directory = vi.fn();
+  vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+    const url = new URL(String(input), "http://localhost");
+    if (url.pathname.endsWith("/seasons"))
+      return status ?? Promise.resolve(seasonStatus(olderHash));
+    if (url.pathname === "/api/v2/analysis/players") {
+      directory(url.search);
+      return Promise.resolve(
+        Response.json([
+          {
+            identity: "player:older",
+            sourceIds: ["older"],
+            name,
+            primaryPosition: "유격수",
+            teams: ["원정"],
+            seasons: [{ season: 2024, battingPlayerId: "older", pitchingPlayerId: null }],
+          },
+        ]),
+      );
+    }
+    if (url.pathname === "/api/v2/analysis/statistics/batting") {
+      return Promise.resolve(
+        Response.json({
+          kind: "batting",
+          query: {
+            season: 2024,
+            competition: "regular",
+            group: "player",
+            playerId: "older",
+            page: 1,
+            limit: 200,
+          },
+          scope: resolveAnalysisScope({ season: 2024, competition: "regular" }),
+          sourceHash: "a".repeat(64),
+          group: "player",
+          total: 0,
+          page: 1,
+          limit: 200,
+          rows: [],
+        }),
+      );
+    }
+    throw new Error(url.href);
+  });
+  const client = show("/analysis/players");
+  await screen.findByRole("link", { name: "가상 선수 분석 보기" });
+  expect(directory.mock.calls).toEqual([[""]]);
+  status = undefined;
+  await act(async () => firstStatus.resolve(seasonStatus("a")));
+  await waitFor(() => expect(client.isFetching()).toBe(0));
+  olderHash = "b";
+  name = "갱신된 선수";
+  await refreshSeasons(client);
+  await screen.findByRole("link", { name: "갱신된 선수 분석 보기" });
+  expect(directory.mock.calls).toEqual([[""], [""]]);
+  fireEvent.click(screen.getByRole("link", { name: "갱신된 선수 분석 보기" }));
+  const modes = await screen.findByRole("navigation", { name: "선수 기록 보기" });
+  expect(modes.textContent).toBe("기본 기록타격 분석");
+  expect(screen.getByRole("combobox", { name: "분석 시즌" })).toHaveProperty("value", "2024");
+  await screen.findByText(/선택한 범위에 이 선수의 기본 기록이 없습니다/);
 });

@@ -840,9 +840,12 @@ try {
   page.on("pageerror", (error) => errors.push(error.message));
   const menu = page.getByRole("navigation", { name: "\uc8fc \uba54\ub274" });
   const playerNavigation = page.getByRole("navigation", { name: "\uc120\uc218 \ubd84\uc11d \ud56d\ubaa9" });
+  const recordNavigation = page.getByRole("navigation", { name: "\uc120\uc218 \uae30\ub85d \ubcf4\uae30" });
+  const playerList = page.getByRole("list", { name: "\uc120\uc218 \ubaa9\ub85d" });
+  const playerSearch = page.getByRole("searchbox", { name: "\uc120\uc218 \uac80\uc0c9" });
   const playerScope = { season: "2024", competition: "unknown", dateFrom: "2024-06-01", dateTo: "2024-06-01" };
   async function openReportFilters() {
-    const filters = page.locator("details.analysis-report-filters");
+    const filters = page.locator("details.analysis-report-filters, details.player-report-filters");
     if (await filters.count() > 0 && await filters.getAttribute("open") === null) {
       await filters.locator(":scope > summary").click();
     }
@@ -856,38 +859,32 @@ try {
       if (actual.searchParams.get(key) !== value) throw new Error(`Player navigation lost ${key}: ${actual}`);
     }
   }
-  async function selectPlayer(role) {
-    const list = page.getByRole("list", { name: role === "pitcher" ? "\ud22c\uc218 \ubaa9\ub85d" : "\ud0c0\uc790 \ubaa9\ub85d" });
-    const firstPlayer = list.getByRole("link").first();
-    await firstPlayer.waitFor();
-    const href = await firstPlayer.getAttribute("href");
-    const id = href === null ? null : new URL(href, page.url()).searchParams.get(role);
-    if (!id) throw new Error(`Missing ${role} identity in player directory.`);
-    await page.getByLabel("\uc120\uc218 \uac80\uc0c9", { exact: true }).fill(id);
-    await assertPlayerDestination("/analysis/players", { q: id });
-    if (new URL(page.url()).searchParams.get("q") !== id) throw new Error("Player search was not reflected in the URL.");
-    await page.waitForFunction(({ role, id, label }) => {
-      const node = [...document.querySelectorAll("ul")].find((list) => list.getAttribute("aria-label") === label);
-      if (!node) return false;
-      const needle = id.normalize("NFC").toLowerCase();
-      const links = [...node.querySelectorAll("a")];
-      return links.length > 0 && links.every((link) => {
-        const playerId = new URL(link.href).searchParams.get(role) ?? "";
-        const name = link.querySelector("strong")?.textContent ?? "";
-        return playerId.normalize("NFC").toLowerCase().includes(needle) || name.normalize("NFC").toLowerCase().includes(needle);
-      });
-    }, { role, id, label: await list.getAttribute("aria-label") });
-    await firstPlayer.click();
-    await assertPlayerDestination(role === "pitcher" ? "/analysis/pitch-location" : "/analysis/batter-profile", { [role]: id });
-    await playerNavigation.waitFor();
-    await page.locator("table:visible").first().waitFor();
+  async function catalogPlayer(role, competition = playerScope.competition) {
+    const endpoint = role === "pitcher" ? "pitch-shape" : "batter-discipline";
+    const options = new URLSearchParams({ ...playerScope, competition });
+    if (competition !== playerScope.competition) {
+      options.delete("dateFrom");
+      options.delete("dateTo");
+    }
+    const response = await page.request.get("http://web/api/v2/analysis/" + endpoint + "?" + options);
+    if (!response.ok()) throw new Error("Could not read catalog for " + competition);
+    const result = await response.json();
+    const id = role === "pitcher" ? result.pitchers[0]?.pitcherId : result.batters[0]?.batterId;
+    if (result.scope.competition !== competition || !id) throw new Error("Missing player in " + competition);
     return id;
   }
-  async function inspectPlayerStatistics(role, id) {
-    await playerNavigation.getByRole("link", { name: "\uae30\ubcf8 \uae30\ub85d", exact: true }).click();
-    await assertPlayerDestination("/analysis/player-statistics", { [role]: id, playerRole: role });
+  async function openMode(role) {
+    const mode = role === "pitcher" ? "\ud22c\uad6c \ubd84\uc11d" : "\ud0c0\uaca9 \ubd84\uc11d";
+    await recordNavigation.getByRole("link", { name: mode, exact: true }).click();
+    await playerNavigation.waitFor();
+  }
+  async function inspectPlayerStatistics(role) {
+    if (new URL(page.url()).pathname !== "/analysis/player-statistics") {
+      await recordNavigation.getByRole("link", { name: "\uae30\ubcf8 \uae30\ub85d", exact: true }).click();
+    }
+    await assertPlayerDestination("/analysis/player-statistics", { pitcher: null, batter: null, playerRole: null });
     await page.getByRole("heading", { name: "\uae30\ubcf8 \uae30\ub85d", exact: true }).waitFor();
-    await playerNavigation.locator('a[aria-current="page"]').filter({ hasText: "\uae30\ubcf8 \uae30\ub85d" }).waitFor();
+    await recordNavigation.locator('a[aria-current="page"]').filter({ hasText: "\uae30\ubcf8 \uae30\ub85d" }).waitFor();
     const recordDetails = page.locator(".player-report-details");
     await recordDetails.waitFor();
     if (await recordDetails.getAttribute("open") !== null) throw new Error("Basic record details must start collapsed.");
@@ -912,35 +909,40 @@ try {
   if (JSON.stringify(analysisDestinations) !== JSON.stringify([
     "/analysis/players", "/analysis/statistics", "/analysis/baserunning", "/analysis/park-environment", "/replay", "/analysis/coverage", "/analysis/models",
   ])) throw new Error("Analysis sidebar did not expose exactly the seven workspace destinations.");
-  await page.getByLabel("\uc120\uc218 \ubd84\uc11d \uc2dc\uc98c", { exact: true }).selectOption("2024");
-  await page.waitForURL((url) => url.searchParams.get("season") === playerScope.season);
-  await page.locator(".analysis-advanced-filters > summary").click();
-  const competitionPicker = page.getByLabel("\uacbd\uae30 \uc885\ub958", { exact: true });
-  if (await competitionPicker.inputValue() !== "regular") throw new Error("Default competition was not regular.");
-  for (const competition of ["allstar", "postseason"]) {
-    const response = page.waitForResponse((res) => {
-      const url = new URL(res.url());
-      return url.pathname === "/api/v2/analysis/pitch-shape" && url.searchParams.get("competition") === competition;
-    });
-    await competitionPicker.selectOption(competition);
-    const result = await (await response).json();
-    if (result.scope.competition !== competition || !result.pitchers.length) throw new Error(`Missing ${competition} catalog.`);
-    await page.waitForURL((url) => url.searchParams.get("competition") === competition);
-  }
-  await competitionPicker.selectOption(playerScope.competition);
-  await page.waitForURL((url) => url.searchParams.get("competition") === playerScope.competition);
-  await page.getByLabel("\ubd84\uc11d \uc2dc\uc791\uc77c", { exact: true }).fill(playerScope.dateFrom);
-  await page.waitForURL((url) => url.searchParams.get("dateFrom") === playerScope.dateFrom);
-  await page.getByLabel("\ubd84\uc11d \uc885\ub8cc\uc77c", { exact: true }).fill(playerScope.dateTo);
-  await assertPlayerDestination("/analysis/players", {});
-  await page.getByRole("list", { name: "\ud22c\uc218 \ubaa9\ub85d" }).waitFor();
+  for (const competition of ["allstar", "postseason"]) await catalogPlayer("pitcher", competition);
+  await playerList.waitFor();
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 844 });
     if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)) throw new Error("Player directory horizontal overflow.");
   }
   await page.setViewportSize({ width: 1280, height: 900 });
-  const pitcher = await selectPlayer("pitcher");
-  if (await playerNavigation.getByRole("link").count() !== 7) throw new Error("Pitcher detail navigation is incomplete.");
+  const directoryResponse = await page.request.get("http://web/api/v2/analysis/players");
+  if (!directoryResponse.ok()) throw new Error("Missing global player directory.");
+  const directory = await directoryResponse.json();
+  if (new Set(directory.map((player) => player.identity)).size !== directory.length) throw new Error("Duplicate player in the directory.");
+  const pitcher = await catalogPlayer("pitcher");
+  const pitcherEntry = directory.find((player) => player.sourceIds.includes(pitcher));
+  if (!pitcherEntry || !pitcherEntry.teams.length) throw new Error("Pitcher history missing.");
+  await playerSearch.fill(pitcher);
+  await page.waitForURL((url) => url.pathname === "/analysis/players" && url.searchParams.get("q") === pitcher);
+  const pitcherLink = playerList.getByRole("link", { name: pitcherEntry.name + " \ubd84\uc11d \ubcf4\uae30", exact: true });
+  await pitcherLink.waitFor();
+  if ((await pitcherLink.innerText()).includes("ID " + pitcher)) throw new Error("Search result showed a raw player ID.");
+  await pitcherLink.click();
+  await page.waitForURL((url) => url.pathname === "/analysis/player-statistics" && url.searchParams.get("player") === pitcherEntry.identity && url.searchParams.get("season") === String(pitcherEntry.seasons[0].season));
+  await page.getByLabel("\ubd84\uc11d \uc2dc\uc98c", { exact: true }).selectOption(playerScope.season);
+  await openReportFilters();
+  const competitionPicker = page.getByLabel("\uacbd\uae30 \uc885\ub958", { exact: true });
+  if (await competitionPicker.inputValue() !== "regular") throw new Error("Default competition was not regular.");
+  await competitionPicker.selectOption(playerScope.competition);
+  await page.waitForURL((url) => url.searchParams.get("competition") === playerScope.competition);
+  await page.getByLabel("\ubd84\uc11d \uc2dc\uc791\uc77c", { exact: true }).fill(playerScope.dateFrom);
+  await page.waitForURL((url) => url.searchParams.get("dateFrom") === playerScope.dateFrom);
+  await page.getByLabel("\ubd84\uc11d \uc885\ub8cc\uc77c", { exact: true }).fill(playerScope.dateTo);
+  await inspectPlayerStatistics("pitcher");
+  await openMode("pitcher");
+  await assertPlayerDestination("/analysis/pitch-location", { pitcher });
+  if (await playerNavigation.getByRole("link").count() !== 6) throw new Error("Pitcher detail navigation is incomplete.");
   if (await playerNavigation.getByRole("link", { name: "\ucf54\uc2a4\u00b7\uacb0\uc815\uad6c", exact: true }).getAttribute("aria-current") !== "page") throw new Error("Current pitcher analysis is not identified.");
   if (await menu.getByRole("link", { name: "\uc120\uc218 \ubd84\uc11d", exact: true }).getAttribute("aria-current") !== "page") throw new Error("Player analysis sidebar state was lost on detail navigation.");
   const quickFilters = page.getByRole("region", { name: "\ube60\ub978 \uc0c1\ud669 \uc870\uac74" });
@@ -1062,27 +1064,28 @@ try {
   if (await allZones.getAttribute("aria-pressed") !== "true" || new URL(page.url()).searchParams.has("locationCell")) {
     throw new Error("Replay did not restore all location zones.");
   }
-  await inspectPlayerStatistics("pitcher", pitcher);
+  await inspectPlayerStatistics("pitcher");
+  await openMode("pitcher");
   await playerNavigation.getByRole("link", { name: "\uad6c\uc9c8\u00b7\uc6c0\uc9c1\uc784", exact: true }).click();
   await assertPlayerDestination("/analysis/pitch-shape", { pitcher });
   await page.getByRole("img", { name: /\ud3c9\uade0 \ud3ec\uc2ec/ }).waitFor();
-  await page.getByRole("link", { name: "\uc120\uc218 \ubcc0\uacbd", exact: true }).click();
-  await assertPlayerDestination("/analysis/players", { role: "pitcher", q: null });
-  await page.getByRole("list", { name: "\ud22c\uc218 \ubaa9\ub85d" }).waitFor();
-  if (await page.getByLabel("\uc120\uc218 \uac80\uc0c9", { exact: true }).inputValue() !== "") throw new Error("Player-specific search leaked into player change.");
-  const playerRoles = page.getByRole("group", { name: "\uc120\uc218 \uc720\ud615" });
-  await playerRoles.getByRole("button", { name: "\ud0c0\uc790", exact: true }).click();
-  await assertPlayerDestination("/analysis/players", { role: "batter" });
-  const batter = await selectPlayer("batter");
-  if (await playerNavigation.getByRole("link").count() !== 4) throw new Error("Batter detail navigation is incomplete.");
-  await inspectPlayerStatistics("batter", batter);
+  const batter = await catalogPlayer("batter");
+  const batterEntry = directory.find((player) => player.sourceIds.includes(batter));
+  if (!batterEntry) throw new Error("Batter missing from the global directory.");
+  await playerSearch.fill(batter);
+  const resultList = page.getByRole("list", { name: "\uc120\uc218 \uac80\uc0c9 \uacb0\uacfc" });
+  await resultList.getByRole("button").filter({ hasText: batterEntry.name }).click();
+  await assertPlayerDestination("/analysis/player-statistics", { player: batterEntry.identity });
+  await inspectPlayerStatistics("batter");
+  await openMode("batter");
+  if (await playerNavigation.getByRole("link").count() !== 3) throw new Error("Batter detail navigation is incomplete.");
   await playerNavigation.getByRole("link", { name: "\uc120\uad6c\uc548", exact: true }).click();
   await assertPlayerDestination("/analysis/batter-discipline", { batter });
   await page.locator(".discipline-map").waitFor();
-  await page.getByRole("link", { name: "\uc120\uc218 \ubcc0\uacbd", exact: true }).click();
-  await assertPlayerDestination("/analysis/players", { role: "batter", q: null });
-  await page.getByRole("list", { name: "\ud0c0\uc790 \ubaa9\ub85d" }).waitFor();
-  if (await playerRoles.getByRole("button", { name: "\ud0c0\uc790", exact: true }).getAttribute("aria-pressed") !== "true") throw new Error("Player change lost the selected player role.");
+  await menu.getByRole("link", { name: "\uc120\uc218 \ubd84\uc11d", exact: true }).click();
+  await page.waitForURL((url) => url.pathname === "/analysis/players" && url.search === "");
+  await playerList.waitFor();
+  if (await playerSearch.inputValue() !== "") throw new Error("Report search leaked into the global directory.");
 
   await page.goto("http://localhost/analysis/pitch-shape?season=2024&competition=unknown", { waitUntil: "networkidle" });
   const chart = page.getByRole("img", { name: /\ud3c9\uade0 \ud3ec\uc2ec/ });
@@ -1205,7 +1208,8 @@ try {
   if (await page.locator('select[aria-label="\uc120\uad6c\uc548 \uce74\uc6b4\ud2b8"]').inputValue() !== "*-2") throw new Error("Strike-only restoration failed.");
   await page.getByRole("button", { name: "\uc870\uac74 \ucd08\uae30\ud654" }).click();
   await page.locator(".discipline-map").waitFor();
-  await page.locator('select[aria-label="\uc120\uad6c\uc548 \uc2dc\uc98c"]').selectOption("2025");
+  await page.getByRole("combobox", { name: "\ubd84\uc11d \uc2dc\uc98c", exact: true }).selectOption("2025");
+  await page.waitForURL((url) => url.pathname === "/analysis/batter-discipline" && url.searchParams.get("season") === "2025");
   await page.locator(".discipline-map").waitFor();
   for (const width of [1440, 390]) {
     await page.setViewportSize({width,height:844});

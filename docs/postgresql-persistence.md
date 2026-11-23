@@ -161,6 +161,39 @@ DB `registry.source_pages`에는 artifact key와 hash만 저장한다. 필수 �
 추측하지 않으며 warning issue로 남긴다. 선수 식별 모호성은 원문 season revision seal을 막지 않지만
 해당 stint 생성에서는 제외한다. 범위 양끝 stint는 left/right-censored 상태를 가진다.
 
+### 선수 경력 원문과 확인 기준
+
+선수 검색의 경력 보조자료는 KBO 선수 프로필과 2017년 이후 KBO 선수 이동 페이지에서 수집한다.
+필요한 초기 이적일은 선수 ID와 이동 방향이 확인된 구단 공식 원문으로 보완한다. 경기 봉인 기록과
+공식 경력 보조자료의 출처는 각각 유지한다.
+
+프로필의 입단년도와 입단 구단, 경력에 나온 구단 순서, 가장 최근 성적에 나타난 소속 구단과
+출전 시즌을 사용한다. 수집 경기에서 확인한 시즌·구단 이력이 그 범위와 맞아야 한다. 같은
+프랜차이즈의 명칭 변경과 확인된 군 복무팀은 이적으로 계산하지 않는다. KBO 이적 방향이
+명시된 이동 행과 같은 원문에서 기존 팀의 FA 자격 및 새 팀 계약이 함께 확인된 경우에 날짜를
+연결한다. 동명이인 이동일은 선수 식별 근거를 검토한 공식 원문이 있어야 한다. 해외 경력,
+마지막 출전 시즌 또는 구단 변경일을 확인하기 어려운 선수의 리포트 기간은 `수집 기록`으로 표시한다.
+
+서버를 빌드한 다음 현재 선수 목록을 저장해 두 명령을 실행할 수 있다. `workRoot`는 작업
+사본의 루트이며 수집 ID가 같으면 해시가 맞는 원문을 재사용한다. 검토 파일은 기본값으로
+`[]`를 쓸 수 있고, 구단 공지로 날짜를 보완할 때는 수집한 HTML을 옆에 둔다.
+
+```powershell
+curl.exe -fsS http://127.0.0.1:8080/api/v2/analysis/players -o directory.json
+node apps/server/dist/maintenance/collect-official-player-careers.js directory.json workRoot career-run-id
+node apps/server/dist/maintenance/build-official-player-careers.js directory.json workRoot career-run-id reviewed-moves.json
+node apps/server/dist/maintenance/build-official-player-birth-years.js directory.json workRoot career-run-id
+```
+
+검토 항목은 `playerId`, `name`, `from`, `to`, `date`, `url`, `localHtml`, `proof`를 갖는다.
+원문과 SHA-256 메타데이터는 `registry/player-careers/source/<수집 ID>/`에 보존한다.
+브라우저에서 사용하는 보조자료는 `registry/player-careers/verified.json`이며 버전, 검증된
+경력과 원문 키·해시를 담는다. 작업 사본의 원문과 검증 결과를 같은 상대 경로로 배치하면
+다음 디렉터리 조회부터 반영된다.
+출생연도는 같은 수집 ID의 KBO 프로필에서 읽어 `registry/player-careers/birth-years.json`에
+보관한다. 개명 등으로 기록 이름이 다르면 KBO의 이전 이름 검색에서 ID와 공식 프로필 이름을
+대조하고 그 원문을 함께 저장한다. 출생연도만 검색 API에 전달한다.
+
 ## Analytics와 analyst 권한
 
 `analytics.current_*`와 `all_revision_*` pitch·PA·play·movement·player game view, 기존 시즌 집계 view를
