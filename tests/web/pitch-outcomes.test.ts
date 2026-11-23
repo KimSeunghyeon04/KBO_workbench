@@ -543,8 +543,16 @@ it("keeps evidence map selection in the URL while preserving the comparison and 
 it("keeps pitch and PA denominators distinct while disclosing detailed metrics and revision-bound evidence", async () => {
   mockOutcomes();
   show("batter", "season=2024&competition=unknown&batter=b1");
-  fireEvent.click(screen.getByRole("tab", { name: "종결 성적" }));
-  await screen.findByRole("table", { name: "종결 구종 성적" });
+  expect(screen.getByRole("heading", { name: "반응과 타석 결과" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: "타석 결과" }));
+  const panel = await screen.findByRole("tabpanel", { name: "타석 결과" });
+  const plateResults = await within(panel).findByRole("table", {
+    name: "마지막 공 구종별 타석 결과",
+  });
+  expect(within(plateResults).getByRole("columnheader", { name: "마지막 공 구종" })).toBeTruthy();
+  expect(
+    new URLSearchParams(screen.getByLabelText("현재 주소").textContent ?? "").get("outcomeView"),
+  ).toBe("terminal");
   expect(screen.queryByRole("tab", { name: "구종 배합" })).toBeNull();
   fireEvent.click(screen.getByRole("tab", { name: "코스·반응" }));
   fireEvent.click(screen.getByRole("button", { name: "전체", exact: true }));

@@ -620,6 +620,9 @@
   background: #e8f4ef;
   color: #177459;
 }
+.outcome-terminal-panel {
+  min-width: 0;
+}
 .outcome-terminal-records {
   list-style: none;
   padding: 0;

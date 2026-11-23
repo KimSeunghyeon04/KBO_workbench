@@ -16,24 +16,23 @@ export function TerminalBattingPanel({
     <section className="panel outcome-terminal-panel">
       <div className="analysis-panel-heading">
         <div>
-          <h2>종결 구종 기준 타석 성적</h2>
+          <h2 id="terminal-batting-heading">마지막 공 구종별 타석 결과</h2>
         </div>
         <span className="analysis-context-tag">투구 조건과 별도 집계</span>
       </div>
       <p>
         기간 내 공식 타석 {data.total.pa} · AB {data.total.ab} · 미귀속 {data.unattributed} · 미완료{" "}
-        {data.partial}. 이 표에는 위 투구 조건을 적용하지 않습니다. 자동 판정·무투구 결과·책임
-        타자와 종결 타자가 다른 결과는 미귀속에 보존합니다.
+        {data.partial}. 이 표에는 위 투구 조건을 적용하지 않습니다. 자동 판정·무투구 결과와 타석을
+        끝낸 타자가 책임 타자와 다른 결과는 미귀속에 포함합니다.
       </p>
       <div className="table-scroll" tabIndex={0}>
-        <table aria-label="종결 구종 성적">
+        <table aria-labelledby="terminal-batting-heading">
           <thead>
             <tr>
-              {["종결 구종", "PA", "AB", "H", "TB", "BB", "K", "HBP", "HR", "AVG", "SLG"].map(
-                (s) => (
-                  <th key={s}>{s}</th>
-                ),
-              )}
+              <th>마지막 공 구종</th>
+              {["PA", "AB", "H", "TB", "BB", "K", "HBP", "HR", "AVG", "SLG"].map((s) => (
+                <th key={s}>{s}</th>
+              ))}
             </tr>
           </thead>
           <tbody>

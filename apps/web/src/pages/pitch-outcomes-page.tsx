@@ -62,7 +62,7 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
     role === "pitcher"
       ? { id: "arsenal", label: "구종 배합" }
       : { id: "count-response", label: "카운트별 대응" },
-    ...(role === "batter" ? ([{ id: "terminal", label: "종결 성적" }] as const) : []),
+    ...(role === "batter" ? ([{ id: "terminal", label: "타석 결과" }] as const) : []),
     { id: "period", label: "기간 비교" },
     { id: "sample", label: "표본 기준" },
   ] as const;
@@ -189,7 +189,7 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
     <div className="page-stack pitch-outcomes-page">
       <header className="page-header">
         <div>
-          <h1>{role === "pitcher" ? "코스와 결정구" : "반응과 종결 성적"}</h1>
+          <h1>{role === "pitcher" ? "코스와 결정구" : "반응과 타석 결과"}</h1>
           <p>투구 위치와 타자의 반응을 한눈에 비교합니다.</p>
         </div>
       </header>
