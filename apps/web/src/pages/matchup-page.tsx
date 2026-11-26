@@ -8,7 +8,6 @@ import { plateResultLabel } from "../events/relay-text";
 import { replayEvidenceUrl } from "../replay/evidence-target";
 import { useAnalysisScope } from "../analysis/use-analysis-scope";
 import { AnalysisEmptyState } from "../analysis/analysis-empty-state";
-import { PitcherScopeFields } from "../analysis/pitcher-scope-fields";
 import { analysisCatalogPlayers, selectedPlayerRole } from "../analysis/player-analysis-navigation";
 import {
   pitcherCatalogQueryOptions,
@@ -22,7 +21,7 @@ import { formatStatNumber } from "../analysis/statistics-format";
 import "../styles/pitch-analysis.css";
 const percent = (n: number | null) => (n === null ? "—" : `${(n * 100).toFixed(1)}%`);
 export function MatchupPage() {
-  const { params, selected, season, scope, change: changeScope } = useAnalysisScope();
+  const { params, season, scope, change } = useAnalysisScope();
   const [sample, setSample] = useState<"direct" | "similar">("direct");
   const [compare, setCompare] = useState(false);
   const [page, setPage] = useState(0);
@@ -45,7 +44,17 @@ export function MatchupPage() {
   const opponents = opponentCatalog.data ? analysisCatalogPlayers(opponentCatalog.data) : [];
   const opponentMissing =
     opponentId !== "" && !opponents.some((player) => player.id === opponentId);
-  useEffect(() => setPage(0), [season, pitcherId, batterId]);
+  useEffect(
+    () => setPage(0),
+    [
+      season,
+      scope.options.competition,
+      scope.options.dateFrom,
+      scope.options.dateTo,
+      pitcherId,
+      batterId,
+    ],
+  );
   const enabled = scope.error === null && pitcherId !== "" && batterId !== "";
   const direct = useQuery({
     queryKey: ["direct-matchup", query],
@@ -59,10 +68,6 @@ export function MatchupPage() {
     enabled: enabled && compare,
     queryFn: ({ signal }) => getMatchup(query, signal),
   });
-  function change(key: string, value: string) {
-    setPage(0);
-    changeScope(key, value);
-  }
   const data = result.data;
   const matchup = direct.data;
   const batting = matchup?.batting;
@@ -74,10 +79,8 @@ export function MatchupPage() {
           <h1>투타 맞대결</h1>
         </div>
       </header>
-      <PitcherScopeFields
-        params={selected}
-        onChange={change}
-        primary={
+      <section className="panel analysis-filter-bar" aria-label="맞대결 상대">
+        <div className="analysis-primary-filters">
           <label>
             {opponentLabel}
             <select value={opponentId} onChange={(e) => change(opponentRole, e.target.value)}>
@@ -91,8 +94,8 @@ export function MatchupPage() {
               ))}
             </select>
           </label>
-        }
-      />
+        </div>
+      </section>
       {opponentCatalog.isSuccess && opponentMissing && (
         <p role="status">
           {opponentLabel}(ID {opponentId})의 실제 투구가 이 조회 범위에 없습니다.

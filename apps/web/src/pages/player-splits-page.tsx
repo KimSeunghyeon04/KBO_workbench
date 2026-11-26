@@ -9,10 +9,8 @@ import {
 } from "@kbo/contracts";
 import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
-import { PlayerRecordConditions } from "../analysis/player-record-conditions";
 import { PlayerRecordTable } from "../analysis/player-record-table";
 import { usePlayerRecordScope } from "../analysis/use-player-record-scope";
-import { analysisScopeSummary } from "../analysis/analysis-scope-fields";
 import { formatStatNumber } from "../analysis/statistics-format";
 import { getPlayerSplits } from "../api/player-statistics-client";
 
@@ -90,7 +88,6 @@ export function PlayerSplitsPage() {
   const {
     params,
     season,
-    selected,
     scope,
     query: selection,
     loading,
@@ -134,11 +131,6 @@ export function PlayerSplitsPage() {
     <div className="page-stack">
       <header className="page-header player-season-heading">
         <h1>상황별 성적</h1>
-        {error === null && (
-          <p className="analysis-caption">
-            {season} · {analysisScopeSummary(selected)}
-          </p>
-        )}
       </header>
       <label className="player-basic-comparison-kind">
         비교 기준
@@ -202,7 +194,6 @@ export function PlayerSplitsPage() {
           </section>
         </>
       )}
-      <PlayerRecordConditions selected={selected} season={season} change={change} />
     </div>
   );
 }

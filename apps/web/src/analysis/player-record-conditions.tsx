@@ -2,25 +2,32 @@ import { AnalysisScopeFields, analysisScopeSummary } from "./analysis-scope-fiel
 import "../styles/player-basic-statistics.css";
 
 export function PlayerRecordConditions({
-  selected,
+  params,
+  invalid,
   season,
   change,
 }: {
-  selected: URLSearchParams;
-  season: number;
+  params: URLSearchParams;
+  invalid: boolean;
+  season?: number;
   change: (key: string, value: string) => void;
 }) {
   return (
-    <details className="panel player-report-filters" aria-label="조회 조건">
+    <details className="panel player-report-filters player-analysis-scope-editor">
       <summary>
-        <strong>조회 조건 변경</strong>
+        <strong>경기 종류·기간</strong>{" "}
+        <span className="player-analysis-scope-summary">
+          {invalid ? "조회 범위 확인 필요" : analysisScopeSummary(params)}
+        </span>
       </summary>
       <div className="player-report-filter-fields">
-        <AnalysisScopeFields params={selected} onChange={change} />
+        <AnalysisScopeFields params={params} onChange={change} />
       </div>
-      <p className="analysis-caption">
-        {season} · {analysisScopeSummary(selected)}
-      </p>
+      {season !== undefined && (
+        <p className="analysis-caption">
+          날짜를 지정하면 {season}년의 해당 기간 기록을 표시합니다.
+        </p>
+      )}
     </details>
   );
 }

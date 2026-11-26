@@ -681,12 +681,16 @@ it("restores advanced filters, preserves URL scope through disclosure and compar
   });
   show("pitcher", initial.toString());
   await screen.findByRole("table", { name: "구종별 반응" });
-  const filters = detailsFor("조회 조건 변경");
+  const scope = detailsFor("경기 종류·기간");
+  fireEvent.click(scope.trigger);
+  expect(scope.details.open).toBe(true);
+  const filters = detailsFor("투구 조건");
   expect(filters.details.open).toBe(false);
   fireEvent.click(filters.trigger);
   expect(filters.details.open).toBe(true);
   expect(screen.getByLabelText("분석 시작일")).toHaveProperty("value", "2024-06-01");
   expect(screen.getByLabelText("분석 종료일")).toHaveProperty("value", "2024-06-30");
+  expect(within(filters.details).queryByLabelText("분석 시작일")).toBeNull();
   expect(screen.getByLabelText("볼", { exact: true })).toHaveProperty("value", "1");
   expect(screen.getByLabelText("스트라이크", { exact: true })).toHaveProperty("value", "2");
   expect(screen.getByLabelText("구종", { exact: true })).toHaveProperty("value", "슬라이더");

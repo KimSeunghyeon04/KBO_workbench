@@ -16,7 +16,6 @@ import {
   type PitchLocationResponse,
   type DisciplineCatalog,
 } from "@kbo/contracts";
-import { AnalysisScopeFields, analysisScopeSummary } from "../analysis/analysis-scope-fields";
 import { useAnalysisScope } from "../analysis/use-analysis-scope";
 import { AnalysisEmptyState } from "../analysis/analysis-empty-state";
 import { TerminalBattingPanel } from "../analysis/terminal-batting-panel";
@@ -56,7 +55,7 @@ function catalogPlayers(catalog: PitchAnalysisCatalog | DisciplineCatalog) {
 const outcomeTabsId = "pitch-outcomes";
 
 export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
-  const { params, selected, season, scope, change, setParams } = useAnalysisScope();
+  const { params, season, scope, change, setParams } = useAnalysisScope();
   const workspaceRef = useRef<HTMLDivElement>(null);
   const tabs = [
     { id: "overview", label: "코스·반응" },
@@ -176,7 +175,6 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
       : [catalog];
   const data = analysis.data;
   const conditions = [
-    analysisScopeSummary(selected),
     ...(!isFlowTab && params.has("balls") ? [`${params.get("balls")}볼`] : []),
     ...(!isFlowTab && params.has("strikes") ? [`${params.get("strikes")}스트라이크`] : []),
     ...(!isFlowTab && params.has("pitchType") ? [params.get("pitchType") || "구종 미상"] : []),
@@ -212,10 +210,10 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
       <AnalysisFilterBar
         collapsible={true}
         label="투구 결과 조건"
+        toggleLabel="투구 조건"
         summary={conditions}
         advanced={
           <>
-            <AnalysisScopeFields params={selected} onChange={change} />
             {!isFlowTab && (
               <>
                 <label>

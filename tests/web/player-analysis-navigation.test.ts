@@ -155,6 +155,26 @@ it("carries the selected player and explicit scope across features, drops featur
   expect(fetch).not.toHaveBeenCalled();
 });
 
+it("edits the common scope above the report tabs and retains it when moving between them", async () => {
+  show("/analysis/player-statistics?season=2025&player=naver%3Ab1&playerRole=batter");
+  const user = userEvent.setup();
+  const scope = screen.getByText("경기 종류·기간", { exact: true });
+  const nav = screen.getByRole("navigation", { name: "선수 기록 보기" });
+  expect(scope.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  await user.click(scope);
+  await user.selectOptions(screen.getByLabelText("경기 종류"), "postseason");
+  fireEvent.change(screen.getByLabelText("분석 시작일"), { target: { value: "2025-10-01" } });
+  for (const name of ["경기별", "상황별", "구종·코스", "맞대결", "기본 기록"]) {
+    await user.click(within(nav).getByRole("link", { name }));
+    const url = new URL(screen.getByLabelText("현재 주소").textContent ?? "", "http://localhost");
+    expect(url.searchParams.get("competition")).toBe("postseason");
+    expect(url.searchParams.get("dateFrom")).toBe("2025-10-01");
+    expect(screen.getByLabelText("분석 시작일")).toHaveProperty("value", "2025-10-01");
+  }
+});
+
 it("changes the pitcher and season in place, including the active outcome subtab", async () => {
   const path = "/analysis/pitch-location";
   const original = `${path}?season=2024&pitcher=p1&competition=allstar&dateFrom=2024-04-01&dateTo=2024-04-30&outcomeView=arsenal&balls=2`;

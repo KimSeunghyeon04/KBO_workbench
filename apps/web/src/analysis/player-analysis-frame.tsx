@@ -27,9 +27,14 @@ import {
   type PlayerReportTab,
 } from "./player-analysis-navigation";
 import { PlayerAnalysisSearch } from "./player-analysis-search";
+import { PlayerRecordConditions } from "./player-record-conditions";
 import { findDirectoryPlayer, playerCareer, usePlayerDirectory } from "./player-directory";
 import { analysisScopeSummary } from "./analysis-scope-fields";
-import { analysisScopeSearch, type AnalysisPlayerSelection } from "./analysis-scope";
+import {
+  analysisScopeSearch,
+  changeAnalysisParams,
+  type AnalysisPlayerSelection,
+} from "./analysis-scope";
 import "../styles/player-analysis-frame.css";
 
 function PlayerNavigation({ role, path }: { role: PlayerAnalysisRole; path: string }) {
@@ -80,6 +85,8 @@ function PlayerNavigation({ role, path }: { role: PlayerAnalysisRole; path: stri
   const currentTab = playerAnalysisSections[reportRole].find(
     (section) => section.path === path,
   )?.tab;
+  const primaryReport =
+    currentTab !== undefined && path === playerReportTabPath(currentTab, reportRole);
   const bothRoles = Boolean(
     record?.battingPlayerId && record.pitchingPlayerId && scope.error === null,
   );
@@ -245,13 +252,24 @@ function PlayerNavigation({ role, path }: { role: PlayerAnalysisRole; path: stri
             <AnalysisSeasonOptions season={scope.season} labelSuffix=" 시즌" />
           )}
         </select>
-        <span className="player-analysis-scope-summary">
-          {scope.error === null
-            ? analysisScopeSummary(
-                new URLSearchParams(analysisScopeSearch(scope.season, scope.options)),
-              )
-            : "조회 범위 확인 필요"}
-        </span>
+        {primaryReport ? (
+          <PlayerRecordConditions
+            params={params}
+            invalid={scope.error !== null}
+            {...(basic ? { season: scope.season } : {})}
+            change={(key, value) =>
+              setParams(changeAnalysisParams(params, key, value), { preventScrollReset: true })
+            }
+          />
+        ) : (
+          <span className="player-analysis-scope-summary">
+            {scope.error === null
+              ? analysisScopeSummary(
+                  new URLSearchParams(analysisScopeSearch(scope.season, scope.options)),
+                )
+              : "조회 범위 확인 필요"}
+          </span>
+        )}
       </div>
       {bothRoles && currentTab && (
         <nav className="player-analysis-links player-analysis-secondary" aria-label="선수 역할">

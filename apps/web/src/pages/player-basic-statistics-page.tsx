@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { PlayerPeriodComparison } from "../analysis/player-period-comparison";
 import { Value } from "@sinclair/typebox/value";
 import {
-  defaultAnalysisCompetition,
   PlayerSeasonStatisticsQuerySchema,
   type DisciplineCatalog,
   type PitchAnalysisCatalog,
@@ -10,11 +9,6 @@ import {
 import { Link } from "react-router-dom";
 import { AnalysisEmptyState } from "../analysis/analysis-empty-state";
 import { analysisScopeSearch } from "../analysis/analysis-scope";
-import {
-  AnalysisScopeFields,
-  analysisScopeSummary,
-  competitionLabels,
-} from "../analysis/analysis-scope-fields";
 import { analysisCatalogPlayers, selectedPlayerRole } from "../analysis/player-analysis-navigation";
 import { findDirectoryPlayer, usePlayerDirectory } from "../analysis/player-directory";
 import { PlayerSeasonRecords } from "../analysis/player-season-records";
@@ -28,7 +22,7 @@ import { getPlayerSeasonStatistics } from "../api/player-statistics-client";
 import "../styles/analysis-workspace.css";
 
 export function PlayerBasicStatisticsPage() {
-  const { params, selected, season, scope, change } = useAnalysisScope();
+  const { params, season, scope, change } = useAnalysisScope();
   const role = selectedPlayerRole(params);
   const identity = params.get("player");
   const directory = usePlayerDirectory();
@@ -52,7 +46,6 @@ export function PlayerBasicStatisticsPage() {
     identity === null && (sourceId === null ? catalog.isPending : directory.isPending);
   const selectionError = identity === null && sourceId === null ? catalog.error : null;
   const dateFiltered = scope.options.dateFrom !== undefined || scope.options.dateTo !== undefined;
-  const competition = scope.options.competition ?? defaultAnalysisCompetition;
   const query = {
     player: playerKey ?? "",
     ...scope.options,
@@ -74,9 +67,7 @@ export function PlayerBasicStatisticsPage() {
   });
   const data = records.data;
   const hasRecords = data !== undefined && (data.batting.length > 0 || data.pitching.length > 0);
-  const summary = dateFiltered
-    ? `${season} · ${analysisScopeSummary(selected)}`
-    : `${competitionLabels[competition]} · 수집 경기 합계`;
+  const summary = dateFiltered ? "선택 기간 성적" : "연도별 성적 · 수집 경기 합계";
   const battingId = legacy && role === "batter" ? sourceId : record?.battingPlayerId;
   const pitchingId = legacy && role === "pitcher" ? sourceId : record?.pitchingPlayerId;
   const comparisonRole =
@@ -95,19 +86,8 @@ export function PlayerBasicStatisticsPage() {
     <div className="page-stack player-basic-statistics-page">
       <header className="page-header player-season-heading">
         <h1>기본 기록</h1>
-        {error === null && <p className="analysis-caption">연도별 성적 · {summary}</p>}
+        {error === null && <p className="analysis-caption">{summary}</p>}
       </header>
-      <details className="panel player-report-filters" aria-label="기본 기록 조건">
-        <summary>
-          <strong>조회 조건 변경</strong>
-        </summary>
-        <div className="player-report-filter-fields">
-          <AnalysisScopeFields params={selected} onChange={change} />
-        </div>
-        <p className="analysis-caption">
-          날짜를 지정하면 {season}년의 해당 기간 기록을 표시합니다.
-        </p>
-      </details>
       {error && <p role="alert">{error}</p>}
       {error === null && selectionError && (
         <div role="alert">

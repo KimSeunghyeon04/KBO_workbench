@@ -843,6 +843,19 @@ try {
   const playerList = page.getByRole("list", { name: "\uc120\uc218 \ubaa9\ub85d" });
   const playerSearch = page.getByRole("searchbox", { name: "\uc120\uc218 \uac80\uc0c9" });
   const playerScope = { season: "2024", competition: "unknown", dateFrom: "2024-06-01", dateTo: "2024-06-01" };
+  async function assertPrimaryReportScope() {
+    const editor = page.locator("details.player-analysis-scope-editor");
+    await editor.waitFor();
+    await recordNavigation.waitFor();
+    const beforeTabs = await editor.evaluate((element) => {
+      const tabs = element.closest(".player-analysis-context")?.querySelector(".player-analysis-primary");
+      return tabs && Boolean(element.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING);
+    });
+    const dateFields = page.getByLabel("\ubd84\uc11d \uc2dc\uc791\uc77c", { exact: true });
+    if (!beforeTabs || await dateFields.count() !== 1) {
+      throw new Error("Primary reports need one date scope editor above the player tabs.");
+    }
+  }
   async function openReportFilters() {
     const filters = page.locator("details.analysis-report-filters, details.player-report-filters").first();
     if (await filters.count() > 0 && await filters.getAttribute("open") === null) {
@@ -856,6 +869,10 @@ try {
     if (actual.pathname !== path) throw new Error(`Unexpected player destination: ${actual.pathname}`);
     for (const [key, value] of expected) {
       if (actual.searchParams.get(key) !== value) throw new Error(`Player navigation lost ${key}: ${actual}`);
+    }
+    if (["/analysis/player-statistics", "/analysis/player-games", "/analysis/player-splits",
+      "/analysis/pitch-location", "/analysis/batter-profile", "/analysis/matchups"].includes(path)) {
+      await assertPrimaryReportScope();
     }
   }
   async function catalogPlayer(role, competition = playerScope.competition) {
@@ -951,6 +968,11 @@ try {
   const gameTable = page.getByRole("table", { name: "\uacbd\uae30\ubcc4 \ub4f1\ud310 \uc131\uc801" });
   const firstGame = gameTable.getByRole("link").first();
   await firstGame.waitFor();
+  const relatedAnalyses = page.getByRole("region", { name: "\ub4f1\ud310 \uc2ec\ud654 \ubd84\uc11d" });
+  if (await relatedAnalyses.getByRole("link").count() !== 2 || !(await gameTable.evaluate((table) => {
+    const links = table.closest(".page-stack")?.querySelector(".player-report-related");
+    return links && Boolean(links.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING);
+  }))) throw new Error("Pitcher follow-up links must appear before the game log.");
   const gameAddress = page.url();
   const replayTarget = new URL(await firstGame.getAttribute("href"), gameAddress);
   if (!replayTarget.searchParams.get("gameId") || !replayTarget.searchParams.get("revision")) throw new Error("Game log replay target lacked its sealed revision.");
@@ -1334,6 +1356,7 @@ try {
           comparison.actualPitches !== workload.appearances[0].pitches) throw new Error("All-Star comparison included pitches from other competitions.");
     }
     if (url.includes("matchups")) {
+      await assertPrimaryReportScope();
       if (await page.locator(".matchup-observed-summary").count() !== 0) throw new Error("Similar matchup comparison opened before selection.");
       const similar = page.waitForResponse(res => new URL(res.url()).pathname === "/api/v2/analysis/matchups" && res.ok());
       await page.getByText("\uc720\uc0ac \uc870\uac74\uc758 \ud22c\uad6c\uc640 \ube44\uad50", { exact: true }).click();

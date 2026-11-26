@@ -6,10 +6,8 @@ import { AnalysisEvidenceLink } from "../analysis/analysis-evidence-link";
 import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import { playerAnalysisHref } from "../analysis/player-analysis-navigation";
-import { PlayerRecordConditions } from "../analysis/player-record-conditions";
 import { PlayerRecordTable } from "../analysis/player-record-table";
 import { usePlayerRecordScope } from "../analysis/use-player-record-scope";
-import { analysisScopeSummary } from "../analysis/analysis-scope-fields";
 import { formatInnings } from "../analysis/statistics-format";
 import { getPlayerGameRecords } from "../api/player-statistics-client";
 import { replayGameUrl } from "../replay/evidence-target";
@@ -85,8 +83,7 @@ function GameRecords({ data }: { data: PlayerGameRecordsResponse }) {
 }
 
 export function PlayerGamesPage() {
-  const { season, selected, scope, query, identity, role, rawId, loading, change } =
-    usePlayerRecordScope();
+  const { season, scope, query, identity, role, rawId, loading } = usePlayerRecordScope();
   const valid = Value.Check(PlayerGameRecordsQuerySchema, query);
   const error =
     scope.error ?? (query !== null && !valid ? "선수 조회 조건이 올바르지 않습니다." : null);
@@ -104,11 +101,6 @@ export function PlayerGamesPage() {
     <div className="page-stack">
       <header className="page-header player-season-heading">
         <h1>경기별 성적</h1>
-        {error === null && (
-          <p className="analysis-caption">
-            {season} · {analysisScopeSummary(selected)}
-          </p>
-        )}
       </header>
       {error !== null && <p role="alert">{error}</p>}
       {error === null && query === null && <p role="status">경기별 기록을 볼 선수를 선택하세요.</p>}
@@ -119,7 +111,6 @@ export function PlayerGamesPage() {
       {records.data?.rows.length === 0 && (
         <p role="status">선택한 범위에 경기별 기록이 없습니다.</p>
       )}
-      {records.data && records.data.rows.length > 0 && <GameRecords data={records.data} />}
       {(records.data?.rows.length && role === "pitcher" && rawId && (
         <section className="player-report-related" aria-label="등판 심화 분석">
           <Link
@@ -151,7 +142,7 @@ export function PlayerGamesPage() {
         </section>
       )) ||
         null}
-      <PlayerRecordConditions selected={selected} season={season} change={change} />
+      {records.data && records.data.rows.length > 0 && <GameRecords data={records.data} />}
     </div>
   );
 }

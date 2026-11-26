@@ -45,7 +45,7 @@
 .player-season-records .analysis-caption {
   margin: 8px 0 0;
 }
-.player-report-filters {
+.panel.player-report-filters {
   padding: 0;
 }
 .player-report-filters > summary {

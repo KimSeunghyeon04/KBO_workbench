@@ -7,18 +7,20 @@ export function AnalysisFilterBar({
   children,
   advanced,
   collapsible = false,
+  toggleLabel = "조회 조건 변경",
 }: {
   label: string;
   summary: string;
   children?: ReactNode;
   advanced: ReactNode;
   collapsible?: boolean;
+  toggleLabel?: string;
 }) {
   if (collapsible)
     return (
       <details className="panel analysis-filter-bar analysis-report-filters" aria-label={label}>
         <summary>
-          <strong>조회 조건 변경</strong>
+          <strong>{toggleLabel}</strong>
           <span>{summary}</span>
         </summary>
         {children != null && <div className="analysis-primary-filters">{children}</div>}

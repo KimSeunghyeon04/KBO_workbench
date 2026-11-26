@@ -99,14 +99,19 @@ it("keeps unconfirmed earned runs separate from a confirmed zero", async () => {
         MemoryRouter,
         {
           initialEntries: [
-            "/analysis/player-games?season=2025&player=kbo%3A456&playerRole=pitcher",
+            "/analysis/player-games?season=2025&player=kbo%3A456&playerRole=pitcher&pitcher=hp1",
           ],
         },
         createElement(PlayerGamesPage),
       ),
     ),
   );
-  const table = within(await screen.findByRole("table", { name: "경기별 등판 성적" }));
+  const tableElement = await screen.findByRole("table", { name: "경기별 등판 성적" });
+  const deeper = screen.getByRole("region", { name: "등판 심화 분석" });
+  expect(deeper.compareDocumentPosition(tableElement) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  const table = within(tableElement);
   const data = table.getAllByRole("row").slice(1);
   expect(data.map((row) => within(row).getAllByRole("cell")[7]?.textContent)).toEqual(["—", "0"]);
   expect(table.getAllByRole("cell", { name: "1⅔" })).toHaveLength(2);

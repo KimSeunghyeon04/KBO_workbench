@@ -223,7 +223,7 @@ it("opens an existing date-scoped link for the requested player and preserves in
       sourceRole: "pitcher",
     },
   ]);
-  const toggle = screen.getByText("조회 조건 변경", { exact: true });
+  const toggle = screen.getByText("경기 종류·기간", { exact: true });
   expect(
     toggle.compareDocumentPosition(screen.getByRole("table", { name: "연도별 투구 성적" })) &
       Node.DOCUMENT_POSITION_FOLLOWING,
