@@ -1,11 +1,16 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import type { PlayerGameRecordsQuery, PlayerLeagueResponse } from "@kbo/contracts";
+import {
+  defaultAnalysisCompetition,
+  type PlayerGameRecordsQuery,
+  type PlayerLeagueResponse,
+} from "@kbo/contracts";
 import { getPlayerLeague } from "../api/player-statistics-client";
 import { analysisQueryMeta } from "./analysis-query-meta";
 import { AnalysisQueryError } from "./analysis-query-error";
 import { analysisScopeSearch } from "./analysis-scope";
+import { competitionLabels } from "./analysis-scope-fields";
 import { PlayerRecordTable } from "./player-record-table";
 import { formatInnings, formatStatNumber, formatStatPercent } from "./statistics-format";
 
@@ -40,7 +45,7 @@ function LeagueTable({ data }: { data: PlayerLeagueResponse }) {
   });
   return (
     <PlayerRecordTable
-      label="같은 범위 리그 성적"
+      label="선수와 리그 평균 비교"
       columns={
         data.role === "batter"
           ? ["표본", "타석", "타수", "타율", "출루율", "장타율", "OPS"]
@@ -64,13 +69,21 @@ export function PlayerLeagueComparison({ query }: { query: PlayerGameRecordsQuer
   void source;
   const leaderboard = new URLSearchParams(analysisScopeSearch(season, scope));
   leaderboard.set("kind", role === "batter" ? "batting" : "pitching");
+  const competition = competitionLabels[scope.competition ?? defaultAnalysisCompetition];
   return (
     <details
       className="panel player-report-filters"
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary>
-        <strong>{query.season}년 같은 범위 리그와 비교</strong>
+        <strong>
+          {season}년 {competition} 리그 평균과 비교
+        </strong>
+        {(scope.dateFrom !== undefined || scope.dateTo !== undefined) && (
+          <span className="player-league-comparison-dates">
+            {scope.dateFrom ?? "시즌 시작"} ~ {scope.dateTo ?? "시즌 끝"}
+          </span>
+        )}
       </summary>
       {open && (
         <div className="player-league-comparison">
@@ -80,12 +93,12 @@ export function PlayerLeagueComparison({ query }: { query: PlayerGameRecordsQuer
             <>
               <LeagueTable data={result.data} />
               <p className="analysis-caption">
-                리그 비율은 같은 조회 범위의 분자와 분모를 각각 합산해 계산합니다.
+                리그 평균은 표시된 범위에서 리그 전체의 분자와 분모를 각각 합산해 계산합니다.
                 {query.role === "pitcher" && " ERA는 자책점이 확인된 이닝을 사용합니다."}
               </p>
             </>
           )}
-          <Link to={`/analysis/statistics?${leaderboard}`}>같은 범위 선수·팀 순위 보기</Link>
+          <Link to={`/analysis/statistics?${leaderboard}`}>같은 조건으로 선수·팀 성적 보기</Link>
         </div>
       )}
     </details>

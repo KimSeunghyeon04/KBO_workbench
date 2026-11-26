@@ -957,7 +957,9 @@ try {
   await page.waitForURL((url) => url.searchParams.get("dateFrom") === playerScope.dateFrom);
   await page.getByLabel("\ubd84\uc11d \uc885\ub8cc\uc77c", { exact: true }).fill(playerScope.dateTo);
   await inspectPlayerStatistics("pitcher");
-  const leagueComparison = page.locator(".player-basic-statistics-page details").filter({ hasText: "\ub9ac\uadf8\uc640 \ube44\uad50" });
+  const leagueComparison = page.locator(".player-basic-statistics-page details").filter({ hasText: "\ub9ac\uadf8 \ud3c9\uade0\uacfc \ube44\uad50" });
+  const leagueSummary = await leagueComparison.locator(":scope > summary").innerText();
+  if (![playerScope.season, playerScope.dateFrom, playerScope.dateTo].every((value) => leagueSummary.includes(value))) throw new Error("League comparison summary omitted the selected period.");
   await leagueComparison.locator(":scope > summary").click();
   await leagueComparison.getByRole("table").waitFor();
   const leagueLink = leagueComparison.getByRole("link");

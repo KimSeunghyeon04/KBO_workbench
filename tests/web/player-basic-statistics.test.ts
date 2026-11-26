@@ -15,6 +15,7 @@ import {
 import { battingStatistics, pitchingStatistics } from "@kbo/game-core";
 import { PlayerBasicStatisticsPage } from "../../apps/web/src/pages/player-basic-statistics-page.js";
 import { PlayerAnalysisFrame } from "../../apps/web/src/analysis/player-analysis-frame.js";
+import { PlayerLeagueComparison } from "../../apps/web/src/analysis/player-league-comparison.js";
 import { getPlayerSeasonStatistics } from "../../apps/web/src/api/player-statistics-client.js";
 import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { battingTotals, pitchingTotals } from "../helpers/player-statistics.js";
@@ -157,6 +158,38 @@ const batter = {
     pitchingPlayerId: null,
   })),
 } satisfies PlayerDirectoryEntry;
+
+it.each([
+  ["시즌 시작 ~ 2025-11-01", { dateTo: "2025-11-01" }],
+  ["2025-10-01 ~ 시즌 끝", { dateFrom: "2025-10-01" }],
+] as const)("names the selected league scope and dates (%s) without fetching", (dates, range) => {
+  const client = createAnalysisQueryClient();
+  clients.push(client);
+  const fetch = vi.fn();
+  vi.stubGlobal("fetch", fetch);
+  render(
+    createElement(
+      QueryClientProvider,
+      { client },
+      createElement(
+        MemoryRouter,
+        null,
+        createElement(PlayerLeagueComparison, {
+          query: {
+            season: 2025,
+            player: "a1",
+            role: "batter",
+            competition: "postseason",
+            ...range,
+          },
+        }),
+      ),
+    ),
+  );
+  expect(screen.getByText("2025년 포스트시즌 리그 평균과 비교")).toBeTruthy();
+  expect(screen.getByText(dates)).toBeTruthy();
+  expect(fetch).not.toHaveBeenCalled();
+});
 
 it("shows the newest season first and combines an in-season transfer into a single unexpandable row", async () => {
   const fetch = mockRecords({ pitching: [] });

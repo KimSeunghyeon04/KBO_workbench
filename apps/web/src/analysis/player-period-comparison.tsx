@@ -31,14 +31,14 @@ export function PlayerPeriodComparison({
   alwaysOpen?: boolean;
 }) {
   const [params, setParams] = useSearchParams();
-  const title =
-    kind === "statistics"
-      ? "두 기간의 기본 성적 비교"
-      : kind === "pitch-shape"
-        ? "두 기간의 구질 비교"
-        : kind === "batter-profile"
-          ? "두 기간의 타자 특성 비교"
-          : "두 기간의 선구 지표 비교";
+  const dateFocused = kind === "statistics";
+  const title = dateFocused
+    ? "기간 지정 비교"
+    : kind === "pitch-shape"
+      ? "두 기간의 구질 비교"
+      : kind === "batter-profile"
+        ? "두 기간의 타자 특성 비교"
+        : "두 기간의 선구 지표 비교";
   const { season, dateFrom, dateTo, ...conditions } = query;
   void season;
   void dateFrom;
@@ -51,9 +51,10 @@ export function PlayerPeriodComparison({
       onChange={setParams}
       title={title}
       alwaysOpen={alwaysOpen}
+      dateFocused={dateFocused}
       description={
-        kind === "statistics"
-          ? "같은 선수·경기 종류의 공식 타석·투구 기록을 비교합니다."
+        dateFocused
+          ? "같은 선수의 월별 성적이나 전반기·후반기 성적을 비교할 수 있습니다."
           : kind === "pitch-shape"
             ? "같은 선수·경기 종류의 전체 구종 프로필을 비교합니다. 산점도의 구종·클러스터 표시 선택은 적용하지 않습니다."
             : "두 기간에 같은 선수·경기 종류와 현재의 상황 조건을 적용합니다."

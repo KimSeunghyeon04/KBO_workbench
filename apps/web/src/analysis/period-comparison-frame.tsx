@@ -40,6 +40,7 @@ export function PeriodComparisonFrame({
   description,
   children,
   alwaysOpen = false,
+  dateFocused = false,
 }: {
   query: AnalysisScopeQuery;
   params: URLSearchParams;
@@ -48,14 +49,18 @@ export function PeriodComparisonFrame({
   description: string;
   children: (periods: AnalysisPeriodQuery) => ReactNode;
   alwaysOpen?: boolean;
+  dateFocused?: boolean;
 }) {
   const seasonSchema = AnalysisScopeQuerySchema.properties.season;
   const priorSeason = query.season - 1;
+  const hasAppliedComparison = params.get("periodCompare") === "1";
+  const firstSeason =
+    (dateFocused && !hasAppliedComparison) || !Value.Check(seasonSchema, priorSeason)
+      ? query.season
+      : priorSeason;
   const initial: Periods = {
     a: {
-      season:
-        params.get("periodASeason") ??
-        String(Value.Check(seasonSchema, priorSeason) ? priorSeason : query.season),
+      season: params.get("periodASeason") ?? String(firstSeason),
       from: params.get("periodAFrom") ?? "",
       to: params.get("periodATo") ?? "",
     },
@@ -65,10 +70,10 @@ export function PeriodComparisonFrame({
       to: params.get("periodBTo") ?? query.dateTo ?? "",
     },
   };
-  const [expanded, setExpanded] = useState(params.get("periodCompare") === "1");
+  const [expanded, setExpanded] = useState(hasAppliedComparison);
   const open = alwaysOpen || expanded;
   const [draft, setDraft] = useState(initial);
-  const applied = params.get("periodCompare") === "1" ? initial : null;
+  const applied = hasAppliedComparison ? initial : null;
   const [submitted, setSubmitted] = useState(false);
   const request = queryOf(query, draft);
   let error: string | null = null;
@@ -99,7 +104,10 @@ export function PeriodComparisonFrame({
     .filter((year) => Value.Check(seasonSchema, year))
     .sort((a, b) => a - b);
   return (
-    <section className="panel location-period-comparison" aria-label={title}>
+    <section
+      className={`panel location-period-comparison${dateFocused && !open ? " location-period-comparison-collapsed" : ""}`}
+      aria-label={title}
+    >
       <div className="analysis-panel-heading">
         <h2>{title}</h2>
         {!alwaysOpen && (
@@ -113,9 +121,11 @@ export function PeriodComparisonFrame({
           </button>
         )}
       </div>
-      <p className="analysis-caption">
-        {description} 날짜를 비우면 해당 시즌 전체입니다. 차이는 B−A입니다.
-      </p>
+      {(open || !dateFocused) && (
+        <p className="analysis-caption">
+          {description} 날짜를 비우면 해당 시즌 전체입니다. 차이는 B−A입니다.
+        </p>
+      )}
       {open && (
         <>
           <form

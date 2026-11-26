@@ -183,7 +183,10 @@ it.each<PeriodComparisonKind>(["statistics", "pitch-shape", "batter-profile", "b
     expect(fetch).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "기간 비교 열기" }));
     expect(fetch).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText("기간 A 시작일"), { target: { value: "2024-04-01" } });
+    const firstSeason = kind === "statistics" ? "2025" : "2024";
+    expect(screen.getByLabelText<HTMLSelectElement>("기간 A 시즌").value).toBe(firstSeason);
+    const firstDate = `${firstSeason}-04-01`;
+    fireEvent.change(screen.getByLabelText("기간 A 시작일"), { target: { value: firstDate } });
     fireEvent.click(screen.getByRole("button", { name: "두 기간 비교 적용" }));
     const table = await screen.findByRole("table", { name: "두 기간 지표 비교" });
     expect(within(table).getByText("+20.0%p")).toBeTruthy();
@@ -192,8 +195,8 @@ it.each<PeriodComparisonKind>(["statistics", "pitch-shape", "batter-profile", "b
     const url = new URL(String(fetch.mock.calls[0]?.[0]), "http://localhost");
     expect(url.pathname).toBe(`/api/v2/analysis/${kind}/p1/comparison`);
     expect(Object.fromEntries(url.searchParams)).toMatchObject({
-      season: "2024",
-      dateFrom: "2024-04-01",
+      season: firstSeason,
+      dateFrom: firstDate,
       compareSeason: "2025",
       competition: "regular",
     });
@@ -213,17 +216,20 @@ it.each<PeriodComparisonKind>(["statistics", "pitch-shape", "batter-profile", "b
 it("preserves cleared B dates and restores A/B selection with browser history", async () => {
   mock();
   show("statistics", "", true);
-  fireEvent.click(screen.getByRole("button", { name: "기간 비교 열기" }));
+  const panel = within(screen.getByRole("region", { name: "기간 지정 비교" }));
+  expect(panel.queryByText(/전반기·후반기/)).toBeNull();
+  fireEvent.click(panel.getByRole("button", { name: "기간 비교 열기" }));
+  expect(panel.getByText(/전반기·후반기/)).toBeTruthy();
   fireEvent.change(screen.getByLabelText("기간 B 시작일"), { target: { value: "" } });
   fireEvent.change(screen.getByLabelText("기간 B 종료일"), { target: { value: "" } });
   fireEvent.click(screen.getByRole("button", { name: "두 기간 비교 적용" }));
   await screen.findByRole("table", { name: "두 기간 지표 비교" });
   expect(screen.getByLabelText<HTMLInputElement>("기간 B 시작일").value).toBe("");
   expect(screen.getByLabelText("현재 주소").textContent).toContain("periodBFrom=&periodBTo=");
-  fireEvent.change(screen.getByLabelText("기간 A 시작일"), { target: { value: "2024-07-01" } });
+  fireEvent.change(screen.getByLabelText("기간 A 시작일"), { target: { value: "2025-07-01" } });
   fireEvent.click(screen.getByRole("button", { name: "두 기간 비교 적용" }));
   await waitFor(() =>
-    expect(screen.getByLabelText("현재 주소").textContent).toContain("2024-07-01"),
+    expect(screen.getByLabelText("현재 주소").textContent).toContain("2025-07-01"),
   );
   fireEvent.click(screen.getByRole("button", { name: "뒤로" }));
   await waitFor(() =>

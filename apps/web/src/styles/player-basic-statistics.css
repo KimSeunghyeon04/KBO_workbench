@@ -26,6 +26,11 @@
 .player-league-comparison {
   padding: 16px;
 }
+.player-league-comparison-dates {
+  display: inline-block;
+  margin-inline-start: 8px;
+  color: var(--ui-muted);
+}
 .player-league-comparison p,
 .player-split-counts p {
   margin: 0;
