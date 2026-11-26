@@ -86,6 +86,23 @@
   position: relative;
   min-width: 0;
 }
+.analysis-player-picker {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.analysis-player-picker .player-analysis-search {
+  width: min(100%, 400px);
+}
+.analysis-player-picker .analysis-caption {
+  margin: 0;
+}
+.analysis-player-picker-selection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
 .player-analysis-search input,
 .player-analysis-season {
   min-height: 40px;

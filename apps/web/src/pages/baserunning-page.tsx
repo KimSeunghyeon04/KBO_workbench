@@ -8,6 +8,7 @@ import { AnalysisScopeFields } from "../analysis/analysis-scope-fields";
 import { changeAnalysisParams, scopeFromParams } from "../analysis/analysis-scope";
 import { getBaserunning } from "../api/baserunning-client";
 import { BaserunningOpportunities } from "../analysis/baserunning-opportunities";
+import { PlayerSearch, reportPlayerOption } from "../analysis/player-analysis-search";
 import "../styles/pitch-analysis.css";
 import "../styles/analysis-evidence.css";
 const percent = (v: number | null) => (v === null ? "—" : `${(v * 100).toFixed(1)}%`);
@@ -41,11 +42,17 @@ export function BaserunningPage() {
     selectionHeading.current?.focus({ preventScroll: true });
     selectionHeading.current?.scrollIntoView({ block: "start" });
   }, [data]);
-  const runners = [
-    ...new Map(
-      data?.players.flatMap((row) => (row.playerId === null ? [] : [[row.playerId, row] as const])),
-    ).values(),
-  ];
+  const byRunner = new Map<string, { name: string; teams: Set<string> }>();
+  for (const { playerId: id, name, teamName } of data?.players ?? []) {
+    if (id === null) continue;
+    const previous = byRunner.get(id);
+    if (previous) previous.teams.add(teamName);
+    else byRunner.set(id, { name, teams: new Set([teamName]) });
+  }
+  const runners = [...byRunner].map(([id, row]) =>
+    reportPlayerOption(id, row.name, [...row.teams]),
+  );
+  const selectedRunner = runners.find(({ id }) => id === playerId);
   function selectRunner(id: string) {
     pendingSelection.current = id;
     change("player", id);
@@ -82,24 +89,39 @@ export function BaserunningPage() {
         <h2 id="baserunning-selection-heading" ref={selectionHeading} tabIndex={-1}>
           선수의 추가 진루
         </h2>
-        <label>
-          주자
-          <select
-            value={playerId ?? ""}
-            onChange={(event) => change("player", event.target.value)}
-            disabled={result.isFetching}
-          >
-            <option value="">선수를 선택하세요</option>
-            {playerId !== null && !runners.some((row) => row.playerId === playerId) && (
-              <option value={playerId}>선수 ID {playerId}</option>
-            )}
-            {runners.map((row) => (
-              <option key={row.playerId} value={row.playerId ?? ""}>
-                {row.name} · {row.playerId}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="analysis-player-picker">
+          <PlayerSearch
+            label="주자 검색"
+            placeholder="주자 이름·팀 또는 ID"
+            players={data === undefined ? undefined : runners}
+            selectedId={playerId}
+            unavailable={
+              result.isError ? "주자 목록을 읽지 못했습니다." : "주자 목록을 읽고 있습니다."
+            }
+            onSelect={selectRunner}
+            suggestOnFocus
+          />
+          {playerId !== null && (
+            <div className="analysis-player-picker-selection">
+              <p className="analysis-caption">
+                선택한 주자 ·{" "}
+                {selectedRunner
+                  ? selectedRunner.name + " · " + selectedRunner.details
+                  : "ID " + playerId}
+              </p>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => {
+                  pendingSelection.current = null;
+                  change("player", "");
+                }}
+              >
+                주자 선택 해제
+              </button>
+            </div>
+          )}
+        </div>
         {playerId === null ? (
           <p>주자를 선택하면 단타 때의 추가 진루 결과와 경기 장면을 확인합니다.</p>
         ) : (

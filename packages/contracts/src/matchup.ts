@@ -10,6 +10,33 @@ export const MatchupQuerySchema = Type.Object(
   { ...AnalysisScopeQuerySchema.properties, pitcherId: text, batterId: text },
   strict,
 );
+export const MatchupOpponentsQuerySchema = Type.Object(
+  {
+    ...AnalysisScopeQuerySchema.properties,
+    role: Type.Union([Type.Literal("pitcher"), Type.Literal("batter")]),
+    playerId: text,
+  },
+  strict,
+);
+export const MatchupOpponentSchema = Type.Object(
+  {
+    id: text,
+    name: text,
+    teams: Type.Array(text, { uniqueItems: true }),
+    pitches: count,
+    plateAppearances: count,
+  },
+  strict,
+);
+export const MatchupOpponentsResponseSchema = Type.Object(
+  {
+    query: MatchupOpponentsQuerySchema,
+    scope: AnalysisScopeSchema,
+    players: Type.Array(MatchupOpponentSchema),
+  },
+  strict,
+);
+export type MatchupOpponentsQuery = Static<typeof MatchupOpponentsQuerySchema>;
 export const MatchupConditionSchema = Type.Object(
   { pitchType: text, balls: count, strikes: count, stance: text, speedBand: Type.Integer() },
   strict,

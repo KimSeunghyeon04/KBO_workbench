@@ -13,7 +13,8 @@ import {
   pitcherCatalogQueryOptions,
   batterCatalogQueryOptions,
 } from "../api/analysis-catalog-query-options";
-import { getDirectMatchup, getMatchup } from "../api/matchup-client";
+import { getDirectMatchup, getMatchup, getMatchupOpponents } from "../api/matchup-client";
+import { PlayerSearch, reportPlayerOption } from "../analysis/player-analysis-search";
 import { MatchupModelPanel } from "../analysis/matchup-model-panel";
 import { MatchupObservedSummary } from "../analysis/matchup-observed-summary";
 import { PlayerRecordTable } from "../analysis/player-record-table";
@@ -36,14 +37,40 @@ export function MatchupPage() {
   const pitcherId = params.get("pitcher") ?? catalog.data?.pitchers[0]?.pitcherId ?? "",
     batterId = params.get("batter") ?? batters.data?.batters[0]?.batterId ?? "",
     query = { season, ...scope.options, pitcherId, batterId };
-  const opponentIsPitcher = selectedPlayerRole(params) === "batter";
+  const actorRole = selectedPlayerRole(params);
+  const opponentIsPitcher = actorRole === "batter";
   const opponentRole = opponentIsPitcher ? "pitcher" : "batter";
   const opponentLabel = opponentIsPitcher ? "상대 투수" : "상대 타자";
   const opponentId = opponentIsPitcher ? pitcherId : batterId;
   const opponentCatalog = opponentIsPitcher ? catalog : batters;
-  const opponents = opponentCatalog.data ? analysisCatalogPlayers(opponentCatalog.data) : [];
-  const opponentMissing =
-    opponentId !== "" && !opponents.some((player) => player.id === opponentId);
+  const actorId = opponentIsPitcher ? batterId : pitcherId;
+  const opponentQuery = { season, ...scope.options, role: actorRole, playerId: actorId };
+  const opponentList = useQuery({
+    queryKey: ["matchup-opponents", opponentQuery],
+    meta: analysisQueryMeta(opponentQuery),
+    enabled: scope.error === null && actorId !== "",
+    queryFn: ({ signal }) => getMatchupOpponents(opponentQuery, signal),
+  });
+  const catalogOptions = opponentCatalog.data ? analysisCatalogPlayers(opponentCatalog.data) : [];
+  const available = new Map(catalogOptions.map((player) => [player.id, player]));
+  const opponents = (opponentList.data?.players ?? []).flatMap((player) => {
+    const known = available.get(player.id);
+    const direct = player.pitches > 0 || player.plateAppearances > 0;
+    if (!known && !direct) return [];
+    available.delete(player.id);
+    return [
+      reportPlayerOption(
+        player.id,
+        known?.name ?? player.name,
+        player.teams,
+        direct ? `직접 상대 · ${player.plateAppearances}타석 · ${player.pitches}구` : undefined,
+      ),
+    ];
+  });
+  opponents.push(
+    ...[...available.values()].map(({ id, name }) => reportPlayerOption(id, name, [])),
+  );
+  const selectedOpponent = opponents.find(({ id }) => id === opponentId);
   useEffect(
     () => setPage(0),
     [
@@ -79,28 +106,45 @@ export function MatchupPage() {
           <h1>투타 맞대결</h1>
         </div>
       </header>
-      <section className="panel analysis-filter-bar" aria-label="맞대결 상대">
-        <div className="analysis-primary-filters">
-          <label>
-            {opponentLabel}
-            <select value={opponentId} onChange={(e) => change(opponentRole, e.target.value)}>
-              {opponentMissing && (
-                <option value={opponentId}>ID {opponentId} · 해당 범위 기록 없음</option>
-              )}
-              {opponents.map((player) => (
-                <option key={player.id} value={player.id}>
-                  {player.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+      <section className="panel analysis-player-picker" aria-label="맞대결 상대">
+        <PlayerSearch
+          label={opponentLabel + " 검색"}
+          placeholder={opponentLabel + " 이름·팀 또는 ID"}
+          players={opponentList.isLoading || opponentCatalog.isLoading ? undefined : opponents}
+          selectedId={opponentId}
+          unavailable="상대 목록을 읽고 있습니다."
+          onSelect={(id) => change(opponentRole, id)}
+          suggestOnFocus
+        />
+        {opponentId !== "" && (
+          <p className="analysis-caption">
+            선택한 {opponentLabel} ·{" "}
+            {selectedOpponent
+              ? selectedOpponent.name + " · " + selectedOpponent.details
+              : "ID " + opponentId}
+          </p>
+        )}
+        {opponentList.isError && (
+          <div role="status">
+            상대의 직접 기록과 시즌 팀을 읽지 못했습니다.{" "}
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => void opponentList.refetch()}
+            >
+              상대 목록 다시 시도
+            </button>
+          </div>
+        )}
       </section>
-      {opponentCatalog.isSuccess && opponentMissing && (
-        <p role="status">
-          {opponentLabel}(ID {opponentId})의 실제 투구가 이 조회 범위에 없습니다.
-        </p>
-      )}
+      {opponentCatalog.isSuccess &&
+        opponentList.isSuccess &&
+        opponentId !== "" &&
+        !selectedOpponent && (
+          <p role="status">
+            {opponentLabel}(ID {opponentId})의 기록이 이 조회 범위에 없습니다.
+          </p>
+        )}
       {scope.error && <p role="alert">{scope.error}</p>}
       <AnalysisQueryError queries={[direct, catalog, batters]} enabled={scope.error === null} />
       {(catalog.isLoading || batters.isLoading || direct.isFetching) && (

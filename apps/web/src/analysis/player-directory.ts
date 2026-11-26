@@ -18,13 +18,16 @@ export function usePlayerDirectory() {
   });
 }
 
+export function normalizePlayerSearch(value: string) {
+  return value.trim().normalize("NFC").toLowerCase();
+}
+
 export function filterDirectoryPlayers(players: readonly PlayerDirectoryEntry[], query: string) {
-  const normalize = (value: string) => value.trim().normalize("NFC").toLowerCase();
-  const needle = normalize(query);
+  const needle = normalizePlayerSearch(query);
   return players.filter(
     (player) =>
-      normalize(player.name).includes(needle) ||
-      player.sourceIds.some((id) => normalize(id).includes(needle)),
+      normalizePlayerSearch(player.name).includes(needle) ||
+      player.sourceIds.some((id) => normalizePlayerSearch(id).includes(needle)),
   );
 }
 

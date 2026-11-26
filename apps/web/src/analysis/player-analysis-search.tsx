@@ -1,7 +1,7 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { PlayerDirectoryEntry } from "@kbo/contracts";
 import {
-  filterDirectoryPlayers,
+  normalizePlayerSearch,
   playerBirthYearLabel,
   playerCareer,
   playerPosition,
@@ -10,18 +10,50 @@ import { usePlayerSearchInput } from "./use-player-search-input";
 
 const resultLimit = 12;
 
-export function PlayerAnalysisSearch({
+export interface PlayerSearchOption {
+  id: string;
+  name: string;
+  summary?: string;
+  details: string;
+  accessibleName: string;
+  searchTerms: readonly string[];
+}
+
+export function reportPlayerOption(
+  id: string,
+  name: string,
+  teams: readonly string[],
+  summary?: string,
+): PlayerSearchOption {
+  const details = (teams.join(" · ") || "팀 미확인") + " · ID " + id;
+  return {
+    id,
+    name,
+    details,
+    ...(summary === undefined ? {} : { summary }),
+    accessibleName: [name, details, summary].filter(Boolean).join(", "),
+    searchTerms: [id, ...teams],
+  };
+}
+
+export function PlayerSearch({
   players,
   selectedId,
   unavailable,
   retry,
   onSelect,
+  label = "선수 검색",
+  placeholder = "전체 선수 이름 또는 ID",
+  suggestOnFocus = false,
 }: {
-  players: readonly PlayerDirectoryEntry[] | undefined;
+  players: readonly PlayerSearchOption[] | undefined;
   selectedId: string | null;
   unavailable: string;
-  retry: (() => void) | undefined;
-  onSelect: (player: PlayerDirectoryEntry) => void;
+  retry?: (() => void) | undefined;
+  onSelect: (id: string) => void;
+  label?: string;
+  placeholder?: string;
+  suggestOnFocus?: boolean;
 }) {
   const resultsId = useId();
   const root = useRef<HTMLDivElement>(null);
@@ -33,8 +65,14 @@ export function PlayerAnalysisSearch({
     setQuery(value);
     setOpen(true);
   });
-  const showResults = open && query.trim() !== "";
-  const matches = showResults && players ? filterDirectoryPlayers(players, query) : [];
+  const needle = normalizePlayerSearch(query);
+  const showResults = open && (suggestOnFocus || needle !== "");
+  const matches =
+    showResults && players
+      ? players.filter(({ name, searchTerms }) =>
+          [name, ...searchTerms].some((term) => normalizePlayerSearch(term).includes(needle)),
+        )
+      : [];
 
   useEffect(() => {
     if (!showResults) return;
@@ -45,11 +83,11 @@ export function PlayerAnalysisSearch({
     return () => document.removeEventListener("pointerdown", dismiss);
   }, [showResults]);
 
-  function choose(player: PlayerDirectoryEntry) {
+  function choose(player: PlayerSearchOption) {
     input.current?.focus();
     setOpen(false);
     setQuery("");
-    if (player.identity !== selectedId) onSelect(player);
+    if (player.id !== selectedId) onSelect(player.id);
   }
 
   return (
@@ -66,7 +104,7 @@ export function PlayerAnalysisSearch({
       onKeyDown={(event) => {
         if (isComposing.current || event.nativeEvent.isComposing) return;
         if (event.key === "ArrowDown" && event.target === input.current && !showResults) {
-          if (query.trim() !== "") {
+          if (suggestOnFocus || needle !== "") {
             event.preventDefault();
             setOpen(true);
           }
@@ -117,9 +155,9 @@ export function PlayerAnalysisSearch({
       <input
         ref={input}
         type="search"
-        aria-label="선수 검색"
+        aria-label={label}
         aria-controls={resultsId}
-        placeholder="전체 선수 이름 또는 ID"
+        placeholder={placeholder}
         autoComplete="off"
         spellCheck={false}
         onFocus={() => setOpen(true)}
@@ -145,27 +183,23 @@ export function PlayerAnalysisSearch({
             </>
           ) : (
             <>
-              <ul ref={results} aria-label="선수 검색 결과">
-                {matches.slice(0, resultLimit).map((player) => {
-                  const { teams } = playerCareer(player);
-                  const birthYear = playerBirthYearLabel(player);
-                  const position = playerPosition(player);
-                  return (
-                    <li key={player.identity}>
-                      <button
-                        type="button"
-                        aria-label={`${player.name}, ${birthYear}, ${position}, ${teams}`}
-                        aria-current={player.identity === selectedId ? true : undefined}
-                        onClick={() => choose(player)}
-                      >
-                        <span className="player-search-result-name">
-                          <strong>{player.name}</strong> · {birthYear} · {position}
-                        </span>
-                        <span className="player-search-result-teams">{teams}</span>
-                      </button>
-                    </li>
-                  );
-                })}
+              <ul ref={results} aria-label={label + " 결과"}>
+                {matches.slice(0, resultLimit).map((player) => (
+                  <li key={player.id}>
+                    <button
+                      type="button"
+                      aria-label={player.accessibleName}
+                      aria-current={player.id === selectedId ? true : undefined}
+                      onClick={() => choose(player)}
+                    >
+                      <span className="player-search-result-name">
+                        <strong>{player.name}</strong>
+                        {player.summary && <> · {player.summary}</>}
+                      </span>
+                      <span className="player-search-result-teams">{player.details}</span>
+                    </button>
+                  </li>
+                ))}
               </ul>
               {matches.length > resultLimit && (
                 <p role="status">검색 결과 {matches.length}명. 이름 또는 ID를 더 입력해 주세요.</p>
@@ -174,5 +208,49 @@ export function PlayerAnalysisSearch({
           ))}
       </div>
     </div>
+  );
+}
+
+export function PlayerAnalysisSearch({
+  players,
+  selectedId,
+  unavailable,
+  retry,
+  onSelect,
+}: {
+  players: readonly PlayerDirectoryEntry[] | undefined;
+  selectedId: string | null;
+  unavailable: string;
+  retry: (() => void) | undefined;
+  onSelect: (player: PlayerDirectoryEntry) => void;
+}) {
+  const options = useMemo(
+    () =>
+      players?.map((player) => {
+        const { teams } = playerCareer(player);
+        const birthYear = playerBirthYearLabel(player);
+        const position = playerPosition(player);
+        return {
+          id: player.identity,
+          name: player.name,
+          summary: birthYear + " · " + position,
+          details: teams,
+          accessibleName: [player.name, birthYear, position, teams].join(", "),
+          searchTerms: player.sourceIds,
+        };
+      }),
+    [players],
+  );
+  return (
+    <PlayerSearch
+      players={options}
+      selectedId={selectedId}
+      unavailable={unavailable}
+      retry={retry}
+      onSelect={(id) => {
+        const player = players?.find(({ identity }) => identity === id);
+        if (player) onSelect(player);
+      }}
+    />
   );
 }

@@ -40,7 +40,7 @@ it.each([false, true])(
       scope: resolveAnalysisScope(query),
       sourceHash: "a".repeat(64),
       playerId: "r",
-      players: [runner],
+      players: [runner, { ...runner, teamId: "HOME", teamName: "홈", advances: 0 }],
       teams: [{ ...runner, identity: "team:AWAY", playerId: null, name: "원정" }],
       opportunities: [
         {
@@ -102,6 +102,9 @@ it.each([false, true])(
     expect(screen.getByRole("heading", { name: "주자 A · 단타 추가 진루" })).toBeTruthy();
     expect(screen.getByText(unknown ? "1 / 2회" : "1 / 1회")).toBeTruthy();
     const summary = screen.getByRole("region", { name: "선수의 추가 진루" });
+    fireEvent.focus(within(summary).getByRole("searchbox", { name: "주자 검색" }));
+    expect(within(summary).getByRole("button", { name: "주자 A, 원정 · 홈 · ID r" })).toBeTruthy();
+    expect(within(summary).getByRole("button", { name: "주자 선택 해제" })).toBeTruthy();
     expect(
       within(summary).getByText(unknown ? "—" : "100.0%", { exact: true, selector: "dd" }),
     ).toBeTruthy();

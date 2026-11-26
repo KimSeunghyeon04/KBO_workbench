@@ -97,6 +97,16 @@ it("distinguishes matchup called strikes per pitch from model called strikes per
   const data = analyzeMatchup(query, scope, "a".repeat(64), rows, [], [], []);
   const fetch = vi.fn(async (input: RequestInfo | URL) => {
     const path = new URL(String(input), "http://localhost").pathname;
+    if (path.endsWith("matchups/opponents"))
+      return Response.json({
+        query: { season: 2024, competition: "regular", playerId: "hp1", role: "pitcher" },
+        scope,
+        players: [
+          { id: "b2", name: "타자", teams: ["다른 팀"], pitches: 0, plateAppearances: 1 },
+          { id: "b1", name: "타자", teams: ["원정"], pitches: 0, plateAppearances: 0 },
+          { id: "b3", name: "명단에만 있는 타자", teams: ["홈"], pitches: 0, plateAppearances: 0 },
+        ],
+      });
     if (path.endsWith("matchups/direct"))
       return Response.json({
         query,
@@ -141,6 +151,22 @@ it("distinguishes matchup called strikes per pitch from model called strikes per
     ),
   );
   await screen.findByRole("table", { name: "직접 맞대결 성적" });
+  const picker = screen.getByRole("region", { name: "맞대결 상대" });
+  const search = within(picker).getByRole("searchbox", { name: "상대 타자 검색" });
+  const user = userEvent.setup();
+  await user.click(search);
+  const suggestions = await within(picker).findByRole("list", { name: "상대 타자 검색 결과" });
+  expect(
+    within(suggestions)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label")),
+  ).toEqual(["타자, 다른 팀 · ID b2, 직접 상대 · 1타석 · 0구", "타자, 원정 · ID b1"]);
+  expect(
+    within(suggestions)
+      .getByRole("button", { name: "타자, 원정 · ID b1" })
+      .getAttribute("aria-current"),
+  ).toBe("true");
+  await user.keyboard("{Escape}");
   expect(
     fetch.mock.calls.map(([input]) => new URL(String(input), "http://localhost").pathname),
   ).not.toContain("/api/v2/analysis/matchups");

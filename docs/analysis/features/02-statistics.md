@@ -98,3 +98,6 @@ DB integration에서 PA/pitch join 없이 집계 보존을 검증하고 API/UI�
 - `/api/v2/analysis/matchups/direct`는 투수와 타자가 직접 상대했던 실제 투구와 공식 책임 기준
   완료 타석을 각각 제공한다. 맞대결 화면에서 타격 합계를 먼저 보고, 유사 조건 비교를 열면
   `/api/v2/analysis/matchups`를 따로 조회한다. 비교 안의 두 투구 표본은 같은 snapshot에서 읽는다.
+- `/api/v2/analysis/matchups/opponents`는 현재 범위의 실제 투구와 책임 기준 공식 완료 타석을
+  각각 집계해 직접 상대를 표시한다. 검색 후보에 시즌의 봉인된 로스터에서 확인한 구단과 선수 ID를
+  표시한다. 같은 이름은 구단과 ID로 구분하고, 직접 상대 기록이 있는 후보부터 보여 준다.

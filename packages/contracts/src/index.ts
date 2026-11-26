@@ -730,6 +730,9 @@ export {
 } from "./workload-comparison.js";
 export {
   MatchupQuerySchema,
+  MatchupOpponentsQuerySchema,
+  MatchupOpponentSchema,
+  MatchupOpponentsResponseSchema,
   DirectMatchupResponseSchema,
   type DirectMatchupResponse,
   MatchupResponseSchema,
@@ -737,6 +740,7 @@ export {
   MatchupConditionCountsSchema,
   MatchupPitchSchema,
   type MatchupQuery,
+  type MatchupOpponentsQuery,
   type MatchupResponse,
   type MatchupCondition,
   type MatchupConditionCounts,

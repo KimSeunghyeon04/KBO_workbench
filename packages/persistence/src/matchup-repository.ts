@@ -5,12 +5,15 @@ import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import {
   MatchupQuerySchema,
+  MatchupOpponentsQuerySchema,
+  MatchupOpponentsResponseSchema,
   DirectMatchupResponseSchema,
   MatchupResponseSchema,
   MatchupConditionCountsSchema,
   resolveAnalysisScope,
   canonicalStringify,
   type MatchupQuery,
+  type MatchupOpponentsQuery,
 } from "@kbo/contracts";
 import { analyzeMatchup, summarizeDirectMatchup } from "@kbo/game-core";
 import {
@@ -27,6 +30,50 @@ import {
 } from "./analysis-pitch-input.js";
 export class MatchupRepository {
   public constructor(private readonly pool: Pool) {}
+  public async opponents(input: MatchupOpponentsQuery) {
+    const query = Value.Decode(MatchupOpponentsQuerySchema, input);
+    const { role, playerId, ...scopeQuery } = query;
+    const scope = resolveAnalysisScope(scopeQuery, "regular");
+    const actor = role === "pitcher" ? "pitcher_id" : "batter_id";
+    const opponent = role === "pitcher" ? "batter_id" : "pitcher_id";
+    const { rows } = await withAnalysisSnapshot(this.pool, (client) =>
+      client.query<Record<string, unknown>>(
+        `WITH selected_games AS MATERIALIZED (
+          SELECT r.game_id, r.revision FROM analytics.current_analysis_games r
+          WHERE ${ANALYSIS_GAME_WHERE}
+        ), observations AS (
+          SELECT p.${opponent} AS id, count(*) AS pitches, 0 AS pa
+          FROM selected_games r JOIN baseball.pitch_facts p USING (game_id, revision)
+          WHERE p.actual AND p.${actor}=$5 AND p.${opponent} IS NOT NULL
+          GROUP BY p.${opponent}
+          UNION ALL
+          SELECT f.${opponent} AS id, 0 AS pitches, count(*) AS pa
+          FROM selected_games r JOIN baseball.plate_appearance_facts f USING (game_id, revision)
+          WHERE f.completed AND f.counts_as_plate_appearance
+            AND f.${actor}=$5 AND f.${opponent} IS NOT NULL
+          GROUP BY f.${opponent}
+        ), direct AS (
+          SELECT id, sum(pitches)::integer AS pitches, sum(pa)::integer AS pa
+          FROM observations GROUP BY id
+        ), season_rosters AS (
+          SELECT s.player_id AS id, min(s.player_name COLLATE "C") AS name,
+            array_agg(DISTINCT t.team_name COLLATE "C" ORDER BY t.team_name COLLATE "C") AS teams
+          FROM analytics.current_analysis_games r
+          JOIN workbench.game_roster_snapshots s USING (game_id, revision)
+          JOIN workbench.game_team_snapshots t ON (t.game_id,t.revision,t.side)=(s.game_id,s.revision,s.side)
+          WHERE r.season=$1 AND r.competition<>'allstar'
+          GROUP BY s.player_id
+        )
+        SELECT COALESCE(r.id,d.id) AS id, COALESCE(r.name,d.id) AS name,
+          COALESCE(r.teams,ARRAY[]::text[]) AS teams, COALESCE(d.pitches,0) AS pitches,
+          COALESCE(d.pa,0) AS "plateAppearances"
+        FROM season_rosters r FULL JOIN direct d USING (id)
+        ORDER BY COALESCE(d.pa,0) DESC, COALESCE(d.pitches,0) DESC, COALESCE(r.id,d.id) COLLATE "C"`,
+        [...analysisScopeParameters(scope), playerId],
+      ),
+    );
+    return Value.Decode(MatchupOpponentsResponseSchema, { query, scope, players: rows });
+  }
   public async direct(input: MatchupQuery) {
     const query = Value.Decode(MatchupQuerySchema, input);
     const { pitcherId, batterId, ...scopeQuery } = query;

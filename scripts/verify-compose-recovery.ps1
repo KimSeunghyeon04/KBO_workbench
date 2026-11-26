@@ -1357,6 +1357,20 @@ try {
     }
     if (url.includes("matchups")) {
       await assertPrimaryReportScope();
+      const previousViewport = page.viewportSize();
+      await page.setViewportSize({ width: 390, height: 844 });
+      const opponentSearch = page.getByRole("searchbox", { name: /\uc0c1\ub300 .* \uac80\uc0c9/ });
+      await opponentSearch.click();
+      const opponentChoices = page.getByRole("list", { name: /\uc0c1\ub300 .* \uac80\uc0c9 \uacb0\uacfc/ });
+      const firstOpponent = opponentChoices.getByRole("button").first();
+      await firstOpponent.waitFor();
+      if (!(await firstOpponent.innerText()).includes("\uc9c1\uc811 \uc0c1\ub300") ||
+          !(await firstOpponent.innerText()).includes("ID ")) {
+        throw new Error("Direct opponents must appear first with identifying details.");
+      }
+      await firstOpponent.click({ trial: true });
+      await opponentSearch.press("Escape");
+      await page.setViewportSize(previousViewport);
       if (await page.locator(".matchup-observed-summary").count() !== 0) throw new Error("Similar matchup comparison opened before selection.");
       const similar = page.waitForResponse(res => new URL(res.url()).pathname === "/api/v2/analysis/matchups" && res.ok());
       await page.getByText("\uc720\uc0ac \uc870\uac74\uc758 \ud22c\uad6c\uc640 \ube44\uad50", { exact: true }).click();

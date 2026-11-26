@@ -82,18 +82,29 @@ it.each([
       false,
     );
   });
-  const requests = fetch.mock.calls.map((call) => String(call[0])).sort();
+  const requiredRequests = () =>
+    fetch.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => !url.includes("/matchups/opponents?"))
+      .sort();
+  const requests = requiredRequests();
   expect(requests.length).toBeGreaterThan(0);
   fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
-  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(requests.length * 2));
+  await waitFor(() => expect(requiredRequests()).toHaveLength(requests.length * 2));
   await waitFor(() => {
     expect(screen.getByRole<HTMLButtonElement>("button", { name: "다시 시도" }).disabled).toBe(
       false,
     );
   });
-  expect(fetch.mock.calls.map((call) => String(call[0])).sort()).toEqual(
-    [...requests, ...requests].sort(),
-  );
+  expect(requiredRequests()).toEqual([...requests, ...requests].sort());
+  if (_name === "matchups") {
+    const opponentRequests = () =>
+      fetch.mock.calls.filter(([url]) => String(url).includes("/matchups/opponents?"));
+    expect(opponentRequests()).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "상대 목록 다시 시도" }));
+    await waitFor(() => expect(opponentRequests()).toHaveLength(2));
+    expect(requiredRequests()).toHaveLength(requests.length * 2);
+  }
   expect(screen.getByLabelText("현재 주소").textContent).toBe(`?${search}`);
 });
 

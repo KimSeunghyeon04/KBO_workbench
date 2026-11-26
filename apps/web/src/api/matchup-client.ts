@@ -2,11 +2,31 @@ import { Value } from "@sinclair/typebox/value";
 import {
   canonicalStringify,
   DirectMatchupResponseSchema,
+  MatchupOpponentsResponseSchema,
   MatchupResponseSchema,
   resolveAnalysisScope,
   type MatchupQuery,
+  type MatchupOpponentsQuery,
 } from "@kbo/contracts";
 import { requestJson } from "./transport";
+export async function getMatchupOpponents(query: MatchupOpponentsQuery, signal: AbortSignal) {
+  const { role, playerId, ...scope } = query;
+  void role;
+  void playerId;
+  const params = new URLSearchParams(Object.entries(query).map(([k, v]) => [k, String(v)]));
+  const result = Value.Decode(
+    MatchupOpponentsResponseSchema,
+    await requestJson(`/api/v2/analysis/matchups/opponents?${params}`, { signal }),
+  );
+  if (
+    canonicalStringify(query) !== canonicalStringify(result.query) ||
+    canonicalStringify(result.scope) !==
+      canonicalStringify(resolveAnalysisScope(scope, "regular")) ||
+    new Set(result.players.map(({ id }) => id)).size !== result.players.length
+  )
+    throw new Error("맞대결 상대 목록의 조회 범위 또는 선수 식별자가 올바르지 않습니다.");
+  return result;
+}
 export async function getDirectMatchup(query: MatchupQuery, signal: AbortSignal) {
   const { pitcherId, batterId, ...scope } = query;
   const params = new URLSearchParams(Object.entries(query).map(([k, v]) => [k, String(v)]));

@@ -2655,6 +2655,59 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     });
   });
 
+  it("lists direct matchup candidates by official PA or actual pitches with season team metadata", async () => {
+    await store.importRevision(pitchAnalysisFixture(2024));
+    const walk = parseStagingGameDocumentV2(
+      makeDocument([
+        { kind: "half_inning_start", payload: {} },
+        { kind: "batter_start", payload: { batterId: "a2", pitcherId: "hp1" } },
+        {
+          kind: "plate_result",
+          payload: { result: "intentional_walk", batterId: "a2", pitcherId: "hp1" },
+        },
+      ]),
+    );
+    await store.importRevision(
+      parseStagingGameDocumentV2({
+        ...walk,
+        metadata: {
+          ...walk.metadata,
+          gameId: "matchup-no-pitch",
+          season: 2024,
+          gameDate: "2024-06-02",
+        },
+      }),
+    );
+    const repository = new MatchupRepository(pool);
+    const scope = { season: 2024, competition: "unknown" } as const;
+    const pitcher = await repository.opponents({ ...scope, role: "pitcher", playerId: "hp1" });
+    expect(pitcher.players.slice(0, 2)).toEqual([
+      { id: "a1", name: "a1", teams: ["원정"], pitches: 4, plateAppearances: 1 },
+      { id: "a2", name: "a2", teams: ["원정"], pitches: 0, plateAppearances: 1 },
+    ]);
+    const batter = await repository.opponents({ ...scope, role: "batter", playerId: "a1" });
+    expect(batter.players[0]).toEqual({
+      id: "hp1",
+      name: "hp1",
+      teams: ["홈"],
+      pitches: 4,
+      plateAppearances: 1,
+    });
+    const onFirstDay = await repository.opponents({
+      ...scope,
+      role: "pitcher",
+      playerId: "hp1",
+      dateTo: "2024-06-01",
+    });
+    expect(onFirstDay.players.find(({ id }) => id === "a2")).toEqual({
+      id: "a2",
+      name: "a2",
+      teams: ["원정"],
+      pitches: 0,
+      plateAppearances: 0,
+    });
+  });
+
   it("uses the same tracked-first batting side for matchup batter, pitcher, and league samples", async () => {
     const profiles = new PlayerBattingProfileRepository(pool);
     const games = [
