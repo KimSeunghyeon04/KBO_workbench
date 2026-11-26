@@ -185,15 +185,43 @@ export function PitchRateTable({
   title,
   rows,
   controls,
+  typeSample,
+  onSelectType,
+  selectedType,
 }: {
   title: string;
   rows: readonly PitchRateGroup[];
   controls?: ReactNode;
+  typeSample?: number | undefined;
+  onSelectType?: ((key: string) => void) | undefined;
+  selectedType?: string | null | undefined;
 }) {
   const [detailed, setDetailed] = useState(false);
   const [sort, setSort] = useState<RateSort | null>(null);
-  const visible = columns.filter((column) => detailed || column.compact);
-  const sortColumn = columns.find((column) => column.label === sort?.column);
+  const available = useMemo(() => {
+    if (typeSample === undefined) return columns;
+    const share = (row: PitchRateGroup) => (typeSample === 0 ? null : row.pitches / typeSample);
+    return [
+      columns[0],
+      {
+        label: "구종 비중",
+        value: (row: PitchRateGroup) => (
+          <SampleRate
+            value={share(row)}
+            numerator={row.pitches}
+            denominator={typeSample}
+            unit="구"
+          />
+        ),
+        sortValue: share,
+        description: "해당 구종의 투구 수 / 선택한 조건의 전체 실제 투구 수.",
+        compact: true,
+      },
+      ...columns.slice(1),
+    ].filter((column) => column !== undefined);
+  }, [typeSample]);
+  const visible = available.filter((column) => detailed || column.compact);
+  const sortColumn = available.find((column) => column.label === sort?.column);
   const orderedRows = useMemo(() => {
     if (!sort || !sortColumn) return rows;
     const direction = sort.direction === "descending" ? -1 : 1;
@@ -265,7 +293,20 @@ export function PitchRateTable({
           <tbody>
             {orderedRows.map((row) => (
               <tr key={row.key}>
-                <th scope="row">{outcomeGroupLabel(row.key)}</th>
+                <th scope="row">
+                  {onSelectType ? (
+                    <button
+                      type="button"
+                      className="outcome-type-select"
+                      aria-pressed={selectedType === row.key}
+                      onClick={() => onSelectType(row.key)}
+                    >
+                      {outcomeGroupLabel(row.key)}
+                    </button>
+                  ) : (
+                    outcomeGroupLabel(row.key)
+                  )}
+                </th>
                 {visible.map((c) => (
                   <td key={c.label}>{c.value(row)}</td>
                 ))}
@@ -297,8 +338,12 @@ export function PitchRateTable({
 
 export function PitchOutcomeBreakdown({
   data,
+  onSelectType,
+  selectedType,
 }: {
   data: PitchLocationResponse | BatterProfileResponse;
+  onSelectType?: (key: string) => void;
+  selectedType?: string | null;
 }) {
   const [selected, setSelected] = useState("type");
   const groups = [
@@ -316,6 +361,9 @@ export function PitchOutcomeBreakdown({
     <PitchRateTable
       title={active.title}
       rows={active.rows}
+      typeSample={active.id === "type" ? data.total.pitches : undefined}
+      onSelectType={active.id === "type" ? onSelectType : undefined}
+      selectedType={selectedType}
       controls={
         <div className="analysis-segments" role="group" aria-label="비교 기준">
           {groups.map((group) => (

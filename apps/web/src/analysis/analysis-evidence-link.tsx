@@ -3,10 +3,17 @@ import { Link, useLocation } from "react-router-dom";
 import { playerAnalysisSections } from "./player-analysis-navigation";
 
 // Keep the return journey in browser history, separate from sealed replay identity.
-export function AnalysisEvidenceLink({ to, children }: PropsWithChildren<{ readonly to: string }>) {
+export function AnalysisEvidenceLink({
+  to,
+  label,
+  children,
+}: PropsWithChildren<{
+  readonly to: string;
+  readonly label?: string;
+}>) {
   const { pathname, search, hash } = useLocation();
   return (
-    <Link to={to} state={{ analysisReturnTo: `${pathname}${search}${hash}` }}>
+    <Link to={to} aria-label={label} state={{ analysisReturnTo: `${pathname}${search}${hash}` }}>
       {children}
     </Link>
   );

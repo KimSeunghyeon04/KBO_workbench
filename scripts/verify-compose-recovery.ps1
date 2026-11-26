@@ -839,13 +839,12 @@ try {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const menu = page.getByRole("navigation", { name: "\uc8fc \uba54\ub274" });
-  const playerNavigation = page.getByRole("navigation", { name: "\uc120\uc218 \ubd84\uc11d \ud56d\ubaa9" });
   const recordNavigation = page.getByRole("navigation", { name: "\uc120\uc218 \uae30\ub85d \ubcf4\uae30" });
   const playerList = page.getByRole("list", { name: "\uc120\uc218 \ubaa9\ub85d" });
   const playerSearch = page.getByRole("searchbox", { name: "\uc120\uc218 \uac80\uc0c9" });
   const playerScope = { season: "2024", competition: "unknown", dateFrom: "2024-06-01", dateTo: "2024-06-01" };
   async function openReportFilters() {
-    const filters = page.locator("details.analysis-report-filters, details.player-report-filters");
+    const filters = page.locator("details.analysis-report-filters, details.player-report-filters").first();
     if (await filters.count() > 0 && await filters.getAttribute("open") === null) {
       await filters.locator(":scope > summary").click();
     }
@@ -873,26 +872,27 @@ try {
     if (result.scope.competition !== competition || !id) throw new Error("Missing player in " + competition);
     return id;
   }
-  async function openMode(role) {
-    const mode = role === "pitcher" ? "\ud22c\uad6c \ubd84\uc11d" : "\ud0c0\uaca9 \ubd84\uc11d";
-    await recordNavigation.getByRole("link", { name: mode, exact: true }).click();
-    await playerNavigation.waitFor();
+  async function openPitches() {
+    await recordNavigation.getByRole("link", { name: "\uad6c\uc885\u00b7\ucf54\uc2a4", exact: true }).click();
   }
   async function inspectPlayerStatistics(role) {
     if (new URL(page.url()).pathname !== "/analysis/player-statistics") {
       await recordNavigation.getByRole("link", { name: "\uae30\ubcf8 \uae30\ub85d", exact: true }).click();
     }
-    await assertPlayerDestination("/analysis/player-statistics", { pitcher: null, batter: null, playerRole: null });
+    await assertPlayerDestination("/analysis/player-statistics", { pitcher: null, batter: null });
     await page.getByRole("heading", { name: "\uae30\ubcf8 \uae30\ub85d", exact: true }).waitFor();
     await recordNavigation.locator('a[aria-current="page"]').filter({ hasText: "\uae30\ubcf8 \uae30\ub85d" }).waitFor();
-    const recordDetails = page.locator(".player-report-details");
-    await recordDetails.waitFor();
-    if (await recordDetails.getAttribute("open") !== null) throw new Error("Basic record details must start collapsed.");
-    await recordDetails.locator(":scope > summary").press("Enter");
-    const table = page.getByRole("table", { name: role === "pitcher" ? "\ud22c\uad6c \uc131\uc801" : "\ud0c0\uaca9 \uc131\uc801", exact: true });
+    const annualBatting = "\uc5f0\ub3c4\ubcc4 \ud0c0\uaca9 \uc131\uc801";
+    const annualPitching = "\uc5f0\ub3c4\ubcc4 \ud22c\uad6c \uc131\uc801";
+    const table = page.getByRole("table", { name: role === "pitcher" ? annualPitching : annualBatting, exact: true });
     await table.waitFor();
     await table.locator("tbody tr").first().waitFor();
-    if (await page.getByRole("table", { name: role === "pitcher" ? "\ud0c0\uaca9 \uc131\uc801" : "\ud22c\uad6c \uc131\uc801", exact: true }).count() !== 0) throw new Error("Basic records rendered the wrong player role.");
+    if (await page.getByRole("table", { name: role === "pitcher" ? annualBatting : annualPitching, exact: true }).count() !== 0) throw new Error("Basic records rendered the wrong player role.");
+    const years = (await table.getByRole("rowheader").allTextContents()).map(Number);
+    if (years.some((year, index) => !Number.isInteger(year) || (index > 0 && year >= years[index - 1]))) {
+      throw new Error(`Basic records must show one row per year, newest first: ${years.join(", ")}`);
+    }
+    if (await table.getByRole("button").count() !== 0) throw new Error("Basic records include an unexpected record disclosure.");
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 844 });
       if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)) throw new Error(`Player ${role} statistics horizontal overflow.`);
@@ -940,10 +940,42 @@ try {
   await page.waitForURL((url) => url.searchParams.get("dateFrom") === playerScope.dateFrom);
   await page.getByLabel("\ubd84\uc11d \uc885\ub8cc\uc77c", { exact: true }).fill(playerScope.dateTo);
   await inspectPlayerStatistics("pitcher");
-  await openMode("pitcher");
+  const leagueComparison = page.locator(".player-basic-statistics-page details").filter({ hasText: "\ub9ac\uadf8\uc640 \ube44\uad50" });
+  await leagueComparison.locator(":scope > summary").click();
+  await leagueComparison.getByRole("table").waitFor();
+  const leagueLink = leagueComparison.getByRole("link");
+  const leagueDestination = new URL(await leagueLink.getAttribute("href"), page.url());
+  if (Object.entries({ ...playerScope, kind: "pitching" }).some(([key, value]) => leagueDestination.searchParams.get(key) !== value)) throw new Error("League comparison dropped the player scope.");
+  await recordNavigation.getByRole("link", { name: "\uacbd\uae30\ubcc4", exact: true }).click();
+  await assertPlayerDestination("/analysis/player-games", { pitcher, playerRole: "pitcher" });
+  const gameTable = page.getByRole("table", { name: "\uacbd\uae30\ubcc4 \ub4f1\ud310 \uc131\uc801" });
+  const firstGame = gameTable.getByRole("link").first();
+  await firstGame.waitFor();
+  const gameAddress = page.url();
+  const replayTarget = new URL(await firstGame.getAttribute("href"), gameAddress);
+  if (!replayTarget.searchParams.get("gameId") || !replayTarget.searchParams.get("revision")) throw new Error("Game log replay target lacked its sealed revision.");
+  await firstGame.click();
+  await page.getByRole("slider").waitFor();
+  await page.locator(".replay-analysis-return").getByRole("link").click();
+  await page.waitForURL(gameAddress);
+  await gameTable.waitFor();
+  await recordNavigation.getByRole("link", { name: "\uc0c1\ud669\ubcc4", exact: true }).click();
+  await assertPlayerDestination("/analysis/player-splits", { pitcher, playerRole: "pitcher" });
+  const splitTable = page.getByRole("table", { name: "\uc0c1\ud669\ubcc4 \uc0c1\ub300 \uc131\uc801" });
+  await splitTable.waitFor();
+  await page.getByLabel("\ube44\uad50 \uae30\uc900", { exact: true }).selectOption("venue");
+  await splitTable.getByRole("rowheader", { name: "\ud648", exact: true }).waitFor();
+  await page.getByLabel("\uce74\uc6b4\ud2b8\ubcc4\ub85c \ubcfc \uc0c1\ud669", { exact: true }).selectOption({ index: 1 });
+  await page.getByRole("table", { name: "\uc120\ud0dd \uc0c1\ud669\uc758 \uce74\uc6b4\ud2b8\ubcc4 \uc131\uc801" }).waitFor();
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)) throw new Error("Situational reports overflow the viewport.");
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openPitches();
   await assertPlayerDestination("/analysis/pitch-location", { pitcher });
-  if (await playerNavigation.getByRole("link").count() !== 6) throw new Error("Pitcher detail navigation is incomplete.");
-  if (await playerNavigation.getByRole("link", { name: "\ucf54\uc2a4\u00b7\uacb0\uc815\uad6c", exact: true }).getAttribute("aria-current") !== "page") throw new Error("Current pitcher analysis is not identified.");
+  await recordNavigation.locator('a[aria-current="page"]').filter({ hasText: "\uad6c\uc885\u00b7\ucf54\uc2a4" }).waitFor();
+  if (await recordNavigation.getByRole("link").count() !== 5) throw new Error("Pitcher report navigation is incomplete.");
   if (await menu.getByRole("link", { name: "\uc120\uc218 \ubd84\uc11d", exact: true }).getAttribute("aria-current") !== "page") throw new Error("Player analysis sidebar state was lost on detail navigation.");
   const quickFilters = page.getByRole("region", { name: "\ube60\ub978 \uc0c1\ud669 \uc870\uac74" });
   for (const [name, stance] of [["\uc88c\ud0c0\uc790", "L"], ["\uc6b0\ud0c0\uc790", "R"]]) {
@@ -1065,8 +1097,8 @@ try {
     throw new Error("Replay did not restore all location zones.");
   }
   await inspectPlayerStatistics("pitcher");
-  await openMode("pitcher");
-  await playerNavigation.getByRole("link", { name: "\uad6c\uc9c8\u00b7\uc6c0\uc9c1\uc784", exact: true }).click();
+  await openPitches();
+  await page.getByRole("link", { name: /\uac19\uc740 \ubc94\uc704 \uad6c\uc9c8 \ubcf4\uae30/ }).click();
   await assertPlayerDestination("/analysis/pitch-shape", { pitcher });
   await page.getByRole("img", { name: /\ud3c9\uade0 \ud3ec\uc2ec/ }).waitFor();
   const batter = await catalogPlayer("batter");
@@ -1077,9 +1109,9 @@ try {
   await resultList.getByRole("button").filter({ hasText: batterEntry.name }).click();
   await assertPlayerDestination("/analysis/player-statistics", { player: batterEntry.identity });
   await inspectPlayerStatistics("batter");
-  await openMode("batter");
-  if (await playerNavigation.getByRole("link").count() !== 3) throw new Error("Batter detail navigation is incomplete.");
-  await playerNavigation.getByRole("link", { name: "\uc120\uad6c\uc548", exact: true }).click();
+  await openPitches();
+  if (await recordNavigation.getByRole("link").count() !== 5) throw new Error("Batter report navigation is incomplete.");
+  await page.getByRole("link", { name: /\uc870\uac74 \uc77c\uce58 \uc120\uad6c\uc548 \ube44\uad50/ }).click();
   await assertPlayerDestination("/analysis/batter-discipline", { batter });
   await page.locator(".discipline-map").waitFor();
   await menu.getByRole("link", { name: "\uc120\uc218 \ubd84\uc11d", exact: true }).click();
@@ -1228,7 +1260,7 @@ try {
     ["http://localhost/analysis/pitch-sequences?season=2024&competition=unknown", ".sequence-groups"],
     ["http://localhost/analysis/pitcher-workload?season=2024&competition=unknown", ".workload-timeline"],
     ["http://localhost/analysis/baserunning?season=2024&competition=unknown", "table"],
-    ["http://localhost/analysis/matchups?season=2024&competition=unknown", ".matchup-observed-summary"],
+    ["http://localhost/analysis/matchups?season=2024&competition=unknown", ".player-report-table"],
   ]) {
     await page.goto(url, {waitUntil:"networkidle"});
     await page.locator(selector).first().waitFor();
@@ -1302,6 +1334,11 @@ try {
           comparison.actualPitches !== workload.appearances[0].pitches) throw new Error("All-Star comparison included pitches from other competitions.");
     }
     if (url.includes("matchups")) {
+      if (await page.locator(".matchup-observed-summary").count() !== 0) throw new Error("Similar matchup comparison opened before selection.");
+      const similar = page.waitForResponse(res => new URL(res.url()).pathname === "/api/v2/analysis/matchups" && res.ok());
+      await page.getByText("\uc720\uc0ac \uc870\uac74\uc758 \ud22c\uad6c\uc640 \ube44\uad50", { exact: true }).click();
+      await similar;
+      await page.locator(".matchup-observed-summary").waitFor();
       await page.getByRole("button", {name: "\uAD6C\uC9C8 \uC720\uC0AC\uB3C4\u00B7\uAE30\uB300 \uBC18\uC751 \uBCF4\uAE30",exact:true}).click();
       await page.getByText("\uC774 \uBD84\uC11D\uC740 \uD655\uC778\uB41C \uC815\uADDC\uC2DC\uC98C\uC5D0\uC11C \uC81C\uACF5\uD569\uB2C8\uB2E4.",{exact:true}).waitFor();
     }

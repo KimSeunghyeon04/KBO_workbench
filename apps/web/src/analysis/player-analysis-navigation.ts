@@ -16,39 +16,73 @@ import { periodUrlKeys } from "./period-selection";
 
 export type PlayerAnalysisRole = "pitcher" | "batter";
 export const playerBasicPath = "/analysis/player-statistics";
+export const playerGamesPath = "/analysis/player-games";
+export const playerSplitsPath = "/analysis/player-splits";
 export const playerRolePath = {
   batter: "/analysis/batter-profile",
   pitcher: "/analysis/pitch-location",
 };
+const matchupPath = "/analysis/matchups";
+const sharedPlayerPaths: ReadonlySet<string> = new Set([
+  playerBasicPath,
+  playerGamesPath,
+  playerSplitsPath,
+  matchupPath,
+]);
+const recordSections = [
+  { path: playerBasicPath, tab: "basic" },
+  { path: playerGamesPath, tab: "games" },
+  { path: playerSplitsPath, tab: "splits" },
+] as const;
 
 export const playerAnalysisSections = {
   pitcher: [
-    { path: "/analysis/player-statistics", label: "기본 기록" },
-    { path: "/analysis/pitch-location", label: "코스·결정구" },
-    { path: "/analysis/pitch-shape", label: "구질·움직임" },
-    { path: "/analysis/pitcher-changes", label: "최근 변화" },
-    { path: "/analysis/pitch-sequences", label: "배합·궤적" },
-    { path: "/analysis/pitcher-workload", label: "등판·운용" },
-    { path: "/analysis/matchups", label: "타자와 매치업" },
+    ...recordSections,
+    { path: playerRolePath.pitcher, tab: "pitches" },
+    { path: "/analysis/pitch-shape", tab: "pitches" },
+    { path: "/analysis/pitcher-changes", tab: "games" },
+    { path: "/analysis/pitch-sequences", tab: "pitches" },
+    { path: "/analysis/pitcher-workload", tab: "games" },
+    { path: matchupPath, tab: "matchup" },
   ],
   batter: [
-    { path: "/analysis/player-statistics", label: "기본 기록" },
-    { path: "/analysis/batter-profile", label: "반응·성적" },
-    { path: "/analysis/batter-discipline", label: "선구안" },
-    { path: "/analysis/matchups", label: "투수와 매치업" },
+    ...recordSections,
+    { path: playerRolePath.batter, tab: "pitches" },
+    { path: "/analysis/batter-discipline", tab: "pitches" },
+    { path: matchupPath, tab: "matchup" },
   ],
 } as const;
 
+export const playerReportTabs = [
+  { tab: "basic", label: "기본 기록" },
+  { tab: "games", label: "경기별" },
+  { tab: "splits", label: "상황별" },
+  { tab: "pitches", label: "구종·코스" },
+  { tab: "matchup", label: "맞대결" },
+] as const;
+export type PlayerReportTab = (typeof playerReportTabs)[number]["tab"];
+
+export function playerReportTabPath(tab: PlayerReportTab, role: PlayerAnalysisRole) {
+  return {
+    basic: playerBasicPath,
+    games: playerGamesPath,
+    splits: playerSplitsPath,
+    pitches: playerRolePath[role],
+    matchup: matchupPath,
+  }[tab];
+}
+
 export function selectedPlayerRole(params: URLSearchParams): PlayerAnalysisRole {
-  return params.get("playerRole") === "batter" ? "batter" : "pitcher";
+  const requested = params.get("playerRole");
+  if (requested === "batter" || requested === "pitcher") return requested;
+  return params.has("batter") && !params.has("pitcher") ? "batter" : "pitcher";
 }
 
 export function playerRoleForPath(
   path: string,
   params: URLSearchParams,
 ): PlayerAnalysisRole | null {
-  if (path === "/analysis/matchups" || path === "/analysis/player-statistics")
-    return selectedPlayerRole(params);
+  if (sharedPlayerPaths.has(path)) return selectedPlayerRole(params);
   if (playerAnalysisSections.pitcher.some((section) => section.path === path)) return "pitcher";
   if (playerAnalysisSections.batter.some((section) => section.path === path)) return "batter";
   return null;
@@ -108,8 +142,7 @@ export function playerAnalysisHref(
     const value = comparison?.get(key);
     if (value !== undefined && value !== null) params.set(key, value);
   }
-  if (path === "/analysis/matchups" || path === "/analysis/player-statistics")
-    params.set("playerRole", role);
+  if (sharedPlayerPaths.has(path)) params.set("playerRole", role);
   if (identity !== undefined) params.set("player", identity);
   return `${path}?${params}`;
 }
@@ -122,6 +155,8 @@ export function playerBasicHref(
   const next = params ? analysisScopeParams(params) : new URLSearchParams();
   next.set("season", String(season));
   next.set("player", identity);
+  const role = params?.get("playerRole");
+  if (role === "batter" || role === "pitcher") next.set("playerRole", role);
   for (const key of periodUrlKeys) {
     const value = params?.get(key);
     if (value != null) next.set(key, value);
@@ -136,6 +171,16 @@ export function playerRecordId(
   return (role === "batter" ? record?.battingPlayerId : record?.pitchingPlayerId) ?? null;
 }
 
+export function playerRoleForRecord(
+  record: PlayerDirectorySeason | undefined,
+  preferred: PlayerAnalysisRole,
+): PlayerAnalysisRole {
+  const other = preferred === "batter" ? "pitcher" : "batter";
+  return playerRecordId(record, preferred) === null && playerRecordId(record, other) !== null
+    ? other
+    : preferred;
+}
+
 export function changePlayerReport(
   path: string,
   params: URLSearchParams,
@@ -148,8 +193,12 @@ export function changePlayerReport(
     season === previousSeason
       ? new URLSearchParams(params)
       : changePlayerAnalysisTarget(path, params, "season", String(season), currentPlayers);
-  const role = playerRoleForPath(path, params);
+  const requestedRole = playerRoleForPath(path, params);
   const record = player.seasons.find((entry) => entry.season === season);
+  const role =
+    (path === playerGamesPath || path === playerSplitsPath) && requestedRole !== null
+      ? playerRoleForRecord(record, requestedRole)
+      : requestedRole;
   const id = role === null ? null : playerRecordId(record, role);
   if (path === playerBasicPath || role === null || id === null)
     return playerBasicHref(player.identity, season, next);
@@ -158,6 +207,7 @@ export function changePlayerReport(
   }
   next.set("season", String(season));
   next.set("player", player.identity);
+  if (sharedPlayerPaths.has(path)) next.set("playerRole", role);
   return `${path}?${next}`;
 }
 

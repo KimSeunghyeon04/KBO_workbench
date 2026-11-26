@@ -95,20 +95,35 @@ it("distinguishes matchup called strikes per pitch from model called strikes per
     outcomeRow({ pitchId: "take", swing: false, whiff: false, calledStrike: true }),
   ];
   const data = analyzeMatchup(query, scope, "a".repeat(64), rows, [], [], []);
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const path = new URL(String(input), "http://localhost").pathname;
-      if (path.endsWith("matchups")) return Response.json(data);
+  const fetch = vi.fn(async (input: RequestInfo | URL) => {
+    const path = new URL(String(input), "http://localhost").pathname;
+    if (path.endsWith("matchups/direct"))
       return Response.json({
-        season: 2024,
+        query,
         scope,
-        ...(path.endsWith("batter-discipline")
-          ? { batters: [{ batterId: "b1", name: "타자", pitches: 2 }] }
-          : { pitchers: [{ pitcherId: "hp1", name: "투수", pitches: 2 }] }),
+        direct: data.direct,
+        directPlateAppearances: [],
+        batting: {
+          plateAppearances: 0,
+          atBats: 0,
+          hits: 0,
+          homeRuns: 0,
+          walks: 0,
+          strikeouts: 0,
+          avg: null,
+          ops: null,
+        },
       });
-    }),
-  );
+    if (path.endsWith("matchups")) return Response.json(data);
+    return Response.json({
+      season: 2024,
+      scope,
+      ...(path.endsWith("batter-discipline")
+        ? { batters: [{ batterId: "b1", name: "타자", pitches: 2 }] }
+        : { pitchers: [{ pitcherId: "hp1", name: "투수", pitches: 2 }] }),
+    });
+  });
+  vi.stubGlobal("fetch", fetch);
   const client = createAnalysisQueryClient();
   render(
     createElement(
@@ -125,6 +140,11 @@ it("distinguishes matchup called strikes per pitch from model called strikes per
       ),
     ),
   );
+  await screen.findByRole("table", { name: "직접 맞대결 성적" });
+  expect(
+    fetch.mock.calls.map(([input]) => new URL(String(input), "http://localhost").pathname),
+  ).not.toContain("/api/v2/analysis/matchups");
+  await userEvent.setup().click(screen.getByText("유사 조건의 투구와 비교"));
   const comparison = await screen.findByRole("region", { name: "매치업 반응 비교" });
   const observedWhiff = within(comparison).getByRole("region", { name: "헛스윙 / 스윙" });
   expect(within(observedWhiff).getByText("1/1 스윙")).toBeTruthy();

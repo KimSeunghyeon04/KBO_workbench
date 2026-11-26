@@ -1,69 +1,31 @@
-import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { useQuery } from "@tanstack/react-query";
-import type { ReactNode } from "react";
 import { PlayerPeriodComparison } from "../analysis/player-period-comparison";
 import { Value } from "@sinclair/typebox/value";
 import {
-  BattingStatisticsQuerySchema,
-  PitchingStatisticsQuerySchema,
+  defaultAnalysisCompetition,
+  PlayerSeasonStatisticsQuerySchema,
   type DisciplineCatalog,
   type PitchAnalysisCatalog,
 } from "@kbo/contracts";
 import { Link } from "react-router-dom";
 import { AnalysisEmptyState } from "../analysis/analysis-empty-state";
 import { analysisScopeSearch } from "../analysis/analysis-scope";
-import { AnalysisScopeFields, analysisScopeSummary } from "../analysis/analysis-scope-fields";
+import {
+  AnalysisScopeFields,
+  analysisScopeSummary,
+  competitionLabels,
+} from "../analysis/analysis-scope-fields";
 import { analysisCatalogPlayers, selectedPlayerRole } from "../analysis/player-analysis-navigation";
 import { findDirectoryPlayer, usePlayerDirectory } from "../analysis/player-directory";
-import { BattingTable, PitchingTable } from "../analysis/player-statistics-tables";
-import { BattingRecordSummary, PitchingRecordSummary } from "../analysis/player-record-summary";
+import { PlayerSeasonRecords } from "../analysis/player-season-records";
+import { PlayerLeagueComparison } from "../analysis/player-league-comparison";
 import { useAnalysisScope } from "../analysis/use-analysis-scope";
 import {
   batterCatalogQueryOptions,
   pitcherCatalogQueryOptions,
 } from "../api/analysis-catalog-query-options";
-import { getBattingStatistics, getPitchingStatistics } from "../api/player-statistics-client";
+import { getPlayerSeasonStatistics } from "../api/player-statistics-client";
 import "../styles/analysis-workspace.css";
-import "../styles/player-basic-statistics.css";
-
-function BasicRecords({
-  label,
-  total,
-  count,
-  children,
-  details,
-}: {
-  label: string;
-  total: number;
-  count: number;
-  children: ReactNode;
-  details: ReactNode;
-}) {
-  return (
-    <section className="panel player-basic-records" aria-label={`${label} 기본 기록`}>
-      {children}
-      <details className="player-report-details">
-        <summary>
-          <strong>상세 기록</strong>
-          <span>{label} 집계와 기록 해석</span>
-        </summary>
-        <div className="player-report-detail-content">
-          {details}
-          <p className="analysis-caption">
-            비율의 분모가 0이면 —입니다. 볼넷은 고의4구를 포함하며 괄호 안에 고의4구를 표시합니다.
-            미제공 자책점은 0으로 채우지 않습니다.
-          </p>
-        </div>
-      </details>
-      {total > count && (
-        <p>
-          전체 {total}개 팀별 기록 중 처음 {count}개를 표시합니다. 기간을 좁혀 나머지 기록을
-          확인하세요.
-        </p>
-      )}
-    </section>
-  );
-}
 
 export function PlayerBasicStatisticsPage() {
   const { params, selected, season, scope, change } = useAnalysisScope();
@@ -83,49 +45,46 @@ export function PlayerBasicStatisticsPage() {
   });
   const sourceId = params.get(role) ?? catalog.data?.[0]?.id ?? null;
   const player = findDirectoryPlayer(directory.data, identity, sourceId);
+  const playerKey = identity ?? player?.identity ?? sourceId;
   const record = player?.seasons.find((entry) => entry.season === season);
   const legacy = identity === null && player === undefined;
+  const loading =
+    identity === null && (sourceId === null ? catalog.isPending : directory.isPending);
+  const selectionError = identity === null && sourceId === null ? catalog.error : null;
+  const dateFiltered = scope.options.dateFrom !== undefined || scope.options.dateTo !== undefined;
+  const competition = scope.options.competition ?? defaultAnalysisCompetition;
+  const query = {
+    player: playerKey ?? "",
+    ...scope.options,
+    ...(dateFiltered ? { season } : {}),
+    ...(legacy ? { sourceRole: role } : {}),
+  };
+  const valid = Value.Check(PlayerSeasonStatisticsQuerySchema, query);
+  const error =
+    scope.error ?? (playerKey !== null && !valid ? "선수 조회 조건이 올바르지 않습니다." : null);
+  const records = useQuery({
+    queryKey: ["player-season-statistics", query],
+    meta: { analysis: { seasons: dateFiltered ? [season] : "all", usesModels: false } },
+    enabled: error === null && !loading && valid,
+    queryFn: ({ signal }) => {
+      if (!Value.Check(PlayerSeasonStatisticsQuerySchema, query))
+        throw new Error("잘못된 기본 기록 조건");
+      return getPlayerSeasonStatistics(query, signal);
+    },
+  });
+  const data = records.data;
+  const hasRecords = data !== undefined && (data.batting.length > 0 || data.pitching.length > 0);
+  const summary = dateFiltered
+    ? `${season} · ${analysisScopeSummary(selected)}`
+    : `${competitionLabels[competition]} · 수집 경기 합계`;
   const battingId = legacy && role === "batter" ? sourceId : record?.battingPlayerId;
   const pitchingId = legacy && role === "pitcher" ? sourceId : record?.pitchingPlayerId;
-  const common = { season, ...scope.options, group: "player", page: 1, limit: 200 };
-  const battingQuery = { ...common, playerId: battingId ?? "" };
-  const pitchingQuery = { ...common, playerId: pitchingId ?? "" };
-  const validBatting = Value.Check(BattingStatisticsQuerySchema, battingQuery);
-  const validPitching = Value.Check(PitchingStatisticsQuerySchema, pitchingQuery);
-  const bat = useQuery({
-    queryKey: ["statistics-batting", battingQuery],
-    meta: analysisQueryMeta(battingQuery),
-    enabled: scope.error === null && !!battingId && validBatting,
-    queryFn: ({ signal }) => {
-      if (!Value.Check(BattingStatisticsQuerySchema, battingQuery))
-        throw new Error("잘못된 타격 조건");
-      return getBattingStatistics(battingQuery, signal);
-    },
-  });
-  const pitch = useQuery({
-    queryKey: ["statistics-pitching", pitchingQuery],
-    meta: analysisQueryMeta(pitchingQuery),
-    enabled: scope.error === null && !!pitchingId && validPitching,
-    queryFn: ({ signal }) => {
-      if (!Value.Check(PitchingStatisticsQuerySchema, pitchingQuery))
-        throw new Error("잘못된 투구 조건");
-      return getPitchingStatistics(pitchingQuery, signal);
-    },
-  });
-  const active = [...(battingId ? [bat] : []), ...(pitchingId ? [pitch] : [])];
-  const failed = active.find((entry) => entry.error !== null);
-  const loading = identity ? directory.isPending : !sourceId && catalog.isPending;
-  const selectionError = identity ? directory.error : !sourceId ? catalog.error : null;
-  const error =
-    scope.error ??
-    ((battingId && !validBatting) || (pitchingId && !validPitching)
-      ? "선수 조회 조건이 올바르지 않습니다."
-      : null);
   const comparisonRole =
     battingId && pitchingId
       ? params.get("comparisonRole") === "pitcher"
         ? "pitcher"
-        : params.get("comparisonRole") === "batter" || identity !== null
+        : params.get("comparisonRole") === "batter" ||
+            (identity !== null && !params.has("playerRole"))
           ? "batter"
           : role
       : battingId
@@ -134,24 +93,19 @@ export function PlayerBasicStatisticsPage() {
   const comparisonId = comparisonRole === "batter" ? battingId : pitchingId;
   return (
     <div className="page-stack player-basic-statistics-page">
-      <header className="page-header">
-        <div>
-          <h1>기본 기록</h1>
-          <p>선택한 선수의 수집 경기 기록입니다. 이적 전후 기록은 팀별로 구분합니다.</p>
-        </div>
+      <header className="page-header player-season-heading">
+        <h1>기본 기록</h1>
+        {error === null && <p className="analysis-caption">연도별 성적 · {summary}</p>}
       </header>
       <details className="panel player-report-filters" aria-label="기본 기록 조건">
         <summary>
           <strong>조회 조건 변경</strong>
-          <span>
-            {season} · {analysisScopeSummary(selected)}
-          </span>
         </summary>
         <div className="player-report-filter-fields">
           <AnalysisScopeFields params={selected} onChange={change} />
         </div>
         <p className="analysis-caption">
-          시즌·경기 종류·기간에 해당하는 전체 기록이며, 구종·카운트·코스 조건은 적용하지 않습니다.
+          날짜를 지정하면 {season}년의 해당 기간 기록을 표시합니다.
         </p>
       </details>
       {error && <p role="alert">{error}</p>}
@@ -160,8 +114,8 @@ export function PlayerBasicStatisticsPage() {
           <p>선수 목록을 읽지 못했습니다. {selectionError.message}</p>
           <button
             className="analysis-button"
-            disabled={identity !== null ? directory.isFetching : catalog.isFetching}
-            onClick={() => void (identity !== null ? directory.refetch() : catalog.refetch())}
+            disabled={catalog.isFetching}
+            onClick={() => void catalog.refetch()}
           >
             선수 목록 다시 시도
           </button>
@@ -171,57 +125,28 @@ export function PlayerBasicStatisticsPage() {
       {error === null && identity === null && !sourceId && catalog.isSuccess && (
         <AnalysisEmptyState season={season} options={scope.options} />
       )}
-      {error === null && active.some((entry) => entry.isFetching) && (
-        <p role="status">기본 기록을 합산하고 있습니다.</p>
-      )}
-      {error === null && failed?.error && (
+      {error === null && records.isFetching && <p role="status">기본 기록을 합산하고 있습니다.</p>}
+      {error === null && records.error && (
         <div role="alert">
-          <p>기본 기록을 읽지 못했습니다. {failed.error.message}</p>
+          <p>기본 기록을 읽지 못했습니다. {records.error.message}</p>
           <button
             className="analysis-button"
-            disabled={failed.isFetching}
-            onClick={() => void failed.refetch()}
+            disabled={records.isFetching}
+            onClick={() => void records.refetch()}
           >
             기록 다시 시도
           </button>
         </div>
       )}
-      {error === null &&
-        !loading &&
-        !selectionError &&
-        (identity || sourceId) &&
-        active.every((entry) => entry.isSuccess && entry.data.total === 0) && (
-          <p role="status" className="panel">
-            선택한 범위에 이 선수의 기본 기록이 없습니다.{" "}
-            <Link to={`/analysis/coverage?${analysisScopeSearch(season, scope.options)}`}>
-              경기 분류와 수집 범위 확인
-            </Link>
-          </p>
-        )}
-      {error === null && (
-        <div className="player-basic-record-groups">
-          {battingId && bat.data && bat.data.total > 0 && (
-            <BasicRecords
-              label="타자"
-              total={bat.data.total}
-              count={bat.data.rows.length}
-              details={<BattingTable rows={bat.data.rows} view="basic" />}
-            >
-              <BattingRecordSummary rows={bat.data.rows} />
-            </BasicRecords>
-          )}
-          {pitchingId && pitch.data && pitch.data.total > 0 && (
-            <BasicRecords
-              label="투수"
-              total={pitch.data.total}
-              count={pitch.data.rows.length}
-              details={<PitchingTable rows={pitch.data.rows} view="basic" />}
-            >
-              <PitchingRecordSummary rows={pitch.data.rows} />
-            </BasicRecords>
-          )}
-        </div>
+      {error === null && records.isSuccess && !hasRecords && (
+        <p role="status" className="panel">
+          선택한 범위에 이 선수의 기본 기록이 없습니다.{" "}
+          <Link to={`/analysis/coverage?${analysisScopeSearch(season, scope.options)}`}>
+            경기 분류와 수집 범위 확인
+          </Link>
+        </p>
       )}
+      {error === null && hasRecords && <PlayerSeasonRecords {...data} />}
       {error === null && comparisonId && (
         <>
           {battingId && pitchingId && (
@@ -235,6 +160,17 @@ export function PlayerBasicStatisticsPage() {
                 <option value="pitcher">투구</option>
               </select>
             </label>
+          )}
+          {playerKey && (
+            <PlayerLeagueComparison
+              query={{
+                season,
+                ...scope.options,
+                role: comparisonRole,
+                player: playerKey,
+                ...(legacy ? { source: "naver" } : {}),
+              }}
+            />
           )}
           <PlayerPeriodComparison
             kind="statistics"

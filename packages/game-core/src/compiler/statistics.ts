@@ -1,6 +1,7 @@
 import { compareCanonicalStrings, type PlateResultEvent } from "@kbo/contracts";
 
-import { isAtBat, isHit } from "../rules.js";
+import { isAtBat } from "../rules.js";
+import { plateResultCounts } from "../player-statistics.js";
 import type { CompileContext, MutableBatterLine, MutablePitcherLine } from "./model.js";
 
 export function updateCompletedLines(
@@ -15,33 +16,19 @@ export function updateCompletedLines(
   batter.plateAppearances += 1;
   pitcher.battersFaced += 1;
   if (isAtBat(event.payload.result)) batter.atBats += 1;
-  if (isHit(event.payload.result)) {
-    batter.hits += 1;
-    pitcher.hits += 1;
+  const counts = plateResultCounts(event.payload.result);
+  for (const line of [batter, pitcher]) {
+    line.hits += counts.hits;
+    line.walks += counts.walks;
+    line.intentionalWalks += counts.intentionalWalks;
+    line.hitByPitch += counts.hitByPitch;
+    line.strikeouts += counts.strikeouts;
   }
-  if (event.payload.result === "double") batter.doubles += 1;
-  if (event.payload.result === "triple") batter.triples += 1;
-  if (event.payload.result === "home_run") batter.homeRuns += 1;
-  if (event.payload.result === "walk") {
-    batter.walks += 1;
-    pitcher.walks += 1;
-  }
-  if (event.payload.result === "intentional_walk") {
-    batter.walks += 1;
-    pitcher.walks += 1;
-    batter.intentionalWalks += 1;
-    pitcher.intentionalWalks += 1;
-  }
-  if (event.payload.result === "hit_by_pitch") {
-    batter.hitByPitch += 1;
-    pitcher.hitByPitch += 1;
-  }
-  if (event.payload.result === "strikeout") {
-    batter.strikeouts += 1;
-    pitcher.strikeouts += 1;
-  }
-  if (event.payload.result === "sacrifice_bunt") batter.sacrificeBunts += 1;
-  if (event.payload.result === "sacrifice_fly") batter.sacrificeFlies += 1;
+  batter.doubles += counts.doubles;
+  batter.triples += counts.triples;
+  batter.homeRuns += counts.homeRuns;
+  batter.sacrificeBunts += counts.sacrificeBunts;
+  batter.sacrificeFlies += counts.sacrificeFlies;
   if (event.payload.creditedRbi === undefined && runsScored > 0) {
     context.uncertainRbiBatterIds.add(resultBatterId);
   }

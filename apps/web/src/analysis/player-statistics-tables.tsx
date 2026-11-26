@@ -14,9 +14,8 @@ export function BattingTable({
 }: {
   rows: readonly BattingStatisticsRow[];
   detail?: (id: string) => string;
-  view?: "summary" | "basic" | "full";
+  view?: "summary" | "full";
 }) {
-  const basic = view === "basic";
   const summary = view === "summary";
   return (
     <>
@@ -40,7 +39,7 @@ export function BattingTable({
                 ...(summary
                   ? ["PA", "HR", "AVG", "OBP", "SLG", "OPS", "K%", "BB%"]
                   : [
-                      basic ? "G" : "경기",
+                      "경기",
                       "PA",
                       "AB",
                       "H",
@@ -50,14 +49,16 @@ export function BattingTable({
                       "BB (IBB)",
                       "HBP",
                       "SO",
-                      ...(basic ? [] : ["SF", "SH"]),
+                      "SF",
+                      "SH",
                       "R",
-                      ...(basic ? [] : ["TB"]),
+                      "TB",
                       "AVG",
                       "OBP",
                       "SLG",
                       "OPS",
-                      ...(basic ? [] : ["K%", "BB%"]),
+                      "K%",
+                      "BB%",
                     ]),
               ].map((h) => (
                 <th key={h} scope="col">
@@ -100,14 +101,16 @@ export function BattingTable({
                         `${r.walks} (${r.intentionalWalks})`,
                         r.hitByPitch,
                         r.strikeouts,
-                        ...(basic ? [] : [r.sacrificeFlies, r.sacrificeBunts]),
+                        r.sacrificeFlies,
+                        r.sacrificeBunts,
                         r.runs,
-                        ...(basic ? [] : [r.totalBases]),
+                        r.totalBases,
                         number(r.avg),
                         number(r.obp),
                         number(r.slg),
                         number(r.ops),
-                        ...(basic ? [] : [percent(r.kRate), percent(r.bbRate)]),
+                        percent(r.kRate),
+                        percent(r.bbRate),
                       ]),
                 ].map((x, i) => (
                   <td key={i}>{x}</td>
@@ -127,9 +130,8 @@ export function PitchingTable({
 }: {
   rows: readonly PitchingStatisticsRow[];
   detail?: (id: string) => string;
-  view?: "summary" | "basic" | "full";
+  view?: "summary" | "full";
 }) {
-  const basic = view === "basic";
   const summary = view === "summary";
   return (
     <>
@@ -153,16 +155,19 @@ export function PitchingTable({
                 ...(summary
                   ? ["BF", "IP", "ERA", "K%", "BB%", "K−BB%", "투구", "ER 확인 경기"]
                   : [
-                      basic ? "G" : "경기",
+                      "경기",
                       "BF",
-                      basic ? "IP" : "이닝",
+                      "이닝",
                       "H",
                       "R",
                       "BB (IBB)",
                       "HBP",
                       "SO",
                       "투구",
-                      ...(basic ? [] : ["스트라이크", "K%", "BB%", "K−BB%"]),
+                      "스트라이크",
+                      "K%",
+                      "BB%",
+                      "K−BB%",
                       "ERA",
                       "ER 확인 경기",
                       "확인 이닝",
@@ -209,14 +214,10 @@ export function PitchingTable({
                         r.hitByPitch,
                         r.strikeouts,
                         r.pitches,
-                        ...(basic
-                          ? []
-                          : [
-                              r.strikes,
-                              percent(r.kRate),
-                              percent(r.bbRate),
-                              percent(r.kMinusBbRate),
-                            ]),
+                        r.strikes,
+                        percent(r.kRate),
+                        percent(r.bbRate),
+                        percent(r.kMinusBbRate),
                         number(r.era, 2),
                         `${r.knownErGames}/${r.games}`,
                         innings(r.knownErOuts),

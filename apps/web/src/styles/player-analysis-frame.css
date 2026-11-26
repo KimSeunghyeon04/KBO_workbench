@@ -180,6 +180,18 @@
 .player-analysis-secondary {
   border-top: 1px solid var(--ui-line);
 }
+.player-report-related {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.player-report-related a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  color: var(--ui-accent);
+  font-size: 13px;
+}
 .player-analysis-frame .page-header {
   min-height: 0;
   padding: 0;

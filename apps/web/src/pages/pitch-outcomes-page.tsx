@@ -31,6 +31,7 @@ import { PitchArsenalPanel } from "../analysis/pitch-arsenal-panel";
 import { PitchLocationPeriodComparison } from "../analysis/pitch-location-period-comparison";
 import { SMALL_RATE_DENOMINATOR } from "../analysis/sample-rate";
 import { sharedPitchSituationParams } from "../analysis/pitch-situation-params";
+import { playerAnalysisHref } from "../analysis/player-analysis-navigation";
 import {
   pitcherCatalogQueryOptions,
   batterCatalogQueryOptions,
@@ -185,6 +186,21 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
       : []),
     ...(params.get("cohort") === "discipline" ? ["선구안과 동일 상황"] : []),
   ].join(" · ");
+  function relatedHref(path: string, filters: Record<string, string>) {
+    const identity = params.get("player") ?? undefined;
+    const href = playerAnalysisHref(path, role, id, season, scope.options, params, identity);
+    const suffix = new URLSearchParams(filters).toString();
+    return suffix ? `${href}&${suffix}` : href;
+  }
+  const selectedType = params.get("pitchType");
+  function selectPitchType(key: string) {
+    const type = key === "unknown" ? "" : key;
+    const next = new URLSearchParams(params);
+    if (selectedType === type) next.delete("pitchType");
+    else next.set("pitchType", type);
+    next.delete("locationCell");
+    setParams(next, { preventScrollReset: true });
+  }
   return (
     <div className="page-stack pitch-outcomes-page">
       <header className="page-header">
@@ -366,7 +382,12 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
                     selectedCell={selectedCell}
                     onSelectCell={selectCell}
                   />
-                  <PitchOutcomeBreakdown key={role} data={data} />
+                  <PitchOutcomeBreakdown
+                    key={role}
+                    data={data}
+                    onSelectType={selectPitchType}
+                    selectedType={selectedType === "" ? "unknown" : selectedType}
+                  />
                 </div>
               </>
             )}
@@ -470,10 +491,27 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
         ))}
         {(role === "pitcher" || linksToDiscipline) &&
           ((isFlowTab ? flowData : data) || (isComparisonTab && canAnalyze)) && (
-            <>
+            <section className="player-report-related" aria-label="구종·코스 심화 분석">
+              {role === "pitcher" && (
+                <Link
+                  className="outcome-related-link"
+                  to={relatedHref("/analysis/pitch-sequences", sharedPitchSituationParams(params))}
+                >
+                  {selectedType === null
+                    ? "두 공의 배합·궤적"
+                    : `두 번째 공이 ${selectedType || "구종 미상"}인 배합·궤적`}
+                </Link>
+              )}
               <Link
                 className="outcome-related-link"
-                to={`/analysis/${role === "pitcher" ? "pitch-shape" : "batter-discipline"}?${new URLSearchParams({ season: String(season), ...scope.options, [role]: id, ...(role === "batter" ? sharedPitchSituationParams(params) : {}) })}`}
+                to={
+                  role === "pitcher"
+                    ? relatedHref(
+                        "/analysis/pitch-shape",
+                        selectedType ? { type: selectedType } : {},
+                      )
+                    : relatedHref("/analysis/batter-discipline", sharedPitchSituationParams(params))
+                }
               >
                 {role === "pitcher" ? "같은 범위 구질 보기" : "조건 일치 선구안 비교"}{" "}
                 <span aria-hidden="true">↗</span>
@@ -484,7 +522,7 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
                   실제 투구 전체 표본과 분모가 다를 수 있습니다.
                 </p>
               )}
-            </>
+            </section>
           )}
       </div>
     </div>

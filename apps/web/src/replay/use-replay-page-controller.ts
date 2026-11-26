@@ -11,6 +11,7 @@ import {
   readReplayEvidenceTarget,
   replayEvidenceIndex,
   replayEvidenceLabels,
+  replayOpenKey,
   type ReplayEvidenceTarget,
 } from "./evidence-target";
 
@@ -30,6 +31,7 @@ export function useReplayPageController() {
   const [searchParams] = useSearchParams();
   const requestedGameId = searchParams.get("gameId");
   const requestedRevision = parseRequestedRevision(searchParams.get("revision"));
+  const openGame = searchParams.get(replayOpenKey) === "1";
   const evidenceTarget = useMemo(() => readReplayEvidenceTarget(searchParams), [searchParams]);
   const autoLoaded = useRef<string | null>(null);
   const [evidenceNotice, setEvidenceNotice] = useState<string | null>(null);
@@ -87,7 +89,8 @@ export function useReplayPageController() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { mutate: load } = replay;
   useEffect(() => {
-    if (!requestedGameId || requestedRevision === null || evidenceTarget === null) return;
+    if (!requestedGameId || requestedRevision === null || (!openGame && evidenceTarget === null))
+      return;
     const key = JSON.stringify([requestedGameId, requestedRevision, evidenceTarget]);
     if (autoLoaded.current === key) return;
     autoLoaded.current = key;
@@ -104,7 +107,7 @@ export function useReplayPageController() {
     return () => {
       autoLoaded.current = null;
     };
-  }, [requestedGameId, requestedRevision, evidenceTarget, load, selectLoadedEvidence]);
+  }, [requestedGameId, requestedRevision, openGame, evidenceTarget, load, selectLoadedEvidence]);
   const seasons = useMemo(() => catalogSeasons(stored), [stored]);
   const calendarMonths = useMemo(() => catalogMonths(stored, seasonFilter), [seasonFilter, stored]);
   const selectedGame = stored.find((item) => item.gameId === gameId) ?? null;

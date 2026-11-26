@@ -8,6 +8,7 @@ import {
   playerPosition,
   usePlayerDirectory,
 } from "../analysis/player-directory";
+import { usePlayerSearchInput } from "../analysis/use-player-search-input";
 import "../styles/analysis-workspace.css";
 import "../styles/analysis-players.css";
 
@@ -18,6 +19,7 @@ export function AnalysisPlayersPage() {
   const [params, setParams] = useSearchParams();
   const directory = usePlayerDirectory();
   const search = params.get("q") ?? "";
+  const { inputProps } = usePlayerSearchInput(search, changeSearch);
   const matches = useMemo(
     () => filterDirectoryPlayers(directory.data ?? [], search),
     [directory.data, search],
@@ -49,12 +51,7 @@ export function AnalysisPlayersPage() {
         <div className="analysis-primary-filters">
           <label>
             선수 검색
-            <input
-              type="search"
-              value={search}
-              placeholder="전체 선수 이름 또는 ID"
-              onChange={(event) => changeSearch(event.target.value)}
-            />
+            <input type="search" placeholder="전체 선수 이름 또는 ID" {...inputProps} />
           </label>
         </div>
       </section>

@@ -581,25 +581,12 @@ it("loads the global directory independently of season readiness and refreshes a
         ]),
       );
     }
-    if (url.pathname === "/api/v2/analysis/statistics/batting") {
+    if (url.pathname === "/api/v2/analysis/statistics/player-seasons") {
       return Promise.resolve(
         Response.json({
-          kind: "batting",
-          query: {
-            season: 2024,
-            competition: "regular",
-            group: "player",
-            playerId: "older",
-            page: 1,
-            limit: 200,
-          },
-          scope: resolveAnalysisScope({ season: 2024, competition: "regular" }),
-          sourceHash: "a".repeat(64),
-          group: "player",
-          total: 0,
-          page: 1,
-          limit: 200,
-          rows: [],
+          query: { player: "player:older", competition: "regular" },
+          batting: [],
+          pitching: [],
         }),
       );
     }
@@ -618,7 +605,7 @@ it("loads the global directory independently of season readiness and refreshes a
   expect(directory.mock.calls).toEqual([[""], [""]]);
   fireEvent.click(screen.getByRole("link", { name: "갱신된 선수 분석 보기" }));
   const modes = await screen.findByRole("navigation", { name: "선수 기록 보기" });
-  expect(modes.textContent).toBe("기본 기록타격 분석");
+  expect(modes.textContent).toBe("기본 기록경기별상황별구종·코스맞대결");
   expect(screen.getByRole("combobox", { name: "분석 시즌" })).toHaveProperty("value", "2024");
   await screen.findByText(/선택한 범위에 이 선수의 기본 기록이 없습니다/);
 });

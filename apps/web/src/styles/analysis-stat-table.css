@@ -86,3 +86,15 @@
   color: #536f75;
   line-height: 1.7;
 }
+.outcome-type-select {
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--ui-accent);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.outcome-type-select[aria-pressed="true"] {
+  font-weight: 700;
+}

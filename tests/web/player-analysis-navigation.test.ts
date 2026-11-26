@@ -2,7 +2,7 @@
 import { createElement } from "react";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { resolveAnalysisScope, type PlayerDirectoryEntry } from "@kbo/contracts";
@@ -121,18 +121,22 @@ it("carries the selected player and explicit scope across features, drops featur
     "/analysis/pitch-shape?season=2024&pitcher=p2&competition=allstar&dateFrom=2024-04-01&dateTo=2024-04-30&color=cluster&cluster=2";
   const fetch = show(original);
   const user = userEvent.setup();
-  const nav = screen.getByRole("navigation", { name: "선수 분석 항목" });
+  const nav = screen.getByRole("navigation", { name: "선수 기록 보기" });
   expect(screen.getByText("선택 투수")).toBeTruthy();
-  expect(within(nav).getAllByRole("link")).toHaveLength(6);
-  expect(within(nav).getByRole("link", { name: "구질·움직임" }).getAttribute("href")).toBe(
-    original,
+  expect(
+    within(nav)
+      .getAllByRole("link")
+      .map((link) => link.textContent),
+  ).toEqual(["기본 기록", "경기별", "상황별", "구종·코스", "맞대결"]);
+  expect(within(nav).getByRole("link", { name: "구종·코스" }).getAttribute("aria-current")).toBe(
+    "location",
   );
-  await user.click(within(nav).getByRole("link", { name: "배합·궤적" }));
+  await user.click(within(nav).getByRole("link", { name: "경기별" }));
   const location = new URL(
     screen.getByLabelText("현재 주소").textContent ?? "",
     "http://localhost",
   );
-  expect(location.pathname).toBe("/analysis/pitch-sequences");
+  expect(location.pathname).toBe("/analysis/player-games");
   expect(Object.fromEntries(location.searchParams)).toEqual({
     season: "2024",
     competition: "allstar",
@@ -140,8 +144,9 @@ it("carries the selected player and explicit scope across features, drops featur
     dateTo: "2024-04-30",
     pitcher: "p2",
     player: "naver:p2",
+    playerRole: "pitcher",
   });
-  expect(within(nav).getByRole("link", { name: "배합·궤적" }).getAttribute("aria-current")).toBe(
+  expect(within(nav).getByRole("link", { name: "경기별" }).getAttribute("aria-current")).toBe(
     "page",
   );
   expect(screen.getByRole("searchbox", { name: "선수 검색" })).toBeTruthy();
@@ -191,14 +196,35 @@ it("changes the pitcher and season in place, including the active outcome subtab
     player: "naver:p2",
   });
   expect(screen.getByText("선택 투수")).toBeTruthy();
-  expect(screen.getByRole("link", { name: "코스·결정구" }).getAttribute("aria-current")).toBe(
-    "page",
-  );
+  expect(screen.getByRole("link", { name: "구종·코스" }).getAttribute("aria-current")).toBe("page");
   await user.click(screen.getByRole("button", { name: "뒤로" }));
   expect(screen.getByLabelText("현재 주소").textContent).toBe(
     original.replace("p1", "p2") + "&player=naver%3Ap2",
   );
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it("waits for Korean composition before offering a report search result", () => {
+  const initial = "/analysis/pitch-location?season=2024&pitcher=p1";
+  show(initial);
+  const search = screen.getByRole("searchbox", { name: "선수 검색" });
+  const address = () => screen.getByLabelText("현재 주소").textContent;
+  fireEvent.compositionStart(search);
+  fireEvent.input(search, { target: { value: "선택 투수" }, isComposing: true });
+  expect(search).toHaveProperty("value", "선택 투수");
+  expect(screen.queryByRole("list", { name: "선수 검색 결과" })).toBeNull();
+  fireEvent.keyDown(search, { key: "Enter", isComposing: true });
+  expect(address()).toBe(initial);
+
+  fireEvent.compositionEnd(search, { data: "수" });
+  expect(screen.getByRole("button", { name: /^선택 투수,/u })).toBeTruthy();
+  fireEvent.compositionStart(search);
+  fireEvent.keyDown(search, { key: "Enter" });
+  expect(address()).toBe(initial);
+  fireEvent.compositionEnd(search);
+  fireEvent.keyDown(search, { key: "Enter" });
+  expect(new URL(address() ?? "", "http://localhost").searchParams.get("pitcher")).toBe("p2");
+  expect(search).toHaveProperty("value", "");
 });
 
 it("searches both roles in a matchup and pins its implicit opponent across seasons", async () => {
@@ -242,7 +268,7 @@ it("searches both roles in a matchup and pins its implicit opponent across seaso
 it("retains the batter as the primary player when entering and leaving a matchup", async () => {
   const fetch = show("/analysis/batter-profile?season=2025&batter=b1");
   const user = userEvent.setup();
-  await user.click(screen.getByRole("link", { name: "투수와 매치업" }));
+  await user.click(screen.getByRole("link", { name: "맞대결" }));
   const location = new URL(
     screen.getByLabelText("현재 주소").textContent ?? "",
     "http://localhost",
@@ -255,9 +281,9 @@ it("retains the batter as the primary player when entering and leaving a matchup
     player: "naver:b1",
   });
   expect(screen.getByText("선택 타자")).toBeTruthy();
-  await user.click(screen.getByRole("link", { name: "선구안", exact: true }));
+  await user.click(screen.getByRole("link", { name: "구종·코스", exact: true }));
   expect(screen.getByLabelText("현재 주소").textContent).toBe(
-    "/analysis/batter-discipline?season=2025&competition=regular&batter=b1&player=naver%3Ab1",
+    "/analysis/batter-profile?season=2025&competition=regular&batter=b1&player=naver%3Ab1",
   );
   expect(fetch).not.toHaveBeenCalled();
 });
@@ -284,13 +310,12 @@ it.each([
       dateFrom: "2024-04-01",
       dateTo: "2024-04-30",
       player: `naver:${id}`,
+      playerRole: role,
     });
     expect(screen.getByRole("link", { name: "기본 기록" }).getAttribute("aria-current")).toBe(
       "page",
     );
-    await user.click(
-      screen.getByRole("link", { name: role === "batter" ? "타격 분석" : "투구 분석" }),
-    );
+    await user.click(screen.getByRole("link", { name: "구종·코스" }));
     expect(screen.getByLabelText("현재 주소").textContent).toBe(
       `${path}?season=2024&competition=allstar&dateFrom=2024-04-01&dateTo=2024-04-30&${role}=${id}&player=naver%3A${id}`,
     );
@@ -301,7 +326,7 @@ it.each([
 it("uses the first shape player only when no player is requested", () => {
   show("/analysis/pitch-shape?season=2025");
   expect(screen.getByText("첫 투수")).toBeTruthy();
-  const link = screen.getByRole("link", { name: "코스·결정구" }).getAttribute("href");
+  const link = screen.getByRole("link", { name: "구종·코스" }).getAttribute("href");
   expect(link).toContain("pitcher=p1");
   expect(link).toContain("competition=regular");
 });
@@ -310,7 +335,7 @@ it("keeps a requested player missing from the catalog in the frame and leaves un
   const fetch = show("/analysis/pitch-shape?season=2025&pitcher=missing");
   expect(screen.getByText("선수 missing")).toBeTruthy();
   expect(screen.queryByText("첫 투수")).toBeNull();
-  expect(screen.queryByRole("link", { name: "투구 분석" })).toBeNull();
+  expect(screen.queryByRole("navigation", { name: "선수 역할" })).toBeNull();
   expect(screen.getByRole("link", { name: "기본 기록" }).getAttribute("href")).toContain(
     "pitcher=missing",
   );
@@ -351,7 +376,7 @@ it("keeps the change page's effective end date and rejects inconsistent dates", 
 
 it("does not show individual-player navigation on league rankings", () => {
   show("/analysis/statistics?season=2025");
-  expect(screen.queryByRole("navigation", { name: "선수 분석 항목" })).toBeNull();
+  expect(screen.queryByRole("navigation", { name: "선수 기록 보기" })).toBeNull();
 });
 it("carries explicit A/B periods between analysis tabs without leaking situation filters", () => {
   const comparison = new URLSearchParams(
@@ -388,17 +413,24 @@ it("reveals only the selected season's modes and falls back to basic records if 
     within(nav)
       .getAllByRole("link")
       .map((link) => link.textContent),
-  ).toEqual(["기본 기록", "타격 분석", "투구 분석"]);
-  await user.click(within(nav).getByRole("link", { name: "타격 분석" }));
-  expect(screen.getByRole("link", { name: "반응·성적" }).getAttribute("aria-current")).toBe("page");
+  ).toEqual(["기본 기록", "경기별", "상황별", "구종·코스", "맞대결"]);
+  await user.click(
+    within(screen.getByRole("navigation", { name: "선수 역할" })).getByRole("link", {
+      name: "타격",
+    }),
+  );
+  await user.click(within(nav).getByRole("link", { name: "구종·코스" }));
+  expect(screen.getByRole("link", { name: "구종·코스" }).getAttribute("aria-current")).toBe("page");
   const season = screen.getByRole("combobox", { name: "분석 시즌" });
   await user.selectOptions(season, "2023");
   expect(screen.getByLabelText("현재 주소").textContent).toContain("batter=p2-old");
-  expect(within(nav).queryByRole("link", { name: "투구 분석" })).toBeNull();
+  expect(screen.queryByRole("navigation", { name: "선수 역할" })).toBeNull();
   await user.selectOptions(season, "2025");
   expect(screen.getByText("선택 투수")).toBeTruthy();
-  expect(within(nav).queryByRole("link", { name: "타격 분석" })).toBeNull();
-  expect(within(nav).getByRole("link", { name: "투구 분석" })).toBeTruthy();
+  expect(screen.queryByRole("navigation", { name: "선수 역할" })).toBeNull();
+  expect(within(nav).getByRole("link", { name: "구종·코스" }).getAttribute("href")).toContain(
+    "/analysis/pitch-location?",
+  );
   expect(within(nav).getByRole("link", { name: "기본 기록" }).getAttribute("aria-current")).toBe(
     "page",
   );
@@ -418,6 +450,8 @@ it("can move from batting analysis to a pitcher with no records in the active se
   );
   expect(location.pathname).toBe("/analysis/player-statistics");
   expect(Object.fromEntries(location.searchParams)).toEqual({ season: "2025", player: "naver:p1" });
-  expect(screen.queryByRole("link", { name: "타격 분석" })).toBeNull();
-  expect(screen.getByRole("link", { name: "투구 분석" })).toBeTruthy();
+  expect(screen.queryByRole("navigation", { name: "선수 역할" })).toBeNull();
+  expect(screen.getByRole("link", { name: "구종·코스" }).getAttribute("href")).toContain(
+    "/analysis/pitch-location?",
+  );
 });

@@ -3,6 +3,7 @@ import {
   ApiErrorSchema,
   MatchupQuerySchema,
   MatchupResponseSchema,
+  DirectMatchupResponseSchema,
   MatchupModelResponseSchema,
 } from "@kbo/contracts";
 import {
@@ -19,6 +20,16 @@ export const matchupRoutes: FastifyPluginAsyncTypebox<
   }
 > = async (app, { pool, models, computation }) => {
   const repository = new MatchupRepository(pool);
+  app.get(
+    "/api/v2/analysis/matchups/direct",
+    {
+      schema: {
+        querystring: MatchupQuerySchema,
+        response: { 200: DirectMatchupResponseSchema, 400: ApiErrorSchema, 500: ApiErrorSchema },
+      },
+    },
+    (request) => repository.direct(request.query),
+  );
   app.get(
     "/api/v2/analysis/matchups",
     {

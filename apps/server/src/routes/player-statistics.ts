@@ -2,6 +2,13 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import {
   ApiErrorSchema,
   PlayerDirectorySchema,
+  PlayerGameRecordsQuerySchema,
+  PlayerGameRecordsResponseSchema,
+  PlayerLeagueResponseSchema,
+  PlayerSplitQuerySchema,
+  PlayerSplitResponseSchema,
+  PlayerSeasonStatisticsQuerySchema,
+  PlayerSeasonStatisticsResponseSchema,
   BattingStatisticsQuerySchema,
   PitchingStatisticsQuerySchema,
   BattingStatisticsResponseSchema,
@@ -12,6 +19,7 @@ import {
 } from "@kbo/contracts";
 import { Type } from "@sinclair/typebox";
 import { compareBattingPeriods, comparePitchingPeriods } from "@kbo/game-core";
+import { resolveNaverPitcherHand } from "@kbo/collection";
 import { readAnalysisPeriodPair, periodSnapshot } from "../analysis-period-pair.js";
 import {
   PlayerDirectoryRepository,
@@ -31,6 +39,16 @@ export const playerStatisticsRoutes: FastifyPluginAsyncTypebox<
     root === undefined ? undefined : () => readOfficialPlayerBirthYears(root),
   );
   app.get(
+    "/api/v2/analysis/statistics/player-league",
+    {
+      schema: {
+        querystring: PlayerGameRecordsQuerySchema,
+        response: { 200: PlayerLeagueResponseSchema, 400: ApiErrorSchema, 500: ApiErrorSchema },
+      },
+    },
+    (request) => repository.playerLeague(request.query),
+  );
+  app.get(
     "/api/v2/analysis/players",
     {
       schema: {
@@ -39,6 +57,44 @@ export const playerStatisticsRoutes: FastifyPluginAsyncTypebox<
       },
     },
     () => directory.list(),
+  );
+  app.get(
+    "/api/v2/analysis/statistics/player-games",
+    {
+      schema: {
+        querystring: PlayerGameRecordsQuerySchema,
+        response: {
+          200: PlayerGameRecordsResponseSchema,
+          400: ApiErrorSchema,
+          500: ApiErrorSchema,
+        },
+      },
+    },
+    (request) => repository.playerGames(request.query),
+  );
+  app.get(
+    "/api/v2/analysis/statistics/player-splits",
+    {
+      schema: {
+        querystring: PlayerSplitQuerySchema,
+        response: { 200: PlayerSplitResponseSchema, 400: ApiErrorSchema, 500: ApiErrorSchema },
+      },
+    },
+    (request) => repository.playerSplits(request.query, resolveNaverPitcherHand),
+  );
+  app.get(
+    "/api/v2/analysis/statistics/player-seasons",
+    {
+      schema: {
+        querystring: PlayerSeasonStatisticsQuerySchema,
+        response: {
+          200: PlayerSeasonStatisticsResponseSchema,
+          400: ApiErrorSchema,
+          500: ApiErrorSchema,
+        },
+      },
+    },
+    (request) => repository.playerSeasons(request.query),
   );
   app.get(
     "/api/v2/analysis/statistics/:playerId/comparison",

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PropsWithChildren } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, NavLink, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import type { DisciplineCatalog, PitchAnalysisCatalog, PlayerDirectoryEntry } from "@kbo/contracts";
 import {
   batterCatalogQueryOptions,
@@ -15,11 +15,16 @@ import {
   playerAnalysisSections,
   playerBasicHref,
   playerBasicPath,
+  playerGamesPath,
   playerNavigationScope,
   playerRecordId,
+  playerReportTabPath,
+  playerReportTabs,
+  playerRoleForRecord,
   playerRoleForPath,
-  playerRolePath,
+  playerSplitsPath,
   type PlayerAnalysisRole,
+  type PlayerReportTab,
 } from "./player-analysis-navigation";
 import { PlayerAnalysisSearch } from "./player-analysis-search";
 import { findDirectoryPlayer, playerCareer, usePlayerDirectory } from "./player-directory";
@@ -34,7 +39,11 @@ function PlayerNavigation({ role, path }: { role: PlayerAnalysisRole; path: stri
   const directory = usePlayerDirectory();
   const defaultSeason = useAnalysisSeason(params.get("season"));
   const scope = playerNavigationScope(path, params, defaultSeason);
-  const secondary = useRef<HTMLElement>(null);
+  const { dateTo, ...scopeWithoutEnd } = scope.options;
+  const reportScope =
+    path === "/analysis/pitcher-changes" && !params.has("dateTo") ? scopeWithoutEnd : scope.options;
+  void dateTo;
+  const tabNav = useRef<HTMLElement>(null);
   const [previousCatalogPlayer, setPreviousCatalogPlayer] = useState<{
     id: string;
     role: PlayerAnalysisRole;
@@ -64,13 +73,22 @@ function PlayerNavigation({ role, path }: { role: PlayerAnalysisRole; path: stri
   const featureId = playerRecordId(record, role);
   const id = featureId ?? (identity === null ? legacyId : null);
   const basic = path === playerBasicPath;
-  const showSecondary = !basic && featureId !== null && scope.error === null;
+  const reportRole =
+    basic || path === playerGamesPath || path === playerSplitsPath
+      ? playerRoleForRecord(record, role)
+      : role;
+  const currentTab = playerAnalysisSections[reportRole].find(
+    (section) => section.path === path,
+  )?.tab;
+  const bothRoles = Boolean(
+    record?.battingPlayerId && record.pitchingPlayerId && scope.error === null,
+  );
 
   useEffect(() => {
-    const nav = secondary.current;
-    if (!showSecondary || !nav) return;
+    const nav = tabNav.current;
+    if (!nav) return;
     const revealCurrent = () => {
-      const current = nav.querySelector('[aria-current="page"]');
+      const current = nav.querySelector("[aria-current]");
       if (!current || nav.scrollWidth <= nav.clientWidth) return;
       const bounds = nav.getBoundingClientRect();
       const selected = current.getBoundingClientRect();
@@ -82,7 +100,7 @@ function PlayerNavigation({ role, path }: { role: PlayerAnalysisRole; path: stri
       typeof ResizeObserver === "undefined" ? null : new ResizeObserver(revealCurrent);
     observer?.observe(nav);
     return () => observer?.disconnect();
-  }, [path, role, showSecondary]);
+  }, [path, reportRole, identity, legacyId, scope.error]);
 
   function seasonPlayers(): AnalysisPlayerSelection {
     const current: AnalysisPlayerSelection = id ? { [role]: id } : {};
@@ -127,13 +145,34 @@ function PlayerNavigation({ role, path }: { role: PlayerAnalysisRole; path: stri
   const name = player?.name ?? (identity === null ? legacyName : undefined);
   const career = player && playerCareer(player);
   const reportId = player?.sourceIds[0] ?? legacyId;
-  const basicHref = player
-    ? basic
-      ? `${path}?${params}`
-      : playerBasicHref(player.identity, scope.season, params)
-    : id && scope.error === null
-      ? playerAnalysisHref(playerBasicPath, role, id, scope.season, scope.options, params)
+  function reportHref(tab: PlayerReportTab, targetRole: PlayerAnalysisRole) {
+    const targetPath = playerReportTabPath(tab, targetRole);
+    if (scope.error === null && targetPath === path && targetRole === reportRole)
+      return `${path}?${params}`;
+    if (tab === "basic" && player) {
+      const query = new URLSearchParams(params);
+      query.set("playerRole", targetRole);
+      return playerBasicHref(player.identity, scope.season, query);
+    }
+    const targetId =
+      playerRecordId(record, targetRole) ??
+      (identity === null && targetRole === role ? legacyId : null);
+    return targetId !== null && scope.error === null
+      ? playerAnalysisHref(
+          targetPath,
+          targetRole,
+          targetId,
+          scope.season,
+          reportScope,
+          params,
+          player?.identity,
+        )
       : null;
+  }
+  const links = playerReportTabs.flatMap(({ tab, label }) => {
+    const href = reportHref(tab, reportRole);
+    return href === null ? [] : [{ tab, label, href }];
+  });
 
   return (
     <section className="player-analysis-context" aria-label="현재 선수 분석">
@@ -214,73 +253,47 @@ function PlayerNavigation({ role, path }: { role: PlayerAnalysisRole; path: stri
             : "조회 범위 확인 필요"}
         </span>
       </div>
-      {basicHref && (
-        <nav className="player-analysis-links player-analysis-primary" aria-label="선수 기록 보기">
-          <Link
-            to={basicHref}
-            className={basic ? "selected" : undefined}
-            aria-current={basic ? "page" : undefined}
-          >
-            기본 기록
-          </Link>
+      {bothRoles && currentTab && (
+        <nav className="player-analysis-links player-analysis-secondary" aria-label="선수 역할">
           {(["batter", "pitcher"] as const).map((targetRole) => {
-            const targetId = playerRecordId(record, targetRole);
-            if (!targetId || scope.error !== null) return null;
-            const active = !basic && role === targetRole;
+            const href = reportHref(currentTab, targetRole);
+            if (href === null) return null;
+            const active = targetRole === reportRole;
             return (
               <Link
                 key={targetRole}
-                to={
-                  active
-                    ? `${path}?${params}`
-                    : playerAnalysisHref(
-                        playerRolePath[targetRole],
-                        targetRole,
-                        targetId,
-                        scope.season,
-                        scope.options,
-                        params,
-                        player?.identity,
-                      )
-                }
+                to={href}
                 className={active ? "selected" : undefined}
-                aria-current={active ? "page" : undefined}
+                aria-current={active ? "true" : undefined}
               >
-                {targetRole === "batter" ? "타격 분석" : "투구 분석"}
+                {targetRole === "batter" ? "타격" : "투구"}
               </Link>
             );
           })}
         </nav>
       )}
-      {showSecondary && (
+      {links.length > 0 && (
         <nav
-          ref={secondary}
-          className="player-analysis-links player-analysis-secondary"
-          aria-label="선수 분석 항목"
+          ref={tabNav}
+          className="player-analysis-links player-analysis-primary"
+          aria-label="선수 기록 보기"
         >
-          {playerAnalysisSections[role]
-            .filter((section) => section.path !== playerBasicPath)
-            .map((section) => (
-              <NavLink
-                key={section.path}
-                to={
-                  section.path === path
-                    ? `${path}?${params}`
-                    : playerAnalysisHref(
-                        section.path,
-                        role,
-                        featureId,
-                        scope.season,
-                        scope.options,
-                        params,
-                        player?.identity,
-                      )
-                }
-                className={({ isActive }) => (isActive ? "selected" : undefined)}
-              >
-                {section.label}
-              </NavLink>
-            ))}
+          {links.map(({ tab, label, href }) => (
+            <Link
+              key={tab}
+              to={href}
+              className={tab === currentTab ? "selected" : undefined}
+              aria-current={
+                tab === currentTab
+                  ? path === playerReportTabPath(tab, reportRole)
+                    ? "page"
+                    : "location"
+                  : undefined
+              }
+            >
+              {label}
+            </Link>
+          ))}
         </nav>
       )}
     </section>

@@ -753,6 +753,293 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     ).toEqual([]);
   });
 
+  it("combines traded players' game facts into one row per season with the original denominators", async () => {
+    const original = pitchAnalysisFixture(2025);
+    await store.importRevision(pitchAnalysisFixture(2024));
+    await store.importRevision({
+      ...original,
+      officialRecords: {
+        batters: [],
+        pitchers: [
+          {
+            playerId: "hp1",
+            side: "home",
+            battersFaced: 1,
+            outsRecorded: 1,
+            hits: 0,
+            runs: 0,
+            earnedRuns: 0,
+            walks: 0,
+            hitByPitch: 0,
+            strikeouts: 1,
+          },
+        ],
+      },
+    });
+    const homeRun = parseStagingGameDocumentV2(
+      makeDocument([
+        { kind: "half_inning_start", payload: {} },
+        { kind: "batter_start", payload: { batterId: "a1", pitcherId: "hp1" } },
+        { kind: "pitch", payload: { call: "in_play" } },
+        {
+          kind: "plate_result",
+          payload: { result: "home_run", batterId: "a1", pitcherId: "hp1", creditedRbi: 1 },
+        },
+      ]),
+    );
+    for (const { game, day } of [
+      { game: homeRun, day: "01" },
+      { game: original, day: "02" },
+    ]) {
+      const gameId = `annual-statistics-2025-${day}`;
+      await store.importRevision({
+        ...game,
+        source: { ...game.source, sourceGameId: gameId },
+        metadata: { ...game.metadata, gameId, season: 2025, gameDate: "2025-07-01" },
+        teams: {
+          away: { teamId: "NEW_AWAY", name: "새 원정" },
+          home: { teamId: "NEW_HOME", name: "새 홈" },
+        },
+        rosters: {
+          away: { ...game.rosters.away, teamId: "NEW_AWAY" },
+          home: { ...game.rosters.home, teamId: "NEW_HOME" },
+        },
+      });
+    }
+
+    const repository = new PlayerStatisticsRepository(pool);
+    const competition = "unknown" as const;
+    const batting = await repository.playerSeasons({ player: "naver:a1", competition });
+    expect(batting.pitching).toEqual([]);
+    expect(batting.batting.map(({ season }) => season)).toEqual([2025, 2024]);
+    expect(batting.batting[0]).toMatchObject({
+      teams: ["원정", "새 원정"],
+      games: 3,
+      plateAppearances: 3,
+      atBats: 3,
+      hits: 1,
+      homeRuns: 1,
+      avg: 1 / 3,
+      obp: 1 / 3,
+      slg: 4 / 3,
+    });
+    expect(batting.batting[0]?.ops).toBeCloseTo(5 / 3);
+    expect(batting.batting[1]).toMatchObject({ teams: ["원정"], games: 1, hits: 0 });
+
+    const pitching = await repository.playerSeasons({ player: "naver:hp1", competition });
+    expect(pitching.pitching.map(({ season }) => season)).toEqual([2025, 2024]);
+    expect(pitching.pitching[0]).toMatchObject({
+      teams: ["홈", "새 홈"],
+      games: 3,
+      battersFaced: 3,
+      outsRecorded: 2,
+      runs: 1,
+      knownErGames: 1,
+      knownErOuts: 1,
+      era: null,
+      knownGamesEra: 0,
+    });
+    expect(await repository.playerSeasons({ player: "naver:a1" })).toMatchObject({
+      batting: [],
+      pitching: [],
+    });
+    const july = await repository.playerSeasons({
+      player: "a1",
+      sourceRole: "batter",
+      competition,
+      season: 2025,
+      dateFrom: "2025-07-01",
+    });
+    expect(july.pitching).toEqual([]);
+    expect(july.batting).toHaveLength(1);
+    expect(july.batting[0]).toMatchObject({
+      season: 2025,
+      teams: ["새 원정"],
+      games: 2,
+      atBats: 2,
+      hits: 1,
+      avg: 0.5,
+    });
+    const gameScope = { season: 2025, competition, dateFrom: "2025-07-01" };
+    const battingLog = await repository.playerGames({
+      ...gameScope,
+      player: "naver:a1",
+      role: "batter",
+    });
+    expect(battingLog.role).toBe("batter");
+    expect(battingLog.rows).toMatchObject([
+      {
+        gameId: "annual-statistics-2025-02",
+        revision: 1,
+        gameDate: "2025-07-01",
+        teams: ["새 원정"],
+        opponents: ["새 홈"],
+        side: "away",
+        plateAppearances: 1,
+        atBats: 1,
+        hits: 0,
+        homeRuns: 0,
+      },
+      {
+        gameId: "annual-statistics-2025-01",
+        revision: 1,
+        gameDate: "2025-07-01",
+        plateAppearances: 1,
+        atBats: 1,
+        hits: 1,
+        homeRuns: 1,
+      },
+    ]);
+    const pitchingLog = await repository.playerGames({
+      season: 2025,
+      competition,
+      player: "hp1",
+      role: "pitcher",
+      source: "naver",
+    });
+    expect(pitchingLog.role).toBe("pitcher");
+    expect(pitchingLog.rows).toMatchObject([
+      { gameId: "annual-statistics-2025-02", side: "home", outsRecorded: 1, earnedRuns: null },
+      { gameId: "annual-statistics-2025-01", side: "home", outsRecorded: 0, earnedRuns: null },
+      { gameId: original.metadata.gameId, side: "home", outsRecorded: 1, earnedRuns: 0 },
+    ]);
+    const venue = await repository.playerSplits(
+      {
+        season: 2025,
+        competition,
+        player: "naver:hp1",
+        role: "pitcher",
+        split: "venue",
+        countFor: "home",
+      },
+      resolveNaverPitcherHand,
+    );
+    expect(venue.rows).toMatchObject([
+      { bucket: "home", plateAppearances: 3, hits: 1, homeRuns: 1, strikeouts: 2, avg: 1 / 3 },
+      { bucket: "away", plateAppearances: 0, avg: null },
+    ]);
+    expect(venue.byCount).toMatchObject([
+      { count: { balls: 0, strikes: 0 }, plateAppearances: 1, hits: 1 },
+      { count: { balls: 1, strikes: 2 }, plateAppearances: 2, strikeouts: 2 },
+    ]);
+    const league = await repository.playerLeague({
+      season: 2025,
+      competition,
+      player: "naver:hp1",
+      role: "pitcher",
+    });
+    expect(league).toMatchObject({
+      player: { battersFaced: 3, outsRecorded: 2, knownErOuts: 1, era: null, knownGamesEra: 0 },
+      league: { battersFaced: 3, outsRecorded: 2, knownErOuts: 1, era: null, knownGamesEra: 0 },
+    });
+    const hands = await repository.playerSplits(
+      {
+        season: 2025,
+        competition,
+        player: "naver:a1",
+        role: "batter",
+        split: "hand",
+      },
+      resolveNaverPitcherHand,
+    );
+    expect(hands.rows).toMatchObject([
+      { bucket: "L", plateAppearances: 0 },
+      { bucket: "R", plateAppearances: 0 },
+      { bucket: "unknown", plateAppearances: 3, atBats: 3, hits: 1 },
+    ]);
+  });
+
+  it("uses the bases before the result and weights the league line by recorded opportunities", async () => {
+    const start = (batterId: string) => ({
+      kind: "batter_start",
+      payload: { batterId, pitcherId: "hp1" },
+    });
+    const document = parseStagingGameDocumentV2(
+      makeDocument([
+        { kind: "half_inning_start", payload: {} },
+        start("a1"),
+        { kind: "plate_result", payload: { result: "single", batterId: "a1", pitcherId: "hp1" } },
+        start("a2"),
+        { kind: "pitch", payload: { call: "ball" } },
+        {
+          kind: "runner_play",
+          payload: { reason: "stolen_base", movements: [safe("a1", 1, 2, 0)] },
+        },
+        { kind: "pitch", payload: { call: "in_play" } },
+        {
+          kind: "plate_appearance_result",
+          payload: {
+            result: "single",
+            batterId: "a2",
+            pitcherId: "hp1",
+            movements: [scored("a1", 2, 0)],
+          },
+        },
+        start("a3"),
+        {
+          kind: "plate_appearance_result",
+          payload: {
+            result: "intentional_walk",
+            batterId: "a3",
+            pitcherId: "hp1",
+            movements: [safe("a2", 1, 2, 0)],
+          },
+        },
+        start("a4"),
+        {
+          kind: "plate_result",
+          payload: { result: "field_out", batterId: "a4", pitcherId: "hp1" },
+        },
+        start("a5"),
+        { kind: "pitch", payload: { call: "ball" } },
+      ]),
+    );
+    const other = parseStagingGameDocumentV2(
+      makeDocument([
+        { kind: "half_inning_start", payload: {} },
+        start("a1"),
+        {
+          kind: "plate_result",
+          payload: { result: "field_out", batterId: "a1", pitcherId: "hp1" },
+        },
+      ]),
+    );
+    await store.importRevision(document);
+    await store.importRevision({
+      ...other,
+      metadata: { ...other.metadata, gameId: "another-game" },
+    });
+    const repository = new PlayerStatisticsRepository(pool);
+    const scope = { season: 2026, competition: "unknown" } as const;
+    const splits = await repository.playerSplits(
+      { ...scope, player: "naver:hp1", role: "pitcher", split: "risp", countFor: "risp" },
+      resolveNaverPitcherHand,
+    );
+    expect(splits.rows).toMatchObject([
+      { bucket: "risp", plateAppearances: 2, atBats: 2, hits: 1, avg: 0.5 },
+      { bucket: "no-risp", plateAppearances: 3, atBats: 2, hits: 1, intentionalWalks: 1 },
+      { bucket: "unknown", plateAppearances: 0 },
+    ]);
+    expect(splits.byCount).toMatchObject([
+      { count: { balls: 1, strikes: 0 }, plateAppearances: 1, atBats: 1, hits: 1 },
+      { count: null, plateAppearances: 1, atBats: 1, hits: 0 },
+    ]);
+    const a3 = await repository.playerLeague({ ...scope, player: "naver:a3", role: "batter" });
+    expect(a3).toMatchObject({
+      player: { plateAppearances: 1, atBats: 0, avg: null, obp: 1 },
+      league: { plateAppearances: 5, atBats: 4, hits: 2, walks: 1, avg: 0.5, obp: 0.6, ops: 1.1 },
+    });
+    const a2 = await repository.playerSplits(
+      { ...scope, player: "naver:a2", role: "batter", split: "risp" },
+      resolveNaverPitcherHand,
+    );
+    expect(a2.rows).toMatchObject([
+      { bucket: "risp", plateAppearances: 1, hits: 1 },
+      { bucket: "no-risp", plateAppearances: 0 },
+      { bucket: "unknown", plateAppearances: 0 },
+    ]);
+  });
+
   it("builds one career per player, keeps return stints, and counts only official PA and actual pitches", async () => {
     for (const season of [2024, 2025]) {
       const game = pitchAnalysisFixture(season);
@@ -1962,6 +2249,21 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(flow.byPitcherHand?.left.map(({ pitches }) => pitches)).toEqual([1, 1, 1, 1]);
     expect(flow.byPitcherHand?.right).toEqual([]);
     expect(flow.byPitcherHand?.unknownPitches).toBe(4);
+    const splits = await new PlayerStatisticsRepository(pool).playerSplits(
+      {
+        season: 2024,
+        competition: "unknown",
+        player: "naver:a1",
+        role: "batter",
+        split: "hand",
+      },
+      resolveNaverPitcherHand,
+    );
+    expect(splits.rows.map(({ bucket, plateAppearances }) => [bucket, plateAppearances])).toEqual([
+      ["L", 1],
+      ["R", 0],
+      ["unknown", 1],
+    ]);
   });
 
   it("preserves full sequence before pair filtering and does not skip missing tracking", async () => {
@@ -2319,18 +2621,38 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
 
   it("reads direct PA and league matchup conditions in one snapshot without inferred handedness", async () => {
     await store.importRevision(pitchAnalysisFixture(2024));
-    const result = await new MatchupRepository(pool).analyze({
+    const repository = new MatchupRepository(pool);
+    const query = {
       season: 2024,
       competition: "unknown",
       pitcherId: "hp1",
       batterId: "a1",
-    });
+    } as const;
+    const result = await repository.analyze(query);
     expect(result.direct.pitches).toBe(4);
     expect(result.directPlateAppearances).toHaveLength(1);
     expect(result.similar.pitches).toBe(0);
     expect(result.excludedSimilar).toBe(4);
     expect(result.conditions).toEqual([]);
     expect(result.predictionStatus).toBe("not_validated");
+    const direct = await repository.direct(query);
+    expect(direct.direct).toEqual(result.direct);
+    expect(direct.directPlateAppearances).toEqual(result.directPlateAppearances);
+    expect(direct.batting).toEqual({
+      plateAppearances: 1,
+      atBats: 1,
+      hits: 0,
+      homeRuns: 0,
+      walks: 0,
+      strikeouts: 1,
+      avg: 0,
+      ops: 0,
+    });
+    expect(await repository.direct({ ...query, pitcherId: "other" })).toMatchObject({
+      batting: { plateAppearances: 0, avg: null },
+      direct: { pitches: 0 },
+      directPlateAppearances: [],
+    });
   });
 
   it("uses the same tracked-first batting side for matchup batter, pitcher, and league samples", async () => {

@@ -722,6 +722,36 @@ it("restores advanced filters, preserves URL scope through disclosure and compar
   for (const key of ["dateFrom", "dateTo"]) expect(next.has(key)).toBe(false);
 });
 
+it("filters the map by a selected pitch type and passes it as the second pitch in sequence analysis", async () => {
+  mockOutcomes([
+    outcomeRow({ pitchId: "p1", pitchType: "직구", balls: 1, strikes: 2, stance: "R" }),
+    outcomeRow({ pitchId: "p2", pitchType: "슬라이더", balls: 1, strikes: 2, stance: "R" }),
+  ]);
+  show("pitcher", "season=2024&competition=unknown&pitcher=hp1&balls=1&strikes=2&stance=R");
+  const table = await screen.findByRole("table", { name: "구종별 반응" });
+  const slider = within(table).getByRole("rowheader", { name: "슬라이더" }).closest("tr");
+  expect(slider?.textContent).toContain("50.0%");
+  fireEvent.click(within(table).getByRole("button", { name: "슬라이더" }));
+  const link = await screen.findByRole("link", { name: "두 번째 공이 슬라이더인 배합·궤적" });
+  const target = new URL(link.getAttribute("href") ?? "", "http://localhost");
+  expect(target.pathname).toBe("/analysis/pitch-sequences");
+  expect(Object.fromEntries(target.searchParams)).toEqual({
+    season: "2024",
+    competition: "unknown",
+    pitcher: "hp1",
+    pitchType: "슬라이더",
+    balls: "1",
+    strikes: "2",
+    stance: "R",
+  });
+  const filtered = await screen.findByRole("table", { name: "구종별 반응" });
+  expect(within(filtered).queryByRole("rowheader", { name: "직구" })).toBeNull();
+  expect(within(filtered).getByRole("button", { name: "슬라이더", pressed: true })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "카운트별", exact: true }));
+  const countTable = screen.getByRole("table", { name: "카운트별 반응" });
+  expect(within(countTable).getByRole("rowheader", { name: "1-2" })).toBeTruthy();
+});
+
 it("carries only supported situation conditions into the discipline comparison link", async () => {
   mockOutcomes();
   show(

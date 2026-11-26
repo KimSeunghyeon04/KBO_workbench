@@ -5,13 +5,14 @@ import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import {
   MatchupQuerySchema,
+  DirectMatchupResponseSchema,
   MatchupResponseSchema,
   MatchupConditionCountsSchema,
   resolveAnalysisScope,
   canonicalStringify,
   type MatchupQuery,
 } from "@kbo/contracts";
-import { analyzeMatchup } from "@kbo/game-core";
+import { analyzeMatchup, summarizeDirectMatchup } from "@kbo/game-core";
 import {
   ANALYSIS_GAME_WHERE,
   analysisScopeParameters,
@@ -26,6 +27,18 @@ import {
 } from "./analysis-pitch-input.js";
 export class MatchupRepository {
   public constructor(private readonly pool: Pool) {}
+  public async direct(input: MatchupQuery) {
+    const query = Value.Decode(MatchupQuerySchema, input);
+    const { pitcherId, batterId, ...scopeQuery } = query;
+    const scope = resolveAnalysisScope(scopeQuery, "regular");
+    const { rows, plateAppearances } = await withAnalysisSnapshot(this.pool, (client) =>
+      readPitchOutcomeRows(client, scope, batterId, "batter", pitcherId),
+    );
+    return Value.Decode(
+      DirectMatchupResponseSchema,
+      summarizeDirectMatchup(query, scope, rows, plateAppearances),
+    );
+  }
   public async analyze(input: MatchupQuery) {
     const query = Value.Decode(MatchupQuerySchema, input),
       { pitcherId, batterId, ...scopeQuery } = query,

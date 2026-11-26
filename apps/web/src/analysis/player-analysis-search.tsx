@@ -6,6 +6,7 @@ import {
   playerCareer,
   playerPosition,
 } from "./player-directory";
+import { usePlayerSearchInput } from "./use-player-search-input";
 
 const resultLimit = 12;
 
@@ -28,6 +29,10 @@ export function PlayerAnalysisSearch({
   const results = useRef<HTMLUListElement>(null);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const { isComposing, inputProps } = usePlayerSearchInput(query, (value) => {
+    setQuery(value);
+    setOpen(true);
+  });
   const showResults = open && query.trim() !== "";
   const matches = showResults && players ? filterDirectoryPlayers(players, query) : [];
 
@@ -59,7 +64,7 @@ export function PlayerAnalysisSearch({
           setOpen(false);
       }}
       onKeyDown={(event) => {
-        if (event.nativeEvent.isComposing) return;
+        if (isComposing.current || event.nativeEvent.isComposing) return;
         if (event.key === "ArrowDown" && event.target === input.current && !showResults) {
           if (query.trim() !== "") {
             event.preventDefault();
@@ -117,13 +122,9 @@ export function PlayerAnalysisSearch({
         placeholder="전체 선수 이름 또는 ID"
         autoComplete="off"
         spellCheck={false}
-        value={query}
         onFocus={() => setOpen(true)}
         onClick={() => setOpen(true)}
-        onChange={(event) => {
-          setQuery(event.target.value);
-          setOpen(true);
-        }}
+        {...inputProps}
       />
       <div id={resultsId} className="player-analysis-search-results" hidden={!showResults}>
         {showResults &&

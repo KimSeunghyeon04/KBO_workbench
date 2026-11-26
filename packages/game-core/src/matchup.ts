@@ -6,7 +6,9 @@ import type {
   PitchOutcomeRow,
   TerminalPaRow,
   AnalysisScope,
+  DirectMatchupResponse,
 } from "@kbo/contracts";
+import { summarizeBattingResults } from "./player-statistics.js";
 const divide = (n: number, d: number) => (d === 0 ? null : n / d);
 const key = (r: MatchupCondition) =>
   JSON.stringify([r.pitchType, r.balls, r.strikes, r.stance, r.speedBand]);
@@ -138,14 +140,7 @@ export function analyzeMatchup(
     predictionStatus: "not_validated",
     speedBandKph: 5,
     minControls: 20,
-    direct: cohort(own.filter((r) => r.pitcherId === query.pitcherId)),
-    directPlateAppearances: pas.filter(
-      (p) =>
-        p.batterId === query.batterId &&
-        p.pitcherId === query.pitcherId &&
-        p.completed &&
-        p.countsAsPa,
-    ),
+    ...directMatchupSamples(query, own, pas),
     similar: cohort(similar),
     excludedSimilar: own.length - similar.length,
     matched: {
@@ -159,5 +154,47 @@ export function analyzeMatchup(
       observedCalledStrikeRate: divide(observedCalled, matchedPitches),
     },
     conditions,
+  };
+}
+
+function directMatchupSamples(
+  query: MatchupQuery,
+  pitches: readonly PitchOutcomeRow[],
+  appearances: readonly TerminalPaRow[],
+) {
+  return {
+    direct: cohort(
+      pitches.filter((row) => row.batterId === query.batterId && row.pitcherId === query.pitcherId),
+    ),
+    directPlateAppearances: appearances.filter(
+      (row) =>
+        row.batterId === query.batterId &&
+        row.pitcherId === query.pitcherId &&
+        row.completed &&
+        row.countsAsPa,
+    ),
+  };
+}
+
+export function summarizeDirectMatchup(
+  query: MatchupQuery,
+  scope: AnalysisScope,
+  pitches: readonly PitchOutcomeRow[],
+  appearances: readonly TerminalPaRow[],
+): DirectMatchupResponse {
+  const samples = directMatchupSamples(query, pitches, appearances);
+  const { plateAppearances, atBats, hits, homeRuns, walks, strikeouts, avg, ops } =
+    summarizeBattingResults(
+      samples.directPlateAppearances.map((row) => {
+        if (row.result === null)
+          throw new Error("Completed matchup plate appearance has no result");
+        return { result: row.result, countsAsAtBat: row.countsAsAb };
+      }),
+    );
+  return {
+    query,
+    scope,
+    ...samples,
+    batting: { plateAppearances, atBats, hits, homeRuns, walks, strikeouts, avg, ops },
   };
 }

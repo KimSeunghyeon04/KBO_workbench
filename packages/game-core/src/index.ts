@@ -66,7 +66,12 @@ export {
   type PitchCalibrationCell,
 } from "./pitch-calibration.js";
 export { summarizePitchProfile } from "./pitch-profile.js";
-export { battingStatistics, pitchingStatistics } from "./player-statistics.js";
+export {
+  battingStatistics,
+  pitchingStatistics,
+  summarizePlayerSplits,
+  summarizeBattingResults,
+} from "./player-statistics.js";
 export { observedPitchLocation } from "./pitch-location.js";
 export { comparePitchLocations } from "./pitch-location-comparison.js";
 export {
@@ -85,7 +90,7 @@ export {
 } from "./baserunning-analysis.js";
 export { analyzePitcherWorkload } from "./pitcher-workload.js";
 export { comparePitcherWorkload, WORKLOAD_COMPARISON_POLICY } from "./workload-comparison.js";
-export { analyzeMatchup, matchupCondition } from "./matchup.js";
+export { analyzeMatchup, matchupCondition, summarizeDirectMatchup } from "./matchup.js";
 export {
   baseMask,
   groupAnalysisHalves,

@@ -97,7 +97,13 @@ function PeriodComparisonData({
         : { ...q, role: kind === "statistics" || kind === "pitch-shape" ? "pitcher" : "batter" };
     const search = new URLSearchParams(Object.entries(scope).map(([k, v]) => [k, String(v)]));
     search.set(role === "pitcher" ? "pitcher" : "batter", playerId);
-    if (kind === "statistics") search.set("playerRole", String(role));
+    if (kind === "statistics") {
+      search.set("playerRole", String(role));
+      if (scope.dateFrom === undefined && scope.dateTo === undefined) {
+        search.set("dateFrom", `${scope.season}-01-01`);
+        search.set("dateTo", `${scope.season}-12-31`);
+      }
+    }
     return `/analysis/${kind === "statistics" ? "player-statistics" : kind}?${search}`;
   };
   return (

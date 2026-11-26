@@ -209,7 +209,7 @@ BlinkMacSystemFont → sans-serif. 이는 선언된 fallback 순서이며 폰트
 - **Title:** 분석 패널 제목. 공통 관리 섹션의 자간은 -0.015em, 분석 패널은 프런트매터의 값이다.
 - **Body / Label:** 작업 본문과 보조 설명. 일부 분석 문단은 13px·줄높이 1.75,
   캡션은 12px·줄높이 1.8을 사용한다.
-- **Metric:** 팀별 기본 기록 요약의 수치. 선수 이름은 30px·줄높이 1.3,
+- **Metric:** 선수 이름은 30px·줄높이 1.3,
   640px 이하에서는 25px다. 대시보드 수치는 30px·줄높이 1이다.
 - **Control / Field:** 기존 공통 버튼과 분석 입력의 별도 밀도 역할이다.
 
@@ -233,7 +233,7 @@ BlinkMacSystemFont → sans-serif. 이는 선언된 fallback 순서이며 폰트
 - 620px 이하 관리 본문은 `22px 16px 48px`다. 600px 이하 상단바는 96px이며
   열린 메뉴는 그 아래에서 시작한다.
 - 640px 이하 분석 본문은 `16px 12px 40px`, 섹션 간격은 12px다.
-  선수 분석 탭은 한 줄에서 가로로 스크롤하고, 기본 기록 요약은 두 열이 된다.
+  선수 분석 탭은 한 줄에서 가로로 스크롤하고, 기본 기록 표는 연도 열을 고정한다.
 - 재생은 1280px 이하에서 보조 패널을 재배치하고 860px 이하에서 한 열이 된다.
   620px 이하 재생 컨트롤은 다섯 버튼 행·속도·장면 위치·scrubber를 나눠 배치한다.
 - 표는 자체 가로 스크롤을 허용한다. 페이지 전체의 가로 넘침으로 긴 표를 처리하지 않는다.
@@ -308,7 +308,7 @@ disabled는 기본 공통 버튼에서 opacity 0.55와 기본 커서를 사용�
 | 소유 모듈                                                                            | 표시 책임                                               |
 | ------------------------------------------------------------------------------------ | ------------------------------------------------------- |
 | [player-analysis-frame.tsx](apps/web/src/analysis/player-analysis-frame.tsx)         | 선수 identity·범위·분석 항목 탐색                       |
-| [player-record-summary.tsx](apps/web/src/analysis/player-record-summary.tsx)         | 팀별 타격·투구 수치와 분모, 미확정 ERA 안내             |
+| [player-season-records.tsx](apps/web/src/analysis/player-season-records.tsx)         | 연도별 타격·투구 합계와 미확정 ERA 표시                 |
 | [pitch-location-panel.tsx](apps/web/src/analysis/pitch-location-panel.tsx)           | 포수 시점 코스 지도·선택 영역·소표본 표현               |
 | [pitch-sequence-groups.tsx](apps/web/src/analysis/pitch-sequence-groups.tsx)         | 상위 6개 조합 막대·전체 조합 선택                       |
 | [pitch-sequence-pairs.tsx](apps/web/src/analysis/pitch-sequence-pairs.tsx)           | 선택한 두 공·페이지·근거 연결                           |

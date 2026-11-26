@@ -11,37 +11,32 @@ import { battingTotals, pitchingTotals } from "../helpers/player-statistics.js";
 
 afterEach(cleanup);
 
-it.each([true, false])(
-  "explains computed G and unrounded OPS in the basic=%s batting table",
-  (basic) => {
-    const row = battingStatistics({
-      ...battingTotals,
-      games: 1,
-      plateAppearances: 3,
-      atBats: 3,
-      hits: 1,
-      doubles: 0,
-      homeRuns: 0,
-      walks: 0,
-      intentionalWalks: 0,
-      hitByPitch: 0,
-      sacrificeFlies: 0,
-    });
-    render(createElement(BattingTable, { rows: [row], view: basic ? "basic" : "full" }));
-    const table = within(screen.getByRole("table", { name: "타격 성적" }));
-    expect(
-      table.getByRole("columnheader", { name: basic ? "G" : "경기", exact: true }),
-    ).toBeTruthy();
-    expect(table.getAllByRole("cell", { name: "0.333", exact: true })).toHaveLength(3);
-    expect(table.getByRole("cell", { name: "0.667", exact: true })).toBeTruthy();
-    expect(screen.getByText(/무타석·무득점 출전은 빠질 수 있어/)).toBeTruthy();
-    expect(screen.getByText(/OPS는 반올림 전 OBP와 SLG를 더한 뒤/)).toBeTruthy();
-  },
-);
+it("explains computed G and unrounded OPS in the full league batting table", () => {
+  const row = battingStatistics({
+    ...battingTotals,
+    games: 1,
+    plateAppearances: 3,
+    atBats: 3,
+    hits: 1,
+    doubles: 0,
+    homeRuns: 0,
+    walks: 0,
+    intentionalWalks: 0,
+    hitByPitch: 0,
+    sacrificeFlies: 0,
+  });
+  render(createElement(BattingTable, { rows: [row], view: "full" }));
+  const table = within(screen.getByRole("table", { name: "타격 성적" }));
+  expect(table.getByRole("columnheader", { name: "경기", exact: true })).toBeTruthy();
+  expect(table.getAllByRole("cell", { name: "0.333", exact: true })).toHaveLength(3);
+  expect(table.getByRole("cell", { name: "0.667", exact: true })).toBeTruthy();
+  expect(screen.getByText(/무타석·무득점 출전은 빠질 수 있어/)).toBeTruthy();
+  expect(screen.getByText(/OPS는 반올림 전 OBP와 SLG를 더한 뒤/)).toBeTruthy();
+});
 
 it("keeps incomplete ERA separate from G's participation limit", () => {
   render(
-    createElement(PitchingTable, { rows: [pitchingStatistics(pitchingTotals)], view: "basic" }),
+    createElement(PitchingTable, { rows: [pitchingStatistics(pitchingTotals)], view: "full" }),
   );
   const table = within(screen.getByRole("table", { name: "투구 성적" }));
   expect(table.getByRole("cell", { name: "—", exact: true })).toBeTruthy();

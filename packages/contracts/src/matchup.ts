@@ -1,6 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { AnalysisScopeQuerySchema, AnalysisScopeSchema } from "./analysis-scope.js";
 import { PitchOutcomeRowSchema, TerminalPaRowSchema } from "./pitch-outcomes.js";
+import { BattingStatisticsRowSchema } from "./player-statistics.js";
 const strict = { additionalProperties: false } as const,
   text = Type.String({ minLength: 1 }),
   count = Type.Integer({ minimum: 0 }),
@@ -95,7 +96,25 @@ export const MatchupResponseSchema = Type.Object(
   },
   strict,
 );
+export const DirectMatchupResponseSchema = Type.Object(
+  {
+    ...Type.Pick(MatchupResponseSchema, ["query", "scope", "direct", "directPlateAppearances"])
+      .properties,
+    batting: Type.Pick(BattingStatisticsRowSchema, [
+      "plateAppearances",
+      "atBats",
+      "hits",
+      "homeRuns",
+      "walks",
+      "strikeouts",
+      "avg",
+      "ops",
+    ]),
+  },
+  strict,
+);
 export type MatchupQuery = Static<typeof MatchupQuerySchema>;
 export type MatchupCondition = Static<typeof MatchupConditionSchema>;
 export type MatchupConditionCounts = Static<typeof MatchupConditionCountsSchema>;
 export type MatchupResponse = Static<typeof MatchupResponseSchema>;
+export type DirectMatchupResponse = Static<typeof DirectMatchupResponseSchema>;

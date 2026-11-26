@@ -3,6 +3,7 @@ import { Outlet, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "./components/app-shell";
 import { PlayerAnalysisFrame } from "./analysis/player-analysis-frame";
+import { playerGamesPath, playerSplitsPath } from "./analysis/player-analysis-navigation";
 import { AnalysisRefreshBoundary } from "./analysis/analysis-seasons";
 import { NotFoundPage } from "./pages/not-found-page";
 const AnalysisPlayersPage = lazy(() =>
@@ -41,6 +42,12 @@ const PlayerBasicStatisticsPage = lazy(() =>
   import("./pages/player-basic-statistics-page").then((module) => ({
     default: module.PlayerBasicStatisticsPage,
   })),
+);
+const PlayerGamesPage = lazy(() =>
+  import("./pages/player-games-page").then((module) => ({ default: module.PlayerGamesPage })),
+);
+const PlayerSplitsPage = lazy(() =>
+  import("./pages/player-splits-page").then((module) => ({ default: module.PlayerSplitsPage })),
 );
 
 const DashboardPage = lazy(() =>
@@ -116,6 +123,8 @@ export function App(): React.JSX.Element {
             <Route path="/analysis/batter-profile" element={<PitchOutcomesPage role="batter" />} />
             <Route path="/analysis/statistics" element={<PlayerStatisticsPage />} />
             <Route path="/analysis/player-statistics" element={<PlayerBasicStatisticsPage />} />
+            <Route path={playerGamesPath} element={<PlayerGamesPage />} />
+            <Route path={playerSplitsPath} element={<PlayerSplitsPage />} />
           </Route>
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFoundPage />} />

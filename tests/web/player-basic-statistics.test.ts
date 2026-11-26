@@ -1,27 +1,22 @@
 // @vitest-environment jsdom
-import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { createElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router-dom";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Value } from "@sinclair/typebox/value";
 import {
   AnalysisScopeQuerySchema,
-  BattingStatisticsQuerySchema,
-  PitchingStatisticsQuerySchema,
+  PlayerSeasonStatisticsQuerySchema,
   resolveAnalysisScope,
-  type BattingStatisticsRow,
-  type PitchingStatisticsRow,
   type PlayerDirectoryEntry,
+  type PlayerSeasonStatisticsResponse,
 } from "@kbo/contracts";
 import { battingStatistics, pitchingStatistics } from "@kbo/game-core";
 import { PlayerBasicStatisticsPage } from "../../apps/web/src/pages/player-basic-statistics-page.js";
 import { PlayerAnalysisFrame } from "../../apps/web/src/analysis/player-analysis-frame.js";
-import {
-  getBattingStatistics,
-  getPitchingStatistics,
-} from "../../apps/web/src/api/player-statistics-client.js";
+import { getPlayerSeasonStatistics } from "../../apps/web/src/api/player-statistics-client.js";
+import { createAnalysisQueryClient } from "../helpers/analysis-query-client.js";
 import { battingTotals, pitchingTotals } from "../helpers/player-statistics.js";
 
 const clients: QueryClient[] = [];
@@ -32,14 +27,44 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function withoutIdentity<T extends typeof battingTotals | typeof pitchingTotals>(
+  row: T,
+): Omit<T, "identity" | "playerId" | "name" | "teamId" | "teamName"> {
+  const { identity, playerId, name, teamId, teamName, ...totals } = row;
+  void identity;
+  void playerId;
+  void name;
+  void teamId;
+  void teamName;
+  return totals;
+}
+const battingRows = [2025, 2024].map((season) =>
+  battingStatistics({
+    ...withoutIdentity(battingTotals),
+    season,
+    teams: season === 2025 ? ["원정", "다른 팀"] : ["원정"],
+  }),
+);
+const pitchingRows = [2025, 2024].map((season) =>
+  pitchingStatistics({
+    ...withoutIdentity(pitchingTotals),
+    season,
+    teams: ["홈"],
+  }),
+);
+const path = "/api/v2/analysis/statistics/player-seasons";
+const annualRequests = (fetch: ReturnType<typeof mockRecords>) =>
+  fetch.mock.calls
+    .map(([input]) => new URL(String(input), "http://localhost"))
+    .filter((url) => url.pathname === path)
+    .map((url) => Object.fromEntries(url.searchParams));
+
 function mockRecords({
-  batting = [battingStatistics(battingTotals)],
-  pitching = [pitchingStatistics(pitchingTotals)],
+  batting = battingRows,
+  pitching = pitchingRows,
   emptyCatalog = false,
   failStatistics = false,
-}: {
-  batting?: BattingStatisticsRow[];
-  pitching?: PitchingStatisticsRow[];
+}: Partial<Pick<PlayerSeasonStatisticsResponse, "batting" | "pitching">> & {
   emptyCatalog?: boolean;
   failStatistics?: boolean;
 } = {}) {
@@ -47,25 +72,31 @@ function mockRecords({
   const fetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input), "http://localhost");
     const raw = Object.fromEntries(url.searchParams);
-    const scopeQuery = Value.Decode(AnalysisScopeQuerySchema, {
-      season: Number(raw.season),
-      ...Object.fromEntries(
-        ["competition", "dateFrom", "dateTo"].flatMap((key) =>
-          raw[key] === undefined ? [] : [[key, raw[key]]],
-        ),
-      ),
-    });
+    const candidate = {
+      ...raw,
+      ...(raw.season === undefined ? {} : { season: Number(raw.season) }),
+    };
+    if (url.pathname === path) {
+      if (failStatistics && !failed) {
+        failed = true;
+        return Response.json({}, { status: 503 });
+      }
+      const query = Value.Decode(PlayerSeasonStatisticsQuerySchema, candidate);
+      const inSeason = (row: { season: number }) =>
+        query.season === undefined || row.season === query.season;
+      return Response.json({
+        query,
+        batting: query.sourceRole === "pitcher" ? [] : batting.filter(inSeason),
+        pitching: query.sourceRole === "batter" ? [] : pitching.filter(inSeason),
+      });
+    }
+    const scopeQuery = Value.Decode(AnalysisScopeQuerySchema, candidate);
     const scope = resolveAnalysisScope(scopeQuery, "regular");
     if (url.pathname === "/api/v2/analysis/pitch-shape")
       return Response.json({
         season: scopeQuery.season,
         scope,
-        pitchers: emptyCatalog
-          ? []
-          : [
-              { pitcherId: "hp1", name: "투수 A", pitches: 150 },
-              { pitcherId: "hp2", name: "투수 B", pitches: 40 },
-            ],
+        pitchers: emptyCatalog ? [] : [{ pitcherId: "hp1", name: "투수 A", pitches: 150 }],
       });
     if (url.pathname === "/api/v2/analysis/batter-discipline")
       return Response.json({
@@ -73,34 +104,7 @@ function mockRecords({
         scope,
         batters: emptyCatalog ? [] : [{ batterId: "a1", name: "타자 A", pitches: 70 }],
       });
-    if (!url.pathname.startsWith("/api/v2/analysis/statistics/"))
-      throw new Error(`Unexpected request: ${url.pathname}`);
-    if (failStatistics && !failed) {
-      failed = true;
-      return Response.json({}, { status: 503 });
-    }
-    const pitch = url.pathname.endsWith("pitching");
-    const candidate = {
-      ...raw,
-      season: Number(raw.season),
-      page: Number(raw.page),
-      limit: Number(raw.limit),
-    };
-    const query = pitch
-      ? Value.Decode(PitchingStatisticsQuerySchema, candidate)
-      : Value.Decode(BattingStatisticsQuerySchema, candidate);
-    const rows = pitch ? pitching : batting;
-    return Response.json({
-      kind: pitch ? "pitching" : "batting",
-      query,
-      scope,
-      sourceHash: "a".repeat(64),
-      group: query.group ?? "player",
-      total: rows.length,
-      page: query.page ?? 1,
-      limit: query.limit ?? 50,
-      rows,
-    });
+    throw new Error(`Unexpected request: ${url.pathname}`);
   });
   vi.stubGlobal("fetch", fetch);
   return fetch;
@@ -135,176 +139,148 @@ function show(
   );
 }
 
-function openConditions() {
-  const toggle = screen.getByText("조회 조건 변경", { exact: true });
-  if (!toggle.closest("details")?.open) fireEvent.click(toggle);
+function currentParams() {
+  return Object.fromEntries(
+    new URL(screen.getByLabelText("현재 주소").textContent ?? "", "http://localhost").searchParams,
+  );
 }
 
-async function findRecordTable(options: { name: string }) {
-  const toggle = await screen.findByText("상세 기록", { exact: true });
-  if (!toggle.closest("details")?.open) fireEvent.click(toggle);
-  return screen.findByRole("table", options);
-}
+const batter = {
+  identity: "naver:a1",
+  sourceIds: ["a1"],
+  name: "타자 A",
+  primaryPosition: "유격수",
+  teams: ["원정", "다른 팀"],
+  seasons: [2025, 2024].map((season) => ({
+    season,
+    battingPlayerId: "a1",
+    pitchingPlayerId: null,
+  })),
+} satisfies PlayerDirectoryEntry;
 
-it("leads with team records and ERA coverage while conditions and detailed records stay discoverable", async () => {
-  const fetch = mockRecords();
-  show();
-  const summary = await screen.findByRole("region", { name: "홈 핵심 투구 기록" });
-  expect(within(summary).getByText("20.0%")).toBeTruthy();
-  const era = within(summary).getByText("평균자책점 ERA").parentElement;
-  expect(era?.textContent).toContain("자책점 확인 1/2경기");
-  expect(screen.getByText("상세 기록", { exact: true }).closest("details")?.open).toBe(false);
-  expect(screen.getByText("조회 조건 변경").closest("details")?.open).toBe(false);
-  expect(screen.getByText("조회 조건 변경")).toBeTruthy();
-  const table = await findRecordTable({ name: "투구 성적" });
-  expect(within(table).getByText("3.00")).toBeTruthy();
-  fireEvent.click(screen.getByText("상세 기록", { exact: true }));
-  expect(screen.getByText("상세 기록", { exact: true }).closest("details")?.open).toBe(false);
-  expect(within(summary).getByText("20.0%")).toBeTruthy();
-  expect(screen.getByRole("combobox", { name: "분석 시즌" })).toBeTruthy();
-  expect(screen.getByRole("searchbox", { name: "선수 검색" })).toBeTruthy();
-  openConditions();
-  expect(screen.getByRole("combobox", { name: "경기 종류" })).toBeTruthy();
-  expect(screen.getByLabelText("분석 시작일")).toBeTruthy();
-  expect(fetch).toHaveBeenCalledTimes(2);
+it("shows the newest season first and combines an in-season transfer into a single unexpandable row", async () => {
+  const fetch = mockRecords({ pitching: [] });
+  show("season=2024&player=naver%3Aa1", [batter]);
+  const table = within(await screen.findByRole("table", { name: "연도별 타격 성적" }));
+  expect(table.getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+    "연도",
+    "팀",
+    "경기",
+    "타석",
+    "홈런",
+    "타율",
+    "출루율",
+    "장타율",
+    "OPS",
+  ]);
+  expect(table.getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["2025", "2024"]);
+  const transfer = within(table.getAllByRole("row")[1] ?? screen.getByRole("table"));
+  expect(transfer.getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+    "원정 · 다른 팀",
+    "2",
+    "8",
+    "1",
+    "0.400",
+    "0.500",
+    "1.200",
+    "1.700",
+  ]);
+  expect(table.queryByRole("button")).toBeNull();
+  expect(screen.queryByText("상세 기록", { exact: true })).toBeNull();
+  expect(annualRequests(fetch)).toEqual([{ player: "naver:a1", competition: "regular" }]);
+  fireEvent.change(screen.getByLabelText("분석 시즌"), { target: { value: "2025" } });
+  expect(currentParams().season).toBe("2025");
+  expect(table.getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["2025", "2024"]);
+  expect(annualRequests(fetch)).toHaveLength(1);
 });
 
-it("requests one bounded player page with only common scope and preserves team rows and incomplete ERA", async () => {
-  const fetch = mockRecords({
-    pitching: [
-      pitchingStatistics(pitchingTotals),
-      pitchingStatistics({
-        ...pitchingTotals,
-        teamId: "OTHER",
-        teamName: "이적 후 팀",
-        runs: 0,
-        knownErGames: 0,
-        knownErOuts: 0,
-        knownEarnedRuns: 0,
-      }),
-    ],
-  });
+it("opens an existing date-scoped link for the requested player and preserves incomplete ERA", async () => {
+  const fetch = mockRecords();
   show(
-    "season=2024&playerRole=pitcher&pitcher=hp1&competition=allstar&dateFrom=2024-04-01&dateTo=2024-04-30&pitchType=slider&balls=2&minimum=999&page=4",
+    "season=2024&playerRole=pitcher&pitcher=hp1&competition=allstar&dateFrom=2024-04-01&dateTo=2024-04-30&pitchType=slider&balls=2&page=4",
   );
-  const table = await findRecordTable({ name: "투구 성적" });
-  const rows = within(table).getAllByRole("row");
-  expect(rows).toHaveLength(3);
-  expect(within(table).getByRole("columnheader", { name: "IP", exact: true })).toBeTruthy();
-  expect(within(table).queryByRole("columnheader", { name: "K%", exact: true })).toBeNull();
-  expect(rows[1]?.textContent).toContain("1/2");
-  expect(rows[1]?.textContent).toContain("3.00");
-  expect(rows[2]?.textContent).toContain("0/2");
-  expect(within(rows[2] ?? table).getAllByText("—")).toHaveLength(3);
-  expect(within(table).getByText("이적 후 팀")).toBeTruthy();
-  const transferredSummary = screen.getByRole("region", { name: "이적 후 팀 핵심 투구 기록" });
-  expect(within(transferredSummary).getByText("9", { exact: true })).toBeTruthy();
-  expect(within(transferredSummary).getByText("—")).toBeTruthy();
-  expect(within(transferredSummary).getByText(/자책점 확인 0\/2경기/)).toBeTruthy();
-  expect(fetch).toHaveBeenCalledTimes(2);
-  const request = fetch.mock.calls
-    .map(([input]) => new URL(String(input), "http://localhost"))
-    .find((url) => url.pathname.endsWith("/statistics/pitching"));
-  expect(Object.fromEntries(request?.searchParams ?? [])).toEqual({
-    season: "2024",
-    competition: "allstar",
-    dateFrom: "2024-04-01",
-    dateTo: "2024-04-30",
-    playerId: "hp1",
-    group: "player",
-    page: "1",
-    limit: "200",
-  });
+  const table = within(await screen.findByRole("table", { name: "연도별 투구 성적" }));
+  expect(table.getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["2024"]);
+  expect(table.getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+    "홈",
+    "2",
+    "9",
+    "40",
+    "8",
+    "2",
+    "—",
+    "1/2",
+  ]);
+  expect(screen.getByText(/자책점이 미확인된 경기가 있으면 평균자책점은 —/)).toBeTruthy();
   expect(screen.getByRole("link", { name: "기본 기록" }).getAttribute("aria-current")).toBe("page");
+  expect(annualRequests(fetch)).toEqual([
+    {
+      season: "2024",
+      competition: "allstar",
+      dateFrom: "2024-04-01",
+      dateTo: "2024-04-30",
+      player: "hp1",
+      sourceRole: "pitcher",
+    },
+  ]);
+  const toggle = screen.getByText("조회 조건 변경", { exact: true });
+  expect(
+    toggle.compareDocumentPosition(screen.getByRole("table", { name: "연도별 투구 성적" })) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  expect(toggle.closest("details")?.open).toBe(false);
+  fireEvent.click(toggle);
+  expect(screen.getByLabelText("분석 시작일")).toHaveProperty("value", "2024-04-01");
+  expect(annualRequests(fetch)).toHaveLength(1);
 });
 
 it.each(["pitcher", "batter"] as const)(
-  "preserves an implicitly selected %s when changing the basic-record season",
+  "preserves an implicitly selected %s and clears the previous year's dates on season change",
   async (role) => {
-    mockRecords();
+    const fetch = mockRecords();
     show(`season=2024&playerRole=${role}&dateFrom=2024-04-01&dateTo=2024-04-30`);
-    await findRecordTable({ name: role === "pitcher" ? "투구 성적" : "타격 성적" });
+    const name = role === "pitcher" ? "연도별 투구 성적" : "연도별 타격 성적";
+    await screen.findByRole("table", { name });
     fireEvent.change(screen.getByLabelText("분석 시즌"), { target: { value: "2025" } });
-    const location = new URL(
-      screen.getByLabelText("현재 주소").textContent ?? "",
-      "http://localhost",
-    );
-    expect(Object.fromEntries(location.searchParams)).toEqual({
-      season: "2025",
-      playerRole: role,
-      [role]: role === "pitcher" ? "hp1" : "a1",
+    const playerId = role === "pitcher" ? "hp1" : "a1";
+    expect(currentParams()).toEqual({ season: "2025", playerRole: role, [role]: playerId });
+    await waitFor(() => {
+      expect(annualRequests(fetch).at(-1)).toEqual({
+        competition: "regular",
+        player: playerId,
+        sourceRole: role,
+      });
     });
+    expect(
+      within(await screen.findByRole("table", { name })).getAllByRole("rowheader"),
+    ).toHaveLength(2);
   },
 );
 
-it("shows basic batting columns and each team's returned rates without combining them", async () => {
-  const fetch = mockRecords({
-    batting: [
-      battingStatistics(battingTotals),
-      battingStatistics({
-        ...battingTotals,
-        teamId: "SECOND",
-        teamName: "다른 팀",
-        hits: 1,
-        doubles: 0,
-        homeRuns: 0,
-      }),
-    ],
-  });
-  show("season=2025&playerRole=batter&batter=a1");
-  const table = await findRecordTable({ name: "타격 성적" });
-  expect(within(table).getAllByRole("row")).toHaveLength(3);
-  for (const metric of [
-    "G",
-    "PA",
-    "AB",
-    "H",
-    "2B",
-    "3B",
-    "HR",
-    "HBP",
-    "SO",
-    "R",
-    "AVG",
-    "OBP",
-    "SLG",
-    "OPS",
-  ])
-    expect(within(table).getByRole("columnheader", { name: metric, exact: true })).toBeTruthy();
-  expect(within(table).queryByRole("columnheader", { name: "SF", exact: true })).toBeNull();
-  expect(within(table).getByText("1.700")).toBeTruthy();
-  expect(within(table).getByText("0.575")).toBeTruthy();
-  const transferredSummary = screen.getByRole("region", { name: "다른 팀 핵심 타격 기록" });
-  expect(within(transferredSummary).getByText("0.575")).toBeTruthy();
-  expect(within(transferredSummary).queryByText("1.700")).toBeNull();
-  expect(fetch).toHaveBeenCalledTimes(2);
-  expect(fetch.mock.calls.every(([input]) => !String(input).includes("/pitch-shape"))).toBe(true);
-});
-
-it("keeps a requested ID absent from the pitch catalog and reports a loaded empty record", async () => {
+it("keeps a requested ID absent from the catalog and reports an empty result", async () => {
   const fetch = mockRecords({ pitching: [] });
   show("season=2025&playerRole=pitcher&pitcher=outside");
   expect(await screen.findByText(/선택한 범위에 이 선수의 기본 기록이 없습니다/)).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
   expect(screen.queryByRole("table")).toBeNull();
   expect(screen.getByText("선수 outside", { exact: true })).toBeTruthy();
-  expect(fetch.mock.calls.some(([input]) => String(input).includes("playerId=outside"))).toBe(true);
-  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(annualRequests(fetch)).toEqual([
+    { player: "outside", sourceRole: "pitcher", competition: "regular" },
+  ]);
 });
 
-it("does not fall back to an unfiltered statistics request when no player can be selected", async () => {
+it("does not request statistics when no player can be selected", async () => {
   const fetch = mockRecords({ emptyCatalog: true });
   show("season=2025&playerRole=pitcher");
   expect(
     await screen.findByRole("heading", { name: "선택한 범위에 분석할 선수가 없습니다" }),
   ).toBeTruthy();
-  expect(fetch).toHaveBeenCalledTimes(1);
-  expect(String(fetch.mock.calls[0]?.[0])).toContain("/analysis/pitch-shape");
+  expect(annualRequests(fetch)).toEqual([]);
   expect(screen.queryByRole("table")).toBeNull();
 });
 
-it("changes only the selected player and requests that player's statistics in the same scope", async () => {
-  const fetch = mockRecords();
+it("changes the player identity while preserving the explicit period", async () => {
+  const fetch = mockRecords({ batting: [] });
   show(
     "season=2024&playerRole=pitcher&pitcher=hp1&competition=allstar&dateFrom=2024-04-01&dateTo=2024-04-30",
     [
@@ -318,162 +294,87 @@ it("changes only the selected player and requests that player's statistics in th
       },
     ],
   );
-  await findRecordTable({ name: "투구 성적" });
-  const query = {
-    season: 2024,
-    competition: "allstar",
-    dateFrom: "2024-04-01",
-    dateTo: "2024-04-30",
-    playerId: "hp2",
-    group: "player",
-    page: 1,
-    limit: 200,
-  };
-  fetch.mockResolvedValueOnce(
-    Response.json({
-      kind: "pitching",
-      query,
-      scope: resolveAnalysisScope({
-        season: 2024,
-        competition: "allstar",
-        dateFrom: "2024-04-01",
-        dateTo: "2024-04-30",
-      }),
-      sourceHash: "a".repeat(64),
-      group: "player",
-      total: 1,
-      page: 1,
-      limit: 200,
-      rows: [
-        pitchingStatistics({
-          ...pitchingTotals,
-          identity: "naver:hp2",
-          playerId: "hp2",
-          name: "투수 B",
-        }),
-      ],
-    }),
-  );
+  await screen.findByRole("table", { name: "연도별 투구 성적" });
   fireEvent.change(screen.getByRole("searchbox", { name: "선수 검색" }), {
     target: { value: "hp2" },
   });
   fireEvent.click(screen.getByRole("button", { name: /^투수 B, 출생연도 미확인, 투수/ }));
-  const table = await findRecordTable({ name: "투구 성적" });
-  expect(within(table).getByRole("rowheader", { name: "투수 B" })).toBeTruthy();
-  const location = new URL(
-    screen.getByLabelText("현재 주소").textContent ?? "",
-    "http://localhost",
-  );
-  expect(location.pathname).toBe("/analysis/player-statistics");
-  expect(Object.fromEntries(location.searchParams)).toEqual({
+  await screen.findByRole("table", { name: "연도별 투구 성적" });
+  const period = {
     season: "2024",
     competition: "allstar",
     dateFrom: "2024-04-01",
     dateTo: "2024-04-30",
-    player: "naver:hp2",
-  });
-  expect(fetch).toHaveBeenCalledTimes(3);
-  expect(String(fetch.mock.calls[2]?.[0])).toContain("playerId=hp2");
+  };
+  expect(currentParams()).toEqual({ ...period, player: "naver:hp2", playerRole: "pitcher" });
+  expect(annualRequests(fetch)).toEqual([
+    { ...period, player: "hp1", sourceRole: "pitcher" },
+    { ...period, player: "naver:hp2" },
+  ]);
 });
 
-it("shows both basic record groups for a player with batting and pitching records in a season", async () => {
-  const fetch = mockRecords({
-    batting: [
-      battingStatistics({
-        ...battingTotals,
-        identity: "naver:hp1",
-        playerId: "hp1",
-        name: "겸업 선수",
-      }),
-    ],
-    pitching: [
-      pitchingStatistics({
-        ...pitchingTotals,
-        name: "겸업 선수",
-        knownErGames: 2,
-        knownErOuts: 27,
-      }),
-    ],
-  });
-  show("player=naver%3Ahp1&season=2025", [
+it("shows both roles from one canonical request even when the selected analysis season has only one role", async () => {
+  const fetch = mockRecords({ pitching: pitchingRows.filter(({ season }) => season === 2024) });
+  show("player=naver%3Aa1&season=2025", [
     {
-      identity: "naver:hp1",
-      sourceIds: ["hp1"],
-      name: "겸업 선수",
-      primaryPosition: "투수",
-      teams: ["홈"],
-      seasons: [{ season: 2025, battingPlayerId: "hp1", pitchingPlayerId: "hp1" }],
+      ...batter,
+      seasons: [
+        { season: 2025, battingPlayerId: "a1", pitchingPlayerId: null },
+        { season: 2024, battingPlayerId: "a1", pitchingPlayerId: "a1" },
+      ],
     },
   ]);
-  const batting = await screen.findByRole("region", { name: "타자 기본 기록" });
-  const pitching = await screen.findByRole("region", { name: "투수 기본 기록" });
-  expect(within(batting).getByText("0.400", { selector: "dd" })).toBeTruthy();
-  expect(within(pitching).getByText("1.00", { selector: "dd" })).toBeTruthy();
-  expect(
-    fetch.mock.calls.map(([input]) => new URL(String(input), "http://localhost").pathname).sort(),
-  ).toEqual(["/api/v2/analysis/statistics/batting", "/api/v2/analysis/statistics/pitching"]);
+  await screen.findByRole("table", { name: "연도별 타격 성적" });
+  const pitch = within(await screen.findByRole("table", { name: "연도별 투구 성적" }));
+  expect(pitch.getByRole("rowheader").textContent).toBe("2024");
+  expect(annualRequests(fetch)).toEqual([{ player: "naver:a1", competition: "regular" }]);
 });
 
-it("distinguishes a failed record request from no records and retries the selected player's query", async () => {
+it("distinguishes a failed record request from no records and retries the same request", async () => {
   const fetch = mockRecords({ failStatistics: true });
   show();
-  expect(await screen.findByRole("alert")).toHaveProperty(
-    "textContent",
-    expect.stringContaining("기본 기록을 읽지 못했습니다."),
-  );
+  expect((await screen.findByRole("alert")).textContent).toContain("기본 기록을 읽지 못했습니다.");
   expect(screen.queryByText(/선택한 범위에 이 선수의 기본 기록이 없습니다/)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "기록 다시 시도" }));
-  expect(await findRecordTable({ name: "투구 성적" })).toBeTruthy();
-  expect(fetch).toHaveBeenCalledTimes(3);
+  await screen.findByRole("table", { name: "연도별 투구 성적" });
+  const requests = annualRequests(fetch);
+  expect(requests).toHaveLength(2);
+  expect(requests[0]).toEqual(requests[1]);
 });
 
-it("preserves the player and role when changing season and removes dates from the old season", async () => {
-  const fetch = mockRecords();
-  show(
-    "season=2024&playerRole=pitcher&pitcher=hp1&competition=allstar&dateFrom=2024-04-01&dateTo=2024-04-30",
-  );
-  await findRecordTable({ name: "투구 성적" });
-  fireEvent.change(screen.getByRole("combobox", { name: "분석 시즌" }), {
-    target: { value: "2025" },
-  });
-  await findRecordTable({ name: "투구 성적" });
-  expect(screen.getByLabelText("현재 주소").textContent).toBe(
-    "/analysis/player-statistics?season=2025&playerRole=pitcher&pitcher=hp1&competition=allstar",
-  );
-  expect(fetch).toHaveBeenCalledTimes(4);
-});
+it.each(["dateFrom=2025-08-01&dateTo=2025-04-01", "competition="])(
+  "does not request records for an invalid scope: %s",
+  (scope) => {
+    const fetch = mockRecords();
+    show(`season=2025&playerRole=pitcher&pitcher=hp1&${scope}`);
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(fetch).not.toHaveBeenCalled();
+  },
+);
 
-it("does not query an invalid date range", () => {
-  const fetch = mockRecords();
-  show("season=2025&playerRole=pitcher&pitcher=hp1&dateFrom=2025-08-01&dateTo=2025-04-01");
-  expect(screen.getByRole("alert")).toBeTruthy();
-  expect(fetch).not.toHaveBeenCalled();
-});
-
-it("rejects an empty competition instead of mixing all-game catalog and regular-season records", () => {
-  const fetch = mockRecords();
-  show("season=2025&playerRole=pitcher&pitcher=hp1&competition=");
-  expect(screen.getByRole("alert")).toBeTruthy();
-  expect(fetch).not.toHaveBeenCalled();
-});
-
-it.each(["batting", "pitching"] as const)(
-  "rejects a %s response containing another player",
+it.each(["another player", "duplicate season", "out-of-range season", "other role"] as const)(
+  "rejects annual responses containing a %s",
   async (kind) => {
-    mockRecords();
-    const get = kind === "batting" ? getBattingStatistics : getPitchingStatistics;
-    await expect(
-      get(
-        {
-          season: 2025,
-          competition: "regular",
-          playerId: "different",
-          group: "player",
-          page: 1,
-          limit: 200,
-        },
-        new AbortController().signal,
+    const query = { player: "a1", sourceRole: "batter", season: 2025 } as const;
+    const first = battingRows[0];
+    const second = battingRows[1];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json({
+          query: kind === "another player" ? { ...query, player: "other" } : query,
+          batting:
+            kind === "duplicate season"
+              ? [first, first]
+              : kind === "out-of-range season"
+                ? [second]
+                : [first],
+          pitching: kind === "other role" ? [pitchingRows[0]] : [],
+        }),
       ),
-    ).rejects.toThrow("성적 조회 범위가 요청과 다릅니다.");
+    );
+    await expect(getPlayerSeasonStatistics(query, new AbortController().signal)).rejects.toThrow(
+      "연도별 성적 조회 범위가 요청과 다릅니다.",
+    );
   },
 );

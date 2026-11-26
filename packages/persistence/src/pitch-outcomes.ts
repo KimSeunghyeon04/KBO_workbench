@@ -171,9 +171,11 @@ export async function readPitchOutcomeRows(
   scope: AnalysisScope,
   actorId: string,
   role: "pitcher" | "batter",
+  opponentId?: string,
 ) {
   const actorColumn = role === "pitcher" ? "pitcher_id" : "batter_id",
-    parameters = [...analysisScopeParameters(scope), actorId];
+    opponentColumn = role === "pitcher" ? "batter_id" : "pitcher_id",
+    parameters = [...analysisScopeParameters(scope), actorId, opponentId ?? null];
   const pitches = await client.query<Record<string, unknown>>(
     `WITH selected_games AS MATERIALIZED (
       SELECT r.game_id,r.revision FROM analytics.current_analysis_games r WHERE ${ANALYSIS_GAME_WHERE}
@@ -187,7 +189,8 @@ export async function readPitchOutcomeRows(
       ${pitchGeometrySql}
       FROM selected_games r CROSS JOIN LATERAL (
         SELECT p.* FROM analytics.current_pitches p
-        WHERE p.game_id=r.game_id AND p.revision=r.revision AND p.actual AND p.${actorColumn}=$5 OFFSET 0
+        WHERE p.game_id=r.game_id AND p.revision=r.revision AND p.actual AND p.${actorColumn}=$5
+          AND ($6::text IS NULL OR p.${opponentColumn}=$6) OFFSET 0
       ) p
       LEFT JOIN workbench.tracking_observations t ON t.game_id=p.game_id AND t.revision=p.revision AND t.tracking_id=p.tracking_id
       ${gameBattingProfileJoinSql("p")}
@@ -201,9 +204,11 @@ export async function readPitchOutcomeRows(
     ), selected_pas AS (
       SELECT pa.game_id,pa.revision,pa.start_event_id AS pa_id FROM baseball.plate_appearance_facts pa
         JOIN selected_games r USING(game_id,revision) WHERE pa.${actorColumn}=$5
+          AND ($6::text IS NULL OR pa.${opponentColumn}=$6)
       UNION
       SELECT p.game_id,p.revision,p.plate_appearance_event_id AS pa_id FROM baseball.pitch_facts p
         JOIN selected_games r USING(game_id,revision) WHERE p.${actorColumn}=$5 AND p.plate_appearance_event_id IS NOT NULL
+          AND ($6::text IS NULL OR p.${opponentColumn}=$6)
     ), ${lastPitchesCteSql}
     SELECT pa.game_id AS "gameId",pa.revision,to_char(r.game_date,'YYYY-MM-DD') AS "gameDate",pa.start_event_id AS "paId",
       pa.batter_id AS "batterId",pa.pitcher_id AS "pitcherId",pa.completed,pa.counts_as_plate_appearance AS "countsAsPa",

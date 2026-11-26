@@ -11,6 +11,8 @@ import {
   BattingStatisticsResponseSchema,
   PitchingStatisticsResponseSchema,
   PlayerDirectorySchema,
+  PlayerSeasonStatisticsResponseSchema,
+  PlayerGameRecordsResponseSchema,
   canonicalStringify,
   type BattingStatisticsResponse,
   type PitchingStatisticsResponse,
@@ -134,6 +136,88 @@ it("serves the unscoped player directory with identity, history and season avail
         ...(id === "10101" ? { career, birthYear: 1991 } : {}),
       })),
     );
+  } finally {
+    await app.close();
+    await db.pool.end();
+  }
+});
+
+it("validates game log queries and returns the requested role's row shape", async () => {
+  const db = connection();
+  const original = db.query.getMockImplementation();
+  db.query.mockImplementation((...args) =>
+    String(args[0]).includes("current_player_game_batting")
+      ? Promise.resolve({
+          rows: [
+            {
+              gameId: "game-1",
+              revision: 2,
+              gameDate: "2025-04-01",
+              teams: ["홈"],
+              opponents: ["원정"],
+              side: "home",
+              plateAppearances: 4,
+              atBats: 3,
+              hits: 2,
+              homeRuns: 1,
+              walks: 1,
+              strikeouts: 1,
+              runs: 1,
+            },
+          ],
+          command: "SELECT",
+          rowCount: 1,
+          fields: [],
+          oid: 0,
+        })
+      : original?.(...args),
+  );
+  const app = Fastify();
+  installHttpErrorHandler(app);
+  await app.register(playerStatisticsRoutes, { pool: db.pool });
+  try {
+    const path = "/api/v2/analysis/statistics/player-games";
+    const invalid = await app.inject(
+      `${path}?player=kbo:10101&role=batter&season=2025&dateFrom=2024-04-01`,
+    );
+    expect(invalid.statusCode, invalid.body).toBe(400);
+    expect(db.connect).not.toHaveBeenCalled();
+    const response = await app.inject(`${path}?player=kbo:10101&role=batter&season=2025`);
+    expect(response.statusCode, response.body).toBe(200);
+    expect(Value.Decode(PlayerGameRecordsResponseSchema, response.json())).toMatchObject({
+      query: { player: "kbo:10101", role: "batter", season: 2025 },
+      rows: [{ gameId: "game-1", revision: 2, homeRuns: 1 }],
+    });
+  } finally {
+    await app.close();
+    await db.pool.end();
+  }
+});
+
+it("returns both annual record groups in one snapshot and rejects unscoped dates", async () => {
+  const db = connection();
+  const app = Fastify();
+  installHttpErrorHandler(app);
+  await app.register(playerStatisticsRoutes, { pool: db.pool });
+  try {
+    const path = "/api/v2/analysis/statistics/player-seasons";
+    const invalid = await app.inject(`${path}?player=kbo:10101&dateFrom=2025-04-01`);
+    expect(invalid.statusCode, invalid.body).toBe(400);
+    expect(db.connect).not.toHaveBeenCalled();
+    const response = await app.inject(`${path}?player=kbo:10101`);
+    expect(response.statusCode, response.body).toBe(200);
+    expect(Value.Decode(PlayerSeasonStatisticsResponseSchema, response.json())).toEqual({
+      query: { player: "kbo:10101" },
+      batting: [],
+      pitching: [],
+    });
+    expect(db.connect).toHaveBeenCalledTimes(1);
+    for (const kind of ["batting", "pitching"]) {
+      expect(db.query).toHaveBeenCalledWith(
+        expect.stringContaining(`current_player_game_${kind}`),
+        [null, "regular", null, null, "kbo:10101"],
+      );
+    }
   } finally {
     await app.close();
     await db.pool.end();

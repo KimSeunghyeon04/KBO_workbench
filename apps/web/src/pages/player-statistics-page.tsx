@@ -17,6 +17,7 @@ import {
 } from "../analysis/analysis-scope";
 import { getBattingStatistics, getPitchingStatistics } from "../api/player-statistics-client";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
+import { playerAnalysisHref, playerBasicPath } from "../analysis/player-analysis-navigation";
 
 export function PlayerStatisticsPage() {
   const [params, setParams] = useSearchParams();
@@ -99,16 +100,14 @@ export function PlayerStatisticsPage() {
     }
     setParams(next);
   }
-  const detail = (playerId: string) => {
-    const query = new URLSearchParams(
-      Object.entries({
-        season,
-        ...scope.options,
-        [kind === "batting" ? "batter" : "pitcher"]: playerId,
-      }).map(([k, v]) => [k, String(v)]),
+  const detail = (playerId: string) =>
+    playerAnalysisHref(
+      playerBasicPath,
+      kind === "batting" ? "batter" : "pitcher",
+      playerId,
+      season,
+      scope.options,
     );
-    return `/analysis/${kind === "batting" ? "batter-discipline" : "pitch-shape"}?${query}`;
-  };
   return (
     <div className="page-stack league-statistics-page">
       <header className="page-header">

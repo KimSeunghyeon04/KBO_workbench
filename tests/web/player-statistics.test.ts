@@ -14,6 +14,10 @@ import {
 } from "@kbo/contracts";
 import { battingStatistics, pitchingStatistics } from "@kbo/game-core";
 import { PlayerStatisticsPage } from "../../apps/web/src/pages/player-statistics-page.js";
+import {
+  getBattingStatistics,
+  getPitchingStatistics,
+} from "../../apps/web/src/api/player-statistics-client.js";
 import { battingTotals, pitchingTotals } from "../helpers/player-statistics.js";
 afterEach(() => {
   cleanup();
@@ -59,6 +63,27 @@ function statisticsFetch() {
     );
   });
 }
+
+it.each(["batting", "pitching"] as const)(
+  "rejects a %s response containing another player",
+  async (kind) => {
+    vi.stubGlobal("fetch", statisticsFetch());
+    const query = {
+      season: 2025,
+      competition: "regular",
+      playerId: "different",
+      group: "player",
+      page: 1,
+      limit: 50,
+    } as const;
+    const signal = new AbortController().signal;
+    const result =
+      kind === "batting"
+        ? getBattingStatistics({ ...query, minPA: 0 }, signal)
+        : getPitchingStatistics({ ...query, minBF: 0 }, signal);
+    await expect(result).rejects.toThrow("성적 조회 범위가 요청과 다릅니다.");
+  },
+);
 
 it("defaults new statistics to confirmed regular games and distinguishes incomplete ERA", async () => {
   const fetch = statisticsFetch();

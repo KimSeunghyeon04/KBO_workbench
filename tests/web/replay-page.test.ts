@@ -11,6 +11,7 @@ import { loadReplay } from "../../apps/web/src/api/replay-client.js";
 import {
   replayEvidenceIndex,
   replayEvidenceUrl,
+  replayGameUrl,
   readReplayEvidenceTarget,
 } from "../../apps/web/src/replay/evidence-target.js";
 
@@ -70,18 +71,22 @@ describe("경기 재생 UI", () => {
     },
   );
 
-  it.each(["event", "pa", "play"] as const)(
+  it.each(["event", "pa", "play", "game"] as const)(
     "returns from %s evidence to the exact player, scope and detail filters",
     async (kind) => {
       vi.stubGlobal("fetch", replayFetchMock());
       const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-      const origin =
-        "/analysis/pitch-shape?season=2025&pitcher=anon-p1&competition=unknown&dateFrom=2025-06-01&team=home&pitchType=slider#comparison";
+      const path = kind === "game" ? "/analysis/player-games" : "/analysis/pitch-shape";
+      const origin = `${path}?season=2025&pitcher=anon-p1&competition=unknown&dateFrom=2025-06-01&team=home&pitchType=slider#comparison`;
+      const to =
+        kind === "game"
+          ? replayGameUrl("anon-game-2026", 1)
+          : replayEvidenceUrl("anon-game-2026", 1, { kind, id: "event-3" });
       function Origin() {
         const location = useLocation();
         return createElement(
           AnalysisEvidenceLink,
-          { to: replayEvidenceUrl("anon-game-2026", 1, { kind, id: "event-3" }) },
+          { to },
           `${location.pathname}${location.search}${location.hash}`,
         );
       }
@@ -96,7 +101,7 @@ describe("경기 재생 UI", () => {
               Routes,
               null,
               createElement(Route, {
-                path: "/analysis/pitch-shape",
+                path,
                 element: createElement(Origin),
               }),
               createElement(Route, { path: "/replay", element: createElement(ReplayPage) }),
@@ -108,7 +113,8 @@ describe("경기 재생 UI", () => {
       await user.click(screen.getByRole("link", { name: origin }));
       const back = screen.getByRole("link", { name: "분석으로 돌아가기" });
       expect(back.getAttribute("href")).toBe(origin);
-      await screen.findByRole("slider");
+      const slider = await screen.findByRole("slider");
+      if (kind === "game") expect(slider).toHaveProperty("value", "0");
       await user.click(back);
       expect(screen.getByRole("link", { name: origin })).toBeTruthy();
       client.clear();

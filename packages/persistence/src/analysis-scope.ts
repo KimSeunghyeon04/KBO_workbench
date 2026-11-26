@@ -6,8 +6,10 @@ import { canonicalStringify, resolveAnalysisScope, type AnalysisScope } from "@k
 
 // Only game selection is shared. Each consumer owns its grain, eligibility and reference period.
 // This fragment always uses alias r and parameters 1–4; feature parameters start at 5.
-export const ANALYSIS_GAME_WHERE = `r.season=$1 AND r.competition=$2
+const competitionAndDates = `r.competition=$2
   AND ($3::date IS NULL OR r.game_date >= $3::date) AND ($4::date IS NULL OR r.game_date <= $4::date)`;
+export const ANALYSIS_GAME_WHERE = `r.season=$1 AND ${competitionAndDates}`;
+export const OPTIONAL_SEASON_ANALYSIS_GAME_WHERE = `($1::integer IS NULL OR r.season=$1) AND ${competitionAndDates}`;
 export function analysisScopeParameters(scope: AnalysisScope) {
   return [scope.season, scope.competition, scope.dateFrom, scope.dateTo];
 }

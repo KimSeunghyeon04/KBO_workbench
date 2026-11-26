@@ -57,7 +57,7 @@ function Location() {
   );
 }
 
-function show(search = "") {
+function show(search = "", previous = "/previous") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   clients.push(client);
   render(
@@ -66,7 +66,7 @@ function show(search = "") {
       { client },
       createElement(
         MemoryRouter,
-        { initialEntries: ["/previous", `/analysis/players?${search}`], initialIndex: 1 },
+        { initialEntries: [previous, `/analysis/players?${search}`], initialIndex: 1 },
         createElement(AnalysisPlayersPage),
         createElement(Location),
       ),
@@ -146,6 +146,32 @@ it("restores a normalized name search and replaces edited query history", async 
   expect(screen.getByRole("link", { name: "동명 선수 분석 보기" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "이전 화면" }));
   expect(screen.getByLabelText("현재 주소").textContent).toBe("/previous");
+});
+
+it("keeps the URL and results stable until the Korean name is committed", async () => {
+  mockDirectory([
+    player,
+    { ...player, identity: "naver:77637", name: "양현종", sourceIds: ["77637"] },
+  ]);
+  show("q=dual&page=1", "/analysis/players?q=old-dual");
+  await screen.findByRole("link", { name: "동명 선수 분석 보기" });
+  const search = screen.getByRole("searchbox", { name: "선수 검색" });
+  const address = () => screen.getByLabelText("현재 주소").textContent;
+  fireEvent.compositionStart(search);
+  for (const value of ["ㅇ", "야", "양", "양혀", "양현", "양현종"]) {
+    fireEvent.input(search, { target: { value }, isComposing: true });
+    expect(search).toHaveProperty("value", value);
+    expect(address()).toBe("/analysis/players?q=dual&page=1");
+  }
+  expect(screen.queryByRole("link", { name: "양현종 분석 보기" })).toBeNull();
+  fireEvent.compositionEnd(search, { data: "종" });
+  expect(search).toHaveProperty("value", "양현종");
+  expect(address()).toBe(`/analysis/players?q=${encodeURIComponent("양현종")}`);
+  expect(screen.getByRole("link", { name: "양현종 분석 보기" })).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "이전 화면" }));
+  expect(search).toHaveProperty("value", "old-dual");
+  expect(screen.getByRole("link", { name: "동명 선수 분석 보기" })).toBeTruthy();
 });
 
 it("retries failure and distinguishes an empty directory from an unmatched search", async () => {

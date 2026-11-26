@@ -4,6 +4,11 @@ export type ReplayEvidenceTarget = { kind: "event" | "pa" | "play"; id: string }
 
 const targetParams = { event: "eventId", pa: "paId", play: "playId" };
 export const replayEvidenceLabels = { event: "투구", pa: "타석", play: "플레이" };
+export const replayOpenKey = "open";
+
+export function replayGameUrl(gameId: string, revision: number): string {
+  return `/replay?${new URLSearchParams({ gameId, revision: String(revision), [replayOpenKey]: "1" })}`;
+}
 
 export function replayEvidenceUrl(
   gameId: string,
