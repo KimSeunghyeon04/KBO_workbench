@@ -620,6 +620,23 @@
   background: #e8f4ef;
   color: #177459;
 }
+.outcome-terminal-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--ui-muted);
+  font-size: 13px;
+}
+.outcome-terminal-filter select {
+  min-height: 40px;
+  padding: 7px 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius);
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  font: inherit;
+}
 .outcome-terminal-panel {
   min-width: 0;
 }

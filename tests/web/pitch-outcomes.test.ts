@@ -38,7 +38,7 @@ afterEach(() => {
 
 function mockOutcomes(
   rows: (PitchOutcomeRow & { pitcherHand?: PitcherHand | null })[] = [outcomeRow()],
-  pas: TerminalPaRow[] = [terminalPa()],
+  pas: (TerminalPaRow & { pitcherHand?: PitcherHand | null })[] = [terminalPa()],
   flowResponse?: () => Response | undefined,
 ) {
   const fetch = vi.fn(async (input: RequestInfo | URL) => {
@@ -573,6 +573,42 @@ it("keeps pitch and PA denominators distinct while disclosing detailed metrics a
   expect(within(evidence.details).queryAllByRole("link")).toHaveLength(0);
   fireEvent.click(screen.getByRole("button", { name: "모든 코스", exact: true }));
   expect(within(evidence.details).getByRole("link", { name: "투구 장면 r1" })).toBeTruthy();
+});
+
+it("shows only applied controls on the terminal tab and restores pitch conditions on return", async () => {
+  const fetch = mockOutcomes(undefined, [
+    { ...terminalPa({ paId: "left" }), pitcherHand: "L" },
+    { ...terminalPa({ paId: "right" }), pitcherHand: "R" },
+  ]);
+  show(
+    "batter",
+    "season=2024&competition=unknown&batter=b1&outcomeView=terminal&balls=0&strikes=0&cohort=discipline",
+  );
+  const current = () => new URLSearchParams(screen.getByLabelText("현재 주소").textContent ?? "");
+  const table = await screen.findByRole("table", { name: "마지막 공 구종별 타석 결과" });
+  const total = () => within(table).getAllByRole("row")[1]?.querySelector("td")?.textContent;
+  expect(total()).toBe("2");
+  expect(screen.queryByRole("button", { name: "초구" })).toBeNull();
+  expect(screen.queryByText("투구 조건", { exact: true })).toBeNull();
+  expect(screen.getByText("경기 종류·기간", { exact: true })).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("종결 투수 손"), { target: { value: "L" } });
+  await waitFor(() => {
+    const left = screen.getByRole("table", { name: "마지막 공 구종별 타석 결과" });
+    expect(within(left).getAllByRole("row")[1]?.querySelector("td")?.textContent).toBe("1");
+  });
+  const requests = fetch.mock.calls
+    .map(([input]) => new URL(String(input), "http://localhost"))
+    .filter((url) => url.pathname.endsWith("/batter-profile/b1"));
+  expect(requests.map((url) => Object.fromEntries(url.searchParams))).toEqual([
+    { season: "2024", competition: "unknown", cohort: "all" },
+    { season: "2024", competition: "unknown", cohort: "all", pitcherHand: "L" },
+  ]);
+  expect(current().get("cohort")).toBe("discipline");
+  fireEvent.click(screen.getByRole("tab", { name: "코스·반응" }));
+  expect(screen.getByRole("button", { name: "초구", pressed: true })).toBeTruthy();
+  expect(screen.queryByLabelText("종결 투수 손")).toBeNull();
+  expect(current().get("balls")).toBe("0");
+  expect(current().get("strikes")).toBe("0");
 });
 
 it("restores selected tabs from the URL and opens A/B controls without issuing a comparison request", async () => {

@@ -74,6 +74,7 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
   const activeTab =
     tabs.find((tab) => tab.id === params.get("outcomeView"))?.id ??
     (selectedCell !== null || params.get("periodCompare") !== "1" ? "overview" : "period");
+  const isTerminalTab = activeTab === "terminal";
   function selectCell(cell: number | null) {
     const next = new URLSearchParams(params);
     if (cell === null) next.delete("locationCell");
@@ -108,10 +109,14 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
   };
   const candidate = {
     ...commonCandidate,
-    ...(params.has("balls") ? { balls: Number(params.get("balls")) } : {}),
-    ...(params.has("strikes") ? { strikes: Number(params.get("strikes")) } : {}),
-    ...(params.has("pitchType") ? { pitchType: params.get("pitchType") } : {}),
-    ...(params.has("stance") ? { stance: params.get("stance") } : {}),
+    ...(isTerminalTab
+      ? { cohort: "all" }
+      : {
+          ...(params.has("balls") ? { balls: Number(params.get("balls")) } : {}),
+          ...(params.has("strikes") ? { strikes: Number(params.get("strikes")) } : {}),
+          ...(params.has("pitchType") ? { pitchType: params.get("pitchType") } : {}),
+          ...(params.has("stance") ? { stance: params.get("stance") } : {}),
+        }),
     ...(role === "batter" && params.has("pitcherHand")
       ? { pitcherHand: params.get("pitcherHand") }
       : {}),
@@ -136,7 +141,11 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
   const isOutcomeTab = !isComparisonTab && !isFlowTab;
   const flowTabLabel = role === "pitcher" ? "구종 배합" : "카운트별 대응";
   const linksToDiscipline =
-    role === "batter" && !isFlowTab && params.get("pitchType") !== "" && !params.has("pitcherHand");
+    role === "batter" &&
+    !isFlowTab &&
+    !isTerminalTab &&
+    params.get("pitchType") !== "" &&
+    !params.has("pitcherHand");
   const flowValid = scope.error === null && Value.Check(flowSchema, flowCandidate);
   const activeValid = isFlowTab ? flowValid : valid;
   const analysis = useQuery<PitchLocationResponse | BatterProfileResponse>({
@@ -207,87 +216,89 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
           <p>투구 위치와 타자의 반응을 한눈에 비교합니다.</p>
         </div>
       </header>
-      <AnalysisFilterBar
-        collapsible={true}
-        label="투구 결과 조건"
-        toggleLabel="투구 조건"
-        summary={conditions}
-        advanced={
-          <>
-            {!isFlowTab && (
-              <>
-                <label>
-                  볼
-                  <select
-                    value={params.get("balls") ?? ""}
-                    onChange={(e) => change("balls", e.target.value)}
-                  >
-                    <option value="">전체</option>
-                    {[0, 1, 2, 3].map((n) => (
-                      <option key={n}>{n}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  스트라이크
-                  <select
-                    value={params.get("strikes") ?? ""}
-                    onChange={(e) => change("strikes", e.target.value)}
-                  >
-                    <option value="">전체</option>
-                    {[0, 1, 2].map((n) => (
-                      <option key={n}>{n}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  구종
-                  <input
-                    value={params.get("pitchType") ?? ""}
-                    onChange={(e) => change("pitchType", e.target.value)}
-                    placeholder={params.has("pitchType") ? "구종 미상" : "전체"}
-                  />
-                </label>
-                <label>
-                  타석 좌우
-                  <select
-                    value={params.get("stance") ?? ""}
-                    onChange={(e) => change("stance", e.target.value)}
-                  >
-                    <option value="">전체</option>
-                    {["L", "R", "S"].map((v) => (
-                      <option key={v}>{v}</option>
-                    ))}
-                  </select>
-                </label>
-                {role === "batter" && (
+      {!isTerminalTab && (
+        <AnalysisFilterBar
+          collapsible={true}
+          label="투구 결과 조건"
+          toggleLabel="투구 조건"
+          summary={conditions}
+          advanced={
+            <>
+              {!isFlowTab && (
+                <>
                   <label>
-                    상대 투수
+                    볼
                     <select
-                      value={params.get("pitcherHand") ?? ""}
-                      onChange={(e) => change("pitcherHand", e.target.value)}
+                      value={params.get("balls") ?? ""}
+                      onChange={(e) => change("balls", e.target.value)}
                     >
                       <option value="">전체</option>
-                      <option value="L">좌완 상대</option>
-                      <option value="R">우완 상대</option>
+                      {[0, 1, 2, 3].map((n) => (
+                        <option key={n}>{n}</option>
+                      ))}
                     </select>
                   </label>
-                )}
-              </>
-            )}
-            <label>
-              표본
-              <select
-                value={params.get("cohort") ?? "all"}
-                onChange={(e) => change("cohort", e.target.value)}
-              >
-                <option value="all">실제 투구 전체</option>
-                <option value="discipline">선구안과 동일 상황</option>
-              </select>
-            </label>
-          </>
-        }
-      />
+                  <label>
+                    스트라이크
+                    <select
+                      value={params.get("strikes") ?? ""}
+                      onChange={(e) => change("strikes", e.target.value)}
+                    >
+                      <option value="">전체</option>
+                      {[0, 1, 2].map((n) => (
+                        <option key={n}>{n}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    구종
+                    <input
+                      value={params.get("pitchType") ?? ""}
+                      onChange={(e) => change("pitchType", e.target.value)}
+                      placeholder={params.has("pitchType") ? "구종 미상" : "전체"}
+                    />
+                  </label>
+                  <label>
+                    타석 좌우
+                    <select
+                      value={params.get("stance") ?? ""}
+                      onChange={(e) => change("stance", e.target.value)}
+                    >
+                      <option value="">전체</option>
+                      {["L", "R", "S"].map((v) => (
+                        <option key={v}>{v}</option>
+                      ))}
+                    </select>
+                  </label>
+                  {role === "batter" && (
+                    <label>
+                      상대 투수
+                      <select
+                        value={params.get("pitcherHand") ?? ""}
+                        onChange={(e) => change("pitcherHand", e.target.value)}
+                      >
+                        <option value="">전체</option>
+                        <option value="L">좌완 상대</option>
+                        <option value="R">우완 상대</option>
+                      </select>
+                    </label>
+                  )}
+                </>
+              )}
+              <label>
+                표본
+                <select
+                  value={params.get("cohort") ?? "all"}
+                  onChange={(e) => change("cohort", e.target.value)}
+                >
+                  <option value="all">실제 투구 전체</option>
+                  <option value="discipline">선구안과 동일 상황</option>
+                </select>
+              </label>
+            </>
+          }
+        />
+      )}
       <div className="outcome-workspace" ref={workspaceRef}>
         <div className="outcome-workspace-tabs">
           <WorkspaceTabs
@@ -298,7 +309,22 @@ export function PitchOutcomesPage({ role }: { role: "pitcher" | "batter" }) {
             onChange={(tab) => switchTab(tab)}
           />
         </div>
-        {!isFlowTab && <PitchOutcomeQuickFilters params={params} onChange={setParams} />}
+        {!isFlowTab && !isTerminalTab && (
+          <PitchOutcomeQuickFilters params={params} onChange={setParams} />
+        )}
+        {isTerminalTab && (
+          <label className="outcome-terminal-filter">
+            종결 투수 손
+            <select
+              value={params.get("pitcherHand") ?? ""}
+              onChange={(e) => change("pitcherHand", e.target.value)}
+            >
+              <option value="">전체</option>
+              <option value="L">좌완 상대</option>
+              <option value="R">우완 상대</option>
+            </select>
+          </label>
+        )}
         {!activeValid && <p role="alert">{scope.error ?? "투구 조건이 올바르지 않습니다."}</p>}
         <AnalysisQueryError queries={activeQueries} enabled={activeValid} />
         {catalog.isLoading ||

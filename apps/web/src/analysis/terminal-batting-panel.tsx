@@ -18,12 +18,11 @@ export function TerminalBattingPanel({
         <div>
           <h2 id="terminal-batting-heading">마지막 공 구종별 타석 결과</h2>
         </div>
-        <span className="analysis-context-tag">투구 조건과 별도 집계</span>
       </div>
       <p>
         기간 내 공식 타석 {data.total.pa} · AB {data.total.ab} · 미귀속 {data.unattributed} · 미완료{" "}
-        {data.partial}. 이 표에는 위 투구 조건을 적용하지 않습니다. 자동 판정·무투구 결과와 타석을
-        끝낸 타자가 책임 타자와 다른 결과는 미귀속에 포함합니다.
+        {data.partial}. 자동 판정·무투구 결과와 타석을 끝낸 타자가 책임 타자와 다른 결과는 미귀속에
+        포함합니다.
       </p>
       <div className="table-scroll" tabIndex={0}>
         <table aria-labelledby="terminal-batting-heading">
