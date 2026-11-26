@@ -1,16 +1,44 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { PitchLocationComparisonResponse } from "@kbo/contracts";
-import { PitchLocationGrid } from "./pitch-location-grid";
+import { pitchLocationCellPosition, PitchLocationGrid } from "./pitch-location-grid";
 import { outcomePercent } from "./pitch-outcome-presentation";
 import { SampleRate } from "./sample-rate";
 import { PeriodComparisonResults } from "./period-comparison-results";
 
 const metrics = {
-  usageRate: { label: "투구 사용 비중", maximum: 0.2, unit: "구", scale: "0 → 20%+" },
-  whiffRate: { label: "헛스윙률 Whiff%", maximum: 0.5, unit: "스윙", scale: "0 → 50%+" },
-  cswRate: { label: "루킹 + 헛스윙 CSW%", maximum: 0.5, unit: "구", scale: "0 → 50%+" },
-  inPlayHitRate: { label: "인플레이 안타 비율", maximum: 1, unit: "결과", scale: "0 → 100%" },
+  usageRate: {
+    label: "투구 사용 비중",
+    numeratorLabel: "이 구역 투구",
+    denominatorLabel: "위치 확인 투구",
+    maximum: 0.2,
+    unit: "구",
+    scale: "0 → 20%+",
+  },
+  whiffRate: {
+    label: "헛스윙률 Whiff%",
+    numeratorLabel: "헛스윙",
+    denominatorLabel: "스윙",
+    maximum: 0.5,
+    unit: "스윙",
+    scale: "0 → 50%+",
+  },
+  cswRate: {
+    label: "루킹 + 헛스윙 CSW%",
+    numeratorLabel: "루킹과 헛스윙",
+    denominatorLabel: "이 구역 투구",
+    maximum: 0.5,
+    unit: "구",
+    scale: "0 → 50%+",
+  },
+  inPlayHitRate: {
+    label: "인플레이 안타 비율",
+    numeratorLabel: "인플레이 안타",
+    denominatorLabel: "인플레이 결과",
+    maximum: 1,
+    unit: "결과",
+    scale: "0 → 100%",
+  },
 };
 type Metric = keyof typeof metrics;
 type Period = PitchLocationComparisonResponse["first"];
@@ -118,6 +146,7 @@ export function PitchLocationComparisonMaps({ data }: { data: PitchLocationCompa
               <span className="outcome-zone-axis">높은 공</span>
               <PitchLocationGrid
                 label={`기간 ${index === 0 ? "A" : "B"} 코스 지도`}
+                metric={definition}
                 cells={period.cells.map((_, cell) => displayCell(period, cell, metric))}
                 maximum={definition.maximum}
                 selected={selected}
@@ -146,7 +175,7 @@ export function PitchLocationComparisonMaps({ data }: { data: PitchLocationCompa
       )}
       <div className="location-comparison-readout" aria-live="polite">
         <h3>
-          선택 코스 {selected} · {definition.label}
+          선택 코스 {selected} · {pitchLocationCellPosition(selected)} · {definition.label}
         </h3>
         <div className="location-comparison-values">
           {([data.first, data.second] as const).map((period, index) => {

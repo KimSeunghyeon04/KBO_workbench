@@ -130,13 +130,20 @@ it("loads two explicit periods only after apply, uses common filters and shares 
     competition: "regular",
   });
   expect(screen.getByRole("note").textContent).toContain("존 규칙이 다릅니다");
-  fireEvent.change(screen.getByLabelText("지도 지표"), { target: { value: "whiffRate" } });
   const a = screen.getByRole("group", { name: "기간 A 코스 지도" });
   const b = screen.getByRole("group", { name: "기간 B 코스 지도" });
-  const occupied = within(a).getByRole("button", { name: /: 1구/ });
+  expect(
+    within(a).getByRole("button", {
+      name: "코스 20, 포수 시점 존 위 왼쪽 바깥, 투구 사용 비중 0.0%, 이 구역 투구 0 / 위치 확인 투구 1, 소표본, 투구 0구",
+    }),
+  ).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("지도 지표"), { target: { value: "whiffRate" } });
+  const occupied = within(a).getByRole("button", {
+    name: "코스 12, 포수 시점 존 중단 가운데, 헛스윙률 Whiff% 100.0%, 헛스윙 1 / 스윙 1, 소표본, 투구 1구",
+  });
   fireEvent.click(occupied);
   const counterpart = within(b).getByRole("button", {
-    name: occupied.getAttribute("aria-label") ?? "",
+    name: "코스 12, 포수 시점 존 중단 가운데, 헛스윙률 Whiff% 0.0%, 헛스윙 0 / 스윙 1, 소표본, 투구 1구",
   });
   expect(counterpart.getAttribute("aria-pressed")).toBe("true");
   expect(screen.getAllByText("-100.0%p").length).toBeGreaterThanOrEqual(2);

@@ -1083,7 +1083,11 @@ try {
   await comparisonMaps.waitFor();
   if (await comparisonMaps.locator(".outcome-zone-grid button").count() !== 50) throw new Error("Period comparison must show two complete location maps.");
   await page.getByLabel("\uc9c0\ub3c4 \uc9c0\ud45c", { exact: true }).selectOption("whiffRate");
-  await comparisonMaps.locator(".outcome-zone-grid").first().getByRole("button").first().click();
+  const comparisonCorner = comparisonMaps.locator(".outcome-zone-grid").first().getByRole("button", { name: /^\ucf54\uc2a4 20, \ud3ec\uc218 \uc2dc\uc810 \uc874 \uc704 \uc67c\ucabd \ubc14\uae65, \ud5db\uc2a4\uc719\ub960/ });
+  await comparisonCorner.press("Enter");
+  if (!(await comparisonCorner.evaluate((button) => button.matches(":focus-visible") && getComputedStyle(button).outlineOffset === "1px"))) {
+    throw new Error("Keyboard focus on the selected location cell is not visible.");
+  }
   if (await comparisonMaps.locator('button[aria-pressed="true"]').count() !== 2) throw new Error("Location map selection was not shared.");
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 900 });
@@ -1095,12 +1099,12 @@ try {
   }
   await page.setViewportSize({ width: 1280, height: 900 });
   const periodBMap = comparisonMaps.locator(".outcome-zone-grid").nth(1);
-  await periodBMap.getByRole("button", { name: /: 0\uad6c$/ }).first().click();
+  await periodBMap.getByRole("button", { name: /, \ud22c\uad6c 0\uad6c$/ }).first().click();
   await page.locator(".location-comparison-values a").nth(1).click();
   const evidenceMap = page.getByRole("group", { name: "\uc2e4\uc81c \ucf54\uc2a4 \uc9c0\ub3c4", exact: true });
   const initialZone = await evidenceMap.locator('button[aria-pressed="true"]').getAttribute("aria-label");
-  if (!initialZone?.endsWith(": 0\uad6c")) throw new Error("Comparison evidence did not open its empty zone.");
-  const populatedZone = evidenceMap.getByRole("button", { name: /: [1-9][\d,]*\uad6c$/ }).first();
+  if (!initialZone?.endsWith(", \ud22c\uad6c 0\uad6c")) throw new Error("Comparison evidence did not open its empty zone.");
+  const populatedZone = evidenceMap.getByRole("button", { name: /, \ud22c\uad6c [1-9][\d,]*\uad6c$/ }).first();
   const populatedLabel = await populatedZone.getAttribute("aria-label");
   await populatedZone.click();
   async function replayLocationEvidenceAndReturn() {

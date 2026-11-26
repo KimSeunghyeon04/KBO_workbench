@@ -3,7 +3,9 @@ import { useMemo, useState } from "react";
 import type { PitchRateGroup, PitchLocationPoint } from "@kbo/contracts";
 import { replayEvidenceUrl } from "../replay/evidence-target";
 import { outcomePercent as percent } from "./pitch-outcome-presentation";
-import { PitchLocationGrid } from "./pitch-location-grid";
+import { pitchLocationCellPosition, PitchLocationGrid } from "./pitch-location-grid";
+
+const whiffMetric = { label: "헛스윙률", numeratorLabel: "헛스윙", denominatorLabel: "스윙" };
 
 export function PitchLocationMap({
   season,
@@ -41,6 +43,7 @@ export function PitchLocationMap({
           <span className="outcome-zone-axis">높은 공</span>
           <PitchLocationGrid
             label="실제 코스 지도"
+            metric={whiffMetric}
             cells={cells.map((g) => ({
               value: g.whiffRate,
               pitches: g.pitches,
@@ -60,7 +63,11 @@ export function PitchLocationMap({
           <p className="analysis-caption">회색 칸은 20스윙 미만 · 바깥 칸은 존 밖 전체</p>
         </div>
         <aside className="outcome-zone-readout" aria-label="선택 코스 요약">
-          <h3>{group ? `코스 ${cell}` : "코스를 선택해 비교하세요"}</h3>
+          <h3>
+            {cell === null
+              ? "코스를 선택해 비교하세요"
+              : `코스 ${cell} · ${pitchLocationCellPosition(cell)}`}
+          </h3>
           <p>
             {group
               ? "선택한 영역에 도착한 투구의 결과입니다."

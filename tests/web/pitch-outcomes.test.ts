@@ -518,19 +518,28 @@ it("isolates an old API's missing route even after the count tree has been cache
 });
 
 it("keeps evidence map selection in the URL while preserving the comparison and fetched data", async () => {
-  const fetch = mockOutcomes();
+  const fetch = mockOutcomes([outcomeRow({ swing: true, whiff: false })]);
   show(
     "pitcher",
     "season=2024&competition=unknown&pitcher=hp1&periodCompare=1&periodASeason=2023&locationCell=12",
   );
   const map = await screen.findByRole("group", { name: "실제 코스 지도" });
-  expect(within(map).getByRole("button", { name: /^코스 12:/, pressed: true })).toBeTruthy();
+  expect(
+    within(map).getByRole("button", {
+      name: "코스 12, 포수 시점 존 중단 가운데, 헛스윙률 0.0%, 헛스윙 0 / 스윙 1, 소표본, 투구 1구",
+      pressed: true,
+    }),
+  ).toBeTruthy();
   const before = fetch.mock.calls.length;
-  fireEvent.click(within(map).getByRole("button", { name: /^코스 0:/ }));
+  const bottomLeft = within(map).getByRole("button", {
+    name: "코스 0, 포수 시점 존 아래 왼쪽 바깥, 헛스윙률 계산할 표본 없음, 헛스윙 0 / 스윙 0, 투구 0구",
+  });
+  fireEvent.click(bottomLeft);
   const currentParams = () =>
     new URLSearchParams(screen.getByLabelText("현재 주소").textContent ?? "");
   expect(currentParams().get("locationCell")).toBe("0");
-  expect(within(map).getByRole("button", { name: /^코스 0:/, pressed: true })).toBeTruthy();
+  expect(bottomLeft.getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByRole("heading", { name: "코스 0 · 존 아래 왼쪽 바깥" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "모든 코스" }));
   expect(currentParams().get("locationCell")).toBeNull();
   expect(currentParams().get("pitcher")).toBe("hp1");

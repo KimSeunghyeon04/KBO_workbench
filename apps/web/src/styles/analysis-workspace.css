@@ -311,6 +311,14 @@
   outline-offset: -2px;
   z-index: 1;
 }
+.outcome-zone-grid button:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+  z-index: 2;
+}
+.outcome-zone-grid button[aria-pressed="true"]:focus-visible {
+  box-shadow: inset 0 0 0 2px #d78a3d;
+}
 .outcome-zone-outline {
   position: absolute;
   inset: calc(20% + 1px);
