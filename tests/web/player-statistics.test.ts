@@ -157,7 +157,6 @@ it.each(["batting", "pitching"] as const)(
     const fetch = statisticsFetch();
     vi.stubGlobal("fetch", fetch);
     const sort = kind === "batting" ? "avg" : "era";
-    const sortLabel = kind === "batting" ? "타율" : "ERA";
     const search = `?season=2024&competition=allstar&kind=${kind}&dateFrom=2024-04-01&dateTo=2024-04-30&group=team&minimum=25&sort=${sort}&page=2`;
     const client = createAnalysisQueryClient();
     render(
@@ -172,20 +171,29 @@ it.each(["batting", "pitching"] as const)(
         ),
       ),
     );
-    await screen.findByRole("table", { name: kind === "batting" ? "타격 성적" : "투구 성적" });
+    const table = await screen.findByRole("table", {
+      name: kind === "batting" ? "타격 성적" : "투구 성적",
+    });
+    const columns = within(table).getAllByRole("columnheader");
+    expect(columns.slice(0, 3).map((column) => column.textContent)).toEqual(
+      kind === "batting" ? ["선수/팀", "PA", "AVG"] : ["선수/팀", "BF", "ERA"],
+    );
+    expect(columns[2]?.getAttribute("aria-sort")).toBe(
+      kind === "batting" ? "descending" : "ascending",
+    );
     const summary = screen.getByText("세부 조건").closest("summary");
     const disclosure = summary?.parentElement;
     if (!(disclosure instanceof HTMLDetailsElement) || summary === null)
       throw new Error("Missing filter disclosure");
     expect(disclosure.open).toBe(false);
-    expect(summary.textContent).toContain("2024-04-01 ~ 2024-04-30 · 팀 · 최소 25");
-    expect(summary.textContent).toContain(kind === "batting" ? "25타석" : "25상대 타자");
-    expect(summary.textContent).toContain(`${sortLabel}순`);
+    expect(summary.textContent).toContain("2024-04-01 ~ 2024-04-30 · 팀");
     const primary = screen
       .getByRole("region", { name: "성적 조건" })
       .querySelector(".analysis-primary-filters");
     if (!(primary instanceof HTMLElement)) throw new Error("Missing primary filters");
-    expect(within(primary).getAllByRole("combobox")).toHaveLength(3);
+    expect(within(primary).getAllByRole("combobox")).toHaveLength(4);
+    expect(within(primary).getByLabelText("최소 표본")).toHaveProperty("value", "25");
+    expect(within(primary).getByLabelText("성적 정렬")).toHaveProperty("value", sort);
     const requestCount = fetch.mock.calls.length;
     const user = userEvent.setup();
     await user.click(summary);
@@ -198,7 +206,6 @@ it.each(["batting", "pitching"] as const)(
     expect(disclosure.open).toBe(false);
     expect(screen.getByLabelText("현재 주소").textContent).toBe(search);
     expect(fetch.mock.calls).toHaveLength(requestCount);
-    await user.click(summary);
     await user.selectOptions(
       screen.getByLabelText("성적 정렬"),
       kind === "batting" ? "homeRuns" : "outsRecorded",
@@ -222,8 +229,10 @@ it.each(["batting", "pitching"] as const)(
     expect(switched.has("sort")).toBe(false);
     expect(switched.has("minimum")).toBe(false);
     expect(switched.get("dateFrom")).toBe("2024-04-01");
-    expect(summary.textContent).toContain(
-      kind === "batting" ? "최소 0상대 타자 · K−BB%순" : "최소 0타석 · OPS순",
+    expect(screen.getByLabelText("최소 표본")).toHaveProperty("value", "0");
+    expect(screen.getByLabelText("성적 정렬")).toHaveProperty(
+      "value",
+      kind === "batting" ? "kMinusBbRate" : "ops",
     );
     client.clear();
   },
@@ -245,7 +254,8 @@ it("keeps invalid folded conditions discoverable without sending a request", asy
     ),
   );
   expect(screen.getByRole("alert").textContent).toContain("조회 조건이 올바르지 않습니다");
-  expect(screen.getByText("정렬 확인 필요", { exact: false }).closest("summary")).toBeTruthy();
+  expect(screen.getByLabelText("성적 정렬").getAttribute("aria-invalid")).toBe("true");
+  expect(screen.getByRole("option", { name: "정렬 확인 필요", selected: true })).toBeTruthy();
   expect(fetch).not.toHaveBeenCalled();
   client.clear();
 });

@@ -13,6 +13,18 @@
   text-align: left;
 }
 
+.league-statistics-table tr > :nth-child(2):not(.statistics-team) {
+  text-align: right;
+}
+
+.league-statistics-table .statistics-team {
+  text-align: left;
+}
+
+.league-statistics-table th[aria-sort] {
+  color: var(--ui-accent);
+}
+
 .player-statistics-table tr > :first-child {
   position: sticky;
   left: 0;
@@ -54,7 +66,7 @@
     overflow-wrap: anywhere;
   }
 
-  .league-statistics-page .analysis-primary-filters > label:last-child {
+  .league-statistics-page .analysis-primary-filters > label:nth-child(3) {
     grid-column: 1 / -1;
   }
 

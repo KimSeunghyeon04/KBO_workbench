@@ -82,7 +82,7 @@ export function PlayerStatisticsPage() {
           ["outsRecorded", "이닝"],
         ] as const);
   const sort = kind === "batting" ? batting.sort : pitching.sort;
-  const sortLabel = sortOptions.find(([key]) => key === sort)?.[1];
+  const invalidSort = !sortOptions.some(([key]) => key === sort);
   const period =
     params.has("dateFrom") || params.has("dateTo")
       ? `${params.get("dateFrom") ?? "시즌 시작"} ~ ${params.get("dateTo") ?? "시즌 끝"}`
@@ -90,7 +90,7 @@ export function PlayerStatisticsPage() {
   const groupLabel =
     common.group === "player" ? "선수·당시 팀" : common.group === "team" ? "팀" : "집계 확인 필요";
   const minimum = kind === "batting" ? batting.minPA : pitching.minBF;
-  const filterSummary = `${period} · ${groupLabel} · 최소 ${Number.isFinite(minimum) ? minimum : "확인 필요"}${kind === "batting" ? "타석" : "상대 타자"} · ${sortLabel === undefined ? "정렬 확인 필요" : `${sortLabel}순`}`;
+  const filterSummary = `${period} · ${groupLabel}`;
   function change(key: string, value: string) {
     const next = changeAnalysisParams(params, key, value);
     if (key !== "page") next.delete("page");
@@ -152,30 +152,6 @@ export function PlayerStatisticsPage() {
                 <option value="team">팀</option>
               </select>
             </label>
-            <label>
-              최소 {kind === "batting" ? "타석" : "상대 타자"}
-              <input
-                aria-label="최소 표본"
-                type="number"
-                min="0"
-                value={params.get("minimum") ?? "0"}
-                onChange={(event) => change("minimum", event.target.value)}
-              />
-            </label>
-            <label>
-              정렬
-              <select
-                aria-label="성적 정렬"
-                value={sort}
-                onChange={(event) => change("sort", event.target.value)}
-              >
-                {sortOptions.map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
           </>
         }
       >
@@ -214,6 +190,36 @@ export function PlayerStatisticsPage() {
             ))}
           </select>
         </label>
+        <label>
+          최소 {kind === "batting" ? "타석" : "상대 타자"}
+          <input
+            aria-label="최소 표본"
+            type="number"
+            min="0"
+            value={params.get("minimum") ?? "0"}
+            onChange={(event) => change("minimum", event.target.value)}
+          />
+        </label>
+        <label>
+          정렬
+          <select
+            aria-label="성적 정렬"
+            aria-invalid={invalidSort || undefined}
+            value={sort}
+            onChange={(event) => change("sort", event.target.value)}
+          >
+            {invalidSort && (
+              <option value={sort} disabled>
+                정렬 확인 필요
+              </option>
+            )}
+            {sortOptions.map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
       </AnalysisFilterBar>
       {!valid && <p role="alert">{scope.error ?? "조회 조건이 올바르지 않습니다."}</p>}
       {valid && active.isPending && <p role="status">성적을 합산하고 있습니다.</p>}
@@ -235,6 +241,7 @@ export function PlayerStatisticsPage() {
             <BattingTable
               rows={bat.data.rows}
               detail={detail}
+              sort={bat.data.query.sort ?? "ops"}
               view={expanded ? "full" : "summary"}
             />
           )}
@@ -242,6 +249,7 @@ export function PlayerStatisticsPage() {
             <PitchingTable
               rows={pitch.data.rows}
               detail={detail}
+              sort={pitch.data.query.sort ?? "kMinusBbRate"}
               view={expanded ? "full" : "summary"}
             />
           )}
