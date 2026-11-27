@@ -34,9 +34,13 @@ export async function readAnalysisPeriodPair<T extends { sourceHash: string }>(
 ): Promise<{ first: T; second: T }> {
   const a = await first();
   const b = await second();
-  if (a.sourceHash !== (await readFirstSourceHash()))
+  assertPeriodSourceHash(a.sourceHash, await readFirstSourceHash());
+  return { first: a, second: b };
+}
+
+export function assertPeriodSourceHash(sourceHash: string, currentSourceHash: string): void {
+  if (sourceHash !== currentSourceHash)
     throw new InvalidAnalysisScopeError(
       "비교 조회 중 원천 기록이 갱신됐습니다. 두 기간 비교를 다시 시도하세요.",
     );
-  return { first: a, second: b };
 }

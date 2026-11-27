@@ -14,7 +14,7 @@ import {
   type DisciplineResponse,
 } from "@kbo/contracts";
 import { compareDisciplinePeriods } from "@kbo/game-core";
-import { readAnalysisPeriodPair, periodSnapshot } from "../analysis-period-pair.js";
+import { assertPeriodSourceHash, periodSnapshot } from "../analysis-period-pair.js";
 import {
   BatterDisciplineRepository,
   type DisciplinePreparedWorkspace,
@@ -47,13 +47,25 @@ export const batterDisciplineRoutes: FastifyPluginAsyncTypebox<Options> = async 
         },
   );
   const periods = new BoundedReadCache<DisciplineResponse>(16 * 1024 * 1024, 16, 300_000);
-  const readPeriod = async (query: DisciplineQuery, batterId: string) => {
-    const key = canonicalStringify([query, batterId]);
-    const cached = await periods.get(key);
-    if (cached !== undefined && cached.sourceHash === (await repository.readSourceHash(query))) {
-      return cached;
+  const readPeriods = async (first: DisciplineQuery, second: DisciplineQuery, batterId: string) => {
+    const firstKey = canonicalStringify([first, batterId]);
+    const secondKey = canonicalStringify([second, batterId]);
+    let [a, b] = await Promise.all([periods.get(firstKey), periods.get(secondKey)]);
+    if (a !== undefined || b !== undefined) {
+      const [firstHash, secondHash] = await repository.readPeriodSourceHashes(first, second);
+      if (a?.sourceHash !== firstHash) a = undefined;
+      if (b?.sourceHash !== secondHash) b = undefined;
+      if (a !== undefined && b !== undefined) return { first: a, second: b };
     }
-    return periods.load(key, () => service.analyze(query, batterId), true);
+    a ??= await periods.load(firstKey, () => service.analyze(first, batterId), true);
+    b ??=
+      firstKey === secondKey
+        ? a
+        : await periods.load(secondKey, () => service.analyze(second, batterId), true);
+    const [firstHash, secondHash] = await repository.readPeriodSourceHashes(first, second);
+    assertPeriodSourceHash(a.sourceHash, firstHash);
+    assertPeriodSourceHash(b.sourceHash, secondHash);
+    return { first: a, second: b };
   };
   app.get(
     "/api/v2/analysis/batter-discipline/:batterId/comparison",
@@ -72,11 +84,7 @@ export const batterDisciplineRoutes: FastifyPluginAsyncTypebox<Options> = async 
     async (request) => {
       const { first, second } = analysisPeriodQueries(request.query);
       const playerId = request.params.batterId;
-      const pair = await readAnalysisPeriodPair(
-        () => readPeriod(first, playerId),
-        () => readPeriod(second, playerId),
-        () => repository.readSourceHash(first),
-      );
+      const pair = await readPeriods(first, second, playerId);
       const snapshot = (d: typeof pair.first) =>
         periodSnapshot(d.query, d.sourceHash, [
           { label: "실제 투구", count: d.coverage.actualPitches },

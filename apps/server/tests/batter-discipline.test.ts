@@ -201,6 +201,90 @@ describe("batter discipline API and worker", () => {
     }
   });
 
+  it("returns the ordered first response before encoding and finishes encoding on close", async () => {
+    const source = disciplineSnapshot([
+      disciplineRow({ pitchId: "pitch-z", swing: true }),
+      disciplineRow({ pitchId: "pitch-a" }),
+    ]);
+    const encode = Promise.withResolvers<Worker>();
+    const postMessage = Worker.prototype.postMessage;
+    const post = vi.spyOn(Worker.prototype, "postMessage").mockImplementation(function (
+      this: Worker,
+      ...args: Parameters<Worker["postMessage"]>
+    ) {
+      if (args[0] === "encode-cache") encode.resolve(this);
+      else postMessage.apply(this, args);
+    });
+    const write = vi.fn<DisciplinePreparedWorkspace["write"]>().mockResolvedValue(undefined);
+    const service = new BatterDisciplineService(
+      { snapshot: async () => source },
+      {
+        store: { read: async () => undefined, write },
+        sourceHash: async () => source.sourceHash,
+        reportError: vi.fn(),
+      },
+    );
+    let worker: Worker | undefined;
+    try {
+      const result = service.analyze({ season: 2024 }, "b1");
+      worker = await encode.promise;
+      const first = await Promise.race([
+        result,
+        new Promise<null>((resolve) => setImmediate(() => resolve(null))),
+      ]);
+      expect(first?.points.map(({ pitchId }) => pitchId)).toEqual(["pitch-z", "pitch-a"]);
+      expect(write).not.toHaveBeenCalled();
+      const closed = vi.fn();
+      const closing = service.close().then(closed);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(closed).not.toHaveBeenCalled();
+      postMessage.call(worker, "encode-cache");
+      worker = undefined;
+      await closing;
+      expect(write).toHaveBeenCalledOnce();
+    } finally {
+      if (worker !== undefined) postMessage.call(worker, "encode-cache");
+      post.mockRestore();
+      await service.close();
+    }
+  });
+
+  it("keeps the first response and reloads a fresh worker when sending the encoding request fails", async () => {
+    const source = disciplineSnapshot([disciplineRow({ pitchId: "kept" })]);
+    const snapshot = vi.fn(async () => source);
+    const failed = Promise.withResolvers<unknown>();
+    const failure = new Error("cache encoding request failed");
+    const postMessage = Worker.prototype.postMessage;
+    const post = vi.spyOn(Worker.prototype, "postMessage").mockImplementation(function (
+      this: Worker,
+      ...args: Parameters<Worker["postMessage"]>
+    ) {
+      if (args[0] === "encode-cache") {
+        post.mockRestore();
+        throw failure;
+      }
+      postMessage.apply(this, args);
+    });
+    const service = new BatterDisciplineService(
+      { snapshot },
+      {
+        store: { read: async () => undefined, write: async () => {} },
+        sourceHash: async () => source.sourceHash,
+        reportError: failed.resolve,
+      },
+    );
+    try {
+      const first = await service.analyze({ season: 2024 }, "b1");
+      expect(first.points.map(({ pitchId }) => pitchId)).toEqual(["kept"]);
+      expect(await failed.promise).toBe(failure);
+      expect(await service.analyze({ season: 2024 }, "b1")).toEqual(first);
+      expect(snapshot).toHaveBeenLastCalledWith(2024, undefined, {});
+    } finally {
+      post.mockRestore();
+      await service.close();
+    }
+  });
+
   it("returns a correct response when saving the prepared rows fails", async () => {
     const snapshot = vi.fn(async () => disciplineSnapshot());
     const failure = new Error("read-only cache storage");
@@ -229,7 +313,8 @@ describe("batter discipline API and worker", () => {
   });
   it("validates filters and returns a strict API response", async () => {
     let firstPeriodHash = "a".repeat(64);
-    const sourceHash = (season: number) => (season === 2026 ? firstPeriodHash : "a".repeat(64));
+    let secondPeriodHash = "d".repeat(64);
+    const sourceHash = (season: number) => (season === 2026 ? firstPeriodHash : secondPeriodHash);
     const read = vi
       .spyOn(BatterDisciplineRepository.prototype, "snapshot")
       .mockImplementation(async (season) => ({
@@ -238,8 +323,11 @@ describe("batter discipline API and worker", () => {
         sourceHash: sourceHash(season),
       }));
     const readHash = vi
-      .spyOn(BatterDisciplineRepository.prototype, "readSourceHash")
-      .mockImplementation(async ({ season }) => sourceHash(season));
+      .spyOn(BatterDisciplineRepository.prototype, "readPeriodSourceHashes")
+      .mockImplementation(async (first, second) => [
+        sourceHash(first.season),
+        sourceHash(second.season),
+      ]);
     const catalog = vi.spyOn(BatterDisciplineRepository.prototype, "catalog").mockResolvedValue({
       season: 2024,
       scope: resolveAnalysisScope({ season: 2024 }),
@@ -289,25 +377,29 @@ describe("batter discipline API and worker", () => {
       const comparison = await app.inject(comparisonUrl);
       expect(comparison.statusCode, comparison.body).toBe(200);
       expect(comparison.json()).toMatchObject({
-        first: { scope: { season: 2026 } },
-        second: { scope: { season: 2027 } },
+        first: { scope: { season: 2026 }, sourceHash: firstPeriodHash },
+        second: { scope: { season: 2027 }, sourceHash: secondPeriodHash },
       });
       expect(read.mock.calls.map(([season]) => season)).toEqual([2026, 2027]);
-      expect(readHash).toHaveBeenLastCalledWith({ season: 2026 });
+      expect(readHash.mock.calls).toEqual([[{ season: 2026 }, { season: 2027 }]]);
 
       read.mockClear();
+      readHash.mockClear();
       const repeated = await app.inject(comparisonUrl);
       expect(repeated.statusCode, repeated.body).toBe(200);
       expect(repeated.json()).toEqual(comparison.json());
       expect(read).not.toHaveBeenCalled();
+      expect(readHash).toHaveBeenCalledOnce();
 
-      // A changed source is rejected even if both period results were cache hits.
+      // A change confined to B while a mixed cache hit/miss is being computed must fail.
       readHash
-        .mockResolvedValueOnce("a".repeat(64))
-        .mockResolvedValueOnce("a".repeat(64))
-        .mockResolvedValueOnce("b".repeat(64));
-      expect((await app.inject(comparisonUrl)).statusCode).toBe(400);
-      expect(read).not.toHaveBeenCalled();
+        .mockResolvedValueOnce([firstPeriodHash, secondPeriodHash])
+        .mockResolvedValueOnce([firstPeriodHash, "c".repeat(64)]);
+      const stale = await app.inject(comparisonUrl + "&dateFrom=2026-06-03");
+      expect(stale.statusCode).toBe(400);
+      expect(stale.json()).toMatchObject({ code: "invalid_analysis_scope" });
+      expect(read.mock.calls.map(([season]) => season)).toEqual([2026]);
+      read.mockClear();
 
       const narrower = await app.inject(comparisonUrl + "&dateFrom=2026-06-02");
       expect(narrower.statusCode, narrower.body).toBe(200);
@@ -322,13 +414,47 @@ describe("batter discipline API and worker", () => {
       read.mockClear();
 
       firstPeriodHash = "b".repeat(64);
+      readHash.mockClear();
       const refreshed = await app.inject(comparisonUrl);
       expect(refreshed.statusCode, refreshed.body).toBe(200);
       expect(refreshed.json()).toMatchObject({
         first: { sourceHash: "b".repeat(64) },
-        second: { sourceHash: "a".repeat(64) },
+        second: { sourceHash: secondPeriodHash },
       });
       expect(read.mock.calls.map(([season]) => season)).toEqual([2026]);
+      expect(readHash).toHaveBeenCalledTimes(2);
+      read.mockClear();
+      secondPeriodHash = "e".repeat(64);
+      const refreshedSecond = await app.inject(comparisonUrl);
+      expect(refreshedSecond.statusCode, refreshedSecond.body).toBe(200);
+      expect(refreshedSecond.json()).toMatchObject({
+        first: { sourceHash: firstPeriodHash },
+        second: { sourceHash: secondPeriodHash },
+      });
+      expect(read.mock.calls.map(([season]) => season)).toEqual([2027]);
+
+      read.mockClear();
+      readHash.mockClear();
+      const same =
+        "/api/v2/analysis/batter-discipline/b1/comparison?season=2026&compareSeason=2026";
+      const identical = await app.inject(same + "&balls=0");
+      expect(identical.statusCode, identical.body).toBe(200);
+      expect(identical.json().first).toEqual(identical.json().second);
+      expect(read.mock.calls.map(([season]) => season)).toEqual([2026]);
+      expect(readHash).toHaveBeenCalledOnce();
+
+      const sameYear = await app.inject(same + "&dateTo=2026-05-31&compareDateFrom=2026-06-01");
+      expect(sameYear.statusCode, sameYear.body).toBe(200);
+      expect(sameYear.json()).toMatchObject({
+        first: {
+          sourceHash: firstPeriodHash,
+          samples: expect.arrayContaining([{ label: "실제 투구", count: 0 }]),
+        },
+        second: {
+          sourceHash: firstPeriodHash,
+          samples: expect.arrayContaining([{ label: "실제 투구", count: 1 }]),
+        },
+      });
     } finally {
       await app.close();
       await pool.end();

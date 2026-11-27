@@ -3652,12 +3652,43 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(
       (await repository.snapshot(2024, snapshot.sourceHash, { competition: "unknown" })).rows,
     ).toBeNull();
+    const first = { season: 2025, competition: "unknown" } as const;
+    const second = { season: 2024, competition: "unknown" } as const;
+    const firstSourceHash = await repository.readSourceHash(first);
+    const acquired = vi.fn();
+    pool.on("acquire", acquired);
+    try {
+      expect(await repository.readPeriodSourceHashes(first, second)).toEqual([
+        firstSourceHash,
+        snapshot.sourceHash,
+      ]);
+      expect(acquired).toHaveBeenCalledOnce();
+    } finally {
+      pool.off("acquire", acquired);
+    }
+    const early = { ...second, dateTo: "2024-05-31" };
+    const late = { ...second, dateFrom: "2024-06-01" };
+    expect(await repository.readPeriodSourceHashes(early, late)).toEqual([
+      snapshot.sourceHash,
+      snapshot.sourceHash,
+    ]);
+    const regular = { season: 2024, competition: "regular" } as const;
+    const regularHash = await repository.readSourceHash(regular);
+    expect(regularHash).not.toBe(snapshot.sourceHash);
+    expect(await repository.readPeriodSourceHashes(regular, second)).toEqual([
+      regularHash,
+      snapshot.sourceHash,
+    ]);
     const draft = await store.loadCorrectionDraft("analysis-2024-hp1", 1);
     await store.importRevision(draft);
     const updated = await repository.snapshot(2024, snapshot.sourceHash, {
       competition: "unknown",
     });
     expect(updated.sourceHash).not.toBe(snapshot.sourceHash);
+    expect(await repository.readPeriodSourceHashes(first, second)).toEqual([
+      firstSourceHash,
+      updated.sourceHash,
+    ]);
     expect(updated.rows).toHaveLength(4);
     expect(updated.rows?.every((p) => p.revision === 2)).toBe(true);
   });

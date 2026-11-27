@@ -113,7 +113,6 @@ const requestSchema = Type.Object(
     query: DisciplineQuerySchema,
     append: Type.Boolean(),
     complete: Type.Boolean(),
-    persist: Type.Boolean(),
     artifact: Type.Optional(Type.Uint8Array()),
     ...DisciplineParamsSchema.properties,
   },
@@ -128,9 +127,21 @@ let cached:
     }
   | undefined;
 parentPort?.on("message", (raw: unknown) => {
+  if (raw === "encode-cache") {
+    try {
+      if (cached === undefined) throw new Error("Discipline snapshot expired");
+      const artifact = encodeDisciplineCache(cached);
+      parentPort?.postMessage(artifact === undefined ? {} : { artifact });
+    } catch (error: unknown) {
+      parentPort?.postMessage({
+        cacheError: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
   // Restore in this worker so the HTTP thread never deserializes the season.
   if (!request.Check(raw)) throw new Error("Invalid discipline request");
-  const { snapshot, query, batterId, append, complete, persist, artifact } = raw;
+  const { snapshot, query, batterId, append, complete, artifact } = raw;
   if (artifact !== undefined) {
     const prepared = decodeDisciplineCache(artifact, snapshot);
     if (prepared === undefined) {
@@ -157,16 +168,6 @@ parentPort?.on("message", (raw: unknown) => {
     cached.snapshot.sourceHash !== snapshot.sourceHash
   )
     throw new Error("Discipline snapshot expired");
-  if (complete) {
-    const result = analyzeBatterDiscipline(cached, batterId, query);
-    try {
-      const encoded = persist ? encodeDisciplineCache(cached) : undefined;
-      parentPort?.postMessage({ result, ...(encoded === undefined ? {} : { artifact: encoded }) });
-    } catch (error: unknown) {
-      parentPort?.postMessage({
-        result,
-        cacheError: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
+  if (complete)
+    parentPort?.postMessage({ result: analyzeBatterDiscipline(cached, batterId, query) });
 });

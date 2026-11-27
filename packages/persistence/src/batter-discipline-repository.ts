@@ -44,6 +44,8 @@ const heightInputSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+type DisciplineSourceScope = Pick<DisciplineQuery, "season" | "competition">;
+
 export class BatterDisciplineRepository {
   public constructor(
     private readonly pool: Pool,
@@ -108,16 +110,33 @@ export class BatterDisciplineRepository {
     });
   }
 
-  public async readSourceHash({
-    season,
-    competition,
-  }: Pick<DisciplineQuery, "season" | "competition">) {
-    const scope = disciplineSeasonScope(season, competition === undefined ? {} : { competition });
+  public async readSourceHash(input: DisciplineSourceScope) {
+    const scope = disciplineSourceScope(input);
     return withAnalysisSnapshot(
       this.pool,
       async (client) => (await disciplineSourceHashes(client, scope)).sourceHash,
     );
   }
+
+  public async readPeriodSourceHashes(
+    first: DisciplineSourceScope,
+    second: DisciplineSourceScope,
+  ): Promise<readonly [string, string]> {
+    const a = disciplineSourceScope(first);
+    const b = disciplineSourceScope(second);
+    return withAnalysisSnapshot(this.pool, async (client) => {
+      const { sourceHash: firstHash } = await disciplineSourceHashes(client, a);
+      const secondHash =
+        a.season === b.season && a.competition === b.competition
+          ? firstHash
+          : (await disciplineSourceHashes(client, b)).sourceHash;
+      return [firstHash, secondHash];
+    });
+  }
+}
+
+function disciplineSourceScope({ season, competition }: DisciplineSourceScope): AnalysisScope {
+  return disciplineSeasonScope(season, competition === undefined ? {} : { competition });
 }
 
 function disciplineSeasonScope(season: number, options: AnalysisScopeOptions): AnalysisScope {

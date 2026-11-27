@@ -36,15 +36,20 @@ interface PreparedCache {
 }
 
 const replySchema = Type.Object(
-  {
-    result: Type.Union([DisciplineResponseSchema, Type.Null()]),
-    artifact: Type.Optional(Type.Uint8Array()),
-    cacheError: Type.Optional(Type.String()),
-  },
+  { result: Type.Union([DisciplineResponseSchema, Type.Null()]) },
   { additionalProperties: false },
 );
 const replyValidator = TypeCompiler.Compile(replySchema);
 type WorkerReply = Static<typeof replySchema>;
+const cacheReplyValidator = TypeCompiler.Compile(
+  Type.Object(
+    {
+      artifact: Type.Optional(Type.Uint8Array()),
+      cacheError: Type.Optional(Type.String()),
+    },
+    { additionalProperties: false },
+  ),
+);
 
 export class BatterDisciplineService {
   private readonly queue: Job[] = [];
@@ -53,6 +58,7 @@ export class BatterDisciplineService {
   private known: (DisciplineCacheScope & { hash: string }) | undefined;
   private current: Job | undefined;
   private cancel: ((error: Error) => void) | undefined;
+  private cacheEncoding: Promise<void> | undefined;
   private cacheWrite: Promise<void> | undefined;
   private pendingCacheWrite: { scope: DisciplineCacheScope; artifact: Uint8Array } | undefined;
   private closed = false;
@@ -90,7 +96,8 @@ export class BatterDisciplineService {
     if (job === undefined) return;
     this.current = job;
     try {
-      const { reply, sourceHash } = (await this.readPrepared(job)) ?? (await this.readSource(job));
+      const { reply, sourceHash, preparedFromRows } =
+        (await this.readPrepared(job)) ?? (await this.readSource(job));
       if (this.closed) throw new Error("Discipline analysis is closed");
       const { result } = reply;
       if (
@@ -102,21 +109,42 @@ export class BatterDisciplineService {
       )
         throw new Error("Discipline worker response mismatch");
       this.known = { ...job.scope, hash: sourceHash };
-      if (reply.cacheError !== undefined) this.cache?.reportError(new Error(reply.cacheError));
-      if (reply.artifact !== undefined && this.cache !== undefined) {
-        this.pendingCacheWrite = { scope: job.scope, artifact: reply.artifact };
-        this.startCacheWrite();
-      }
       job.resolve(result);
+      if (preparedFromRows && this.cache !== undefined) {
+        // Keep the prepared rows in this worker until its cache reply arrives.
+        this.cacheEncoding = this.prepareCache(job.scope, this.cache);
+        try {
+          await this.cacheEncoding;
+        } finally {
+          this.cacheEncoding = undefined;
+        }
+      }
     } catch (error: unknown) {
-      this.known = undefined;
-      const worker = this.worker;
-      this.worker = undefined;
-      if (worker !== undefined) await worker.terminate();
+      await this.resetWorker();
       job.reject(error);
     } finally {
       this.current = undefined;
       void this.pump();
+    }
+  }
+
+  private async prepareCache(scope: DisciplineCacheScope, cache: PreparedCache): Promise<void> {
+    let reply;
+    try {
+      reply = await this.requestWorker(
+        (raw) => cacheReplyValidator.Check(raw),
+        (worker) => worker.postMessage("encode-cache"),
+        "Discipline cache encoding exceeded 60 seconds",
+      );
+    } catch (error: unknown) {
+      await this.resetWorker();
+      cache.reportError(error);
+      return;
+    }
+    if (reply.cacheError !== undefined) cache.reportError(new Error(reply.cacheError));
+    if (reply.artifact !== undefined) {
+      this.pendingCacheWrite = { scope, artifact: reply.artifact };
+      this.startCacheWrite();
     }
   }
 
@@ -154,7 +182,7 @@ export class BatterDisciplineService {
       job,
       artifact,
     );
-    return reply.result === null ? undefined : { reply, sourceHash };
+    return reply.result === null ? undefined : { reply, sourceHash, preparedFromRows: false };
   }
 
   private async readSource(job: Job) {
@@ -165,7 +193,7 @@ export class BatterDisciplineService {
       job.query.competition === undefined ? {} : { competition: job.query.competition },
     );
     const reply = await this.run(snapshot, job);
-    return { reply, sourceHash: snapshot.sourceHash };
+    return { reply, sourceHash: snapshot.sourceHash, preparedFromRows: snapshot.rows !== null };
   }
 
   private getWorker(): Worker {
@@ -190,6 +218,43 @@ export class BatterDisciplineService {
   }
 
   private run(snapshot: DisciplineSnapshot, job: Job, artifact?: Uint8Array): Promise<WorkerReply> {
+    return this.requestWorker(
+      (raw) => replyValidator.Check(raw),
+      async (worker, isActive) => {
+        const rows = snapshot.rows;
+        if (rows === null) {
+          worker.postMessage({
+            snapshot,
+            query: job.query,
+            batterId: job.batterId,
+            append: false,
+            complete: true,
+            ...(artifact === undefined ? {} : { artifact }),
+          });
+          return;
+        }
+        await sendWorkerRows(
+          rows,
+          ({ rows, append, complete }) =>
+            worker.postMessage({
+              snapshot: { ...snapshot, rows },
+              query: job.query,
+              batterId: job.batterId,
+              append,
+              complete,
+            }),
+          isActive,
+        );
+      },
+      "Discipline analysis exceeded 60 seconds",
+    );
+  }
+
+  private requestWorker<Reply>(
+    validate: (raw: unknown) => raw is Reply,
+    send: (worker: Worker, isActive: () => boolean) => void | Promise<void>,
+    timeoutMessage: string,
+  ): Promise<Reply> {
     const worker = this.getWorker();
     return new Promise((resolve, reject) => {
       let finished = false;
@@ -205,51 +270,31 @@ export class BatterDisciplineService {
         reject(error);
       };
       const message = (raw: unknown) => {
-        if (!replyValidator.Check(raw)) {
+        if (!validate(raw)) {
           fail(new Error("Invalid discipline response"));
           return;
         }
         cleanup();
         resolve(raw);
       };
-      const timer = setTimeout(
-        () => fail(new Error("Discipline analysis exceeded 60 seconds")),
-        60_000,
-      );
+      const timer = setTimeout(() => fail(new Error(timeoutMessage)), 60_000);
       this.cancel = fail;
       worker.once("message", message);
-      const send = async () => {
-        const rows = snapshot.rows;
-        if (rows === null) {
-          worker.postMessage({
-            snapshot,
-            query: job.query,
-            batterId: job.batterId,
-            append: false,
-            complete: true,
-            persist: false,
-            ...(artifact === undefined ? {} : { artifact }),
-          });
-          return;
-        }
-        await sendWorkerRows(
-          rows,
-          ({ rows, append, complete }) =>
-            worker.postMessage({
-              snapshot: { ...snapshot, rows },
-              query: job.query,
-              batterId: job.batterId,
-              append,
-              complete,
-              persist: complete && this.cache !== undefined,
-            }),
-          () => !finished,
+      void Promise.resolve()
+        .then(() => {
+          if (!finished) return send(worker, () => !finished);
+        })
+        .catch((error: unknown) =>
+          fail(error instanceof Error ? error : new Error("Cannot send discipline request")),
         );
-      };
-      void send().catch((error: unknown) =>
-        fail(error instanceof Error ? error : new Error("Cannot send discipline request")),
-      );
     });
+  }
+
+  private async resetWorker(): Promise<void> {
+    this.known = undefined;
+    const worker = this.worker;
+    this.worker = undefined;
+    if (worker !== undefined) await worker.terminate();
   }
 
   public async close(): Promise<void> {
@@ -257,9 +302,9 @@ export class BatterDisciplineService {
     const error = new Error("Discipline analysis is closed");
     for (const job of this.queue.splice(0)) job.reject(error);
     this.current?.reject(error);
-    this.cancel?.(error);
-    if (this.worker !== undefined) await this.worker.terminate();
+    if (this.cacheEncoding === undefined) this.cancel?.(error);
+    else await this.cacheEncoding;
+    await this.resetWorker();
     while (this.cacheWrite !== undefined) await this.cacheWrite;
-    this.known = undefined;
   }
 }

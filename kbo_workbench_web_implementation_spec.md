@@ -512,10 +512,11 @@ partition을 사용하지 않고 season/date/player/pitcher/batter/count/result 
 
 선수 기본 기록·구질·타자 특성·선구안·코스의 기간 비교는 공통 A/B 시즌·날짜 선택과 URL을 사용한다.
 기능별 strict 비교 API와 game-core의 명시적 계산을 유지한다. 타자 특성과 코스는 A/B를 한
-snapshot에서 읽고, 기본 기록·구질·선구안은 A/B 조회 후 A의 원천 hash를 재검증한다. 기본 기록과
+snapshot에서 읽고, 기본 기록·구질은 A/B 조회 후 A의 원천 hash를 재검증한다. 기본 기록과
 구질은 재검증에서 지문만 조회하고 기존 집계 결과와 응답 hash를 유지한다.
 일반 분석 지문은 최초 조회와 재검증에서 같은 SQL로 경기와 분류 자료를 읽는다.
-선구안 비교의 재검증은 원천 지문만 읽는다. 투수 변화는 3/5등판 자동 비교를 별도로 제공한다.
+선구안 비교는 A/B의 원천 지문을 같은 snapshot에서 확인한다. 기간만 다른 동일 시즌·경기 종류의
+원천 지문은 공유한다. 투수 변화는 3/5등판 자동 비교를 별도로 제공한다.
 세부 범위·분모·시즌 간 구질 제한은 [기간 비교](docs/analysis/period-comparison.md)에 정의한다.
 
 `/analysis/models`와 `/api/v2/analysis/models`, `/api/v2/analysis/model-jobs`,
