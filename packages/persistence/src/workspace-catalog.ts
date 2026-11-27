@@ -26,10 +26,7 @@ export class WorkspaceCatalog {
   }
 
   public async snapshot(gameIds?: readonly string[]): Promise<GameCatalog> {
-    while (this.dirty.size > 0) {
-      await this.refresh();
-    }
-    return {
+    return this.read(() => ({
       games: structuredClone(
         (gameIds === undefined
           ? [...this.items.values()]
@@ -39,7 +36,24 @@ export class WorkspaceCatalog {
             })
         ).sort(compareCatalogItems),
       ),
-    };
+    }));
+  }
+
+  public async overview() {
+    return this.read(() => {
+      const stagingGameIds: string[] = [];
+      let reviewRequired = 0;
+      for (const { gameId, authority } of this.items.values()) {
+        if (authority === "staging") stagingGameIds.push(gameId);
+        else if (authority === "quarantine" || authority === "source_failure") reviewRequired++;
+      }
+      return { stagingGameIds, reviewRequired };
+    });
+  }
+
+  private async read<T>(current: () => T): Promise<T> {
+    while (this.dirty.size > 0) await this.refresh();
+    return current();
   }
 
   private refresh(): Promise<void> {

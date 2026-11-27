@@ -39,6 +39,7 @@ import {
   readDatabaseCatalogPage,
   readDatabaseSeasons,
   readStoredGameIds,
+  readStoredGameCounts,
 } from "./revision-catalog-repository.js";
 import { rebaseSealedCorrectionDraft } from "./revision-draft-rebase.js";
 import {
@@ -432,6 +433,9 @@ export class GameRevisionStore {
   }
   public storedGameIds(): Promise<string[]> {
     return readStoredGameIds(this.pool);
+  }
+  public storedGameCounts(candidates: readonly string[]) {
+    return readStoredGameCounts(this.pool, candidates);
   }
   public catalogPage(query: DatabaseGamesQuery) {
     return readDatabaseCatalogPage(this.pool, query);

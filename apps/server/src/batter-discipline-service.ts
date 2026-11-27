@@ -4,8 +4,10 @@ import {
   resolveAnalysisScope,
   type AnalysisScopeOptions,
   DisciplineResponseSchema,
+  DisciplinePeriodInputSchema,
   type DisciplineQuery,
   type DisciplineResponse,
+  type DisciplinePeriodInput,
   type DisciplineSnapshot,
 } from "@kbo/contracts";
 import { Type, type Static } from "@sinclair/typebox";
@@ -13,6 +15,7 @@ import { TypeCompiler } from "@sinclair/typebox/compiler";
 import type { DisciplineCacheScope, DisciplinePreparedWorkspace } from "@kbo/persistence";
 import { PitchAnalysisBusyError } from "./pitch-clustering-workers.js";
 import { sendWorkerRows } from "./worker-row-transport.js";
+import { disciplineCacheSourceHash } from "./batter-discipline-cache-header.js";
 
 interface Repository {
   snapshot(
@@ -21,11 +24,14 @@ interface Repository {
     options?: AnalysisScopeOptions,
   ): Promise<DisciplineSnapshot>;
 }
+type AnalysisResult = DisciplineResponse | DisciplinePeriodInput;
+
 interface Job {
   scope: DisciplineCacheScope;
   query: DisciplineQuery;
   batterId: string;
-  resolve: (data: DisciplineResponse) => void;
+  mode: "full" | "period";
+  resolve: (data: AnalysisResult) => void;
   reject: (error: unknown) => void;
 }
 
@@ -36,7 +42,7 @@ interface PreparedCache {
 }
 
 const replySchema = Type.Object(
-  { result: Type.Union([DisciplineResponseSchema, Type.Null()]) },
+  { result: Type.Union([DisciplineResponseSchema, DisciplinePeriodInputSchema, Type.Null()]) },
   { additionalProperties: false },
 );
 const replyValidator = TypeCompiler.Compile(replySchema);
@@ -54,6 +60,7 @@ const cacheReplyValidator = TypeCompiler.Compile(
 export class BatterDisciplineService {
   private readonly queue: Job[] = [];
   private readonly pending = new Map<string, Promise<DisciplineResponse>>();
+  private readonly pendingPeriods = new Map<string, Promise<DisciplinePeriodInput>>();
   private worker: Worker | undefined;
   private known: (DisciplineCacheScope & { hash: string }) | undefined;
   private current: Job | undefined;
@@ -68,6 +75,26 @@ export class BatterDisciplineService {
   ) {}
 
   public analyze(query: DisciplineQuery, batterId: string): Promise<DisciplineResponse> {
+    return this.enqueue(query, batterId, "full", this.pending, (data) => "points" in data);
+  }
+
+  public analyzePeriod(query: DisciplineQuery, batterId: string): Promise<DisciplinePeriodInput> {
+    return this.enqueue(
+      query,
+      batterId,
+      "period",
+      this.pendingPeriods,
+      (data) => "mapSwings" in data,
+    );
+  }
+
+  private enqueue<Result extends AnalysisResult>(
+    query: DisciplineQuery,
+    batterId: string,
+    mode: Job["mode"],
+    pending: Map<string, Promise<Result>>,
+    accepts: (data: AnalysisResult) => data is Result,
+  ): Promise<Result> {
     const { season, competition } = resolveAnalysisScope({
       season: query.season,
       ...(query.competition === undefined ? {} : { competition: query.competition }),
@@ -76,17 +103,27 @@ export class BatterDisciplineService {
     });
     if (this.closed) return Promise.reject(new Error("Discipline analysis is closed"));
     const key = canonicalStringify([query, batterId]);
-    const running = this.pending.get(key);
+    const running = pending.get(key);
     if (running !== undefined) return running;
     if (this.queue.length >= 16)
       return Promise.reject(
         new PitchAnalysisBusyError("선구안 분석 요청이 많습니다. 잠시 뒤 다시 시도해 주세요."),
       );
-    const result = new Promise<DisciplineResponse>((resolve, reject) => {
-      this.queue.push({ scope: { season, competition }, query, batterId, resolve, reject });
+    const result = new Promise<Result>((resolve, reject) => {
+      this.queue.push({
+        scope: { season, competition },
+        query,
+        batterId,
+        mode,
+        reject,
+        resolve: (data) => {
+          if (!accepts(data)) throw new Error("Discipline worker sent the wrong result type");
+          resolve(data);
+        },
+      });
       void this.pump();
-    }).finally(() => this.pending.delete(key));
-    this.pending.set(key, result);
+    }).finally(() => pending.delete(key));
+    pending.set(key, result);
     return result;
   }
 
@@ -176,22 +213,44 @@ export class BatterDisciplineService {
     if (artifact === undefined) return undefined;
     if (this.closed) throw new Error("Discipline analysis is closed");
     this.getWorker();
+    const storedHash = disciplineCacheSourceHash(artifact);
+    if (storedHash !== undefined) {
+      const snapshot = await this.readSnapshot(job, storedHash);
+      if (snapshot.rows !== null) return this.analyzeSnapshot(snapshot, job);
+      return this.restorePrepared(snapshot, job, artifact);
+    }
     const sourceHash = await this.cache.sourceHash(job.query);
-    const reply = await this.run(
+    return this.restorePrepared(
       { season: job.scope.season, sourceHash, reference: null, rows: null },
       job,
       artifact,
     );
-    return reply.result === null ? undefined : { reply, sourceHash, preparedFromRows: false };
+  }
+
+  private async restorePrepared(snapshot: DisciplineSnapshot, job: Job, artifact: Uint8Array) {
+    const reply = await this.run(snapshot, job, artifact);
+    return reply.result === null
+      ? undefined
+      : { reply, sourceHash: snapshot.sourceHash, preparedFromRows: false };
   }
 
   private async readSource(job: Job) {
+    return this.analyzeSnapshot(
+      await this.readSnapshot(job, this.isKnownScope(job.scope) ? this.known?.hash : undefined),
+      job,
+    );
+  }
+
+  private readSnapshot(job: Job, knownHash: string | undefined) {
     if (this.closed) throw new Error("Discipline analysis is closed");
-    const snapshot = await this.repository.snapshot(
+    return this.repository.snapshot(
       job.query.season,
-      this.isKnownScope(job.scope) ? this.known?.hash : undefined,
+      knownHash,
       job.query.competition === undefined ? {} : { competition: job.query.competition },
     );
+  }
+
+  private async analyzeSnapshot(snapshot: DisciplineSnapshot, job: Job) {
     const reply = await this.run(snapshot, job);
     return { reply, sourceHash: snapshot.sourceHash, preparedFromRows: snapshot.rows !== null };
   }
@@ -227,6 +286,7 @@ export class BatterDisciplineService {
             snapshot,
             query: job.query,
             batterId: job.batterId,
+            mode: job.mode,
             append: false,
             complete: true,
             ...(artifact === undefined ? {} : { artifact }),
@@ -240,6 +300,7 @@ export class BatterDisciplineService {
               snapshot: { ...snapshot, rows },
               query: job.query,
               batterId: job.batterId,
+              mode: job.mode,
               append,
               complete,
             }),

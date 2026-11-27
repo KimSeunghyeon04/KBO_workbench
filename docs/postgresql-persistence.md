@@ -243,7 +243,9 @@ DB 경기 목록은 `GET /api/v2/database/games`에서 authority·season·search
 Savant식 wide search, RE24/WPA, percentile/qualification leaderboard는 이 버전에 포함하지 않는다.
 
 Database 운영 콘솔은 catalog 요약만으로 적재 대기·저장 경기·작업 기록을 공통 고정 높이 가상
-목록에 표시한다. 행에는 반복 행동 버튼을 두지 않으며 단건 적재, current 교정 초안, 원천 재수집,
+목록에 표시한다. 대시보드와 DB 상태의 건수는 작업본 인덱스의 상태와 현재 봉인 경기의 총계·
+적재 후보 중복 수로 계산한다. 전체 목록 정렬은 실제 목록 화면에서 수행한다.
+행에는 반복 행동 버튼을 두지 않으며 단건 적재, current 교정 초안, 원천 재수집,
 revision 선택과 작업 오류는 선택 상세에서 수행한다. 저장 경기 revision endpoint는 항목 선택 뒤에만
 호출한다. 검색·시즌·범위·선택은 URL 검색 파라미터가 정본이며 모바일에서는 목록과 상세를 번갈아
 표시한다. 1,000px 이하에서는 선택 상세가 문서 스크롤을 따라 이어지며 내부 세로 스크롤을 만들지

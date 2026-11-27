@@ -39,6 +39,10 @@ function courseRates(rows: readonly Pick<CourseRow, "inZone" | "swing">[]): Disc
   };
 }
 
+export function conventionalCourseRates(rows: readonly CourseRow[]): DisciplineCourseRates {
+  return courseRates(rows.filter((p) => p.eligible));
+}
+
 export function compareDisciplineCourses(
   targetRows: readonly CourseRow[],
   controlRows: readonly CourseRow[],
@@ -95,8 +99,8 @@ export function compareDisciplineCourses(
   }
   return {
     conventional: {
-      batter: courseRates(targetRows.filter((p) => p.eligible)),
-      league: courseRates(controlRows.filter((p) => p.eligible)),
+      batter: conventionalCourseRates(targetRows),
+      league: conventionalCourseRates(controlRows),
     },
     common: { batter: courseRates(target), league: courseRates(league) },
     paired: tallies.map(({ courseExpected, expectationExpected, ...g }) => ({

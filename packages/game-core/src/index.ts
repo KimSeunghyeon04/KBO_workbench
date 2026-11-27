@@ -50,6 +50,7 @@ export {
   disciplinePoint,
   prepareDisciplineSeason,
   analyzeBatterDiscipline,
+  summarizeDisciplinePeriod,
   DISCIPLINE_MIN_CONTROLS,
   type PreparedDisciplineSeason,
 } from "./batter-discipline.js";

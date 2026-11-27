@@ -3,7 +3,7 @@ import type {
   PitchingStatisticsRow,
   PitchAnalysisSample,
   BatterProfileResponse,
-  DisciplineResponse,
+  DisciplinePeriodInput,
   PeriodMetric,
   PitchProfileGroup,
   PitchRateGroup,
@@ -312,13 +312,12 @@ export function compareBatterProfilePeriods(a: BatterProfileResponse, b: BatterP
   }
   return result;
 }
-export function compareDisciplinePeriods(a: DisciplineResponse, b: DisciplineResponse) {
-  const read = (d: DisciplineResponse) => d.courseComparison.conventional.batter;
-  const metric = (label: string, get: (r: ReturnType<typeof read>) => Observation) =>
-    periodMetric("전체", label, "rate", get(read(a)), get(read(b)));
-  const whiff = (d: DisciplineResponse) => {
-    const swings = sum(d.summary, (g) => g.swings),
-      whiffs = sum(d.summary, (g) => g.whiffs);
+export function compareDisciplinePeriods(a: DisciplinePeriodInput, b: DisciplinePeriodInput) {
+  const metric = (
+    label: string,
+    get: (r: DisciplinePeriodInput["conventionalBatter"]) => Observation,
+  ) => periodMetric("전체", label, "rate", get(a.conventionalBatter), get(b.conventionalBatter));
+  const whiff = ({ mapSwings: swings, mapWhiffs: whiffs }: DisciplinePeriodInput) => {
     return periodObservation(swings === 0 ? null : whiffs / swings, whiffs, swings);
   };
   return [

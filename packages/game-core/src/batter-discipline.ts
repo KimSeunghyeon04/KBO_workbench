@@ -6,9 +6,10 @@ import type {
   DisciplineQuery,
   DisciplineResponse,
   DisciplineGroup,
+  DisciplinePeriodInput,
 } from "@kbo/contracts";
 import { crossingTime, pitchComparisonStart } from "./pitch-trajectory.js";
-import { compareDisciplineCourses } from "./batter-course-comparison.js";
+import { compareDisciplineCourses, conventionalCourseRates } from "./batter-course-comparison.js";
 import { STRIKE_ZONE_HALF_WIDTH_FEET } from "./strike-zone.js";
 import { observedPitchLocation } from "./pitch-location.js";
 
@@ -225,11 +226,11 @@ function summarize(
   }));
 }
 
-export function analyzeBatterDiscipline(
+function selectDisciplineSample(
   season: PreparedDisciplineSeason,
   batterId: string,
   query: DisciplineQuery,
-): DisciplineResponse {
+) {
   if (query.season !== season.snapshot.season) throw new Error("Discipline season mismatch");
   const scope = resolveAnalysisScope({
     season: query.season,
@@ -239,13 +240,66 @@ export function analyzeBatterDiscipline(
   });
   const inTarget = (p: { gameDate: string }) => inAnalysisPeriod(p.gameDate, scope);
   const inControl = (p: { gameDate: string }) => query.leaguePeriod !== "target" || inTarget(p);
-  const targetRows = season.rows.filter(
-    (p) => p.batterId === batterId && matches(p, query) && inTarget(p),
-  );
-  const filtered = season.points.filter((p) => matches(p, query));
-  const selected = filtered.filter((p) => p.batterId === batterId && inTarget(p));
-  const controls = filtered.filter((p) => p.batterId !== batterId && inControl(p));
+  type Pitch = PreparedDisciplineSeason["rows"][number] | PreparedPoint;
+  const selectTarget = (p: Pitch) => p.batterId === batterId && matches(p, query) && inTarget(p);
+  const selectControl = (p: Pitch) => p.batterId !== batterId && matches(p, query) && inControl(p);
+  return {
+    targetRows: season.rows.filter(selectTarget),
+    selected: season.points.filter(selectTarget),
+    selectControl,
+  };
+}
+
+function disciplineCoverage(
+  targetRows: PreparedDisciplineSeason["rows"],
+  selected: readonly PreparedPoint[],
+  leagueLocationPitches: number,
+): DisciplineResponse["coverage"] {
   const eligible = targetRows.filter((p) => p.eligible).length;
+  return {
+    actualPitches: targetRows.length,
+    excludedSituations: targetRows.length - eligible,
+    missingLocation: eligible - selected.length,
+    locationPitches: selected.length,
+    comparisonPitches: selected.filter((p) => p.expectedInZone !== null).length,
+    leagueLocationPitches,
+  };
+}
+
+export function summarizeDisciplinePeriod(
+  season: PreparedDisciplineSeason,
+  batterId: string,
+  query: DisciplineQuery,
+): DisciplinePeriodInput {
+  const { targetRows, selected, selectControl } = selectDisciplineSample(season, batterId, query);
+  const leagueLocationPitches = season.points.reduce(
+    (n, pitch) => n + Number(selectControl(pitch)),
+    0,
+  );
+  let mapSwings = 0;
+  let mapWhiffs = 0;
+  for (const pitch of selected) {
+    mapSwings += Number(pitch.swing);
+    mapWhiffs += Number(pitch.whiff);
+  }
+  return {
+    query,
+    batterId,
+    sourceHash: season.snapshot.sourceHash,
+    coverage: disciplineCoverage(targetRows, selected, leagueLocationPitches),
+    conventionalBatter: conventionalCourseRates(targetRows),
+    mapSwings,
+    mapWhiffs,
+  };
+}
+
+export function analyzeBatterDiscipline(
+  season: PreparedDisciplineSeason,
+  batterId: string,
+  query: DisciplineQuery,
+): DisciplineResponse {
+  const { targetRows, selected, selectControl } = selectDisciplineSample(season, batterId, query);
+  const controls = season.points.filter(selectControl);
   const summarizeGroups = (keys: string[], key: (p: DisciplinePoint) => string | null) =>
     summarize(keys, selected, controls, key);
   const deviation = (axis: "deltaXCm" | "deltaZCm" | "deltaMs") =>
@@ -274,18 +328,11 @@ export function analyzeBatterDiscipline(
         season.rows.filter((p) => p.batterId === batterId).map((p) => p.pitchType ?? "구종 미상"),
       ),
     ].sort(),
-    coverage: {
-      actualPitches: targetRows.length,
-      excludedSituations: targetRows.length - eligible,
-      missingLocation: eligible - selected.length,
-      locationPitches: selected.length,
-      comparisonPitches: selected.filter((p) => p.expectedInZone !== null).length,
-      leagueLocationPitches: controls.length,
-    },
+    coverage: disciplineCoverage(targetRows, selected, controls.length),
     summary: summarizeGroups(summaryKeys, (p) => (p.inZone ? "zone" : "outside")),
     courseComparison: compareDisciplineCourses(
       targetRows,
-      season.rows.filter((p) => p.batterId !== batterId && matches(p, query) && inControl(p)),
+      season.rows.filter(selectControl),
       selected,
       controls,
       stratum,

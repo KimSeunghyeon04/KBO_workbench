@@ -1,4 +1,5 @@
 import { resolveAnalysisScope, type DisciplineQuery } from "@kbo/contracts";
+import { createHash } from "node:crypto";
 import { mkdtempDisposable } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -67,7 +68,11 @@ describe("batter discipline API and worker", () => {
     await store.write(scope, Buffer.from("incomplete"));
     guard.mockClear();
     const original = disciplineSnapshot([disciplineRow({ pitchId: "new-pitch" })]);
-    const snapshot = vi.fn(async () => ({ ...original, sourceHash: "b".repeat(64) }));
+    let current = { ...original, sourceHash: "b".repeat(64) };
+    const snapshot = vi.fn(async (_season: number, known?: string) => ({
+      ...current,
+      rows: known === current.sourceHash ? null : current.rows,
+    }));
     const sourceHash = vi.fn(async () => "b".repeat(64)).mockResolvedValueOnce("a".repeat(64));
     const cache = { store, sourceHash, reportError: vi.fn() };
     const analyze = async (query: DisciplineQuery = { season: 2024 }) => {
@@ -89,18 +94,98 @@ describe("batter discipline API and worker", () => {
       ...first,
       query: { season: 2024, competition: "regular" },
     });
+    expect(snapshot).toHaveBeenCalledExactlyOnceWith(2024, first.sourceHash, {
+      competition: "regular",
+    });
+    expect(sourceHash).toHaveBeenCalledOnce();
+
+    const artifact = await store.read(scope);
+    if (artifact === undefined) throw new Error("Prepared fixture missing");
+    const gzipped = artifact.subarray(100);
+    await store.write(
+      scope,
+      Buffer.concat([createHash("sha256").update(gzipped).digest(), gzipped]),
+    );
+    snapshot.mockClear();
+    expect(await analyze()).toEqual(first);
     expect(snapshot).not.toHaveBeenCalled();
 
-    const updated = { ...original, sourceHash: "c".repeat(64), rows: [] };
-    sourceHash.mockResolvedValue(updated.sourceHash);
-    snapshot.mockResolvedValue(updated);
-    expect((await analyze()).coverage.actualPitches).toBe(0);
-    expect(snapshot).toHaveBeenCalledTimes(1);
+    await store.write(scope, artifact);
+    current = { ...original, sourceHash: "c".repeat(64), rows: [] };
+    sourceHash.mockClear();
+    const post = vi.spyOn(Worker.prototype, "postMessage");
+    try {
+      expect((await analyze()).coverage.actualPitches).toBe(0);
+      expect(snapshot).toHaveBeenCalledExactlyOnceWith(2024, first.sourceHash, {});
+      expect(sourceHash).not.toHaveBeenCalled();
+      expect(
+        post.mock.calls.some(
+          ([message]) => message !== null && typeof message === "object" && "artifact" in message,
+        ),
+      ).toBe(false);
+    } finally {
+      post.mockRestore();
+    }
 
-    await store.write(scope, Buffer.from("damaged"));
+    const newArtifact = await store.read(scope);
+    if (newArtifact === undefined) throw new Error("Updated prepared fixture missing");
+    const damaged = Buffer.from(newArtifact);
+    damaged.writeUInt8(damaged.readUInt8(68) ^ 255, 68);
+    await store.write(scope, damaged);
     snapshot.mockClear();
-    expect((await analyze()).sourceHash).toBe(updated.sourceHash);
-    expect(snapshot).toHaveBeenCalledTimes(1);
+    expect((await analyze()).coverage.actualPitches).toBe(0);
+    expect(snapshot.mock.calls.map(([, known]) => known)).toEqual([current.sourceHash, undefined]);
+  });
+
+  it("returns only the shared period counts and keeps full and period requests independent", async () => {
+    const source = disciplineSnapshot([
+      disciplineRow({ pitchId: "called", swing: false }),
+      disciplineRow({ pitchId: "miss", swing: true, whiff: true }),
+      disciplineRow({ pitchId: "excluded", eligible: false }),
+      disciplineRow({ pitchId: "control", batterId: "other" }),
+    ]);
+    const snapshot = vi.fn(async (_season: number, known?: string) => ({
+      ...source,
+      rows: known === source.sourceHash ? null : source.rows,
+    }));
+    const service = new BatterDisciplineService({ snapshot });
+    try {
+      const query = { season: 2024 };
+      const period = service.analyzePeriod(query, "b1");
+      expect(service.analyzePeriod(query, "b1")).toBe(period);
+      const [compact, full] = await Promise.all([period, service.analyze(query, "b1")]);
+      expect(compact).toEqual({
+        query,
+        batterId: "b1",
+        sourceHash: source.sourceHash,
+        coverage: {
+          actualPitches: 3,
+          excludedSituations: 1,
+          missingLocation: 0,
+          locationPitches: 2,
+          comparisonPitches: 2,
+          leagueLocationPitches: 1,
+        },
+        conventionalBatter: {
+          pitches: 2,
+          swings: 1,
+          zonePitches: 2,
+          zoneSwings: 1,
+          outsidePitches: 0,
+          outsideSwings: 0,
+          zoneRate: 1,
+          swingRate: 0.5,
+          chaseRate: null,
+          zoneSwingRate: 0.5,
+        },
+        mapSwings: 1,
+        mapWhiffs: 1,
+      });
+      expect(full.points.map(({ pitchId }) => pitchId)).toEqual(["called", "miss"]);
+      expect(compact.coverage).toEqual(full.coverage);
+    } finally {
+      await service.close();
+    }
   });
 
   it("responds in pitch order during a blocked save and drains the latest prepared rows on close", async () => {
@@ -108,7 +193,10 @@ describe("batter discipline API and worker", () => {
       disciplineRow({ pitchId: "pitch-b", swing: true }),
       disciplineRow({ pitchId: "pitch-a" }),
     ]);
-    const snapshot = vi.fn(async () => source);
+    const snapshot = vi.fn(async (_season: number, known?: string) => ({
+      ...source,
+      rows: known === source.sourceHash ? null : source.rows,
+    }));
     const firstWriteStarted = Promise.withResolvers<undefined>();
     const firstWrite = Promise.withResolvers<undefined>();
     const lastWriteStarted = Promise.withResolvers<undefined>();
@@ -190,7 +278,7 @@ describe("batter discipline API and worker", () => {
       const reopened = new BatterDisciplineService({ snapshot }, cache);
       try {
         expect(await reopened.analyze(query, "b1")).toEqual(latest);
-        expect(snapshot).not.toHaveBeenCalled();
+        expect(snapshot).toHaveBeenCalledExactlyOnceWith(2024, source.sourceHash, {});
       } finally {
         await reopened.close();
       }

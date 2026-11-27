@@ -45,6 +45,7 @@ export interface AppRuntime {
     | "catalogSeasons"
     | "countStoredGames"
     | "storedGameIds"
+    | "storedGameCounts"
     | "currentRevisionBase"
     | "loadCompiled"
     | "loadCorrectionDraft"

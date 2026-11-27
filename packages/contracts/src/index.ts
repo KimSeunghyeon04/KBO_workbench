@@ -481,6 +481,7 @@ export {
   DisciplinePointSchema,
   DisciplineGroupSchema,
   DisciplineResponseSchema,
+  DisciplinePeriodInputSchema,
   type DisciplineQuery,
   type DisciplineCatalog,
   type DisciplineRow,
@@ -492,6 +493,7 @@ export {
   type DisciplineCourseRates,
   type DisciplineCourseComparison,
   type DisciplineResponse,
+  type DisciplinePeriodInput,
 } from "./batter-discipline.js";
 export { BatterStrikeZoneSchema, type BatterStrikeZone } from "./strike-zone.js";
 export {

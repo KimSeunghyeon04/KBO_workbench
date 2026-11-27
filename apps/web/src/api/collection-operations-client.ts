@@ -109,9 +109,11 @@ export const collectionHistoryDetailOptions = (id: string) =>
         signal,
       ),
   });
+export const collectionHistoryItemsKey = (id: string) =>
+  [...collectionOperationKey, "history-items", id] as const;
 export const collectionHistoryItemsOptions = (id: string, page: number, problemsOnly: boolean) =>
   queryOptions({
-    queryKey: [...collectionOperationKey, "history-items", id, page, problemsOnly],
+    queryKey: [...collectionHistoryItemsKey(id), page, problemsOnly],
     enabled: id !== "",
     queryFn: ({ signal }) =>
       get(

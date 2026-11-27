@@ -11,7 +11,7 @@ import {
   analysisPeriodQueries,
   canonicalStringify,
   type DisciplineQuery,
-  type DisciplineResponse,
+  type DisciplinePeriodInput,
 } from "@kbo/contracts";
 import { compareDisciplinePeriods } from "@kbo/game-core";
 import { assertPeriodSourceHash, periodSnapshot } from "../analysis-period-pair.js";
@@ -46,7 +46,7 @@ export const batterDisciplineRoutes: FastifyPluginAsyncTypebox<Options> = async 
           reportError: (err) => app.log.warn({ err }, "Discipline prepared cache unavailable"),
         },
   );
-  const periods = new BoundedReadCache<DisciplineResponse>(16 * 1024 * 1024, 16, 300_000);
+  const periods = new BoundedReadCache<DisciplinePeriodInput>(16 * 1024 * 1024, 16, 300_000);
   const readPeriods = async (first: DisciplineQuery, second: DisciplineQuery, batterId: string) => {
     const firstKey = canonicalStringify([first, batterId]);
     const secondKey = canonicalStringify([second, batterId]);
@@ -57,11 +57,11 @@ export const batterDisciplineRoutes: FastifyPluginAsyncTypebox<Options> = async 
       if (b?.sourceHash !== secondHash) b = undefined;
       if (a !== undefined && b !== undefined) return { first: a, second: b };
     }
-    a ??= await periods.load(firstKey, () => service.analyze(first, batterId), true);
+    a ??= await periods.load(firstKey, () => service.analyzePeriod(first, batterId), true);
     b ??=
       firstKey === secondKey
         ? a
-        : await periods.load(secondKey, () => service.analyze(second, batterId), true);
+        : await periods.load(secondKey, () => service.analyzePeriod(second, batterId), true);
     const [firstHash, secondHash] = await repository.readPeriodSourceHashes(first, second);
     assertPeriodSourceHash(a.sourceHash, firstHash);
     assertPeriodSourceHash(b.sourceHash, secondHash);

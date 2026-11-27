@@ -5,7 +5,6 @@ import {
   HealthStatusSchema,
   SystemStatusSchema,
   type FailureDiagnostic,
-  type GameCatalogItem,
 } from "@kbo/contracts";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 
@@ -16,6 +15,12 @@ export const systemRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app,
   const readStatus = createSystemStatusReader(() =>
     buildSystemStatus(context.config, context.pool),
   );
+  const readCounts = async (stagingGameIds: readonly string[], healthy = true) => {
+    const { stored, alreadyStored } = healthy
+      ? await context.runtime.revisionStore.storedGameCounts(stagingGameIds)
+      : { stored: 0, alreadyStored: 0 };
+    return { readyToImport: stagingGameIds.length - alreadyStored, stored };
+  };
   app.get("/health/live", { schema: { response: { 200: HealthStatusSchema } } }, async () => ({
     status: "ok" as const,
   }));
@@ -42,14 +47,11 @@ export const systemRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app,
     async () => {
       const [database, workspaceCatalog] = await Promise.all([
         readStatus().then((status) => status.database),
-        context.runtime.workspace.catalog(),
+        context.runtime.workspace.catalogOverview(),
       ]);
-      const storedGameIds = database.healthy
-        ? await context.runtime.revisionStore.storedGameIds()
-        : [];
       return {
         database,
-        counts: databaseGameCounts(workspaceCatalog.games, storedGameIds),
+        counts: await readCounts(workspaceCatalog.stagingGameIds, database.healthy),
       };
     },
   );
@@ -58,35 +60,24 @@ export const systemRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app,
     "/api/v2/dashboard",
     { schema: { response: { 200: DashboardSummarySchema } } },
     async () => {
-      const [system, catalog, storedGameIds] = await Promise.all([
+      const [system, catalog] = await Promise.all([
         readStatus(),
-        context.runtime.workspace.catalog(),
-        context.runtime.revisionStore.storedGameIds(),
+        context.runtime.workspace.catalogOverview(),
       ]);
+      const counts = await readCounts(catalog.stagingGameIds);
       const jobs = context.runtime.collectionJobs.list();
       return {
         status: system.status,
         counts: {
           collecting: jobs.filter((job) => ["queued", "running", "cancelling"].includes(job.status))
             .length,
-          reviewRequired: catalog.games.filter(
-            (game) => game.authority === "quarantine" || game.authority === "source_failure",
-          ).length,
-          ...databaseGameCounts(catalog.games, storedGameIds),
+          reviewRequired: catalog.reviewRequired,
+          ...counts,
         },
       };
     },
   );
 };
-
-function databaseGameCounts(games: readonly GameCatalogItem[], storedGameIds: readonly string[]) {
-  const stored = new Set(storedGameIds);
-  return {
-    readyToImport: games.filter((game) => game.authority === "staging" && !stored.has(game.gameId))
-      .length,
-    stored: stored.size,
-  };
-}
 
 function recentFailures(runtime: RouteContext["runtime"]): FailureDiagnostic[] {
   return [

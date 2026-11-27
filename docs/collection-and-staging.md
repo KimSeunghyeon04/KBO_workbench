@@ -158,6 +158,10 @@ WebKit이 포함되어 있으며 별도 display 서버를 요구하지 않는다
 - `POST /api/v2/collection-selections`: `all_matching` 또는 `explicit`, 포함/제외 ID로 선택 확정
 - `POST /api/v2/collection-jobs`: 기존 scope와 `{kind:"selection",selectionId}` 지원
 - `GET /api/v2/collection-jobs?activeOnly=true`: 진행 작업 snapshot
+
+열려 있는 작업 결과는 작업 상세의 상태나 완료 건수가 바뀌면 갱신한다. 진행 중이거나 상세 확인에
+실패했을 때는 15초마다 결과를 재확인하고, 작업이 끝나면 마지막 결과를 갱신한다.
+
 - `GET /api/v2/collection-history`, `/:id`, `/:id/games`: 보존된 작업과 경기 결과 페이지;
   `problemsOnly=true`는 검토 필요·원천 실패·중단 결과
 

@@ -438,6 +438,11 @@ export class StagingWorkspace {
     return this.catalogIndex.snapshot(gameIds);
   }
 
+  public catalogOverview() {
+    this.assertOpen();
+    return this.catalogIndex.overview();
+  }
+
   public async correctionGameCatalog(): Promise<CorrectionGameCatalog> {
     this.assertOpen();
     const games = (await this.catalog()).games.flatMap((game) =>

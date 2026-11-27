@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +11,7 @@ import type {
   CollectionViewQuery,
 } from "@kbo/contracts";
 import { CollectPage } from "../../apps/web/src/pages/collect-page.js";
+import { CollectionHistory } from "../../apps/web/src/collection/collection-panels.js";
 import {
   collectionLevel,
   collectionNavigationKey,
@@ -20,8 +21,95 @@ import {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   localStorage.clear();
   vi.unstubAllGlobals();
+});
+it("refreshes terminal results with an unchanged completed count and cancels an older first read", async () => {
+  vi.useFakeTimers();
+  const at = "2026-09-05T00:00:00.000Z";
+  const request = {
+    scope: { kind: "game_ids", gameIds: ["game-a"] },
+    idempotencyKey: "fixture-job",
+  };
+  const job = {
+    jobId: "job-a",
+    kind: "collection",
+    scope: request.scope,
+    status: "running",
+    createdAt: at,
+    startedAt: at,
+    finishedAt: null as string | null,
+    completedItems: 0,
+    skippedItems: 0,
+    totalItems: 1,
+    currentGameId: null,
+    summary: { ready: 0, quarantined: 0, sourceFailures: 0 },
+    error: null,
+    errorCategory: null,
+  };
+  const signals: (AbortSignal | null | undefined)[] = [];
+  const first = Promise.withResolvers<Response>();
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input), "http://localhost");
+    if (url.pathname.endsWith("/job-a"))
+      return Response.json({ job, request, sequence: 0, range: null });
+    if (url.pathname.endsWith("/job-a/games")) {
+      signals.push(init?.signal);
+      if (signals.length === 1) return first.promise;
+      return Response.json({
+        items: [
+          {
+            result: {
+              gameId: "game-a",
+              gameDate: null,
+              label: "중단 경기",
+              outcome: "interrupted",
+              message: "수집 중단",
+              finishedAt: at,
+            },
+            current: null,
+          },
+        ],
+        total: 1,
+        page: 1,
+        limit: 50,
+      });
+    }
+    return Response.json({ records: [], total: 0, page: 1, limit: 50 });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    createElement(
+      QueryClientProvider,
+      { client },
+      createElement(
+        MemoryRouter,
+        null,
+        createElement(CollectionHistory, {
+          page: 1,
+          jobId: "job-a",
+          resultPage: 1,
+          problemsOnly: false,
+          update: vi.fn(),
+        }),
+      ),
+    ),
+  );
+  const advance = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
+  await advance(2_100);
+  expect(signals).toHaveLength(1);
+  job.status = "cancelled";
+  job.finishedAt = at;
+  await advance(2_100);
+  expect(signals[0]?.aborted).toBe(true);
+  expect(signals).toHaveLength(2);
+  first.resolve(Response.json({ items: [], total: 0, page: 1, limit: 50 }));
+  await advance(15_100);
+  expect(screen.getByText("중단 경기")).toBeTruthy();
+  expect(signals).toHaveLength(2);
+  cleanup();
+  client.clear();
 });
 const range = { startDate: "2026-01-01", endDate: "2026-12-31" };
 const discovery: CollectionDiscovery = {

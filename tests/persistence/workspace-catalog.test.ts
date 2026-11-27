@@ -16,6 +16,19 @@ function item(gameId: string, warningFindings = 0): GameCatalogItem {
 }
 
 describe("workspace 표시 요약 인덱스", () => {
+  it("counts the current authorities without cloning and sorting the list", async () => {
+    const load = vi.fn(async (id: string) => ({ ...item(id), authority: "staging" as const }));
+    const catalog = new WorkspaceCatalog(load);
+    catalog.seed(item("source-failure"));
+    catalog.seed({ ...item("quarantine"), authority: "quarantine" });
+    catalog.seed(item("fixed"));
+    catalog.invalidate("fixed");
+    expect(await catalog.overview()).toEqual({ stagingGameIds: ["fixed"], reviewRequired: 2 });
+    expect(load).toHaveBeenCalledExactlyOnceWith("fixed");
+    const copy = await catalog.overview();
+    copy.stagingGameIds.push("other");
+    expect(await catalog.overview()).toEqual({ stagingGameIds: ["fixed"], reviewRequired: 2 });
+  });
   it("10,000경기 목록의 반복·동시 조회는 파일을 다시 읽지 않는다", async () => {
     const load = vi.fn(async () => null);
     const catalog = new WorkspaceCatalog(load);

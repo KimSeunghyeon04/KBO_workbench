@@ -3559,6 +3559,12 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(inventory.map(({ gameId }) => gameId)).toEqual([ids[1], ids[0]]);
     expect(page.games).toEqual([...inventory].reverse());
     expect(await store.catalog([])).toEqual([]);
+    expect(await store.storedGameCounts([])).toEqual({ stored: 2, alreadyStored: 0 });
+    const onlyFirst = first.metadata.gameId;
+    expect(await store.storedGameCounts([onlyFirst, onlyFirst, "missing"])).toEqual({
+      stored: 2,
+      alreadyStored: 1,
+    });
   });
 
   it("타자 선구안은 공통 표본 제외 대상을 실제 투구 합계에 보존하고 적격 분모에서 뺀다", async () => {

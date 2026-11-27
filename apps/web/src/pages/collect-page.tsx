@@ -7,6 +7,7 @@ import {
   activeCollectionOptions,
   cancelDiscovery,
   collectionOperationKey,
+  collectionHistoryItemsKey,
   createDiscovery,
   discoveryListOptions,
   discoveryOptions,
@@ -107,19 +108,29 @@ export function CollectPage(): React.JSX.Element {
       .map((job) => job.jobId)
       .sort()
       .join(",") ?? "";
+  const refreshAfterJob = useCallback(
+    (id: string) => {
+      const itemsKey = collectionHistoryItemsKey(id);
+      return client.invalidateQueries({
+        queryKey: collectionOperationKey,
+        predicate: ({ queryKey }) => !itemsKey.every((value, index) => queryKey[index] === value),
+      });
+    },
+    [client],
+  );
   useEffect(() => {
     for (const id of activeIds.split(",").filter(Boolean)) trackedJobs.current.add(id);
     if (active.data === undefined) return;
     for (const id of trackedJobs.current)
       if (!active.data.jobs.some((job) => job.jobId === id)) {
         trackedJobs.current.delete(id);
-        void client.invalidateQueries({ queryKey: collectionOperationKey });
+        void refreshAfterJob(id);
         if (id === startedJob) {
           update({ tab: "history", job: id, results: null, resultPage: null });
           setStartedJob(null);
         }
       }
-  }, [active.data, activeIds, client, startedJob, update]);
+  }, [active.data, activeIds, refreshAfterJob, startedJob, update]);
   useEffect(() => {
     const streams = activeIds
       .split(",")
@@ -127,13 +138,12 @@ export function CollectPage(): React.JSX.Element {
       .map((id) => {
         const stream = new EventSource(`/api/v2/collection-jobs/${encodeURIComponent(id)}/events`);
         stream.onopen = () => {
-          void client.invalidateQueries({ queryKey: collectionOperationKey });
+          void refreshAfterJob(id);
         };
         stream.onmessage = (message) => {
           try {
             const event = decodeCollectionJobEvent(message.data);
-            if (event.type !== "progress")
-              void client.invalidateQueries({ queryKey: collectionOperationKey });
+            if (event.type !== "progress") void refreshAfterJob(id);
           } catch {
             /* Snapshot polling recovers from malformed or truncated events. */
           }
@@ -141,7 +151,7 @@ export function CollectPage(): React.JSX.Element {
         return stream;
       });
     return () => streams.forEach((stream) => stream.close());
-  }, [activeIds, client]);
+  }, [activeIds, refreshAfterJob]);
   const refresh = useCallback(async () => {
     await client.invalidateQueries({ queryKey: collectionOperationKey });
   }, [client]);

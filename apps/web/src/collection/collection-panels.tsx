@@ -6,6 +6,7 @@ import { createCorrectionSession } from "../api/correction-client";
 import {
   collectionHistoryOptions,
   collectionHistoryDetailOptions,
+  collectionHistoryItemsKey,
   collectionHistoryItemsOptions,
 } from "../api/collection-operations-client";
 import {
@@ -204,6 +205,10 @@ export function ActiveJob({
     </section>
   );
 }
+function activeHistory(status: CollectionJob["status"] | undefined): boolean {
+  return status === "queued" || status === "running" || status === "cancelling";
+}
+
 export function CollectionHistory({
   page,
   jobId,
@@ -221,24 +226,38 @@ export function CollectionHistory({
   const client = useQueryClient();
   const detail = useQuery({
     ...collectionHistoryDetailOptions(jobId),
-    refetchInterval: (query) => {
-      const status = query.state.data?.job.status;
-      return status === "queued" || status === "running" || status === "cancelling" ? 2_000 : false;
-    },
-  });
-  const status = detail.data?.job.status;
-  React.useEffect(() => {
-    if (jobId !== "")
-      void client.invalidateQueries({
-        queryKey: collectionHistoryItemsOptions(jobId, resultPage, problemsOnly).queryKey,
-      });
-  }, [client, jobId, resultPage, problemsOnly, status, detail.data?.job.completedItems]);
-  const items = useQuery({
-    ...collectionHistoryItemsOptions(jobId, resultPage, problemsOnly),
-    refetchInterval:
-      status === "queued" || status === "running" || status === "cancelling" ? 2_000 : false,
+    refetchInterval: ({ state }) =>
+      activeHistory(state.data?.job.status) ? 2_000 : state.status === "error" ? 15_000 : false,
   });
   const job = detail.data?.job;
+  const status = job?.status;
+  const completedItems = job?.completedItems;
+  const observed = status !== undefined || detail.isError;
+  const previous = React.useRef<
+    { jobId: string; status: typeof status; completedItems: typeof completedItems } | undefined
+  >(undefined);
+  React.useEffect(() => {
+    if (!observed || jobId === "") {
+      previous.current = undefined;
+      return;
+    }
+    const before = previous.current;
+    previous.current = { jobId, status, completedItems };
+    if (
+      before?.jobId === jobId &&
+      status !== undefined &&
+      (before.status !== status || before.completedItems !== completedItems)
+    ) {
+      const queryKey = collectionHistoryItemsKey(jobId);
+      // Even a first request can finish with results from before the job ended.
+      void client.cancelQueries({ queryKey }).then(() => client.invalidateQueries({ queryKey }));
+    }
+  }, [client, jobId, observed, status, completedItems]);
+  const items = useQuery({
+    ...collectionHistoryItemsOptions(jobId, resultPage, problemsOnly),
+    enabled: jobId !== "" && observed,
+    refetchInterval: activeHistory(status) || detail.isError ? 15_000 : false,
+  });
   const error = history.error ?? detail.error ?? items.error;
   return (
     <section className="panel collection-history" aria-label="수집 기록">

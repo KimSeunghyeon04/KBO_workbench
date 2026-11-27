@@ -65,6 +65,18 @@ export async function readStoredGameIds(pool: CatalogPool): Promise<string[]> {
   ).map((row) => row.gameId);
 }
 
+export async function readStoredGameCounts(pool: CatalogPool, candidates: readonly string[]) {
+  const result = await pool.query<{ stored: number; alreadyStored: number }>(
+    `SELECT count(*)::integer AS stored,
+       count(*) FILTER (WHERE game_id = ANY($1::text[]))::integer AS "alreadyStored"
+     FROM analytics.current_game_revisions`,
+    [candidates],
+  );
+  const counts = result.rows[0];
+  if (counts === undefined) throw new Error("Stored game counts are missing");
+  return counts;
+}
+
 export async function readDatabaseSeasons(pool: CatalogPool): Promise<number[]> {
   const result = await pool.query(
     "SELECT DISTINCT season FROM analytics.current_game_revisions ORDER BY season DESC",

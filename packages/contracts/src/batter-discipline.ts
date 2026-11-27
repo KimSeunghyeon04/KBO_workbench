@@ -222,3 +222,15 @@ export const DisciplineResponseSchema = Type.Object(
   strict,
 );
 export type DisciplineResponse = Static<typeof DisciplineResponseSchema>;
+export const DisciplinePeriodInputSchema = Type.Composite(
+  [
+    Type.Pick(DisciplineResponseSchema, ["query", "batterId", "sourceHash", "coverage"]),
+    Type.Object({
+      conventionalBatter: DisciplineCourseRatesSchema,
+      mapSwings: count,
+      mapWhiffs: count,
+    }),
+  ],
+  strict,
+);
+export type DisciplinePeriodInput = Static<typeof DisciplinePeriodInputSchema>;

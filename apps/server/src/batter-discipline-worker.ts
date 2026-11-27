@@ -13,11 +13,24 @@ import {
 } from "@kbo/contracts";
 import {
   analyzeBatterDiscipline,
+  summarizeDisciplinePeriod,
   prepareDisciplineSeason,
   type PreparedDisciplineSeason,
 } from "@kbo/game-core";
 import { Type, type Static } from "@sinclair/typebox";
 import { TypeCompiler } from "@sinclair/typebox/compiler";
+const {
+  disciplineCacheHeader,
+  disciplineCacheHeaderLength,
+  disciplineCacheSourceHash,
+}: typeof import("./batter-discipline-cache-header.js") = await import(
+  new URL(
+    import.meta.url.endsWith(".ts")
+      ? "./batter-discipline-cache-header.ts"
+      : "./batter-discipline-cache-header.js",
+    import.meta.url,
+  ).href
+);
 
 const version = 1;
 const digestSize = 32;
@@ -65,8 +78,8 @@ const schema = Type.Object(
 );
 const validator = TypeCompiler.Compile(schema);
 
-function digest(payload: Uint8Array) {
-  return createHash("sha256").update(payload).digest();
+function digest(header: Uint8Array, payload: Uint8Array) {
+  return createHash("sha256").update(header).update(payload).digest();
 }
 
 function encodeDisciplineCache(prepared: PreparedDisciplineSeason): Uint8Array | undefined {
@@ -78,18 +91,29 @@ function encodeDisciplineCache(prepared: PreparedDisciplineSeason): Uint8Array |
   });
   if (Buffer.byteLength(json) > maxDecodedBytes) return undefined;
   const payload = gzipSync(json, { level: 1 });
-  if (digestSize + payload.byteLength > MAX_DISCIPLINE_CACHE_BYTES) return undefined;
-  return Buffer.concat([digest(payload), payload]);
+  const header = disciplineCacheHeader(prepared.snapshot.sourceHash);
+  if (header.byteLength + digestSize + payload.byteLength > MAX_DISCIPLINE_CACHE_BYTES)
+    return undefined;
+  return Buffer.concat([header, digest(header, payload), payload]);
 }
 
 function decodeDisciplineCache(
   bytes: Uint8Array,
   expected: Pick<PreparedDisciplineSeason["snapshot"], "season" | "sourceHash">,
 ): Static<typeof schema>["prepared"] | undefined {
-  if (bytes.byteLength <= digestSize || bytes.byteLength > MAX_DISCIPLINE_CACHE_BYTES)
+  const headerHash = disciplineCacheSourceHash(bytes);
+  const headerLength = headerHash === undefined ? 0 : disciplineCacheHeaderLength;
+  const payloadStart = headerLength + digestSize;
+  if (bytes.byteLength <= payloadStart || bytes.byteLength > MAX_DISCIPLINE_CACHE_BYTES)
     return undefined;
-  const payload = bytes.subarray(digestSize);
-  if (!digest(payload).equals(bytes.subarray(0, digestSize))) return undefined;
+  if (headerHash !== undefined && headerHash !== expected.sourceHash) return undefined;
+  const payload = bytes.subarray(payloadStart);
+  if (
+    !digest(bytes.subarray(0, headerLength), payload).equals(
+      bytes.subarray(headerLength, payloadStart),
+    )
+  )
+    return undefined;
   try {
     const raw: unknown = JSON.parse(
       gunzipSync(payload, { maxOutputLength: maxDecodedBytes }).toString("utf8"),
@@ -113,6 +137,7 @@ const requestSchema = Type.Object(
     query: DisciplineQuerySchema,
     append: Type.Boolean(),
     complete: Type.Boolean(),
+    mode: Type.Union([Type.Literal("full"), Type.Literal("period")]),
     artifact: Type.Optional(Type.Uint8Array()),
     ...DisciplineParamsSchema.properties,
   },
@@ -141,7 +166,7 @@ parentPort?.on("message", (raw: unknown) => {
   }
   // Restore in this worker so the HTTP thread never deserializes the season.
   if (!request.Check(raw)) throw new Error("Invalid discipline request");
-  const { snapshot, query, batterId, append, complete, artifact } = raw;
+  const { snapshot, query, batterId, append, complete, mode, artifact } = raw;
   if (artifact !== undefined) {
     const prepared = decodeDisciplineCache(artifact, snapshot);
     if (prepared === undefined) {
@@ -168,6 +193,11 @@ parentPort?.on("message", (raw: unknown) => {
     cached.snapshot.sourceHash !== snapshot.sourceHash
   )
     throw new Error("Discipline snapshot expired");
-  if (complete)
-    parentPort?.postMessage({ result: analyzeBatterDiscipline(cached, batterId, query) });
+  if (complete) {
+    const result =
+      mode === "period"
+        ? summarizeDisciplinePeriod(cached, batterId, query)
+        : analyzeBatterDiscipline(cached, batterId, query);
+    parentPort?.postMessage({ result });
+  }
 });
