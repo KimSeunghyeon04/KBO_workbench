@@ -1,10 +1,13 @@
 import { Type } from "@sinclair/typebox";
 import { MatchupModelSchema, type MatchupModel } from "@kbo/contracts";
 import { readAnalysisModelFile, writeAnalysisModelFile } from "./analysis-model-files.js";
-import { PitchQualityManifestSchema, type PitchQualityManifest } from "./pitch-quality-manifest.js";
+import {
+  StoredPitchQualityManifestSchema,
+  type PitchQualityManifest,
+} from "./pitch-quality-manifest.js";
 import { validMatchupModel } from "./matchup-model-validation.js";
 const envelope = Type.Object(
-  { model: MatchupModelSchema, manifest: PitchQualityManifestSchema },
+  { model: MatchupModelSchema, manifest: StoredPitchQualityManifestSchema },
   { additionalProperties: false },
 );
 export class MatchupModelWorkspace {

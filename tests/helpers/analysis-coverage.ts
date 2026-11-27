@@ -4,7 +4,7 @@ import type { CoverageSeason } from "@kbo/persistence";
 export function coverageSeasonFixture(): CoverageSeason {
   const response = coverageFixture();
   return {
-    version: 1,
+    version: 2,
     sourceKey: "c".repeat(64),
     referenceHash: "d".repeat(64),
     calibrationHash: response.calibrationHash,

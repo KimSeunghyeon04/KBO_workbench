@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Value } from "@sinclair/typebox/value";
 import {
   canonicalStringify,
+  PITCH_CALIBRATION_PARAMETERS,
   PitchAnalysisSampleSchema,
   PitchCalibrationSeasonSchema,
 } from "@kbo/contracts";
@@ -97,7 +98,11 @@ describe("daily park calibration integration", () => {
   it("coalesces work, survives restart and passes a validated older snapshot only as a reuse hint", async () => {
     await using temp = await mkdtempDisposable(path.join(tmpdir(), "kbo-calibration-"));
     let workspace = await StagingWorkspace.open(temp.path);
-    const key = { modelVersion: 1, season: 2024, sourceHash: "a".repeat(64) } as const;
+    const key = {
+      modelVersion: PITCH_CALIBRATION_PARAMETERS.modelVersion,
+      season: 2024,
+      sourceHash: "a".repeat(64),
+    };
     const calculate = vi.fn(async () => emptyCalibration());
     try {
       const results = await Promise.all(
@@ -132,11 +137,15 @@ describe("daily park calibration integration", () => {
     async (damage) => {
       await using temp = await mkdtempDisposable(path.join(tmpdir(), "kbo-calibration-"));
       const workspace = await StagingWorkspace.open(temp.path);
-      const key = { modelVersion: 1, season: 2024, sourceHash: "a".repeat(64) } as const;
+      const key = {
+        modelVersion: PITCH_CALIBRATION_PARAMETERS.modelVersion,
+        season: 2024,
+        sourceHash: "a".repeat(64),
+      };
       const calculate = vi.fn(async () => emptyCalibration());
       const file = path.join(
         temp.path,
-        "analysis/pitch-calibration/v1/2024",
+        `analysis/pitch-calibration/v${key.modelVersion}/2024`,
         `${key.sourceHash}.json`,
       );
       try {

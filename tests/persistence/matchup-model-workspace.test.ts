@@ -7,7 +7,7 @@ import { trainPitchQuality, trainMatchupModel } from "@kbo/game-core";
 it("binds matchup models to the immutable base model and rejects corruption, false adoption and cancellation", async () => {
   await using directory = await mkdtempDisposable(path.join(tmpdir(), "kbo-matchup-"));
   const workspace = await StagingWorkspace.open(directory.path),
-    manifest = { version: 1 as const, through: 2024, games: [], seasons: [] },
+    manifest = { version: 2 as const, through: 2024, games: [], seasons: [] },
     sourceHash = pitchQualitySourceHash(manifest),
     base = trainPitchQuality([], [], sourceHash),
     baseHash = await workspace.pitchQuality.save(base, manifest),

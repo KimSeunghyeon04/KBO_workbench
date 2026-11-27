@@ -4,35 +4,20 @@ import type {
   PitchSequenceResponse,
   AnalysisScope,
 } from "@kbo/contracts";
-import { crossingTime } from "./pitch-trajectory.js";
+import { pitchComparisonStart, pitchStateAtPlane } from "./pitch-trajectory.js";
 import { matchesPitchOutcome } from "./pitch-outcomes.js";
 /** Provider coordinates, with no endpoint bias correction extended to the middle of the trajectory. */
 export function pitchPositionAtPlane(row: PitchSequenceRow, y: number) {
-  const { x0, y0, z0, vx0, vy0, vz0, ax, ay, az } = row;
-  if (
-    !row.supported ||
-    row.trackingId === null ||
-    x0 === null ||
-    y0 === null ||
-    z0 === null ||
-    vx0 === null ||
-    vy0 === null ||
-    vz0 === null ||
-    ax === null ||
-    ay === null ||
-    az === null ||
-    ![x0, y0, z0, vx0, vy0, vz0, ax, ay, az, y].every(Number.isFinite) ||
-    Math.abs(y0 - 50) > 1e-6 ||
-    y < 0 ||
-    y >= y0
-  )
-    return null;
-  const t = crossingTime(y0 - y, vy0, ay);
-  if (t === null) return null;
-  const x = x0 + vx0 * t + (ax * t * t) / 2,
-    z = z0 + vz0 * t + (az * t * t) / 2;
-  if (![x, z].every(Number.isFinite) || z < 0) return null;
-  return { xCm: x * 30.48, zCm: z * 30.48, timeMs: t * 1000 };
+  if (!row.supported || row.trackingId === null) return null;
+  const start = pitchComparisonStart(row);
+  if (start === null || y >= start.y) return null;
+  const point = pitchStateAtPlane(row, y);
+  if (point === null) return null;
+  return {
+    xCm: point.x * 30.48,
+    zCm: point.z * 30.48,
+    timeMs: (point.seconds - start.seconds) * 1000,
+  };
 }
 export function analyzePitchSequences(
   query: PitchSequenceQuery,

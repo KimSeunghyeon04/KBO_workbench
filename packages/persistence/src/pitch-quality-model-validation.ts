@@ -1,8 +1,14 @@
 import { modelTrainingPeriod, validModelEvaluationSeasons } from "@kbo/game-core";
 import type { PitchQualityModel } from "@kbo/contracts";
-import { pitchQualitySourceHash, type PitchQualityManifest } from "./pitch-quality-manifest.js";
+import {
+  pitchQualitySourceHash,
+  type StoredPitchQualityManifest,
+} from "./pitch-quality-manifest.js";
 
-export function validPitchQualityModel(model: PitchQualityModel, manifest: PitchQualityManifest) {
+export function validPitchQualityModel(
+  model: PitchQualityModel,
+  manifest: StoredPitchQualityManifest,
+) {
   const p = model.preprocessing;
   if (
     modelTrainingPeriod("quality", model.trainedThrough + 1).support !== "eligible" ||

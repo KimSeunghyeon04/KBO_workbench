@@ -1,4 +1,8 @@
-import type { PitchAnalysisSample, PitchCalibrationSeason } from "@kbo/contracts";
+import {
+  PITCH_CALIBRATION_PARAMETERS,
+  type PitchAnalysisSample,
+  type PitchCalibrationSeason,
+} from "@kbo/contracts";
 import type { PitchAnalysisRow } from "@kbo/persistence";
 
 export function calibrationSummary(
@@ -6,7 +10,7 @@ export function calibrationSummary(
   applied = 0,
 ): PitchAnalysisSample["calibration"] {
   return {
-    modelVersion: 1,
+    modelVersion: PITCH_CALIBRATION_PARAMETERS.modelVersion,
     profileHash: "c".repeat(64),
     windowDays: 84,
     halfLifeDays: 7,
@@ -16,7 +20,12 @@ export function calibrationSummary(
   };
 }
 export function emptyCalibration(season = 2024): PitchCalibrationSeason {
-  return { modelVersion: 1, season, sourceHash: "a".repeat(64), profiles: [] };
+  return {
+    modelVersion: PITCH_CALIBRATION_PARAMETERS.modelVersion,
+    season,
+    sourceHash: "a".repeat(64),
+    profiles: [],
+  };
 }
 
 export function calibrationRows(): PitchAnalysisRow[] {

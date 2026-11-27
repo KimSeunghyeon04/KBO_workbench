@@ -21,7 +21,7 @@ import {
 import { stagingDocumentHash } from "@kbo/game-core";
 import { createRevisionProjectionComputation } from "../../apps/server/src/computation.js";
 import { ComputationPool, ComputationBusyError } from "../../apps/server/src/computation-pool.js";
-import { calibrationRows } from "../helpers/pitch-calibration.js";
+import { calibrationRows, emptyCalibration } from "../helpers/pitch-calibration.js";
 
 const document = parseStagingGameDocumentV2(
   JSON.parse(await readFile("tests/fixtures/game-document-v2.golden.json", "utf8")) as unknown,
@@ -219,7 +219,7 @@ describe("bounded shared compiler workers", () => {
     try {
       const result = await pool.run({
         kind: "pitch_sample",
-        calibration: { modelVersion: 1, season: 2024, sourceHash: "a".repeat(64), profiles: [] },
+        calibration: emptyCalibration(),
         season: 2024,
         pitcherId: "pitcher",
         sourceHash: "a".repeat(64),

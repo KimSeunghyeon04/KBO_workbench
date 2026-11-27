@@ -70,6 +70,10 @@ pnpm analysis:train-matchup --through 2024 --dry-run
 공식 경기 분류를 채택해야 한다. 매치업 학습 전에는 같은 원천의 구종 기대 효과 모델이 준비되어야 한다.
 기준 미달 모델은 새 예측값으로 공개하지 않는다.
 
+50·55피트 PTS를 함께 반영하는 구종 기대 효과와 매치업은 학습 manifest 2를 사용한다.
+이전 manifest의 모델은 상태 화면에서 원천 변경을 확인할 수 있다. 새 기대값을 사용하려면
+구종 기대 효과를 먼저, 매치업을 다음으로 갱신한다.
+
 격리 DB에서 분류·학습·성능을 재현하는 `pnpm analysis:validate`와 후속
 `pnpm analysis:audit --run analysis/validation/<UUID>`의 인자·재개·정리 절차는
 [실데이터 검증](real-data-validation.md)에 있다. 운영 workspace에 모델을 공개하는 절차와 구분한다.

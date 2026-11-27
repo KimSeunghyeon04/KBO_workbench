@@ -7,7 +7,7 @@ import { trainPitchQuality } from "@kbo/game-core";
 it("publishes quality models only with matching manifests and intact feature dimensions", async () => {
   await using directory = await mkdtempDisposable(path.join(tmpdir(), "kbo-quality-"));
   const workspace = await StagingWorkspace.open(directory.path),
-    manifest = { version: 1 as const, through: 2024, games: [], seasons: [] },
+    manifest = { version: 2 as const, through: 2024, games: [], seasons: [] },
     model = trainPitchQuality([], [], pitchQualitySourceHash(manifest));
   try {
     const hash = await workspace.pitchQuality.save(model, manifest);

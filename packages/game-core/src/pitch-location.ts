@@ -36,7 +36,6 @@ export function observedPitchLocation(row: Input) {
     ay === null ||
     az === null ||
     ![x, y, y0, z0, vy0, vz0, ay, az, bottomFeet, topFeet].every(Number.isFinite) ||
-    Math.abs(y0 - 50) > 1e-6 ||
     bottomFeet < 0 ||
     topFeet <= bottomFeet ||
     y < 0

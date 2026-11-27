@@ -3,6 +3,7 @@ import { analyzeBatterDiscipline, disciplinePoint, prepareDisciplineSeason } fro
 import { DisciplineResponseSchema } from "@kbo/contracts";
 import { Value } from "@sinclair/typebox/value";
 import { disciplineRow, disciplineSnapshot } from "../helpers/batter-discipline.js";
+import { pitchFrom50Feet, pitchFrom55Feet } from "../helpers/pitch-trajectory.js";
 
 describe("batter swing decisions and fastball counterfactual", () => {
   it("filters the target period while retaining an explicit season or matching-period league cohort", () => {
@@ -149,6 +150,18 @@ describe("batter swing decisions and fastball counterfactual", () => {
       disciplineSnapshot().reference,
     );
     expect(point?.deltaMs).toBeCloseTo(0, 10);
+  });
+  it("uses the same 50-foot tangent and elapsed time for both raw origins", () => {
+    const reference = disciplineSnapshot().reference;
+    const distance = 50 - 1.76;
+    for (const raw of [pitchFrom50Feet, pitchFrom55Feet]) {
+      const point = disciplinePoint(disciplineRow({ ...raw, inZone: false }), reference);
+      expect(point?.zCm).toBeCloseTo(2.216 * 30.48, 10);
+      expect(point?.expectedXCm).toBeCloseTo((1.0864 + (2.32 / 124.6) * distance) * 30.48, 10);
+      expect(point?.expectedZCm).toBeCloseTo((5.896 - (3.2 / 124.6) * distance) * 30.48, 10);
+      expect(point?.deltaMs).toBeCloseTo((0.4 - distance / 140) * 1000, 9);
+    }
+    expect(disciplinePoint(disciplineRow({ y0: 40 }), reference)?.expectedXCm).toBeNull();
   });
   it("preserves zone-only points with missing lateral trajectory and absent baseline", () => {
     const point = disciplinePoint(disciplineRow({ vx0: null }), disciplineSnapshot().reference);

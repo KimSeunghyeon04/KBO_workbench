@@ -1465,8 +1465,8 @@ try {
         ($response.calibration.calibratedCount + $response.calibration.uncalibratedCount) -ne $response.points.Count) {
       throw "Pitch calibration coverage does not match points."
     }
-    $referencePath = Join-Path $workspacePath "analysis/pitch-reference/v2/reference-v2/$($response.calibration.profileHash)/$season/$($response.referenceSourceHash).json"
-    $calibrationPath = Join-Path $workspacePath "analysis/pitch-calibration/v1/$season/$($response.referenceSourceHash).json"
+    $referencePath = Join-Path $workspacePath "analysis/pitch-reference/v$($response.modelVersion)/reference-v3/$($response.calibration.profileHash)/$season/$($response.referenceSourceHash).json"
+    $calibrationPath = Join-Path $workspacePath "analysis/pitch-calibration/v$($response.calibration.modelVersion)/$season/$($response.referenceSourceHash).json"
     foreach ($cachePath in @($referencePath, $calibrationPath)) {
       $referenceFiles[$cachePath] = @{
         hash = Get-Sha256Hex $cachePath

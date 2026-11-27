@@ -4,8 +4,10 @@ import {
   alignPitchTrajectory,
   averagePitchTrajectory,
   comparePitchTrajectory,
+  pitchApproachAngles,
   type PitchTrajectoryInput,
 } from "@kbo/game-core";
+import { pitchFrom50Feet, pitchFrom55Feet } from "../helpers/pitch-trajectory.js";
 
 const input: PitchTrajectoryInput = {
   x0: -1,
@@ -26,6 +28,29 @@ function aligned(overrides: Partial<PitchTrajectoryInput> = {}) {
 }
 
 describe("pitch trajectory reference snapshot", () => {
+  it("keeps speed, tangent and flight time at 50 feet for either original reference plane", () => {
+    for (const raw of [pitchFrom50Feet, pitchFrom55Feet]) {
+      const pitch = aligned(raw);
+      expect(pitch.distance).toBeCloseTo(48.24, 12);
+      expect(pitch.arrivalSeconds).toBeCloseTo(0.4, 12);
+      expect(pitch.speedKph).toBeCloseTo(
+        Math.sqrt(2.32 ** 2 + 124.6 ** 2 + 3.2 ** 2) * 1.09728,
+        10,
+      );
+      expect(pitch.lateralAcceleration).toBeCloseTo(8 + (2.32 * 20) / 124.6, 12);
+      expect(pitch.verticalAcceleration).toBeCloseTo(-30 - (3.2 * 20) / 124.6, 12);
+    }
+  });
+
+  it("evaluates plate position and direction on the original flight clock", () => {
+    for (const raw of [pitchFrom50Feet, pitchFrom55Feet]) {
+      const angle = pitchApproachAngles(raw, 1.76);
+      expect(angle?.sideCm).toBeCloseTo(2.6544 * 30.48, 10);
+      expect(angle?.heightCm).toBeCloseTo(2.216 * 30.48, 10);
+      expect(angle?.haaDegrees).toBeCloseTo((Math.atan2(5.52, 116.6) * 180) / Math.PI, 10);
+      expect(angle?.vaaDegrees).toBeCloseTo((Math.atan2(-15.2, 116.6) * 180) / Math.PI, 10);
+    }
+  });
   it("keeps equal curvature at the same position when only flight speed differs", () => {
     const reference = aligned({ ay: 0 });
     const slow = aligned({ ay: 0, vy0: -110 });
@@ -103,7 +128,8 @@ describe("pitch trajectory reference snapshot", () => {
     { x0: null },
     { az: Infinity },
     { vy0: NaN },
-    { y0: 55 },
+    { y0: 49 },
+    { y0: 55, vy0: -5, ay: 20 },
     { crossPlateY: -1 },
     { vy0: 0 },
     { vy0: 120 },

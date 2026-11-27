@@ -7,7 +7,7 @@ import type {
   DisciplineResponse,
   DisciplineGroup,
 } from "@kbo/contracts";
-import { alignPitchTrajectory, crossingTime } from "./pitch-trajectory.js";
+import { crossingTime, pitchComparisonStart } from "./pitch-trajectory.js";
 import { compareDisciplineCourses } from "./batter-course-comparison.js";
 import { STRIKE_ZONE_HALF_WIDTH_FEET } from "./strike-zone.js";
 import { observedPitchLocation } from "./pitch-location.js";
@@ -53,46 +53,39 @@ export function disciplinePoint(
     normalizedZ,
     bottomFeet,
     topFeet,
-    crossingSeconds: time,
+    crossingSeconds,
   } = location;
-  const { crossPlateY: y, y0, z0, vy0, vz0 } = row;
+  const y = row.crossPlateY;
   let expectedXCm: number | null = null;
   let expectedZCm: number | null = null;
   let expectedInZone: boolean | null = null;
   let deltaMs: number | null = null;
-  const aligned = alignPitchTrajectory(row);
-  if (
-    aligned !== null &&
-    reference !== null &&
-    row.x0 !== null &&
-    row.vx0 !== null &&
-    y !== null &&
-    y0 !== null &&
-    z0 !== null &&
-    vy0 !== null &&
-    vz0 !== null
-  ) {
+  const start = reference === null ? null : pitchComparisonStart(row);
+  if (start !== null && reference !== null && y !== null) {
     const r = reference.trajectory;
-    const expectedTime = crossingTime(y0 - y, r.vy, r.ay);
+    const distance = start.y - y;
+    const expectedTime = crossingTime(distance, r.vy, r.ay);
     if (expectedTime !== null) {
-      // Restore this pitch's observed initial tangent. Only the aligned curvature and clock
-      // come from the season reference; each trajectory is evaluated at its own plate crossing.
+      // Both clocks start at 50 ft. Restore this pitch's tangent there and use the season
+      // reference curvature and crossing time for the counterfactual.
       const ex =
-        row.x0 - (row.vx0 / vy0) * (y0 - y) + (r.lateralAcceleration * expectedTime ** 2) / 2;
-      const ez = z0 - (vz0 / vy0) * (y0 - y) + (r.verticalAcceleration * expectedTime ** 2) / 2;
+        start.x -
+        (start.vx / start.vy) * distance +
+        (r.lateralAcceleration * expectedTime ** 2) / 2;
+      const ez =
+        start.z -
+        (start.vz / start.vy) * distance +
+        (r.verticalAcceleration * expectedTime ** 2) / 2;
+      const timeDifferenceMs = (crossingSeconds - start.seconds - expectedTime) * 1000;
       if (
-        [
-          ex * FT_CM,
-          ez * FT_CM,
-          (x - ex) * FT_CM,
-          (z - ez) * FT_CM,
-          (time - expectedTime) * 1000,
-        ].every(Number.isFinite)
+        [ex * FT_CM, ez * FT_CM, (x - ex) * FT_CM, (z - ez) * FT_CM, timeDifferenceMs].every(
+          Number.isFinite,
+        )
       ) {
         expectedXCm = ex * FT_CM;
         expectedZCm = ez * FT_CM;
         expectedInZone = Math.abs(ex) <= HALF_ZONE && ez >= bottomFeet && ez <= topFeet;
-        deltaMs = (time - expectedTime) * 1000;
+        deltaMs = timeDifferenceMs;
       }
     }
   }

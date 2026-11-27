@@ -44,7 +44,7 @@ export const CoverageGameSchema = Type.Object(
 );
 export type CoverageGame = Static<typeof CoverageGameSchema>;
 // Bump when coverage eligibility, trajectory/zone definitions, or aggregation semantics change.
-export const COVERAGE_SUMMARY_VERSION = 1;
+export const COVERAGE_SUMMARY_VERSION = 2;
 export const CoverageSeasonSchema = Type.Object(
   {
     version: Type.Literal(COVERAGE_SUMMARY_VERSION),

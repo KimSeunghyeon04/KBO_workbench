@@ -3,8 +3,25 @@ import { Value } from "@sinclair/typebox/value";
 import { PitchSequenceResponseSchema, resolveAnalysisScope } from "@kbo/contracts";
 import { analyzePitchSequences, pitchPositionAtPlane } from "@kbo/game-core";
 import { independentSequenceSamples, pitchSequenceRow as row } from "../helpers/pitch-sequence.js";
+import { pitchFrom50Feet, pitchFrom55Feet } from "../helpers/pitch-trajectory.js";
 const query = { season: 2024 },
   scope = resolveAnalysisScope(query, "regular");
+
+it("uses one clock for a pair with different original reference planes", () => {
+  const previous = row(0, { ...pitchFrom50Feet, speedKph: 139 }),
+    current = row(1, { ...pitchFrom55Feet, speedKph: 141 });
+  const position = pitchPositionAtPlane(current, 1.76);
+  expect(position?.timeMs).toBeCloseTo(400, 9);
+  expect(position?.xCm).toBeCloseTo(2.6544 * 30.48, 10);
+  expect(position?.zCm).toBeCloseTo(2.216 * 30.48, 10);
+  const { pairs, coverage } = analyzePitchSequences(query, "p", scope, "hash", [previous, current]);
+  expect(coverage.geometryPairs).toBe(1);
+  expect(pairs[0]?.planeDistanceCm).toBeCloseTo(0, 9);
+  expect(pairs[0]?.planeTimeDifferenceMs).toBeCloseTo(0, 9);
+  expect(pairs[0]?.arrivalDistanceCm).toBeCloseTo(0, 9);
+  expect(pairs[0]?.speedDifferenceKph).toBe(2);
+  expect(pitchPositionAtPlane({ ...current, y0: 49 }, 23.8)).toBeNull();
+});
 it("forms pairs before type filtering and preserves missing tracking as an intervening pitch", () => {
   const rows = [
     row(0),

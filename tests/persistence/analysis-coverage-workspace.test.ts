@@ -40,7 +40,7 @@ it.each(["json", "hash", "source", "counts", "version", "order", "size"])(
     if (damage === "source") payload.sourceKey = "f".repeat(64);
     if (damage === "counts" && payload.games[0]) payload.games[0].counts.actualPitches++;
     if (damage === "order") payload.games.push(...structuredClone(payload.games));
-    const value = damage === "version" ? { ...payload, version: 2 } : payload;
+    const value = damage === "version" ? { ...payload, version: 1 } : payload;
     const hash = createHash("sha256").update(canonicalStringify(value)).digest("hex");
     await writeFile(
       path.join(temp.path, "analysis", "coverage", `${sourceKey}.json`),

@@ -196,7 +196,7 @@ it("checks freshly changed sources before publication and never replaces a previ
   await using dir = await mkdtempDisposable(path.join(tmpdir(), "kbo-model-source-"));
   const workspace = await StagingWorkspace.open(dir.path),
     pool = new Pool();
-  const manifest = { version: 1 as const, through: 2024, seasons: [], games: [] };
+  const manifest = { version: 2 as const, through: 2024, seasons: [], games: [] };
   const sourceHash = pitchQualitySourceHash(manifest),
     model = trainPitchQuality([], [], sourceHash);
   const saved = await workspace.pitchQuality.save(model, manifest);
@@ -362,7 +362,7 @@ it("rejects wrong-period training output before publication and avoids DB work f
   await using dir = await mkdtempDisposable(path.join(tmpdir(), "kbo-model-period-"));
   const workspace = await StagingWorkspace.open(dir.path),
     pool = new Pool();
-  const manifest = { version: 1 as const, through: 2024, seasons: [], games: [] },
+  const manifest = { version: 2 as const, through: 2024, seasons: [], games: [] },
     sourceHash = pitchQualitySourceHash(manifest),
     model = trainPitchQuality([], [], sourceHash);
   const sources = vi.spyOn(AnalysisModelSourceRepository.prototype, "read").mockResolvedValue({

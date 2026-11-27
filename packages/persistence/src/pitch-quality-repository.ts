@@ -21,6 +21,7 @@ import { analysisVenueId } from "./analysis-venues.js";
 import { pitchQualityHeightCache } from "./pitch-quality-height-cache.js";
 import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import {
+  PITCH_QUALITY_MANIFEST_VERSION,
   PitchQualityManifestSchema,
   pitchQualitySourceHash,
   type PitchQualityManifest,
@@ -93,7 +94,7 @@ async function manifest(
     [through + 1],
   );
   return Value.Decode(PitchQualityManifestSchema, {
-    version: 1,
+    version: PITCH_QUALITY_MANIFEST_VERSION,
     through,
     seasons,
     games: games.rows,

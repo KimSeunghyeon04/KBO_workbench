@@ -37,9 +37,10 @@ snapshot에서 읽은 뒤 계산 전에 연결을 반환한다. 관련 설계 �
 보조 레이블은 공통 `--ui-muted`와 12px 역할을 사용한다.
 
 길이는 foot, 시간은 second인 `naver_pts_v1` 관측을 사용한다. 입력은
-`x0/y0/z0, vx0/vy0/vz0, ax/ay/az, crossPlateY`다. `y0=50`인 관측만 사용하며,
-`crossPlateY`는 종방향의 플레이트 위치다. 분석에서는 중간면 `17/24 ft`를 사용하고 원천 fact는 보존한다.
-나머지 궤적 값 누락·비유한 수·미지원 profile·전진 교차 불가·음수
+`x0/y0/z0, vx0/vy0/vz0, ax/ay/az, crossPlateY`다. `crossPlateY`는 종방향의 플레이트 위치다.
+원본 `y0`에서 50피트에 전진 도달할 때의 위치와 속도를 구하며 가속도는 그대로 사용한다.
+분석에서는 중간면 `17/24 ft`를 사용하고 원천 fact는 보존한다.
+궤적 값 누락·비유한 수·미지원 profile·50피트 또는 목표면 전진 교차 불가·음수
 플레이트 높이를 제외한다. 자동 판정/no_pitch, 미연결 및 중복 관측은 실제 투구 표본에 추가하지 않는다.
 
 모든 투구의 50피트 기준 시각을 t=0으로 둔다. 초기 위치와 초기 진행 방향을 정렬하기 위해
@@ -47,13 +48,13 @@ snapshot에서 읽은 뒤 계산 전에 연결을 반환한다. 관련 설계 �
 정렬된 모델 궤적의 정면 투영이다.
 
 ```text
-d = y0 - 17/24
-kx = ax - (vx0 / vy0) * ay
-kz = az - (vz0 / vy0) * ay
+d = 50 - 17/24
+kx = ax - (vx50 / vy50) * ay
+kz = az - (vz50 / vy50) * ay
 kx_corrected = kx - 경기일·구장별 lateralBias
 kz_corrected = kz - 경기일·구장별 verticalBias
 
-플레이트까지 종방향 거리: q(t) = d + vy0*t + ay*t²/2
+플레이트까지 종방향 거리: q(t) = d + vy50*t + ay*t²/2
 보정된 좌우 위치:         u(t) = kx_corrected*t²/2
 보정된 높이:              w(t) = kz_corrected*t²/2
 ```
@@ -117,7 +118,7 @@ Lloyd 초기화로 10개 후보를 적합한다. EM 최대 500회, 평균 로그
 이전 결과는 계산 중이라는 표시와 함께 흐리게 유지하고 최신 요청의 응답만 반영한다. 중계 구성,
 설정 K와 실제 배정 수, 빈 성분·미수렴을 표시한다.
 
-기준 속력은 50피트에서 `hypot(vx0,vy0,vz0)*1.09728` km/h를 평균 낸다. 제공자 중계 구속과 구분한다.
+기준 속력은 50피트에서 `hypot(vx50,vy50,vz50)*1.09728` km/h를 평균 낸다. 제공자 중계 구속과 구분한다.
 측정 시작점·실제 릴리스 위치·구속의 측정 위치를 추가로 추정하지 않는다.
 
 ## 포심을 예상한 타자와의 차이 (expectation modelVersion 1)
@@ -147,7 +148,7 @@ DB typed `swing`·`whiff`와 `referenceBand`(core50/shell90/outside90 또는 nul
 계산 중에는 새 요약을 표시하지 않는다. 헛스윙률에는 분자/분모와 코스·카운트·타자 좌우 미보정
 설명을 함께 제공한다. 좌우·높이·시간차를 하나의 구위 점수로 합치지 않는다.
 
-## 자동 구장 보정 (calibration modelVersion 1)
+## 자동 구장 보정 (calibration modelVersion 2)
 
 선택한 연구 모형 `daily_w84_h7`을 사용한다. 경기일 D에는 같은 시즌의 `[D-84일, D)`만 사용한다.
 당일 경기와 이후 경기는 계수 추정에 들어가지 않는다. 투수×경기×구종 평균을 만들며 유효 투구가
@@ -174,7 +175,7 @@ DB typed `swing`·`whiff`와 `referenceBand`(core50/shell90/outside90 또는 nul
 시즌 포심 기준은 저장된 시즌 전체의 기술적 비교 기준이다. 보정 계수의 과거 자료 제한이
 포심 기준까지 실시간 예측용으로 만든다는 의미는 아니다.
 
-보정 파일은 `.data/analysis/pitch-calibration/v1/<season>/<sourceHash>.json`에 저장한다.
+보정 파일은 `.data/analysis/pitch-calibration/v2/<season>/<sourceHash>.json`에 저장한다.
 각 날짜에는 과거 입력 해시·학습 기간·마지막 학습일·표본 수·상태·구장별 계수·공분산을 기록한다.
 새 current revision이 생긴 뒤 첫 분석 요청에서 worker가 자동 갱신한다. 별도 일일 스케줄러는 없다.
 동일 키의 요청은 계산을 공유한다. 원천 변경 시 시즌 행을 다시 읽어 집계하지만, 과거 입력 해시가
@@ -208,7 +209,7 @@ DB typed `swing`·`whiff`와 `referenceBand`(core50/shell90/outside90 또는 nul
 
 서버는 `.data/analysis/pitch-reference/v<modelVersion>/reference-v<referenceVersion>/<calibrationHash 또는 source-plane>/<season>/<sourceHash>.json`에 평균 궤적
 계수(d, vy, ay, kx, kz), 평균 속력, 도착 시각 T와 표본 수·제외 수·경기 날짜 범위 및 포심 분포를 저장한다.
-referenceVersion=2가 새 분포 계약을 식별한다. 이전 referenceVersion이 없는 캐시 파일은 그대로 보존한다.
+referenceVersion=3은 원본의 기준 위치가 다른 투구까지 50피트로 환산한 표본을 식별한다.
 원시 투구 행이나 군집 결과는 이 파일에 저장하지 않는다. 유효한 기준이 없는 시즌도 null로 저장한다.
 
 매 요청의 repeatable-read snapshot에서 확인한 시즌·궤적 모델 버전·sourceHash가 모두 맞을 때만

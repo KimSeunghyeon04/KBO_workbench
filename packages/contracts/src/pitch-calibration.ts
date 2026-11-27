@@ -7,7 +7,7 @@ const count = Type.Integer({ minimum: 0 });
 const id = Type.String({ minLength: 1, maxLength: 200 });
 
 export const PITCH_CALIBRATION_PARAMETERS = {
-  modelVersion: 1,
+  modelVersion: 2,
   windowDays: 84,
   halfLifeDays: 7,
   minCellPitches: 5,

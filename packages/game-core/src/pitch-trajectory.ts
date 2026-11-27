@@ -30,6 +30,8 @@ export interface PitchTrajectoryComparison {
   readonly extrapolated: boolean;
 }
 
+const PITCH_COMPARISON_START_FEET = 50;
+
 export function crossingTime(distance: number, vy: number, ay: number): number | null {
   if (!(distance > 0) || !(vy < 0)) return null;
   const discriminant = vy * vy - 2 * ay * distance;
@@ -39,37 +41,9 @@ export function crossingTime(distance: number, vy: number, ay: number): number |
   return time > 0 && Number.isFinite(time) && vy + ay * time < 0 ? time : null;
 }
 
-/** Approach angles of the observed trajectory at an explicit plane, before tangent alignment or park correction. */
-export function pitchApproachAngles(input: PitchTrajectoryInput, plateYFeet: number) {
-  const trajectory = alignPitchTrajectory({ ...input, crossPlateY: plateYFeet });
-  const { vx0, vy0, vz0, ax, ay, az, x0, z0 } = input;
-  if (
-    trajectory === null ||
-    vx0 === null ||
-    vy0 === null ||
-    vz0 === null ||
-    ax === null ||
-    ay === null ||
-    az === null ||
-    x0 === null ||
-    z0 === null
-  )
-    return null;
-  const t = trajectory.arrivalSeconds,
-    vx = vx0 + ax * t,
-    vy = vy0 + ay * t,
-    vz = vz0 + az * t;
-  const result = {
-    vaaDegrees: (Math.atan2(vz, -vy) * 180) / Math.PI,
-    haaDegrees: (Math.atan2(vx, -vy) * 180) / Math.PI,
-    heightCm: (z0 + vz0 * t + (az * t * t) / 2) * 30.48,
-    sideCm: (x0 + vx0 * t + (ax * t * t) / 2) * 30.48,
-  };
-  return Object.values(result).every(Number.isFinite) ? result : null;
-}
-
-export function alignPitchTrajectory(input: PitchTrajectoryInput): AlignedPitchTrajectory | null {
-  const { x0, y0, z0, vx0, vy0, vz0, ax, ay, az, crossPlateY } = input;
+/** Position and velocity at a plane reached by the original trajectory. */
+export function pitchStateAtPlane(input: Omit<PitchTrajectoryInput, "crossPlateY">, y: number) {
+  const { x0, y0, z0, vx0, vy0, vz0, ax, ay, az } = input;
   if (
     x0 === null ||
     y0 === null ||
@@ -80,27 +54,72 @@ export function alignPitchTrajectory(input: PitchTrajectoryInput): AlignedPitchT
     ax === null ||
     ay === null ||
     az === null ||
-    crossPlateY === null ||
-    ![x0, y0, z0, vx0, vy0, vz0, ax, ay, az, crossPlateY].every(Number.isFinite) ||
-    Math.abs(y0 - 50) > 1e-6 ||
+    ![x0, y0, z0, vx0, vy0, vz0, ax, ay, az, y].every(Number.isFinite) ||
     z0 < 0 ||
-    crossPlateY < 0 ||
-    crossPlateY >= y0
+    vy0 >= 0 ||
+    y < 0 ||
+    y > y0
   )
     return null;
-  const arrivalSeconds = crossingTime(y0 - crossPlateY, vy0, ay);
+
+  const seconds = y0 === y ? 0 : crossingTime(y0 - y, vy0, ay);
+  if (seconds === null) return null;
+  const state = {
+    y,
+    seconds,
+    x: x0 + vx0 * seconds + (ax * seconds * seconds) / 2,
+    z: z0 + vz0 * seconds + (az * seconds * seconds) / 2,
+    vx: vx0 + ax * seconds,
+    vy: vy0 + ay * seconds,
+    vz: vz0 + az * seconds,
+  };
+  return state.z >= 0 && Object.values(state).every(Number.isFinite) ? state : null;
+}
+
+export function pitchComparisonStart(input: Omit<PitchTrajectoryInput, "crossPlateY">) {
+  return pitchStateAtPlane(input, PITCH_COMPARISON_START_FEET);
+}
+
+/** Approach angles of the observed trajectory at an explicit plane, before tangent alignment or park correction. */
+export function pitchApproachAngles(input: PitchTrajectoryInput, plateYFeet: number) {
+  const state = pitchStateAtPlane(input, plateYFeet);
+  if (state === null || state.seconds === 0) return null;
+  const result = {
+    vaaDegrees: (Math.atan2(state.vz, -state.vy) * 180) / Math.PI,
+    haaDegrees: (Math.atan2(state.vx, -state.vy) * 180) / Math.PI,
+    heightCm: state.z * 30.48,
+    sideCm: state.x * 30.48,
+  };
+  return Object.values(result).every(Number.isFinite) ? result : null;
+}
+
+export function alignPitchTrajectory(input: PitchTrajectoryInput): AlignedPitchTrajectory | null {
+  const { ax, ay, az, crossPlateY } = input;
+  const start = pitchComparisonStart(input);
+  if (
+    start === null ||
+    ax === null ||
+    ay === null ||
+    az === null ||
+    crossPlateY === null ||
+    !Number.isFinite(crossPlateY) ||
+    crossPlateY < 0
+  )
+    return null;
+  const distance = start.y - crossPlateY;
+  const arrivalSeconds = crossingTime(distance, start.vy, ay);
   if (arrivalSeconds === null) return null;
-  const height = z0 + vz0 * arrivalSeconds + (az * arrivalSeconds ** 2) / 2;
+  const height = start.z + start.vz * arrivalSeconds + (az * arrivalSeconds ** 2) / 2;
   if (!(height >= 0) || !Number.isFinite(height)) return null;
   // Remove the initial tangent in distance space: x - x0 - (vx0/vy0)*(y-y0).
   // This aligns location and direction while retaining the observed flight clock.
   const result = {
-    distance: y0 - crossPlateY,
-    vy: vy0,
+    distance,
+    vy: start.vy,
     ay,
-    lateralAcceleration: ax - (vx0 * ay) / vy0,
-    verticalAcceleration: az - (vz0 * ay) / vy0,
-    speedKph: Math.hypot(vx0, vy0, vz0) * 1.09728,
+    lateralAcceleration: ax - (start.vx * ay) / start.vy,
+    verticalAcceleration: az - (start.vz * ay) / start.vy,
+    speedKph: Math.hypot(start.vx, start.vy, start.vz) * 1.09728,
     arrivalSeconds,
   };
   return Object.values(result).every(Number.isFinite) ? result : null;

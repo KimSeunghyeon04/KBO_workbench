@@ -178,6 +178,7 @@ async function disciplineSourceHashes(client: PoolClient, scope: AnalysisScope) 
     .update(
       canonicalStringify({
         referenceHash,
+        referenceVersion: PITCH_REFERENCE_VERSION,
         zonePolicy: "frozen-player-height-effective-season-v4",
         heights: Value.Decode(Type.Array(heightInputSchema), heights.rows),
       }),

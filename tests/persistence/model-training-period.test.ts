@@ -23,18 +23,19 @@ it("isolates historical model files and rejects reused or future validation year
   try {
     for (const through of [2022, 2023, 2024]) {
       const runManifest = { version: 1 as const, through, games: [], scopeHashes: [] },
-        manifest = { version: 1 as const, through, games: [], seasons: [] },
+        manifest = { version: 2 as const, through, games: [], seasons: [] },
+        parkManifest = { version: 1 as const, through, games: [], seasons: [] },
         sourceHash = pitchQualitySourceHash(manifest),
         re24 = trainRunExpectancy([], runTrainingHash(runManifest), through),
         count = trainCountRunExpectancy([], [], runTrainingHash(runManifest), through),
         base = trainPitchQuality([], [], sourceHash, through),
-        park = trainParkEnvironment([], parkTrainingHash(manifest), through);
+        park = trainParkEnvironment([], parkTrainingHash(parkManifest), through);
       const reHash = await workspace.runExpectancy.save(re24, runManifest);
       await workspace.runExpectancy.saveCount(count, runManifest);
       const baseHash = await workspace.pitchQuality.save(base, manifest);
       const matchup = trainMatchupModel([], base, baseHash, sourceHash);
       await workspace.matchupModels.save(matchup, manifest);
-      await workspace.parkEnvironment.save(park, manifest);
+      await workspace.parkEnvironment.save(park, parkManifest);
       expect(await workspace.runExpectancy.read(through)).toEqual({ model: re24, hash: reHash });
       expect(await workspace.pitchQuality.read(through)).toEqual({ model: base, hash: baseHash });
       const wrong = structuredClone(base);

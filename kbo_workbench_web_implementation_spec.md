@@ -174,7 +174,8 @@ tracking은 blocking이다. 실제 pitch의 tracking 누락은 warning이며 자
 ### 5.1 시즌 평균 포심 비교
 
 시즌 평균 포심 도착 순간의 읽기 전용 분석은 `/analysis/pitch-shape`에 구현한다. 2020–2025년 각각의
-current actual pitch 중 `직구`를 포심 기준 집단으로 사용한다. 초기 위치·거리 방향 접선을 정렬한
+current actual pitch 중 `직구`를 포심 기준 집단으로 사용한다. 원본 `y0`에서 50피트에 도달할 때의
+위치·속도로 비교 시작점을 맞춘 뒤 초기 위치·거리 방향 접선을 정렬한다. 원본 코스에는 각 `y0`를 쓴다.
 평균 궤적의 도착 시각 T에서 대상 공의 X–Z 상대 위치와 플레이트까지 Y 거리를 회전 가능한 3D로
 표시한다. 중계 구종/클러스터 색상을 전환하며 개별 시간차는 선택 상세에 표시한다. 군집은 투수·시즌의
 전체 유효한 X/Z/Y를 표준화한 full-covariance GMM으로 계산하고 원표기를 보존한다.
@@ -187,7 +188,7 @@ current actual pitch 중 `직구`를 포심 기준 집단으로 사용한다. �
 기준은 투수·구종 필터와 독립이며 빠른 공은 통과 후 외삽으로 표시한다. 계산·제외 기준,
 같은 시각의 의미, sourceHash와 읽기 API 계약은 [투구 움직임 분석](docs/pitch-shape-analysis.md)을 따른다.
 포심 기대 비교는 같은 snapshot의 시즌 포심으로 3D 공분산과 경험적 50%·90% 타원체를 만든다.
-순수 game-core 계산을 사용하고 기준 분포는 referenceVersion 2로 보존한다. 궤적 modelVersion 2와
+순수 game-core 계산을 사용하고 기준 분포는 referenceVersion 3으로 보존한다. 궤적 modelVersion 2와
 GMM modelVersion 2는 유지한다. 실제 포함 수와 표본 수를 함께 반환하며 4구 미만은 분포 null이다.
 DB의 swing/whiff fact를 그대로 연결하고 서버에서 구종·군집·분포 구간별 위치·시간 평균/표준편차와
 헛스윙/스윙을 집계한다. 분모 0은 null이며 웹에서 —로 표시한다. 시점·확대·필터는 기준 분포를
@@ -196,7 +197,7 @@ DB의 swing/whiff fact를 그대로 연결하고 서버에서 구종·군집·�
 투구 움직임은 중간면 17/24ft로 통일하고, 같은 시즌의 경기일 이전 84일·반감기 7일 가중 회귀로 구장 편향을 차감한다.
 투수×구종×월 고정효과와 구속·좌타 비율·카운트를 통제한다. 9개 주 구장이 모두 최소 5경기·20투수를
 충족하고 편향 대비가 식별 가능할 때 적용하며, 부족 날짜/미지원 구장의 유효 투구는 미보정으로 표시한다.
-계수는 `analysis/pitch-calibration/v1/<season>/<sourceHash>.json`에 저장하고 sourceHash 변경 후 첫 요청에서
+계수는 `analysis/pitch-calibration/v2/<season>/<sourceHash>.json`에 저장하고 sourceHash 변경 후 첫 요청에서
 bounded worker로 갱신한다. 날짜별 과거 입력 해시가 같으면 재사용하며 미래 자료를 사용하지 않는다.
 평균 포심·기준 분포·대상 투구에 동일 보정을 적용하며 원천 fact와 타자 선구안은 보존한다.
 시즌 기준 궤적과 요약은 workspace의 `analysis/pitch-reference/v<modelVersion>/reference-v<referenceVersion>/<calibrationHash 또는 source-plane>/<season>/<sourceHash>.json`에

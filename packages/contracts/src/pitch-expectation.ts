@@ -8,7 +8,7 @@ const position = Type.Object(
   strict,
 );
 const contour = Type.Object({ radius: Type.Number({ minimum: 0 }), includedCount: count }, strict);
-export const PITCH_REFERENCE_VERSION = 2;
+export const PITCH_REFERENCE_VERSION = 3;
 export const PitchReferenceDistributionSchema = Type.Object(
   {
     modelVersion: Type.Literal(1),

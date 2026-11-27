@@ -5,6 +5,7 @@ import path from "node:path";
 
 import {
   canonicalStringify,
+  PITCH_REFERENCE_VERSION,
   PitchReferenceEnvelopeSchema,
   type PitchReferenceKey,
 } from "@kbo/contracts";
@@ -15,7 +16,7 @@ import { describe, expect, it, vi } from "vitest";
 const key: PitchReferenceKey = {
   modelVersion: 2,
   calibrationHash: null,
-  referenceVersion: 2,
+  referenceVersion: PITCH_REFERENCE_VERSION,
   season: 2024,
   sourceHash: "a".repeat(64),
 };
@@ -23,7 +24,7 @@ const relative = path.join(
   "analysis",
   "pitch-reference",
   "v2",
-  "reference-v2",
+  `reference-v${key.referenceVersion}`,
   "source-plane",
   "2024",
   `${key.sourceHash}.json`,

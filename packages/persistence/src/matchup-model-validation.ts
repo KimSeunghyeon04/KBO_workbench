@@ -1,9 +1,12 @@
 import { modelValidationSeasons, validModelEvaluationSeasons } from "@kbo/game-core";
 import type { MatchupModel } from "@kbo/contracts";
-import { pitchQualitySourceHash, type PitchQualityManifest } from "./pitch-quality-manifest.js";
+import {
+  pitchQualitySourceHash,
+  type StoredPitchQualityManifest,
+} from "./pitch-quality-manifest.js";
 import { validPitchQualityModel } from "./pitch-quality-model-validation.js";
 
-export function validMatchupModel(model: MatchupModel, manifest: PitchQualityManifest) {
+export function validMatchupModel(model: MatchupModel, manifest: StoredPitchQualityManifest) {
   if (
     !validModelEvaluationSeasons(model.trainedThrough, model.validationPreprocessing) ||
     model.targets.some(

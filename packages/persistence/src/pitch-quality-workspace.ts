@@ -1,10 +1,13 @@
 import { Type } from "@sinclair/typebox";
 import { PitchQualityModelSchema, type PitchQualityModel } from "@kbo/contracts";
 import { readAnalysisModelFile, writeAnalysisModelFile } from "./analysis-model-files.js";
-import { PitchQualityManifestSchema, type PitchQualityManifest } from "./pitch-quality-manifest.js";
+import {
+  StoredPitchQualityManifestSchema,
+  type PitchQualityManifest,
+} from "./pitch-quality-manifest.js";
 import { validPitchQualityModel } from "./pitch-quality-model-validation.js";
 const envelope = Type.Object(
-  { model: PitchQualityModelSchema, manifest: PitchQualityManifestSchema },
+  { model: PitchQualityModelSchema, manifest: StoredPitchQualityManifestSchema },
   { additionalProperties: false },
 );
 export class PitchQualityWorkspace {
