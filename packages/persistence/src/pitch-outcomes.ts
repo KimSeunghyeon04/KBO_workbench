@@ -66,6 +66,15 @@ export async function readPitchOutcomePair(
   cache?: PitchOutcomeCache,
   resolveHand?: ResolvePitcherHand,
 ) {
+  if (
+    firstScope.season === secondScope.season &&
+    firstScope.competition === secondScope.competition &&
+    firstScope.dateFrom === secondScope.dateFrom &&
+    firstScope.dateTo === secondScope.dateTo
+  ) {
+    const snapshot = await readPitchOutcomes(pool, firstScope, actorId, role, cache, resolveHand);
+    return { first: snapshot, second: snapshot };
+  }
   const [first, second] = await withAnalysisSnapshot(
     pool,
     async (client) =>

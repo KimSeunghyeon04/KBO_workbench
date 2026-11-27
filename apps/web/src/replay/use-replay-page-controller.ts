@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 
 import { loadReplay } from "../api/client";
 import type { LoadedReplay } from "../api/replay-client";
-import { storedCatalogQueryOptions, revisionCatalogQueryOptions } from "../api/query-options";
-import { catalogGameIdentity, catalogMonths, catalogSeasons, filterStoredGames } from "./catalog";
+import {
+  replayCatalogCalendarQueryOptions,
+  replayCatalogPageQueryOptions,
+  revisionCatalogQueryOptions,
+} from "../api/query-options";
+import { summarizeReplayCalendar } from "./catalog";
 import { nextReplayIndex, replayDelay } from "./playback";
 import {
   readReplayEvidenceTarget,
@@ -34,28 +38,26 @@ export function useReplayPageController() {
   const openGame = searchParams.get(replayOpenKey) === "1";
   const evidenceTarget = useMemo(() => readReplayEvidenceTarget(searchParams), [searchParams]);
   const autoLoaded = useRef<string | null>(null);
-  const [evidenceNotice, setEvidenceNotice] = useState<string | null>(null);
-  const games = useQuery(storedCatalogQueryOptions());
-  const stored = useMemo(
-    () => games.data?.games.filter((item) => item.authority === "database") ?? [],
-    [games.data],
+  const automaticSelection = useMemo(
+    () =>
+      requestedGameId && requestedRevision !== null && (openGame || evidenceTarget !== null)
+        ? { gameId: requestedGameId, revision: requestedRevision, target: evidenceTarget }
+        : null,
+    [requestedGameId, requestedRevision, openGame, evidenceTarget],
   );
+  const [failedAutomaticSelection, setFailedAutomaticSelection] = useState<ReplaySelection | null>(
+    null,
+  );
+  const [evidenceNotice, setEvidenceNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search.trim());
+  const [requestedPage, setPage] = useState(1);
   const [selectedGameId, setSelectedGameId] = useState<string | null>(requestedGameId);
-  const gameId = selectedGameId ?? stored[0]?.gameId ?? "";
   const [revisionSelection, setRevisionSelection] = useState<RevisionSelection | null>(
     requestedGameId === null || requestedRevision === null
       ? null
       : { gameId: requestedGameId, revision: requestedRevision },
   );
-  const revisions = useQuery({
-    ...revisionCatalogQueryOptions(gameId),
-    enabled: gameId !== "",
-  });
-  const revision =
-    revisionSelection !== null && revisionSelection.gameId === gameId
-      ? revisionSelection.revision
-      : (revisions.data?.currentRevision ?? null);
   const replay = useMutation({
     mutationFn: (selection: ReplaySelection) =>
       queryClient.fetchQuery({
@@ -87,50 +89,85 @@ export function useReplayPageController() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [requestedMonth, setRequestedMonth] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const loadedReplay = replay.data;
+  const awaitingAutomatic =
+    automaticSelection !== null &&
+    automaticSelection !== failedAutomaticSelection &&
+    loadedReplay === undefined;
+  const showPicker = (loadedReplay === undefined && !awaitingAutomatic) || sourceOpen;
+  const games = useQuery({
+    ...replayCatalogPageQueryOptions({
+      page: requestedPage,
+      ...(seasonFilter === "all" ? {} : { season: Number(seasonFilter) }),
+      ...(deferredSearch === "" ? {} : { search: deferredSearch }),
+      ...(selectedDate === null ? {} : { gameDate: selectedDate }),
+      ...(selectedGameId !== null && /^[A-Za-z0-9_-]{1,100}$/.test(selectedGameId)
+        ? { selectedGameId }
+        : {}),
+    }),
+    enabled: showPicker,
+  });
+  const calendar = useQuery({ ...replayCatalogCalendarQueryOptions(), enabled: showPicker });
+  useEffect(() => {
+    if (games.data === undefined || games.isPlaceholderData) return;
+    const lastPage = Math.max(1, Math.ceil(games.data.total / games.data.limit));
+    if (requestedPage > lastPage) setPage(lastPage);
+  }, [games.data, games.isPlaceholderData, requestedPage]);
+  const gameId = selectedGameId ?? games.data?.selectedGame?.gameId ?? "";
+  const revisions = useQuery({
+    ...revisionCatalogQueryOptions(gameId),
+    enabled: showPicker && gameId !== "",
+  });
+  const revision =
+    revisionSelection !== null && revisionSelection.gameId === gameId
+      ? revisionSelection.revision
+      : (revisions.data?.currentRevision ?? null);
   const { mutate: load } = replay;
   useEffect(() => {
-    if (!requestedGameId || requestedRevision === null || (!openGame && evidenceTarget === null))
-      return;
-    const key = JSON.stringify([requestedGameId, requestedRevision, evidenceTarget]);
+    if (automaticSelection === null) return;
+    const key = JSON.stringify(automaticSelection);
     if (autoLoaded.current === key) return;
     autoLoaded.current = key;
-    setSelectedGameId(requestedGameId);
-    setRevisionSelection({ gameId: requestedGameId, revision: requestedRevision });
-    const selection = {
-      gameId: requestedGameId,
-      revision: requestedRevision,
-      target: evidenceTarget,
-    };
-    load(selection, { onSuccess: (data) => selectLoadedEvidence(data, selection) });
+    const { gameId, revision } = automaticSelection;
+    setSelectedGameId(gameId);
+    setRevisionSelection({ gameId, revision });
+    load(automaticSelection, {
+      onSuccess: (data) => selectLoadedEvidence(data, automaticSelection),
+      onError: () => setFailedAutomaticSelection(automaticSelection),
+    });
     // StrictMode reconnects the mutation observer after its first effect cleanup.
     // Reattach the selection callback; fetchQuery shares the immutable revision request.
     return () => {
       autoLoaded.current = null;
     };
-  }, [requestedGameId, requestedRevision, openGame, evidenceTarget, load, selectLoadedEvidence]);
-  const seasons = useMemo(() => catalogSeasons(stored), [stored]);
-  const calendarMonths = useMemo(() => catalogMonths(stored, seasonFilter), [seasonFilter, stored]);
-  const selectedGame = stored.find((item) => item.gameId === gameId) ?? null;
-  const selectedGameMonth =
-    selectedGame === null ? null : catalogGameIdentity(selectedGame)?.isoDate.slice(0, 7);
+  }, [automaticSelection, load, selectLoadedEvidence]);
+  const {
+    total: storedCount,
+    seasons,
+    months: calendarMonths,
+    dateCounts,
+  } = useMemo(
+    () => summarizeReplayCalendar(calendar.data ?? [], seasonFilter),
+    [calendar.data, seasonFilter],
+  );
+  const filteredGames = games.data?.games ?? [];
+  const candidate = games.data?.selectedGame;
+  const selectedGame =
+    candidate?.gameId === gameId
+      ? candidate
+      : (filteredGames.find((item) => item.gameId === gameId) ?? null);
+  const selectedGameMonth = selectedGame?.gameDate.slice(0, 7);
   const fallbackMonth =
-    selectedGameMonth !== null &&
-    selectedGameMonth !== undefined &&
-    calendarMonths.includes(selectedGameMonth)
+    selectedGameMonth !== undefined && calendarMonths.includes(selectedGameMonth)
       ? selectedGameMonth
       : (calendarMonths.at(-1) ?? "");
   const visibleMonth = calendarMonths.includes(requestedMonth) ? requestedMonth : fallbackMonth;
-  const filteredGames = useMemo(
-    () => filterStoredGames(stored, search, seasonFilter, selectedDate),
-    [search, seasonFilter, selectedDate, stored],
-  );
 
   useEffect(() => {
     if (!sourceOpen) return;
     searchInputRef.current?.focus();
   }, [sourceOpen]);
 
-  const loadedReplay = replay.data;
   useEffect(() => {
     if (!playing || loadedReplay === undefined || loadedReplay.frames.length === 0) return;
     const timer = globalThis.setInterval(
@@ -160,11 +197,22 @@ export function useReplayPageController() {
     setSeasonFilterState(nextSeason);
     setSelectedDate(null);
     setRequestedMonth("");
+    setPage(1);
   }
 
   function setVisibleMonth(nextMonth: string): void {
     setRequestedMonth(nextMonth);
-    setSelectedDate(null);
+    selectDate(null);
+  }
+
+  function selectDate(nextDate: string | null): void {
+    setSelectedDate(nextDate);
+    setPage(1);
+  }
+
+  function changeSearch(nextSearch: string): void {
+    setSearch(nextSearch);
+    setPage(1);
   }
 
   function loadSelectedReplay(): void {
@@ -181,10 +229,17 @@ export function useReplayPageController() {
   const state = frame?.after ?? loadedReplay?.manifest.finalState ?? null;
 
   return {
-    games,
-    stored,
+    catalogError: games.error ?? calendar.error,
+    loadingGames: showPicker && (games.isPending || calendar.isPending || games.isPlaceholderData),
+    storedCount,
+    filteredCount: games.data?.total ?? 0,
+    page: games.data?.page ?? requestedPage,
+    pageSize: games.data?.limit ?? 50,
+    setPage,
+    showPicker,
+    awaitingAutomatic,
     search,
-    setSearch,
+    setSearch: changeSearch,
     gameId,
     setGameId,
     revision,
@@ -202,12 +257,13 @@ export function useReplayPageController() {
     seasonFilter,
     setSeasonFilter,
     selectedDate,
-    setSelectedDate,
+    setSelectedDate: selectDate,
     visibleMonth,
     setVisibleMonth,
     searchInputRef,
     seasons,
     calendarMonths,
+    dateCounts,
     filteredGames,
     selectedGame,
     loadedReplay,

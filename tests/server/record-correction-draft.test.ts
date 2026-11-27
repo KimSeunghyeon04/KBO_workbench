@@ -7,6 +7,7 @@ import {
   RecordCorrectionNoticeSchema,
   StagingGameDocumentV2Schema,
   type RecordCorrectionCase,
+  type RecordCorrectionListItem,
   type StoredFinding,
 } from "@kbo/contracts";
 import { stagingDocumentHash } from "@kbo/game-core";
@@ -66,8 +67,38 @@ describe("기록정정 초안의 current revision과 작업본 보존", () => {
     try {
       await fixture.open();
       const read = vi.spyOn(fixture.workspace, "readCurrentDocumentSnapshot");
+      const catalog = vi.spyOn(fixture.workspace, "correctionGameCatalog");
+      const rows = await fixture.listCaseSummaries();
+      const first = rows[0];
+      if (first === undefined) throw new Error("missing fixture notice");
+      const withoutGame: RecordCorrectionListItem = {
+        ...first,
+        noticeId: "without-game",
+        gameId: null,
+        status: "unmatched",
+      };
+      const completed: RecordCorrectionListItem = {
+        ...first,
+        noticeId: "completed",
+        gameId: "other-game",
+        status: "applied",
+      };
+      fixture.listCaseSummaries.mockResolvedValueOnce([]);
+      expect(await fixture.service.listCaseSummaries({ search: "없는 공지" })).toEqual([]);
+      fixture.listCaseSummaries.mockResolvedValueOnce([completed, withoutGame]);
+      expect(await fixture.service.listCaseSummaries()).toEqual([completed, withoutGame]);
+      expect(catalog).not.toHaveBeenCalled();
+      fixture.listCaseSummaries.mockResolvedValueOnce([completed, ...rows, withoutGame]);
       const list = await fixture.service.listCaseSummaries();
-      expect(list).toHaveLength(8);
+      expect(list).toEqual([
+        completed,
+        ...rows.map((row) => ({
+          ...row,
+          draftProgress: expect.objectContaining({ state: "needs_review" }),
+        })),
+        withoutGame,
+      ]);
+      expect(catalog).toHaveBeenCalledExactlyOnceWith([fixture.document.metadata.gameId]);
       expect(read).toHaveBeenCalledTimes(1);
       const initialProposals = compute.mock.calls.filter(
         ([input]) => input.kind === "proposal",
@@ -415,6 +446,22 @@ async function setup(root: string, copies = 1) {
   const proofs = new Map<number, { proposalHash: string; documentHash: string }>();
   const workspace = await StagingWorkspace.open(root);
   const sessions = new CorrectionSessionManager(workspace);
+  const listCaseSummaries = vi.fn(async (): Promise<RecordCorrectionListItem[]> =>
+    Array.from({ length: copies }, (_, i) => ({
+      noticeId: `${item.noticeId}-${String(i)}`,
+      caseVersion: item.caseVersion,
+      status: item.status,
+      season: item.season,
+      gameId: item.gameId,
+      assessedAt: item.assessedAt,
+      gameDate: notice.gameDate,
+      awayTeamName: notice.awayTeamName,
+      homeTeamName: notice.homeTeamName,
+      venueName: notice.venueName,
+      beforeRecordText: notice.beforeRecordText,
+      afterRecordText: notice.afterRecordText,
+    })),
+  );
   const service = new RecordCorrectionService(
     {
       case: async () => item,
@@ -431,21 +478,7 @@ async function setup(root: string, copies = 1) {
         games: [game],
       }),
       listCases: async () => [item],
-      listCaseSummaries: async () =>
-        Array.from({ length: copies }, (_, i) => ({
-          noticeId: `${item.noticeId}-${String(i)}`,
-          caseVersion: item.caseVersion,
-          status: item.status,
-          season: item.season,
-          gameId: item.gameId,
-          assessedAt: item.assessedAt,
-          gameDate: notice.gameDate,
-          awayTeamName: notice.awayTeamName,
-          homeTeamName: notice.homeTeamName,
-          venueName: notice.venueName,
-          beforeRecordText: notice.beforeRecordText,
-          afterRecordText: notice.afterRecordText,
-        })),
+      listCaseSummaries,
       markProposalApplied: async () => ({ noticeId: notice.noticeId, actionSequence: 1 }),
       matchupContext: async () => ({
         generation: 1,
@@ -493,6 +526,7 @@ async function setup(root: string, copies = 1) {
     workspace,
     sessions,
     service,
+    listCaseSummaries,
     document,
     notice,
     assess,

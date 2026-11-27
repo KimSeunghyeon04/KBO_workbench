@@ -50,8 +50,9 @@ URL을 먼저 확정한 뒤 한 비교 요청을 보낸다. 편집 중에는 기
 A는 `season/dateFrom/dateTo`, B는 `compareSeason/compareDateFrom/compareDateTo`이며 나머지는
 두 기간 공통 조건이다. 비교 지표의 산식은 game-core의 명시적 함수가 소유한다. 웹은 수치를 재계산하지 않는다.
 
-타자 특성과 코스 지도는 한 repeatable-read snapshot에서 두 기간의 투구·타석 입력을 읽고,
-연결을 반환한 뒤 각각 계산한다. 기본 기록·구질은 기간별 snapshot을 읽은 뒤 A의
+타자 특성과 코스 지도는 한 repeatable-read snapshot에서 투구·타석 입력을 읽고, 경기 유형과
+날짜 범위까지 같은 시즌 비교는 한 번 읽은 입력을 공유한다. 비교 결과는 DB 연결을 반환한 뒤 계산한다.
+기본 기록·구질은 기간별 snapshot을 읽은 뒤 A의
 원천 hash를 다시 확인해 조회 사이의 기록 갱신을 거부한다. 기본 기록은 경기·분류 지문,
 구질은 A 시즌 전체 기준 자료의 지문까지 확인한다. 재검증에서는 집계와 투구 표본을 다시 읽지
 않는다. 선구안은 A/B 결과의 revision·경기 분류·유효 신장 지문을 하나의 읽기 전용 snapshot에서

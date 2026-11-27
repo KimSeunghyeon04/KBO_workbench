@@ -41,7 +41,8 @@ describe("경기 재생 UI", () => {
   it.each(["event-3", "missing-event"])(
     "opens or explains an evidence target: %s",
     async (eventId) => {
-      vi.stubGlobal("fetch", replayFetchMock());
+      const fetch = replayFetchMock();
+      vi.stubGlobal("fetch", fetch);
       const client = new QueryClient({
         defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
       });
@@ -67,9 +68,37 @@ describe("경기 재생 UI", () => {
       );
       expect(screen.getByRole("slider")).toHaveProperty("value", eventId === "event-3" ? "1" : "0");
       expect(screen.queryByRole("link", { name: "분석으로 돌아가기" })).toBeNull();
+      expect(fetch.mock.calls.map(([path]) => String(path))).not.toEqual(
+        expect.arrayContaining([expect.stringMatching(/\/api\/v2\/replay\//)]),
+      );
+      expect(fetch.mock.calls.map(([path]) => String(path))).not.toEqual(
+        expect.arrayContaining([expect.stringMatching(/revisions$|authority=database/)]),
+      );
+      if (eventId === "event-3") {
+        await userEvent.click(screen.getByRole("button", { name: "경기 변경" }));
+        expect(await screen.findByText("검색 결과 2 / 2")).toBeTruthy();
+      }
       client.clear();
     },
   );
+
+  it("opens the normal picker after direct replay fails", async () => {
+    vi.stubGlobal("fetch", replayFetchMock(true));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      createElement(
+        MemoryRouter,
+        { initialEntries: [replayGameUrl("anon-game-2026", 1)] },
+        createElement(QueryClientProvider, { client }, createElement(ReplayPage)),
+      ),
+    );
+    expect(await screen.findByText("요청에 실패했습니다 (404)")).toBeTruthy();
+    expect(await screen.findByText("검색 결과 2 / 2")).toBeTruthy();
+    expect(
+      screen.getByRole("option", { name: /anon-game-2026/ }).getAttribute("aria-selected"),
+    ).toBe("true");
+    client.clear();
+  });
 
   it.each(["event", "pa", "play", "game"] as const)(
     "returns from %s evidence to the exact player, scope and detail filters",
@@ -277,21 +306,48 @@ describe("경기 재생 UI", () => {
     });
     expect(screen.queryByRole("button", { name: /9999년/ })).toBeNull();
     await user.click(august30);
-    expect(screen.getByText("검색 결과 2 / 5")).toBeTruthy();
+    expect(await screen.findByText("검색 결과 2 / 5")).toBeTruthy();
     expect(
       within(screen.getByRole("listbox", { name: "DB 경기 목록" })).getAllByRole("option"),
     ).toHaveLength(2);
 
     await user.click(screen.getByRole("button", { name: "전체 날짜 보기" }));
-    expect(screen.getByText("검색 결과 5 / 5")).toBeTruthy();
+    expect(await screen.findByText("검색 결과 5 / 5")).toBeTruthy();
     await user.click(
       within(screen.getByRole("group", { name: "시즌 필터" })).getByRole("button", {
         name: /^2025/,
       }),
     );
     expect(await screen.findByRole("button", { name: "2025년 7월 1일, 경기 1개" })).toBeTruthy();
-    expect(screen.getByText("검색 결과 1 / 5")).toBeTruthy();
+    expect(await screen.findByText("검색 결과 1 / 5")).toBeTruthy();
     queryClient.clear();
+  });
+
+  it("keeps the selected game and global option positions when changing pages", async () => {
+    vi.stubGlobal("fetch", calendarFetchMock(2));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const user = userEvent.setup();
+    render(
+      createElement(
+        MemoryRouter,
+        null,
+        createElement(QueryClientProvider, { client }, createElement(ReplayPage)),
+      ),
+    );
+    expect(await screen.findByText("검색 결과 5 / 5")).toBeTruthy();
+    const first = screen.getByRole("option", { name: /20260830AABB02026/ });
+    expect(first.getAttribute("aria-selected")).toBe("true");
+    const list = screen.getByRole("listbox", { name: "DB 경기 목록" });
+    list.focus();
+    await user.keyboard("{End}");
+    const last = await within(list).findByRole("option", { name: /99990706WEEA02026/ });
+    expect(last.getAttribute("aria-posinset")).toBe("5");
+    expect(last.getAttribute("aria-setsize")).toBe("5");
+    expect(list.getAttribute("aria-activedescendant")).toBe(last.id);
+    expect(screen.getByText("2026.08.30 · 비식별 원정 vs 비식별 홈")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "이전" }));
+    expect(await within(list).findByRole("option", { name: /20260831EEFF02026/ })).toBeTruthy();
+    client.clear();
   });
 
   it("경기를 검색하고 typed movement, 상태, tracking과 재생 경계를 표시한다", async () => {
@@ -310,21 +366,21 @@ describe("경기 재생 UI", () => {
 
     const search = await screen.findByPlaceholderText("게임 ID 또는 시즌");
     await user.type(search, "2025");
-    expect(screen.getByText("검색 결과 1 / 2")).toBeTruthy();
+    expect(await screen.findByText("검색 결과 1 / 2")).toBeTruthy();
     const game2025 = screen.getByRole("option", { name: /anon-game-2025/ });
     await user.click(game2025);
     expect(game2025.getAttribute("aria-selected")).toBe("true");
     await user.clear(search);
-    expect(screen.getByText("검색 결과 2 / 2")).toBeTruthy();
+    expect(await screen.findByText("검색 결과 2 / 2")).toBeTruthy();
     await user.click(
       within(screen.getByRole("group", { name: "시즌 필터" })).getByRole("button", {
         name: /^2025/,
       }),
     );
-    expect(screen.getByText("검색 결과 1 / 2")).toBeTruthy();
+    expect(await screen.findByText("검색 결과 1 / 2")).toBeTruthy();
     expect(screen.queryByRole("option", { name: /anon-game-2026/ })).toBeNull();
     await user.click(screen.getByRole("button", { name: /^전체/ }));
-    const game2026 = screen.getByRole("option", { name: /anon-game-2026/ });
+    const game2026 = await screen.findByRole("option", { name: /anon-game-2026/ });
     await user.click(game2026);
     expect(game2026.getAttribute("aria-selected")).toBe("true");
 
@@ -424,20 +480,21 @@ describe("경기 재생 UI", () => {
   });
 });
 
-function calendarFetchMock(): ReturnType<typeof vi.fn> {
+function calendarFetchMock(pageSize = 50): ReturnType<typeof vi.fn> {
   return vi.fn(async (input: string | URL | Request) => {
     const path = String(input);
-    if (path === "/api/v2/games?authority=database") {
-      return Response.json({
-        games: [
-          catalogGame("20260830AABB02026", 2026, "2026-08-30"),
-          catalogGame("20260830CCDD02026", 2026, "2026-08-30"),
-          catalogGame("20260831EEFF02026", 2026, "2026-08-31"),
-          catalogGame("20250701AABB02025", 2025, "2025-07-01"),
-          catalogGame("99990706WEEA02026", 2026, "2026-07-06"),
-        ],
-      });
-    }
+    const catalog = replayCatalogMock(
+      path,
+      [
+        catalogGame("20260830AABB02026", 2026, "2026-08-30"),
+        catalogGame("20260830CCDD02026", 2026, "2026-08-30"),
+        catalogGame("20260831EEFF02026", 2026, "2026-08-31"),
+        catalogGame("20250701AABB02025", 2025, "2025-07-01"),
+        catalogGame("99990706WEEA02026", 2026, "2026-07-06"),
+      ],
+      pageSize,
+    );
+    if (catalog !== undefined) return catalog;
     if (path.endsWith("/revisions")) {
       const gameId = path.split("/").at(-2) ?? "";
       return Response.json({
@@ -461,31 +518,20 @@ function calendarFetchMock(): ReturnType<typeof vi.fn> {
   });
 }
 
-function replayFetchMock(): ReturnType<typeof vi.fn> {
+function replayFetchMock(failManifest = false): ReturnType<typeof vi.fn> {
   return vi.fn(async (input: string | URL | Request) => {
     const path = String(input);
-    if (path === "/api/v2/games?authority=database") {
-      return Response.json({
-        games: [
-          catalogGame("anon-game-2026", 2026, "2026-08-30"),
-          catalogGame("anon-game-2025", 2025, "2025-07-01"),
-          {
-            gameId: "anon-staging",
-            season: 2026,
-            authority: "staging",
-            gameDate: "2026-08-30",
-            teams: {
-              away: { teamId: "away", name: "비식별 원정" },
-              home: { teamId: "home", name: "비식별 홈" },
-            },
-            updatedAt: "2026-08-30T00:00:00.000Z",
-            blockingFindings: 0,
-            warningFindings: 0,
-            supersededCount: 0,
-          },
-        ],
-      });
-    }
+    const catalog = replayCatalogMock(
+      path,
+      [
+        catalogGame("anon-game-2026", 2026, "2026-08-30"),
+        catalogGame("anon-game-2025", 2025, "2025-07-01"),
+      ],
+      50,
+    );
+    if (catalog !== undefined) return catalog;
+    if (failManifest && path.endsWith("/replay-manifest"))
+      return Response.json({}, { status: 404 });
     if (path === "/api/v2/games/anon-game-2026/revisions") {
       return Response.json({
         gameId: "anon-game-2026",
@@ -556,6 +602,38 @@ function replayFetchMock(): ReturnType<typeof vi.fn> {
       });
     }
     throw new Error(`unexpected request: ${path}`);
+  });
+}
+
+function replayCatalogMock(path: string, games: ReturnType<typeof catalogGame>[], limit: number) {
+  const { pathname, searchParams } = new URL(path, "http://localhost");
+  if (pathname === "/api/v2/replay/calendar") {
+    const counts = new Map<string, { season: number; gameDate: string; count: number }>();
+    for (const { season, gameDate } of games) {
+      const key = `${season}:${gameDate}`;
+      counts.set(key, { season, gameDate, count: (counts.get(key)?.count ?? 0) + 1 });
+    }
+    return Response.json([...counts.values()]);
+  }
+  if (pathname !== "/api/v2/replay/games") return undefined;
+  const page = Number(searchParams.get("page") ?? 1);
+  const season = searchParams.get("season");
+  const gameDate = searchParams.get("gameDate");
+  const search = searchParams.get("search") ?? "";
+  const selected = searchParams.get("selectedGameId");
+  const filtered = games.filter(
+    (game) =>
+      (season === null || Number(season) === game.season) &&
+      (gameDate === null || gameDate === game.gameDate) &&
+      game.gameId.includes(search),
+  );
+  return Response.json({
+    games: filtered.slice((page - 1) * limit, page * limit),
+    total: filtered.length,
+    page,
+    limit,
+    selectedGame:
+      (selected === null ? games[0] : games.find((game) => game.gameId === selected)) ?? null,
   });
 }
 

@@ -1,9 +1,12 @@
 import {
   DatabaseGameCatalogItemSchema,
   DatabaseGamesSchema,
+  ReplayCatalogCalendarSchema,
+  ReplayCatalogPageSchema,
   type DatabaseGames,
   type DatabaseGamesQuery,
   type GameCatalogItem,
+  type ReplayCatalogQuery,
 } from "@kbo/contracts";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
@@ -22,6 +25,7 @@ const catalogGames = `SELECT r.game_id,r.revision,r.season,r.game_date,
     ON home.game_id=r.game_id AND home.revision=r.revision AND home.side='home'`;
 const validationJoin = `JOIN workbench.validation_runs v
   ON v.game_id=g.game_id AND v.revision=g.revision`;
+const replayGameOrder = `date_trunc('milliseconds',g.updated_at) DESC,g.game_date DESC,g.game_id DESC`;
 const catalogColumns = `g.game_id AS "gameId",g.season,'database' AS authority,
   to_char(g.game_date,'YYYY-MM-DD') AS "gameDate",g.revision AS "currentRevision",
   c.revision_count AS "revisionCount",
@@ -146,4 +150,70 @@ export async function readDatabaseCatalogPage(
     limit,
     seasons,
   });
+}
+
+export async function readReplayCatalogPage(pool: CatalogPool, query: ReplayCatalogQuery) {
+  const page = query.page ?? 1;
+  const limit = query.limit ?? 50;
+  const { rows } = await pool.query<Record<string, unknown>>(
+    `WITH catalog AS NOT MATERIALIZED (
+      SELECT g.*,v.warning_count FROM (${catalogGames}) g ${validationJoin}
+    ), filtered AS (
+      SELECT g.* FROM catalog g
+      WHERE ($1::integer IS NULL OR g.season=$1)
+        AND ($2::date IS NULL OR g.game_date=$2)
+        AND ($3='' OR EXISTS (
+          SELECT 1 FROM unnest(ARRAY[g.game_id,g.season::text,to_char(g.game_date,'YYYY-MM-DD'),
+            g.away_name,g.home_name]) field
+          WHERE strpos(lower(field COLLATE "ko-x-icu"),$3)>0
+        ))
+    ), page AS (
+      SELECT g.*,false AS selected FROM filtered g
+      ORDER BY ${replayGameOrder} LIMIT $4 OFFSET $5
+    ), selected AS (
+      SELECT g.*,true AS selected FROM catalog g
+      WHERE $6::text IS NULL OR g.game_id=$6
+      ORDER BY ${replayGameOrder} LIMIT 1
+    ), totals AS (
+      SELECT count(*)::integer AS total FROM filtered
+    )
+    SELECT totals.total,g.selected,${catalogColumns}
+    FROM totals LEFT JOIN (SELECT * FROM page UNION ALL SELECT * FROM selected) g ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT count(*)::integer AS revision_count FROM workbench.game_revisions
+      WHERE game_id=g.game_id AND sealed
+    ) c ON TRUE
+    ORDER BY g.selected,${replayGameOrder}`,
+    [
+      query.season ?? null,
+      query.gameDate ?? null,
+      (query.search ?? "").trim().toLocaleLowerCase("ko-KR"),
+      limit,
+      (page - 1) * limit,
+      query.selectedGameId ?? null,
+    ],
+  );
+  const games: Record<string, unknown>[] = [];
+  const selection: Record<string, unknown>[] = [];
+  for (const { total, selected, ...game } of rows) {
+    void total;
+    if (game.gameId === null) continue;
+    (selected === true ? selection : games).push(game);
+  }
+  return Value.Decode(ReplayCatalogPageSchema, {
+    games: decodeCatalogRows(games),
+    selectedGame: decodeCatalogRows(selection)[0] ?? null,
+    total: rows[0]?.total,
+    page,
+    limit,
+  });
+}
+
+export async function readReplayCatalogCalendar(pool: CatalogPool) {
+  const { rows } = await pool.query(
+    `SELECT g.season,to_char(g.game_date,'YYYY-MM-DD') AS "gameDate",count(*)::integer AS count
+     FROM (${catalogGames}) g ${validationJoin}
+     GROUP BY g.season,g.game_date ORDER BY g.season DESC,g.game_date`,
+  );
+  return Value.Decode(ReplayCatalogCalendarSchema, rows);
 }

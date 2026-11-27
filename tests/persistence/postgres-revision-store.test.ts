@@ -49,6 +49,8 @@ import {
 import {
   BlockingImportError,
   GameRevisionStore,
+  readReplayCatalogCalendar,
+  readReplayCatalogPage,
   PitchAnalysisRepository,
   AnalysisCoverageRepository,
   GameCompetitionRepository,
@@ -95,7 +97,10 @@ import {
 } from "../helpers/pitch-analysis-fixture.js";
 import { disciplineEligibilityFixture } from "../helpers/discipline-eligibility-fixture.js";
 import { competitionFixture } from "../helpers/game-competition.js";
-import { analysisSourceHash } from "../../packages/persistence/src/analysis-scope.js";
+import {
+  analysisSourceHash,
+  readRegularModelScopeHashes,
+} from "../../packages/persistence/src/analysis-scope.js";
 import { AnalysisPreparationManager } from "../../apps/server/src/jobs/analysis-preparation-manager.js";
 import { EXPECTED_MIGRATION_VERSION } from "../../apps/server/src/config.js";
 import { BoundedReadCache } from "../../apps/server/src/bounded-read-cache.js";
@@ -168,6 +173,68 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     }
   });
 
+  it("paginates replay games in catalog order and keeps calendar and selection independent", async () => {
+    for (const [gameId, season, gameDate, home] of [
+      ["old", 2025, "2025-07-01", "홈 B"],
+      ["same-day-1", 2026, "2026-08-30", "홈 B"],
+      ["same-day-2", 2026, "2026-08-30", "홈 D"],
+      ["newly-stored", 2026, "2026-07-06", "홈 B"],
+    ] as const) {
+      const source = regulationGame(season);
+      await store.importRevision(
+        parseStagingGameDocumentV2({
+          ...source,
+          metadata: { ...source.metadata, gameId, gameDate },
+          source: { ...source.source, sourceGameId: gameId },
+          teams: { ...source.teams, home: { ...source.teams.home, name: home } },
+        }),
+      );
+    }
+    const oldOrder = [...(await store.catalog())].sort((a, b) =>
+      a.updatedAt === b.updatedAt ? 0 : a.updatedAt < b.updatedAt ? 1 : -1,
+    );
+    expect(oldOrder.map(({ gameId }) => gameId)).toEqual([
+      "newly-stored",
+      "same-day-2",
+      "same-day-1",
+      "old",
+    ]);
+    const first = await readReplayCatalogPage(pool, { limit: 2 });
+    const second = await readReplayCatalogPage(pool, { page: 2, limit: 2, selectedGameId: "old" });
+    expect(first).toEqual({
+      games: oldOrder.slice(0, 2),
+      selectedGame: oldOrder[0],
+      total: 4,
+      page: 1,
+      limit: 2,
+    });
+    expect(second).toEqual({
+      games: oldOrder.slice(2),
+      selectedGame: oldOrder[3],
+      total: 4,
+      page: 2,
+      limit: 2,
+    });
+    const filtered = await readReplayCatalogPage(pool, {
+      search: " 홈 b ",
+      season: 2026,
+      gameDate: "2026-08-30",
+      selectedGameId: "old",
+    });
+    expect(filtered.games).toEqual([oldOrder[2]]);
+    expect(filtered.selectedGame).toEqual(oldOrder[3]);
+    expect(filtered.total).toBe(1);
+    expect((await readReplayCatalogPage(pool, { search: "2025" })).games).toEqual([oldOrder[3]]);
+    expect(
+      await readReplayCatalogPage(pool, { search: "원정 홈", selectedGameId: "absent" }),
+    ).toMatchObject({ games: [], selectedGame: null, total: 0 });
+    expect(await readReplayCatalogCalendar(pool)).toEqual([
+      { season: 2026, gameDate: "2026-07-06", count: 1 },
+      { season: 2026, gameDate: "2026-08-30", count: 2 },
+      { season: 2025, gameDate: "2025-07-01", count: 1 },
+    ]);
+  });
+
   it("keeps historical source/cache periods independent of later season imports", async () => {
     const sources = new AnalysisModelSourceRepository(pool);
     const earlier = await sources.read(2022),
@@ -192,6 +259,60 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       pitchQualitySourceHash((await new PitchQualityRepository(pool).training(2023)).manifest),
     );
     expect(await sources.read(2022)).toEqual(earlier);
+  });
+  it("preserves regular model fingerprints in season and canonical game order", async () => {
+    const source = regulationGame(2025);
+    const games = ["a", "Z", "preseason"].map((gameId) =>
+      parseStagingGameDocumentV2({
+        ...source,
+        metadata: { ...source.metadata, gameId },
+        source: { ...source.source, sourceGameId: gameId },
+      }),
+    );
+    for (const game of games) await store.importRevision(game);
+    const dataset = await new GameCompetitionRepository(pool).adopt(
+      competitionFixture(
+        2025,
+        games.map((game) => ({
+          sourceGameId: game.source.sourceGameId,
+          gameDate: game.metadata.gameDate,
+          competition: game.metadata.gameId === "preseason" ? "preseason" : "regular",
+        })),
+      ),
+    );
+    const input = new Map(games.map((game) => [game.metadata.gameId, stagingDocumentHash(game)]));
+    const expected = [2020, 2021, 2022, 2023, 2024, 2025, 2026].map((season) => {
+      const scope = { season, competition: "regular", dateFrom: null, dateTo: null };
+      const sources =
+        season === 2025
+          ? ["Z", "a"].map((gameId) => ({
+              gameId,
+              revision: 1,
+              documentHash: input.get(gameId),
+              competition: "regular",
+              datasetHash: dataset.datasetHash,
+            }))
+          : [];
+      const manifest = {
+        version: 1,
+        scope,
+        sources,
+        dataset: season === 2025 ? [{ hash: dataset.datasetHash }] : [],
+      };
+      return {
+        season,
+        hash: createHash("sha256").update(canonicalStringify(manifest)).digest("hex"),
+      };
+    });
+    const client = await pool.connect();
+    const statements = vi.spyOn(client, "query");
+    try {
+      expect(await readRegularModelScopeHashes(client, 2025)).toEqual(expected);
+      expect(statements).toHaveBeenCalledTimes(1);
+    } finally {
+      statements.mockRestore();
+      client.release();
+    }
   });
   it("reuses exact model manifests and invalidates height datasets, frozen choices, revisions and classifications", async () => {
     const game = regulationGame(2025);
@@ -2188,6 +2309,24 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(batPair.first).toEqual(bat);
     expect(batPair.second.total.pitches).toBe(0);
     expect(batPair.second).toEqual(await batters.analyze(nextPeriod, "a1"));
+    const client = await pool.connect();
+    const statements = vi.spyOn(client, "query");
+    client.release();
+    try {
+      const reads = () =>
+        statements.mock.calls.filter(
+          ([sql]) => typeof sql === "string" && /^\s*(WITH|SELECT)\b/i.test(sql),
+        ).length;
+      const coldLocation = new PitchLocationRepository(pool);
+      expect(await coldLocation.compare({ ...query, compareSeason: 2024 }, "hp1")).toEqual(same);
+      expect(reads()).toBe(3);
+      statements.mockClear();
+      const coldBatters = new BatterProfileRepository(pool);
+      expect(await coldBatters.compare(query, query, "a1")).toEqual({ first: bat, second: bat });
+      expect(reads()).toBe(3);
+    } finally {
+      statements.mockRestore();
+    }
     const draft = await store.loadCorrectionDraft(source.metadata.gameId, 1);
     await store.importRevision(
       parseStagingGameDocumentV2({ ...draft, metadata: { ...draft.metadata, stadium: "잠실" } }),

@@ -1,4 +1,4 @@
-import { queryOptions, type QueryKey } from "@tanstack/react-query";
+import { keepPreviousData, queryOptions, type QueryKey } from "@tanstack/react-query";
 
 import { getCollectionJobs, getGameCatalog } from "./collection-client";
 import {
@@ -7,7 +7,11 @@ import {
   getCorrectionSourceEvidence,
 } from "./correction-client";
 import { getImportJobs } from "./import-client";
-import { getRevisionCatalog } from "./replay-client";
+import {
+  getReplayCatalogCalendar,
+  getReplayCatalogPage,
+  getRevisionCatalog,
+} from "./replay-client";
 import {
   getRecordCorrectionCase,
   getRecordCorrectionCases,
@@ -15,7 +19,11 @@ import {
   getRecordCorrectionProposal,
   getRecordCorrectionSummary,
 } from "./record-correction-client";
-import type { RecordCorrectionCaseStatus, RecordCorrectionQueue } from "@kbo/contracts";
+import type {
+  RecordCorrectionCaseStatus,
+  RecordCorrectionQueue,
+  ReplayCatalogQuery,
+} from "@kbo/contracts";
 import { getDashboard, getDatabaseOverview, getSystemStatus } from "./system-client";
 
 export const queryKeys = {
@@ -52,11 +60,17 @@ export const queryKeys = {
 } as const;
 
 export const catalogQueryOptions = () =>
-  queryOptions({ queryKey: queryKeys.catalog, queryFn: () => getGameCatalog() });
-export const storedCatalogQueryOptions = () =>
+  queryOptions({ queryKey: queryKeys.catalog, queryFn: getGameCatalog });
+export const replayCatalogPageQueryOptions = (query: ReplayCatalogQuery) =>
   queryOptions({
-    queryKey: [...queryKeys.catalog, "database"],
-    queryFn: () => getGameCatalog("database"),
+    queryKey: [...queryKeys.catalog, "replay", "page", query],
+    queryFn: ({ signal }) => getReplayCatalogPage(query, signal),
+    placeholderData: keepPreviousData,
+  });
+export const replayCatalogCalendarQueryOptions = () =>
+  queryOptions({
+    queryKey: [...queryKeys.catalog, "replay", "calendar"],
+    queryFn: ({ signal }) => getReplayCatalogCalendar(signal),
   });
 export const correctionGamesQueryOptions = () =>
   queryOptions({ queryKey: queryKeys.correction.games, queryFn: getCorrectionGameCatalog });

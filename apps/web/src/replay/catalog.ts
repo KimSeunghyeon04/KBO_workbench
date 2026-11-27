@@ -1,4 +1,4 @@
-import type { GameCatalogItem } from "@kbo/contracts";
+import type { GameCatalogItem, ReplayCatalogCalendar } from "@kbo/contracts";
 
 export interface CatalogGameIdentity {
   readonly isoDate: string;
@@ -12,61 +12,23 @@ export interface CalendarDay {
   readonly day: number;
 }
 
-export function filterStoredGames(
-  games: readonly GameCatalogItem[],
-  search: string,
-  seasonFilter: string,
-  selectedDate: string | null,
-): readonly GameCatalogItem[] {
-  const query = search.trim().toLocaleLowerCase("ko-KR");
-  return games.filter((game) => {
-    if (seasonFilter !== "all" && String(game.season) !== seasonFilter) return false;
-    if (selectedDate !== null && catalogGameIdentity(game)?.isoDate !== selectedDate) return false;
-    if (query === "") return true;
-    return (
-      game.gameId.toLocaleLowerCase("ko-KR").includes(query) ||
-      (game.season !== null && String(game.season).includes(query)) ||
-      (game.authority === "database" &&
-        [game.gameDate, game.teams.away.name, game.teams.home.name].some((value) =>
-          value.toLocaleLowerCase("ko-KR").includes(query),
-        ))
-    );
-  });
-}
-
-export function catalogSeasons(games: readonly GameCatalogItem[]): readonly number[] {
-  return [...new Set(games.flatMap((game) => (game.season === null ? [] : [game.season])))].sort(
-    (left, right) => right - left,
-  );
-}
-
-export function catalogMonths(
-  games: readonly GameCatalogItem[],
-  seasonFilter: string,
-): readonly string[] {
-  return [
-    ...new Set(
-      games.flatMap((game) => {
-        if (seasonFilter !== "all" && String(game.season) !== seasonFilter) return [];
-        const identity = catalogGameIdentity(game);
-        return identity === null ? [] : [identity.isoDate.slice(0, 7)];
-      }),
-    ),
-  ].sort();
-}
-
-export function catalogDateCounts(
-  games: readonly GameCatalogItem[],
-  seasonFilter: string,
-): ReadonlyMap<string, number> {
-  const counts = new Map<string, number>();
-  for (const game of games) {
-    if (seasonFilter !== "all" && String(game.season) !== seasonFilter) continue;
-    const identity = catalogGameIdentity(game);
-    if (identity === null) continue;
-    counts.set(identity.isoDate, (counts.get(identity.isoDate) ?? 0) + 1);
+export function summarizeReplayCalendar(calendar: ReplayCatalogCalendar, seasonFilter: string) {
+  const seasonCounts = new Map<number, number>();
+  const dateCounts = new Map<string, number>();
+  let total = 0;
+  for (const { season, gameDate, count } of calendar) {
+    total += count;
+    seasonCounts.set(season, (seasonCounts.get(season) ?? 0) + count);
+    if (seasonFilter === "all" || String(season) === seasonFilter) {
+      dateCounts.set(gameDate, (dateCounts.get(gameDate) ?? 0) + count);
+    }
   }
-  return counts;
+  return {
+    total,
+    seasons: [...seasonCounts].sort(([left], [right]) => right - left),
+    months: [...new Set([...dateCounts.keys()].map((date) => date.slice(0, 7)))].sort(),
+    dateCounts,
+  };
 }
 
 export function catalogGameTitle(game: GameCatalogItem): string {

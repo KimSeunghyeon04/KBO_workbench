@@ -31,6 +31,16 @@ const sourceListSchema = Type.Array(sourceSchema);
 const datasetListSchema = Type.Array(
   Type.Object({ hash: Type.String() }, { additionalProperties: false }),
 );
+const regularModelScopeRowsSchema = Type.Array(
+  Type.Object(
+    {
+      season: Type.Integer(),
+      sources: sourceListSchema,
+      anchor: Type.Union([Type.String(), Type.Null()]),
+    },
+    { additionalProperties: false },
+  ),
+);
 export const ANALYSIS_SOURCE_COLUMNS = `r.game_id AS "gameId",r.revision,
   r.document_hash AS "documentHash",r.competition,r.competition_dataset_hash AS "datasetHash"`;
 export const ANALYSIS_COMPETITION_DATASET =
@@ -58,42 +68,38 @@ export async function analysisSourceHash(
   return analysisManifestHash(scope, sources, hash === null ? [] : [{ hash }]);
 }
 
-/** Keep the v1 fingerprint for existing regular-season models across nonregular adoption. */
-async function regularModelScopeHash(client: PoolClient, season: number): Promise<string> {
-  const scope = resolveAnalysisScope({ season, competition: "regular" });
-  const { rows } = await client.query<Record<string, unknown>>(
-    `${analysisSourcesSql} ORDER BY r.game_id COLLATE "C"`,
-    analysisScopeParameters(scope),
-  );
-  const dataset = Value.Decode(
-    datasetListSchema,
-    (
-      await client.query<Record<string, unknown>>(
-        `SELECT regular_model_dataset_hash AS hash FROM reference.current_competition_datasets
-       WHERE season=$1 AND regular_model_dataset_hash IS NOT NULL`,
-        [season],
-      )
-    ).rows,
-  );
-  const anchor = dataset[0]?.hash ?? null;
-  const sources = Value.Decode(sourceListSchema, rows).map((row) => ({
-    ...row,
-    datasetHash: anchor,
-  }));
-  return analysisManifestHash(scope, sources, dataset);
-}
-
 export interface RegularModelScopeHash {
   readonly season: number;
   readonly hash: string;
 }
 
-export async function readRegularModelScopeHashes(client: PoolClient, through: number) {
-  const hashes: RegularModelScopeHash[] = [];
-  for (let season = 2020; season <= through + 1; season++) {
-    hashes.push({ season, hash: await regularModelScopeHash(client, season) });
-  }
-  return hashes;
+export async function readRegularModelScopeHashes(
+  client: PoolClient,
+  through: number,
+): Promise<RegularModelScopeHash[]> {
+  const lastSeason = Math.floor(through + 1);
+  if (lastSeason < 2020) return [];
+  const { rows } = await client.query<Record<string, unknown>>(
+    `SELECT s.season,g.sources,d.regular_model_dataset_hash AS anchor
+    FROM generate_series(2020,$1::integer) s(season)
+    CROSS JOIN LATERAL (
+      SELECT COALESCE(json_agg(source ORDER BY source."gameId" COLLATE "C"),'[]'::json) AS sources
+      FROM (
+        SELECT ${ANALYSIS_SOURCE_COLUMNS} FROM analytics.current_analysis_games r
+        WHERE r.season=s.season AND r.competition='regular'
+      ) source
+    ) g
+    LEFT JOIN reference.current_competition_datasets d ON d.season=s.season
+    ORDER BY s.season`,
+    [lastSeason],
+  );
+  return Value.Decode(regularModelScopeRowsSchema, rows).map(({ season, sources, anchor }) => {
+    const scope = resolveAnalysisScope({ season, competition: "regular" });
+    // The v1 model fingerprint stays stable across nonregular dataset adoptions.
+    const modelSources = sources.map((row) => ({ ...row, datasetHash: anchor }));
+    const dataset = anchor === null ? [] : [{ hash: anchor }];
+    return { season, hash: analysisManifestHash(scope, modelSources, dataset) };
+  });
 }
 
 export function analysisManifestHash(scope: AnalysisScope, sources: unknown, dataset: unknown) {

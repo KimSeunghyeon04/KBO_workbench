@@ -2,6 +2,7 @@ import { type Static, Type } from "@sinclair/typebox";
 
 import {
   ApiErrorSchema,
+  DatabaseGameCatalogItemSchema,
   ErrorCategorySchema,
   JobStatusSchema,
   GameCatalogItemSchema,
@@ -265,6 +266,37 @@ export const DatabaseGamesSchema = Type.Object(
   },
   strict,
 );
+export const ReplayCatalogQuerySchema = Type.Object(
+  {
+    page: DatabaseGamesQuerySchema.properties.page,
+    limit: DatabaseGamesQuerySchema.properties.limit,
+    season: DatabaseGamesQuerySchema.properties.season,
+    search: Type.Optional(Type.String()),
+    gameDate: Type.Optional(Type.String({ format: "date" })),
+    selectedGameId: Type.Optional(GameIdSchema),
+  },
+  strict,
+);
+export const ReplayCatalogPageSchema = Type.Object(
+  {
+    games: Type.Array(DatabaseGameCatalogItemSchema, { maxItems: 200 }),
+    selectedGame: Type.Union([DatabaseGameCatalogItemSchema, Type.Null()]),
+    total: DatabaseGamesSchema.properties.total,
+    page: DatabaseGamesSchema.properties.page,
+    limit: DatabaseGamesSchema.properties.limit,
+  },
+  strict,
+);
+export const ReplayCatalogCalendarSchema = Type.Array(
+  Type.Object(
+    {
+      season: Type.Integer({ minimum: 1982, maximum: 9999 }),
+      gameDate: Type.String({ pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }),
+      count: Type.Integer({ minimum: 1 }),
+    },
+    strict,
+  ),
+);
 export type ImportSelectionRequest = Static<typeof ImportSelectionRequestSchema>;
 export type ImportSelection = Static<typeof ImportSelectionSchema>;
 export type ImportTarget = Static<typeof ImportTargetSchema>;
@@ -275,3 +307,6 @@ export type ImportHistoryQuery = Static<typeof ImportHistoryQuerySchema>;
 export type ImportHistory = Static<typeof ImportHistorySchema>;
 export type DatabaseGamesQuery = Static<typeof DatabaseGamesQuerySchema>;
 export type DatabaseGames = Static<typeof DatabaseGamesSchema>;
+export type ReplayCatalogQuery = Static<typeof ReplayCatalogQuerySchema>;
+export type ReplayCatalogPage = Static<typeof ReplayCatalogPageSchema>;
+export type ReplayCatalogCalendar = Static<typeof ReplayCatalogCalendarSchema>;

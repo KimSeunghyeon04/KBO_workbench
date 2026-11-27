@@ -443,9 +443,9 @@ export class StagingWorkspace {
     return this.catalogIndex.overview();
   }
 
-  public async correctionGameCatalog(): Promise<CorrectionGameCatalog> {
+  public async correctionGameCatalog(gameIds?: readonly string[]): Promise<CorrectionGameCatalog> {
     this.assertOpen();
-    const games = (await this.catalog()).games.flatMap((game) =>
+    const games = (await this.catalog(gameIds)).games.flatMap((game) =>
       (game.authority === "staging" || game.authority === "quarantine") && game.season !== null
         ? [
             {

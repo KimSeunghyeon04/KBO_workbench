@@ -1,6 +1,7 @@
 export { CollectionWorkspace } from "./collection-workspace.js";
 export { ImportWorkspace } from "./import-workspace.js";
 export { readImmutableSourceBundle } from "./source-bundle-reader.js";
+export { readReplayCatalogCalendar, readReplayCatalogPage } from "./revision-catalog-repository.js";
 export {
   buildRelationalProjection,
   decodeProjectionRow,

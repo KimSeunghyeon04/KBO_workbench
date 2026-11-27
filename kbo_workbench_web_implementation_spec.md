@@ -72,8 +72,9 @@ API composition root의 최대 2개 지속 worker는 같은 compiler·correction
 호출한다. 대기열은 32개, 실행 제한은 60초이며 과부하는 재시도 가능한 503으로 반환한다. 취소·실패는
 세션이나 DB를 부분 반영하지 않는다. 파일 writer와 PostgreSQL transaction은 원래 소유자가 유지한다.
 투수 표본 계산은 별도 worker 1개·대기 16개로 제한하고 시즌 행은 5,000개씩 전달한다.
-재생 목록은 database authority만 요청한다. 적재 이력은 hash/decode를 보존한 16개 병렬 읽기와
-생성 시각·ID의 정렬 인덱스를 사용하며, 변경되는 상태는 현재 job snapshot에서 읽는다.
+재생은 경기·revision이 지정된 링크를 바로 연다. 탐색할 때는 봉인 경기의 검색 페이지와 달력 집계를
+읽는다. 적재 이력은 hash/decode를 보존한 16개 병렬 읽기와 생성 시각·ID의 정렬 인덱스를
+사용하며, 변경되는 상태는 현재 job snapshot에서 읽는다.
 
 ## 3. StagingGameDocumentV2
 

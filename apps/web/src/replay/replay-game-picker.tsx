@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { GameCatalogItem } from "@kbo/contracts";
 
 import { useFixedVirtualList } from "../components/use-fixed-virtual-list";
 import {
   calendarDays,
-  catalogDateCounts,
   catalogGameIdentity,
   catalogGameTitle,
   formatCalendarDate,
@@ -12,11 +11,16 @@ import {
 } from "./catalog";
 
 export function GamePicker({
-  games,
+  storedCount,
+  filteredCount,
   filteredGames,
+  page,
+  pageSize,
+  onPageChange,
   seasons,
   seasonFilter,
   calendarMonths,
+  dateCounts,
   visibleMonth,
   selectedDate,
   search,
@@ -37,11 +41,16 @@ export function GamePicker({
   onClose,
   onLoad,
 }: {
-  readonly games: readonly GameCatalogItem[];
+  readonly storedCount: number;
+  readonly filteredCount: number;
   readonly filteredGames: readonly GameCatalogItem[];
-  readonly seasons: readonly number[];
+  readonly page: number;
+  readonly pageSize: number;
+  readonly onPageChange: (page: number) => void;
+  readonly seasons: readonly (readonly [number, number])[];
   readonly seasonFilter: string;
   readonly calendarMonths: readonly string[];
+  readonly dateCounts: ReadonlyMap<string, number>;
   readonly visibleMonth: string;
   readonly selectedDate: string | null;
   readonly search: string;
@@ -64,6 +73,8 @@ export function GamePicker({
 }): React.JSX.Element {
   const selectedIndex = filteredGames.findIndex((game) => game.gameId === selectedGame?.gameId);
   const [activeIndex, setActiveIndex] = useState(selectedIndex < 0 ? 0 : selectedIndex);
+  const requestedEdge = useRef<"first" | "last" | null>(null);
+  const pageCount = Math.max(1, Math.ceil(filteredCount / pageSize));
   const virtualList = useFixedVirtualList({
     itemCount: filteredGames.length,
     rowHeight: 80,
@@ -71,18 +82,34 @@ export function GamePicker({
     initialViewportHeight: 272,
   });
   useEffect(() => {
+    if (loadingGames) return;
+    const edge = requestedEdge.current;
+    requestedEdge.current = null;
+    if (edge !== null) {
+      setActiveIndex(edge === "first" ? 0 : Math.max(0, filteredGames.length - 1));
+      return;
+    }
     if (filteredGames.length === 0) {
       setActiveIndex(0);
       return;
     }
     if (selectedIndex >= 0) setActiveIndex(selectedIndex);
     else setActiveIndex((current) => Math.min(current, filteredGames.length - 1));
-  }, [filteredGames.length, selectedIndex]);
+  }, [filteredGames.length, loadingGames, page, selectedIndex]);
   const visibleGames = filteredGames.slice(virtualList.window.start, virtualList.window.end);
   const activeGame = filteredGames[activeIndex];
 
+  function moveToPage(next: number, edge: "first" | "last"): void {
+    if (next === page) {
+      setActiveIndex(edge === "first" ? 0 : filteredGames.length - 1);
+      return;
+    }
+    requestedEdge.current = edge;
+    onPageChange(next);
+  }
+
   const moveActiveGame = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (filteredGames.length === 0) return;
+    if (loadingGames || filteredGames.length === 0) return;
     if (event.key === "Enter" || event.key === " ") {
       if (activeGame !== undefined) {
         event.preventDefault();
@@ -92,15 +119,14 @@ export function GamePicker({
     }
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
-    setActiveIndex((current) =>
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? filteredGames.length - 1
-          : event.key === "ArrowDown"
-            ? Math.min(filteredGames.length - 1, current + 1)
-            : Math.max(0, current - 1),
-    );
+    if (event.key === "Home") moveToPage(1, "first");
+    else if (event.key === "End") moveToPage(pageCount, "last");
+    else if (event.key === "ArrowDown") {
+      if (activeIndex === filteredGames.length - 1 && page < pageCount)
+        moveToPage(page + 1, "first");
+      else setActiveIndex((current) => Math.min(filteredGames.length - 1, current + 1));
+    } else if (activeIndex === 0 && page > 1) moveToPage(page - 1, "last");
+    else setActiveIndex((current) => Math.max(0, current - 1));
   };
   return (
     <div
@@ -121,7 +147,7 @@ export function GamePicker({
           <span className="replay-game-result-count" role="status" aria-live="polite">
             {loadingGames
               ? "목록 확인 중…"
-              : `검색 결과 ${String(filteredGames.length)} / ${String(games.length)}`}
+              : `검색 결과 ${String(filteredCount)} / ${String(storedCount)}`}
           </span>
           {floating ? (
             <button type="button" className="replay-game-picker-close" onClick={onClose}>
@@ -199,10 +225,9 @@ export function GamePicker({
             aria-pressed={seasonFilter === "all"}
             onClick={() => onSeasonChange("all")}
           >
-            전체 <span>{String(games.length)}</span>
+            전체 <span>{String(storedCount)}</span>
           </button>
-          {seasons.map((season) => {
-            const count = games.filter((game) => game.season === season).length;
+          {seasons.map(([season, count]) => {
             const value = String(season);
             return (
               <button
@@ -221,8 +246,7 @@ export function GamePicker({
 
       <div className="replay-game-browser">
         <GameCalendar
-          games={games}
-          seasonFilter={seasonFilter}
+          dateCounts={dateCounts}
           months={calendarMonths}
           visibleMonth={visibleMonth}
           selectedDate={selectedDate}
@@ -249,13 +273,14 @@ export function GamePicker({
             role="listbox"
             tabIndex={0}
             aria-label="DB 경기 목록"
+            aria-busy={loadingGames}
             aria-activedescendant={
               activeGame === undefined ? undefined : gameOptionId(activeGame.gameId)
             }
             onKeyDown={moveActiveGame}
             onScroll={virtualList.onScroll}
           >
-            {filteredGames.length === 0 ? (
+            {filteredGames.length === 0 && loadingGames ? null : filteredGames.length === 0 ? (
               <div className="replay-game-no-results" role="status">
                 <strong>일치하는 경기가 없습니다.</strong>
                 <span>날짜를 해제하거나 검색어·시즌을 바꿔 보세요.</span>
@@ -272,7 +297,8 @@ export function GamePicker({
                       key={game.gameId}
                       game={game}
                       index={index}
-                      total={filteredGames.length}
+                      position={(page - 1) * pageSize + index + 1}
+                      total={filteredCount}
                       active={index === activeIndex}
                       selected={selectedGame?.gameId === game.gameId}
                       onSelect={() => {
@@ -285,6 +311,29 @@ export function GamePicker({
               </div>
             )}
           </div>
+          {pageCount > 1 ? (
+            <nav className="replay-game-pagination" aria-label="경기 목록 페이지">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={loadingGames || page <= 1}
+                onClick={() => moveToPage(page - 1, "first")}
+              >
+                이전
+              </button>
+              <span>
+                {page} / {pageCount}
+              </span>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={loadingGames || page >= pageCount}
+                onClick={() => moveToPage(page + 1, "first")}
+              >
+                다음
+              </button>
+            </nav>
+          ) : null}
         </div>
       </div>
     </div>
@@ -292,16 +341,14 @@ export function GamePicker({
 }
 
 function GameCalendar({
-  games,
-  seasonFilter,
+  dateCounts,
   months,
   visibleMonth,
   selectedDate,
   onMonthChange,
   onDateChange,
 }: {
-  readonly games: readonly GameCatalogItem[];
-  readonly seasonFilter: string;
+  readonly dateCounts: ReadonlyMap<string, number>;
   readonly months: readonly string[];
   readonly visibleMonth: string;
   readonly selectedDate: string | null;
@@ -309,7 +356,6 @@ function GameCalendar({
   readonly onDateChange: (value: string | null) => void;
 }): React.JSX.Element {
   const monthIndex = months.indexOf(visibleMonth);
-  const dateCounts = useMemo(() => catalogDateCounts(games, seasonFilter), [games, seasonFilter]);
   const days = useMemo(() => calendarDays(visibleMonth), [visibleMonth]);
   return (
     <section className="replay-calendar" aria-label="날짜로 경기 찾기">
@@ -389,6 +435,7 @@ function GameCalendar({
 function GameResult({
   game,
   index,
+  position,
   total,
   active,
   selected,
@@ -396,6 +443,7 @@ function GameResult({
 }: {
   readonly game: GameCatalogItem;
   readonly index: number;
+  readonly position: number;
   readonly total: number;
   readonly active: boolean;
   readonly selected: boolean;
@@ -408,7 +456,7 @@ function GameResult({
       type="button"
       role="option"
       aria-selected={selected}
-      aria-posinset={index + 1}
+      aria-posinset={position}
       aria-setsize={total}
       tabIndex={-1}
       className={`replay-game-result${selected ? " selected" : ""}${active ? " active" : ""}`}

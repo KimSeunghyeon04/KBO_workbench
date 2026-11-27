@@ -1,15 +1,35 @@
 import {
   canonicalStringify,
+  ReplayCatalogCalendarSchema,
+  ReplayCatalogPageSchema,
   ReplayFramePageSchema,
   ReplayManifestSchema,
   RevisionCatalogSchema,
   type ReplayFrame,
+  type ReplayCatalogQuery,
   type ReplayManifest,
   type RevisionCatalog,
 } from "@kbo/contracts";
 import { Value } from "@sinclair/typebox/value";
 
 import { requestJson } from "./transport";
+
+export async function getReplayCatalogPage(query: ReplayCatalogQuery, signal: AbortSignal) {
+  const params = new URLSearchParams(
+    Object.entries(query).map(([key, value]) => [key, String(value)]),
+  );
+  return Value.Decode(
+    ReplayCatalogPageSchema,
+    await requestJson(`/api/v2/replay/games?${params}`, { signal }),
+  );
+}
+
+export async function getReplayCatalogCalendar(signal: AbortSignal) {
+  return Value.Decode(
+    ReplayCatalogCalendarSchema,
+    await requestJson("/api/v2/replay/calendar", { signal }),
+  );
+}
 
 export async function getRevisionCatalog(gameId: string): Promise<RevisionCatalog> {
   return Value.Decode(

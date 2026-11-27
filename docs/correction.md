@@ -475,8 +475,8 @@ finding과 revision base를 DB 사본으로 덮어쓰지 않는다. 요청에 �
 
 이 진행 표시는 API의 선택 필드 `draftProgress`로 제공하는 조회 결과이며 DB case 상태를 바꾸지
 않는다. DB 적재 전에는 미처리 큐에 남고, 목록 안에서는 검토 필요와 DB 적재 대기 수를 구분한다.
-목록은 현재 작업본이 있는 공지만 검증하고 다른 공지의 원문·원장은 읽지 않는다. GET 조회는 공지 평가,
-원장 저장이나 DB import를 수행하지 않는다.
+목록은 경기 ID가 확정된 미결 공지의 작업본만 찾아 검증한다. 이런 공지가 없으면 작업본 목록 조회를
+건너뛴다. GET 조회는 공지 평가, 원장 저장이나 DB import를 수행하지 않는다.
 
 제안은 `replace_event`와 지원되는 공식 타자·투수 line replacement를 기존 `correction_batch` 한
 건으로 만든다. 원래 event ID, source 위치, 현재 `relayText`, 관찰 상태와 기존 runner movement는

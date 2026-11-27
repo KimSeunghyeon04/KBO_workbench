@@ -93,8 +93,9 @@ PUT `model-policy`는 `enabled`, `applicationSeason`으로 해당 시즌만 변�
 
 ## 조회 비용
 
-모델 상태와 공개 전 검증은 같은 읽기 snapshot에서 시즌별 정규시즌 지문을 한 번 읽어
-득점·구장·구종 품질 모델의 manifest에서 공유한다. 각 모델의 보조자료와 최종 hash는 기존 기준을 사용한다.
+모델 상태와 공개 전 검증은 필요한 시즌의 정규시즌 지문을 한 SQL 문으로 읽어
+득점·구장·구종 품질 모델의 manifest에서 공유한다. 경기 표본이 없는 시즌도 지문에 포함하며,
+각 모델의 보조자료와 최종 hash는 기존 기준을 사용한다.
 
 유효 신장 hash만 pool별 최대 다섯 학습 기간에 재사용한다. 매 요청의 동일 repeatable-read snapshot에서
 현재 revision/document/source bundle, sealed 신장 dataset, 선수별 고정 신장 선택의 SHA-256 지문을 읽는다.

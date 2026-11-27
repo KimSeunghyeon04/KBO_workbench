@@ -492,6 +492,14 @@
   position: relative;
 }
 
+.replay-game-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  font-size: 11px;
+}
+
 .replay-game-result {
   position: absolute;
   inset: 0 0 auto;

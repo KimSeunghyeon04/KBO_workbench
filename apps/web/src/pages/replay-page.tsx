@@ -22,8 +22,15 @@ export function ReplayPage(): React.JSX.Element {
   const location = useLocation();
   const analysisReturnTo = readAnalysisReturnTo(location.state);
   const {
-    games,
-    stored,
+    catalogError,
+    loadingGames,
+    storedCount,
+    filteredCount,
+    page,
+    pageSize,
+    setPage,
+    showPicker,
+    awaitingAutomatic,
     search,
     setSearch,
     gameId,
@@ -49,6 +56,7 @@ export function ReplayPage(): React.JSX.Element {
     searchInputRef,
     seasons,
     calendarMonths,
+    dateCounts,
     filteredGames,
     selectedGame,
     loadedReplay,
@@ -82,7 +90,7 @@ export function ReplayPage(): React.JSX.Element {
 
       <section
         className={`panel replay-source-bar${loadedReplay === undefined ? "" : " compact"}`}
-        aria-busy={replay.isPending}
+        aria-busy={replay.isPending || awaitingAutomatic}
       >
         {loadedReplay === undefined ? null : (
           <div className="replay-source-toolbar">
@@ -97,13 +105,18 @@ export function ReplayPage(): React.JSX.Element {
             </button>
           </div>
         )}
-        {loadedReplay === undefined || sourceOpen ? (
+        {showPicker ? (
           <GamePicker
-            games={stored}
+            storedCount={storedCount}
+            filteredCount={filteredCount}
             filteredGames={filteredGames}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={setPage}
             seasons={seasons}
             seasonFilter={seasonFilter}
             calendarMonths={calendarMonths}
+            dateCounts={dateCounts}
             visibleMonth={visibleMonth}
             selectedDate={selectedDate}
             search={search}
@@ -111,7 +124,7 @@ export function ReplayPage(): React.JSX.Element {
             selectedGame={selectedGame}
             revision={revision}
             revisions={revisions.data?.revisions ?? []}
-            loadingGames={games.isPending}
+            loadingGames={loadingGames}
             loadingRevisions={revisions.isPending}
             loadingReplay={replay.isPending}
             floating={loadedReplay !== undefined}
@@ -127,7 +140,7 @@ export function ReplayPage(): React.JSX.Element {
         ) : null}
       </section>
 
-      {games.error !== null ? <div className="error-panel">{games.error.message}</div> : null}
+      {catalogError !== null ? <div className="error-panel">{catalogError.message}</div> : null}
       {revisions.error !== null ? (
         <div className="error-panel">{revisions.error.message}</div>
       ) : null}
@@ -136,10 +149,10 @@ export function ReplayPage(): React.JSX.Element {
 
       {loadedReplay === undefined ? (
         <ReplayEmptyState
-          loadingGames={games.isPending}
-          storedCount={stored.length}
+          loadingGames={loadingGames}
+          storedCount={storedCount}
           sourceReady={gameId !== "" && revision !== null}
-          loadingReplay={replay.isPending}
+          loadingReplay={replay.isPending || awaitingAutomatic}
         />
       ) : (
         <>
@@ -210,10 +223,10 @@ function ReplayEmptyState({
   readonly loadingReplay: boolean;
 }): React.JSX.Element {
   let message = "경기와 기록 버전을 선택하세요.";
-  if (loadingGames) message = "저장된 경기 목록을 불러오는 중입니다.";
+  if (loadingReplay) message = "경기 기록을 불러오고 무결성을 확인하고 있습니다.";
+  else if (loadingGames) message = "저장된 경기 목록을 불러오는 중입니다.";
   else if (storedCount === 0)
     message = "재생할 경기가 없습니다. 검증된 경기를 DB에 저장한 뒤 다시 확인하세요.";
-  else if (loadingReplay) message = "경기 기록을 불러오고 무결성을 확인하고 있습니다.";
   else if (sourceReady) message = "선택 경기 재생을 누르면 경기 장면을 살펴볼 수 있습니다.";
   return (
     <section className="panel replay-empty" role="status">

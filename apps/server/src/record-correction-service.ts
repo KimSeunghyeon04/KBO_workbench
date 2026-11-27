@@ -359,8 +359,14 @@ export class RecordCorrectionService {
     filters: Parameters<RecordCorrectionRepository["listCaseSummaries"]>[0] = {},
   ): Promise<RecordCorrectionListItem[]> {
     const items = await this.repository.listCaseSummaries(filters);
+    const candidates = new Set(
+      items.flatMap((item) => (item.gameId !== null && isPendingCase(item) ? [item.gameId] : [])),
+    );
+    if (candidates.size === 0) return items;
     const workingGames = new Set(
-      (await this.workspace.correctionGameCatalog()).games.map((game) => game.gameId),
+      (await this.workspace.correctionGameCatalog([...candidates])).games.map(
+        (game) => game.gameId,
+      ),
     );
     const result: RecordCorrectionListItem[] = [];
     const drafts = new Map<

@@ -1,11 +1,15 @@
 import {
   ApiErrorSchema,
+  ReplayCatalogCalendarSchema,
+  ReplayCatalogPageSchema,
+  ReplayCatalogQuerySchema,
   ReplayFramePageSchema,
   ReplayFramesQuerySchema,
   ReplayManifestSchema,
   RevisionCatalogSchema,
   StagingGameDocumentV2Schema,
 } from "@kbo/contracts";
+import { readReplayCatalogCalendar, readReplayCatalogPage } from "@kbo/persistence";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 
 import type { RouteContext } from "./context.js";
@@ -15,6 +19,18 @@ import { GameParamsSchema, RevisionParamsSchema } from "./schemas.js";
 import { openCorrectionDraft } from "../open-correction-draft.js";
 
 export const replayRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app, context) => {
+  app.get(
+    "/api/v2/replay/games",
+    {
+      schema: { querystring: ReplayCatalogQuerySchema, response: { 200: ReplayCatalogPageSchema } },
+    },
+    async (request) => readReplayCatalogPage(context.pool, request.query),
+  );
+  app.get(
+    "/api/v2/replay/calendar",
+    { schema: { response: { 200: ReplayCatalogCalendarSchema } } },
+    async () => readReplayCatalogCalendar(context.pool),
+  );
   app.get(
     "/api/v2/games/:gameId/revisions",
     {

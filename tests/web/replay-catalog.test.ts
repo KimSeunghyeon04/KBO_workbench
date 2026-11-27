@@ -4,34 +4,34 @@ import type { GameCatalogItem } from "@kbo/contracts";
 
 import {
   calendarDays,
-  catalogDateCounts,
   catalogGameIdentity,
-  catalogMonths,
-  catalogSeasons,
-  filterStoredGames,
+  summarizeReplayCalendar,
 } from "../../apps/web/src/replay/catalog.js";
 
 describe("replay 경기 catalog 모델", () => {
   const validGame = game("anon-game-a", 2026, "2026-08-30", "원정 A", "홈 B");
-  const games = [
-    validGame,
-    game("anon-game-b", 2026, "2026-08-30", "원정 C", "홈 D"),
-    game("anon-game-c", 2025, "2025-07-01", "원정 A", "홈 B"),
-    game("nonstandard-id", 2026, "2026-09-01", "원정 E", "홈 F"),
+  const calendar = [
+    { season: 2026, gameDate: "2026-08-30", count: 2 },
+    { season: 2026, gameDate: "2026-09-01", count: 1 },
+    { season: 2025, gameDate: "2025-07-01", count: 1 },
   ];
 
-  it("시즌·월·날짜 집계를 같은 game ID 해석 규칙에서 계산한다", () => {
-    expect(catalogSeasons(games)).toEqual([2026, 2025]);
-    expect(catalogMonths(games, "all")).toEqual(["2025-07", "2026-08", "2026-09"]);
-    expect([...catalogDateCounts(games, "2026")]).toEqual([
+  it("시즌 합계와 달력 건수를 목록 페이지에 상관없이 표시한다", () => {
+    expect(summarizeReplayCalendar(calendar, "all")).toMatchObject({
+      total: 4,
+      seasons: [
+        [2026, 3],
+        [2025, 1],
+      ],
+      months: ["2025-07", "2026-08", "2026-09"],
+    });
+    const filtered = summarizeReplayCalendar(calendar, "2026");
+    expect(filtered.months).toEqual(["2026-08", "2026-09"]);
+    expect(filtered.total).toBe(4);
+    expect([...filtered.dateCounts]).toEqual([
       ["2026-08-30", 2],
       ["2026-09-01", 1],
     ]);
-  });
-
-  it("검색, 시즌, 팀 이름과 날짜 조건을 합성한다", () => {
-    expect(filterStoredGames(games, "홈 B", "all", null)).toEqual([games[0], games[2]]);
-    expect(filterStoredGames(games, "", "2026", "2026-08-30")).toEqual([games[0], games[1]]);
   });
 
   it("달력 identity는 database catalog의 typed 날짜와 팀을 사용한다", () => {
