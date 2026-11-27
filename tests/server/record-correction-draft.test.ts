@@ -421,7 +421,7 @@ async function setup(root: string, copies = 1) {
       caseSnapshot: async () => ({ item, assessmentCurrent, publication, decisionSequence }),
       assess,
       pendingNoticeIds: async () => [],
-      listCasesForImport: async () => [],
+      listNoticeIdsForImport: async () => [],
       assessmentBasis: async () => ({
         caseVersion: item.caseVersion,
         publication: 1,

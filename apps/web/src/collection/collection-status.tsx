@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useDeferredValue } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { COLLECTION_SEARCH_MAX_LENGTH } from "@kbo/contracts";
 import type {
   CollectionDateRange,
   CollectionDiscovery,
@@ -8,10 +9,9 @@ import type {
   CollectionSelectionCreate,
 } from "@kbo/contracts";
 import {
-  collectionGamesOptions,
   collectionOperationKey,
+  collectionViewOptions,
   createCollectionSelection,
-  overviewOptions,
 } from "../api/collection-operations-client";
 import { createCollectionJob } from "../api/collection-client";
 import { queryKeys } from "../api/query-options";
@@ -63,31 +63,13 @@ export function CollectionStatus({
   const range = discovery.range,
     location = readLocation(params, range);
   const search = useDeferredValue(params.get("q") ?? "");
+  const searchTooLong = Array.from(search).length > COLLECTION_SEARCH_MAX_LENGTH;
   const state = gameState(params.get("state"));
   const unknown = params.get("unknown") === "true";
   const showGames =
     search.trim() !== "" || state !== undefined || unknown || collectionLevel(location) === "games";
   const listRange = search.trim() !== "" ? range : location;
   const page = positivePage(params.get("page"));
-  const overview = useQuery(
-    overviewOptions(discovery.discoveryId, {
-      ...location,
-      groupBy: collectionLevel(location) === "month" ? "month" : "day",
-    }),
-  );
-  const games = useQuery({
-    ...collectionGamesOptions(discovery.discoveryId, {
-      ...listRange,
-      search,
-      ...(state === undefined ? {} : { state }),
-      unknownDate: unknown,
-      page,
-      limit: 50,
-    }),
-    enabled: showGames,
-  });
-  const selectedGame =
-    games.data?.games.find((game) => game.gameId === params.get("selected")) ?? null;
   const {
     range: executionRange,
     target,
@@ -114,17 +96,32 @@ export function CollectionStatus({
       ...previous,
       excluded: typeof value === "function" ? value(previous.excluded) : value,
     }));
-  const eligible = useQuery(
-    collectionGamesOptions(discovery.discoveryId, {
-      ...executionRange,
-      state: target,
-      unknownDate: executionUnknown,
-      page: 1,
-      limit: 1,
+  const view = useQuery(
+    collectionViewOptions(discovery.discoveryId, discovery.status, {
+      overview: {
+        ...location,
+        groupBy: collectionLevel(location) === "month" ? "month" : "day",
+      },
+      eligibility: { ...executionRange, state: target, unknownDate: executionUnknown },
+      ...(showGames && !searchTooLong
+        ? {
+            games: {
+              ...listRange,
+              search,
+              ...(state === undefined ? {} : { state }),
+              unknownDate: unknown,
+              page,
+              limit: 50,
+            },
+          }
+        : {}),
     }),
   );
+  const overview = view.data?.overview;
+  const games = view.data?.games;
+  const selectedGame = games?.games.find((game) => game.gameId === params.get("selected")) ?? null;
   const total =
-    target === "uncollected" && !discovery.complete ? null : (eligible.data?.total ?? null);
+    target === "uncollected" && !discovery.complete ? null : (view.data?.eligibleTotal ?? null);
   const count =
     total === null
       ? null
@@ -187,7 +184,7 @@ export function CollectionStatus({
         ids.includes(gameId) ? ids.filter((id) => id !== gameId) : [...ids, gameId],
       );
   }
-  const error = overview.error ?? games.error ?? eligible.error ?? run.error;
+  const error = view.error ?? run.error;
   const navigatePeriod = (next: CollectionDateRange): void =>
     update({
       from: next.startDate,
@@ -231,7 +228,14 @@ export function CollectionStatus({
         </div>
         <button
           className="primary-button"
-          disabled={count === null || count === 0 || eligible.isFetching || run.isPending}
+          disabled={
+            count === null ||
+            count === 0 ||
+            view.isFetching ||
+            view.isPlaceholderData ||
+            view.isError ||
+            run.isPending
+          }
           onClick={() => run.mutate()}
         >
           {run.isPending
@@ -325,7 +329,7 @@ export function CollectionStatus({
                   : "현재 기간만 대상으로 설정"}
             </button>
           </div>
-          <Counts counts={overview.data?.counts} />
+          <Counts counts={overview?.counts} />
           {!discovery.complete ? (
             <p className="collection-notice">
               일정을 완전히 확인하지 못해 미수집 수는 아직 알 수 없습니다. 확인된 자료만 표시합니다.
@@ -364,7 +368,7 @@ export function CollectionStatus({
                 ))}
               </select>
             </label>
-            {(overview.data?.unknownDateCount ?? 0) > 0 ? (
+            {(overview?.unknownDateCount ?? 0) > 0 ? (
               <button
                 className="collection-text-button"
                 onClick={() =>
@@ -373,11 +377,16 @@ export function CollectionStatus({
               >
                 {unknown
                   ? "날짜가 확인된 경기 보기"
-                  : `날짜 미확인 원천 실패 ${overview.data?.unknownDateCount}경기`}
+                  : `날짜 미확인 원천 실패 ${overview?.unknownDateCount}경기`}
               </button>
             ) : null}
           </div>
-          {showGames ? (
+          {searchTooLong ? (
+            <p role="alert" className="inline-error">
+              검색어는 {COLLECTION_SEARCH_MAX_LENGTH}자 이하로 입력해 주세요.
+            </p>
+          ) : null}
+          {showGames && !searchTooLong ? (
             <>
               <div className="collection-list-heading">
                 <h2>
@@ -402,7 +411,7 @@ export function CollectionStatus({
                     </tr>
                   </thead>
                   <tbody>
-                    {games.data?.games.map((game) => (
+                    {games?.games.map((game) => (
                       <tr
                         key={game.gameId}
                         className={selectedGame?.gameId === game.gameId ? "selected" : ""}
@@ -446,17 +455,17 @@ export function CollectionStatus({
                   </tbody>
                 </table>
               </div>
-              {games.isFetching ? (
+              {view.isFetching ? (
                 <p role="status" className="collection-notice">
                   경기 목록을 확인하고 있습니다.
                 </p>
               ) : null}
-              {games.data?.total === 0 ? (
+              {games?.total === 0 ? (
                 <div className="collection-empty">조건에 맞는 경기가 없습니다.</div>
               ) : null}
               <Pagination
                 page={page}
-                total={games.data?.total ?? 0}
+                total={games?.total ?? 0}
                 onChange={(next) => update({ page: String(next), selected: null })}
               />
             </>
@@ -480,7 +489,7 @@ export function CollectionStatus({
                     </tr>
                   </thead>
                   <tbody>
-                    {overview.data?.groups.map((group) => (
+                    {overview?.groups.map((group) => (
                       <tr key={group.key}>
                         <th>
                           <button

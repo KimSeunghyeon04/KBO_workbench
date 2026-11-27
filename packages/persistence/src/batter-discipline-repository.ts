@@ -5,7 +5,7 @@ import {
   type AnalysisScopeOptions,
 } from "@kbo/contracts";
 import {
-  ANALYSIS_GAME_WHERE,
+  scopedAnalysisGamesSql,
   analysisScopeParameters,
   analysisSourceHash,
 } from "./analysis-scope.js";
@@ -26,7 +26,7 @@ import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { TypeCompiler } from "@sinclair/typebox/compiler";
 import type { Pool, PoolClient } from "pg";
-import { pitchEligibilitySql } from "./analysis-pitch-input.js";
+import { analysisPitchCatalogSql, scopedTrackedPitchRowsSql } from "./analysis-pitch-input.js";
 import type { PitchReferenceWorkspace } from "./pitch-reference-workspace.js";
 import {
   prepareReference,
@@ -44,26 +44,6 @@ const heightInputSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-const columns = [
-  "x0",
-  "y0",
-  "z0",
-  "vx0",
-  "vy0",
-  "vz0",
-  "ax",
-  "ay",
-  "az",
-  "cross_plate_x",
-  "cross_plate_y",
-  "speed_kph",
-]
-  .map(
-    (column) => `CASE WHEN p.${column} > '-Infinity'::float8 AND p.${column} < 'Infinity'::float8
-    THEN p.${column} ELSE NULL END AS "${column.replace(/_([a-z])/gu, (_, c: string) => c.toUpperCase())}"`,
-  )
-  .join(",");
-
 export class BatterDisciplineRepository {
   public constructor(
     private readonly pool: Pool,
@@ -78,12 +58,7 @@ export class BatterDisciplineRepository {
   ): Promise<DisciplineCatalog> {
     const scope = resolveAnalysisScope({ season, ...options });
     const result = await this.pool.query<Record<string, unknown>>(
-      `
-      SELECT batter_id AS "batterId", COALESCE(min(batter_name),batter_id) AS name,
-        count(*)::integer AS pitches
-      FROM analytics.current_pitches p JOIN analytics.current_analysis_games r USING(game_id,revision)
-      WHERE p.actual AND ${ANALYSIS_GAME_WHERE} AND batter_id IS NOT NULL
-      GROUP BY batter_id ORDER BY count(*) DESC, batter_id COLLATE "C"`,
+      analysisPitchCatalogSql("batter"),
       analysisScopeParameters(scope),
     );
     return Value.Decode(DisciplineCatalogSchema, { season, scope, batters: result.rows });
@@ -102,23 +77,10 @@ export class BatterDisciplineRepository {
         return { season, sourceHash, reference: null, rows: null };
       }
       const result = await client.query<Record<string, unknown>>(
-        `
-        SELECT p.game_id AS "gameId", p.revision, p.pitch_id AS "pitchId",
-          to_char(p.game_date,'YYYY-MM-DD') AS "gameDate", p.batter_id AS "batterId",
-          p.pitch_type AS "pitchType", p.stance, p.before_balls AS balls, p.before_strikes AS strikes,
-          p.season, p.batter_height_cm AS "batterHeightCm",
-          p.swing, p.whiff, p.tracking_id AS "trackingId", p.in_zone AS "inZone",
-          ${pitchEligibilitySql} AS eligible,
-          COALESCE(t.measurement_profile_id='naver_pts_v1',FALSE) AS supported, ${columns}
-        FROM analytics.current_pitches p
-        JOIN analytics.current_analysis_games r ON r.game_id=p.game_id AND r.revision=p.revision
-        LEFT JOIN workbench.tracking_observations t
-          ON t.game_id=p.game_id AND t.revision=p.revision AND t.tracking_id=p.tracking_id
-        LEFT JOIN baseball.plate_appearance_facts pa
-          ON pa.game_id=p.game_id AND pa.revision=p.revision
-            AND pa.start_event_id=p.plate_appearance_event_id
-        WHERE p.actual AND ${ANALYSIS_GAME_WHERE} AND p.batter_id IS NOT NULL
-        ORDER BY p.game_id COLLATE "C", p.pitch_sequence`,
+        scopedTrackedPitchRowsSql({
+          select: "p.stance",
+          pitchPredicate: "p.batter_id IS NOT NULL",
+        }),
         analysisScopeParameters(scope),
       );
       const rows: DisciplineRow[] = [];
@@ -168,10 +130,13 @@ async function disciplineSourceHashes(client: PoolClient, scope: AnalysisScope) 
   // Supplement imports can change effective heights without changing a sealed game hash.
   const heights = await client.query<Record<string, unknown>>(
     `
+    WITH selected_games AS MATERIALIZED (${scopedAnalysisGamesSql()})
     SELECT r.game_id AS "gameId",r.revision,h.player_id AS "playerId",h.height_cm AS "heightCm"
-    FROM analytics.current_analysis_games r
-    LEFT JOIN analytics.game_batter_heights h ON h.game_id=r.game_id AND h.revision=r.revision
-    WHERE ${ANALYSIS_GAME_WHERE} ORDER BY r.game_id COLLATE "C",h.player_id COLLATE "C"`,
+    FROM selected_games r LEFT JOIN LATERAL (
+      SELECT h.player_id,h.height_cm FROM analytics.game_batter_heights h
+      WHERE h.game_id=r.game_id AND h.revision=r.revision OFFSET 0
+    ) h ON TRUE
+    ORDER BY r.game_id COLLATE "C",h.player_id COLLATE "C"`,
     analysisScopeParameters(scope),
   );
   const sourceHash = createHash("sha256")

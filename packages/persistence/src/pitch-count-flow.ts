@@ -18,15 +18,18 @@ import { analyzeBatterCountFlow, analyzePitchCountFlow } from "@kbo/game-core";
 import {
   effectiveBattingSideSql,
   gameBattingProfileJoinSql,
+  gamePitchRowsSql,
   lastPitchesCteSql,
   pitchEligibilitySql,
+  pitchPlateAppearanceJoinSql,
+  pitchViewObservationJoinSql,
 } from "./analysis-pitch-input.js";
 import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import { readGamePitcherHands, type ResolvePitcherHand } from "./pitcher-hands.js";
 import {
-  ANALYSIS_GAME_WHERE,
   analysisScopeParameters,
   analysisSourceHash,
+  scopedAnalysisGamesSql,
 } from "./analysis-scope.js";
 
 export async function readPitchCountFlow(
@@ -100,15 +103,14 @@ async function readCountFlowInput(
   const actorColumn = role === "pitcher" ? "pitcher_id" : "batter_id";
   const result = await client.query(
     `WITH selected_games AS MATERIALIZED (
-        SELECT r.game_id,r.revision FROM analytics.current_analysis_games r WHERE ${ANALYSIS_GAME_WHERE}
+        ${scopedAnalysisGamesSql()}
       ), selected_pitches AS MATERIALIZED (
         SELECT p.game_id,p.revision,p.pitch_id,p.pitch_sequence,p.plate_appearance_event_id,
           p.inning,p.half,p.batter_id,p.pitcher_id,p.pitch_call,p.pitch_type,p.in_play,
           p.before_balls,p.before_strikes,p.after_balls,p.after_strikes,p.tracking_id
           ${role === "batter" ? ",p.swing" : ""}
         FROM selected_games r CROSS JOIN LATERAL (
-          SELECT p.* FROM analytics.current_pitches p
-          WHERE p.game_id=r.game_id AND p.revision=r.revision AND p.actual AND p.${actorColumn}=$5 OFFSET 0
+          ${gamePitchRowsSql({ pitchPredicate: `p.${actorColumn}=$5` })}
         ) p
       ), selected_pas AS (
         SELECT DISTINCT game_id,revision,plate_appearance_event_id AS pa_id
@@ -142,14 +144,12 @@ async function readCountFlowInput(
           WHEN q.pitch_id=p.pitch_id THEN pa.result END
         END AS "terminalResult"
       FROM selected_pitches p
-      LEFT JOIN baseball.plate_appearance_facts pa
-        ON pa.game_id=p.game_id AND pa.revision=p.revision AND pa.start_event_id=p.plate_appearance_event_id
+      ${pitchPlateAppearanceJoinSql}
       LEFT JOIN last_pitches q
         ON q.game_id=pa.game_id AND q.revision=pa.revision AND q.plate_appearance_event_id=pa.start_event_id
       LEFT JOIN hbp_predecessors hbp
         ON hbp.game_id=pa.game_id AND hbp.revision=pa.revision AND hbp.start_event_id=pa.start_event_id
-      LEFT JOIN workbench.tracking_observations t
-        ON t.game_id=p.game_id AND t.revision=p.revision AND t.tracking_id=p.tracking_id
+      ${pitchViewObservationJoinSql}
       ${gameBattingProfileJoinSql("p")}
       ORDER BY p.game_id COLLATE "C",p.pitch_sequence`,
     [...analysisScopeParameters(scope), actorId],

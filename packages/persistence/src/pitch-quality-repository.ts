@@ -12,11 +12,11 @@ import {
 } from "@kbo/contracts";
 import {
   analysisSourceHash,
-  regularModelScopeHash,
+  readRegularModelScopeHashes,
+  type RegularModelScopeHash,
   analysisScopeParameters,
-  ANALYSIS_GAME_WHERE,
 } from "./analysis-scope.js";
-import { pitchGeometrySql, pitchEligibilitySql } from "./analysis-pitch-input.js";
+import { scopedTrackedPitchRowsSql } from "./analysis-pitch-input.js";
 import { analysisVenueId } from "./analysis-venues.js";
 import { pitchQualityHeightCache } from "./pitch-quality-height-cache.js";
 import { withAnalysisSnapshot } from "./analysis-snapshot.js";
@@ -51,6 +51,7 @@ async function manifest(
   client: PoolClient,
   through: number,
   pool?: Pool,
+  sharedScopeHashes?: RegularModelScopeHash[],
 ): Promise<PitchQualityManifest> {
   const seasons: PitchQualityManifest["seasons"] = [];
   const cache = pool === undefined ? null : await pitchQualityHeightCache(client, pool, through);
@@ -81,8 +82,8 @@ async function manifest(
       heightHashes.set(season, pitchQualitySourceHash(bySeason.get(season) ?? []));
     cache?.save(heightHashes);
   }
-  for (let season = 2020; season <= through + 1; season++) {
-    const sourceHash = await regularModelScopeHash(client, season);
+  const scopeHashes = sharedScopeHashes ?? (await readRegularModelScopeHashes(client, through));
+  for (const { season, hash: sourceHash } of scopeHashes) {
     seasons.push({
       season,
       sourceHash,
@@ -106,21 +107,14 @@ async function readRows(
   pitcherId: string | null,
   actor: "pitcher" | "batter" = "pitcher",
 ): Promise<PitchQualityRow[]> {
-  // Bound the view's height/tracking joins by selected games before expanding pitches. Without
-  // this boundary, a monthly query can rescan the entire season once per underestimated game.
   const result = await client.query<Record<string, unknown>>(
-    `WITH selected_games AS MATERIALIZED (
-      SELECT r.* FROM analytics.current_analysis_games r WHERE ${ANALYSIS_GAME_WHERE} AND r.game_status='final'
-    ) SELECT p.game_id AS "gameId",p.revision,p.pitch_id AS "pitchId",to_char(p.game_date,'YYYY-MM-DD') AS "gameDate",p.pitcher_id AS "pitcherId",p.batter_id AS "batterId",p.pitch_type AS "pitchType",p.stance,p.before_balls AS balls,p.before_strikes AS strikes,p.swing,p.whiff,p.called_strike AS "calledStrike",p.season,p.batter_height_cm AS "batterHeightCm",p.tracking_id AS "trackingId",p.in_zone AS "inZone",r.stadium,
-    COALESCE(t.measurement_profile_id='naver_pts_v1',FALSE) AS supported,${pitchEligibilitySql} AS eligible,${pitchGeometrySql}
-    FROM selected_games r CROSS JOIN LATERAL (
-      SELECT p.* FROM analytics.current_pitches p
-      WHERE p.game_id=r.game_id AND p.revision=r.revision AND p.actual AND ($5::text IS NULL OR p.${actor === "pitcher" ? "pitcher_id" : "batter_id"}=$5)
-      OFFSET 0
-    ) p
-    LEFT JOIN workbench.tracking_observations t ON t.game_id=p.game_id AND t.revision=p.revision AND t.tracking_id=p.tracking_id
-    LEFT JOIN baseball.plate_appearance_facts pa ON pa.game_id=p.game_id AND pa.revision=p.revision AND pa.start_event_id=p.plate_appearance_event_id
-    ORDER BY p.game_id COLLATE "C",p.pitch_id COLLATE "C"`,
+    scopedTrackedPitchRowsSql({
+      select: 'p.pitcher_id AS "pitcherId",p.stance,p.called_strike AS "calledStrike",r.stadium',
+      pitchPredicate: `$5::text IS NULL OR p.${actor}_id=$5`,
+      gameColumns: "r.game_id,r.revision,r.stadium",
+      gamePredicate: "r.game_status='final'",
+      orderByPitchId: true,
+    }),
     [...analysisScopeParameters(scope), pitcherId],
   );
   return result.rows.map((r) => {

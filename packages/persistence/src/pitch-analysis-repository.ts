@@ -8,10 +8,9 @@ import {
 } from "@kbo/contracts";
 import { summarizePitchProfile } from "@kbo/game-core";
 import {
-  ANALYSIS_GAME_WHERE,
   analysisScopeParameters,
   analysisSourceHash,
-  recheckAnalysisSourceHash,
+  scopedAnalysisGamesSql,
 } from "./analysis-scope.js";
 import { createHash } from "node:crypto";
 
@@ -37,7 +36,11 @@ import { type Static, Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { TypeCompiler } from "@sinclair/typebox/compiler";
 import type { Pool, PoolClient } from "pg";
-import { pitchTrackingJoinsSql } from "./analysis-pitch-input.js";
+import {
+  analysisPitchCatalogSql,
+  gamePitchRowsSql,
+  pitchTrackingJoinsSql,
+} from "./analysis-pitch-input.js";
 
 import type { PitchReferenceWorkspace } from "./pitch-reference-workspace.js";
 import type { PitchCalibrationWorkspace } from "./pitch-calibration-workspace.js";
@@ -155,11 +158,7 @@ export class PitchAnalysisRepository {
   ): Promise<PitchAnalysisCatalog> {
     const scope = resolveAnalysisScope({ season, ...options });
     const result = await this.pool.query<Record<string, unknown>>(
-      `
-      SELECT pitcher_id AS "pitcherId", min(pitcher_name) AS name, count(*)::integer AS pitches
-      FROM analytics.current_pitches p JOIN analytics.current_analysis_games r USING(game_id,revision) WHERE p.actual AND ${ANALYSIS_GAME_WHERE}
-      GROUP BY pitcher_id ORDER BY count(*) DESC, pitcher_id COLLATE "C"
-    `,
+      analysisPitchCatalogSql("pitcher"),
       analysisScopeParameters(scope),
     );
     return {
@@ -175,7 +174,7 @@ export class PitchAnalysisRepository {
 
   public async readSourceHash(input: AnalysisScopeQuery) {
     const scope = resolveAnalysisScope(input);
-    const referenceHash = await recheckAnalysisSourceHash(this.pool, pitchReferenceScope(scope));
+    const referenceHash = await analysisSourceHash(this.pool, pitchReferenceScope(scope));
     return pitchAnalysisSourceHash(referenceHash, scope);
   }
 
@@ -280,20 +279,19 @@ export async function readPitchRows(
   const result = await client.query<Record<string, unknown>>(
     `
         WITH selected_games AS MATERIALIZED (
-          SELECT r.game_id,r.revision,r.game_date,r.stadium FROM analytics.current_analysis_games r
-          WHERE ${finalOnly ? "r.game_status='final' AND" : ""} ${ANALYSIS_GAME_WHERE}
+          ${scopedAnalysisGamesSql("r.game_id,r.revision,r.game_date,r.stadium", finalOnly ? "r.game_status='final'" : undefined)}
         ) SELECT pitch.* FROM selected_games r CROSS JOIN LATERAL (
-        SELECT p.game_id AS "gameId", p.revision, p.pitch_id AS "pitchId", p.pitch_sequence AS "pitchSequence",
-          to_char(r.game_date,'YYYY-MM-DD') AS "gameDate", p.pitcher_id AS "pitcherId",
-          p.pitch_type AS "pitchType", p.speed_kph AS "speedKph", t.tracking_id AS "trackingId",
-          r.stadium, t.stance, p.before_balls AS balls, p.before_strikes AS strikes,
-          p.swing, p.whiff,
-          COALESCE(t.measurement_profile_id='naver_pts_v1',FALSE) AS supported,
-          ${trajectoryColumns}
-        FROM baseball.pitch_facts p
-        ${pitchTrackingJoinsSql}
-        WHERE p.game_id=r.game_id AND p.revision=r.revision AND p.actual AND ($5::text IS NULL OR p.pitcher_id=$5) AND ${allPitchTypes || pitcherId !== null ? "TRUE" : "p.pitch_type='직구'"}
-        OFFSET 0) pitch
+          ${gamePitchRowsSql({
+            source: "facts",
+            select: `p.game_id AS "gameId",p.revision,p.pitch_id AS "pitchId",p.pitch_sequence AS "pitchSequence",
+              to_char(r.game_date,'YYYY-MM-DD') AS "gameDate",p.pitcher_id AS "pitcherId",
+              p.pitch_type AS "pitchType",p.speed_kph AS "speedKph",t.tracking_id AS "trackingId",
+              r.stadium,t.stance,p.before_balls AS balls,p.before_strikes AS strikes,p.swing,p.whiff,
+              COALESCE(t.measurement_profile_id='naver_pts_v1',FALSE) AS supported,${trajectoryColumns}`,
+            joins: pitchTrackingJoinsSql(),
+            pitchPredicate: `($5::text IS NULL OR p.pitcher_id=$5)${allPitchTypes || pitcherId !== null ? "" : " AND p.pitch_type='직구'"}`,
+          })}
+        ) pitch
         ORDER BY pitch."gameId" COLLATE "C", pitch."pitchSequence"
       `,
     [...analysisScopeParameters(scope), pitcherId],

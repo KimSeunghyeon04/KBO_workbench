@@ -99,20 +99,6 @@ export function CollectPage(): React.JSX.Element {
       : undefined;
   const discovering =
     currentDiscovery?.status === "running" || currentDiscovery?.status === "queued";
-  useEffect(() => {
-    if (
-      currentDiscovery !== undefined &&
-      currentDiscovery.status !== "running" &&
-      currentDiscovery.status !== "queued"
-    ) {
-      void client.invalidateQueries({
-        queryKey: [...collectionOperationKey, "overview", currentDiscovery.discoveryId],
-      });
-      void client.invalidateQueries({
-        queryKey: [...collectionOperationKey, "games", currentDiscovery.discoveryId],
-      });
-    }
-  }, [client, currentDiscovery?.discoveryId, currentDiscovery?.status]);
   const active = useQuery({ ...activeCollectionOptions(), refetchInterval: 2_000 });
   const trackedJobs = useRef(new Set<string>());
   const [startedJob, setStartedJob] = useState<string | null>(null);

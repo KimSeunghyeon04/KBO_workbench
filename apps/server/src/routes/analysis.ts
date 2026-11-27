@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import type {
   AnalysisCoverageWorkspace,
+  DisciplinePreparedWorkspace,
   PitchReferenceWorkspace,
   PitchCalibrationWorkspace,
   RunExpectancyWorkspace,
@@ -33,6 +34,7 @@ type Options = Pick<RouteContext, "pool"> & {
   careerRoot?: string;
   summaries: Pick<AnalysisCoverageWorkspace, "read" | "write">;
   references: Pick<PitchReferenceWorkspace, "getOrCreate">;
+  disciplinePrepared: Pick<DisciplinePreparedWorkspace, "read" | "write">;
   calibrations: Pick<PitchCalibrationWorkspace, "getOrCreate">;
   runModels: Pick<RunExpectancyWorkspace, "read" | "readCount" | "readWin">;
   qualityModels: Pick<PitchQualityWorkspace, "read">;
@@ -48,6 +50,7 @@ export const analysisRoutes: FastifyPluginAsyncTypebox<Options> = async (app, co
   await app.register(batterDisciplineRoutes, {
     pool: context.pool,
     references: context.references,
+    disciplinePrepared: context.disciplinePrepared,
     computeReference: computation.reference,
   });
   await app.register(analysisCoverageRoutes, {

@@ -34,8 +34,12 @@ import {
   hashProjectionTables,
   type RelationalProjection,
 } from "./projection.js";
-import { readDatabaseCatalogPage, readDatabaseSeasons } from "./revision-catalog-page.js";
-import { readDatabaseCatalog, readStoredGameIds } from "./revision-catalog-repository.js";
+import {
+  readDatabaseCatalog,
+  readDatabaseCatalogPage,
+  readDatabaseSeasons,
+  readStoredGameIds,
+} from "./revision-catalog-repository.js";
 import { rebaseSealedCorrectionDraft } from "./revision-draft-rebase.js";
 import {
   assertDatabaseContract,
@@ -66,6 +70,28 @@ const inlineProjection: RevisionProjectionComputation = {
     buildRelationalProjection(document, replay, revision, version),
   hash: async (tables, version) => hashProjectionTables(tables, version),
 };
+
+async function readVerifiedSealedProjection(
+  client: PoolClient,
+  gameId: string,
+  revision: number,
+  purpose: "replay" | "correction",
+) {
+  const manifest = await loadManifest(client, gameId, revision);
+  if (!manifest.sealed) {
+    throw new PersistenceIntegrityError(
+      purpose === "replay"
+        ? "seal되지 않은 revision은 재생할 수 없습니다."
+        : "seal되지 않은 revision은 교정 초안으로 열 수 없습니다.",
+    );
+  }
+  const tables = await readProjection(client, gameId, revision, manifest.projection_version);
+  const projectionHash = hashProjectionTables(tables, manifest.projection_version);
+  if (projectionHash !== manifest.projection_hash) {
+    throw new PersistenceIntegrityError("DB typed projection hash가 manifest와 다릅니다.");
+  }
+  return { manifest, tables, projectionHash };
+}
 
 export class GameRevisionStore {
   public constructor(
@@ -275,19 +301,12 @@ export class GameRevisionStore {
     try {
       await assertDatabaseContract(client, this.expectedMigrationVersion);
       const resolvedRevision = revision ?? (await currentRevision(client, gameId));
-      const manifest = await loadManifest(client, gameId, resolvedRevision);
-      if (!manifest.sealed)
-        throw new PersistenceIntegrityError("seal되지 않은 revision은 재생할 수 없습니다.");
-      const tables = await readProjection(
+      const { manifest, tables, projectionHash } = await readVerifiedSealedProjection(
         client,
         gameId,
         resolvedRevision,
-        manifest.projection_version,
+        "replay",
       );
-      const projectionHash = hashProjectionTables(tables, manifest.projection_version);
-      if (projectionHash !== manifest.projection_hash) {
-        throw new PersistenceIntegrityError("DB typed projection hash가 manifest와 다릅니다.");
-      }
       return {
         gameId,
         revision: resolvedRevision,
@@ -314,16 +333,12 @@ export class GameRevisionStore {
           `current revision만 교정 초안으로 열 수 있습니다: current=${String(resolvedCurrentRevision)}`,
         );
       }
-      const manifest = await loadManifest(client, gameId, revision);
-      if (!manifest.sealed) {
-        throw new PersistenceIntegrityError(
-          "seal되지 않은 revision은 교정 초안으로 열 수 없습니다.",
-        );
-      }
-      const tables = await readProjection(client, gameId, revision, manifest.projection_version);
-      if (hashProjectionTables(tables, manifest.projection_version) !== manifest.projection_hash) {
-        throw new PersistenceIntegrityError("DB typed projection hash가 manifest와 다릅니다.");
-      }
+      const { manifest, tables } = await readVerifiedSealedProjection(
+        client,
+        gameId,
+        revision,
+        "correction",
+      );
       const stored = hydrateProjectionLedger(manifest, tables);
       if (stagingDocumentHash(stored) !== manifest.document_hash) {
         throw new PersistenceIntegrityError("DB 원장 fact의 문서 hash가 manifest와 다릅니다.");
@@ -425,23 +440,28 @@ export class GameRevisionStore {
     return readDatabaseSeasons(this.pool);
   }
   public async revisions(gameId: string): Promise<RevisionCatalog> {
-    const result = await this.pool.query(
-      "SELECT r.* FROM workbench.game_revisions r WHERE r.game_id=$1 ORDER BY r.revision",
+    const result = await this.pool.query<Record<string, unknown>>(
+      `SELECT r.*,g.current_revision FROM workbench.game_revisions r
+       JOIN workbench.games g ON g.game_id=r.game_id
+       WHERE r.game_id=$1 ORDER BY r.revision`,
       [gameId],
     );
-    if (result.rows.length === 0) throw new GameRevisionNotFoundError(gameId, null);
+    const first = result.rows[0];
+    if (first === undefined) throw new GameRevisionNotFoundError(gameId, null);
     if (result.rowCount !== result.rows.length) {
       throw new PersistenceIntegrityError("revision catalog rowCount가 실제 행 수와 다릅니다.");
     }
-    const rows = result.rows.map((row) => decodeManifestRow(row, gameId));
+    const rows = result.rows.map(({ current_revision, ...manifest }) => {
+      void current_revision;
+      return decodeManifestRow(manifest, gameId);
+    });
     if (new Set(rows.map((row) => row.revision)).size !== rows.length) {
       throw new PersistenceIntegrityError("revision catalog에 중복 revision이 있습니다.");
     }
-    const current = await this.pool.query(
-      "SELECT current_revision FROM workbench.games WHERE game_id=$1",
-      [gameId],
-    );
-    const currentRevision = decodeOptionalCurrentRevision(current, "revision catalog current row");
+    const currentRevision =
+      first.current_revision === null
+        ? null
+        : safeInteger(first.current_revision, "revision catalog current row.current_revision");
     return {
       gameId,
       currentRevision,

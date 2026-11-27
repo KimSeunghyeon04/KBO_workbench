@@ -369,8 +369,9 @@ snapshot, typed ledger, official line, validation issue/detail, tracking 원천 
 projection descriptor는 SQL column 순서와 runtime decoder를 함께 소유한다. DB 재조회 행의 shape,
 nullability, enum, 정수, row count, game/revision 문맥과 key uniqueness를 검증하지 못하면
 `PersistenceIntegrityError`로 transaction/replay를 중단한다.
-typed ledger, 재생, DB 경기 목록에서 `game_date`는 드라이버가 읽은 달력 날짜를 보존한다.
-Node의 시간대가 달라도 동일한 원장 hash를 유지한다.
+typed ledger, 재생, DB 경기 목록은 `game_date`의 달력 날짜를 보존한다. Node의 시간대가 달라도
+동일한 원장 hash를 유지한다. DB 목록과 수집 인벤토리는 경기 메타데이터 조회를 공유한다. DB 페이지의
+행과 전체 건수는 같은 PostgreSQL 문장에서 읽고 각 목록의 정렬을 적용한다.
 
 `registry`에는 collection run, immutable season revision/current pointer, source page artifact provenance,
 일별 등록 snapshot, 이동 event, resolution issue, first-team registration과 organization affiliation stint를
@@ -513,6 +514,7 @@ partition을 사용하지 않고 season/date/player/pitcher/batter/count/result 
 기능별 strict 비교 API와 game-core의 명시적 계산을 유지한다. 타자 특성과 코스는 A/B를 한
 snapshot에서 읽고, 기본 기록·구질·선구안은 A/B 조회 후 A의 원천 hash를 재검증한다. 기본 기록과
 구질은 재검증에서 지문만 조회하고 기존 집계 결과와 응답 hash를 유지한다.
+일반 분석 지문은 최초 조회와 재검증에서 같은 SQL로 경기와 분류 자료를 읽는다.
 선구안 비교의 재검증은 원천 지문만 읽는다. 투수 변화는 3/5등판 자동 비교를 별도로 제공한다.
 세부 범위·분모·시즌 간 구질 제한은 [기간 비교](docs/analysis/period-comparison.md)에 정의한다.
 
@@ -547,7 +549,11 @@ fact를 셀로 집계하고 연결을 반환한 뒤 기존 분석 worker에서 �
 스윙률을 제공한다. 초기 위치·방향을 보존한 각자의 플레이트 도착 위치를 비교하며 기존 동일 시각
 투구 움직임 좌표와 구분한다. 실제/가정 존 전이와 카운트·구종·타석·구속대·코스별 다른 타자 비교,
 비교 가능 분모와 개별 투구를 표시한다. 순수 game-core 계산은 DB 연결 반환 후 전용 worker에서
-수행하고 시즌/hash가 같은 준비된 표본을 재사용한다. 계약·제외 기준·가설의 한계는
+수행하고 시즌·경기 종류별로 준비된 표본을 작업 영역에 저장한다. 원천 hash와 계산 버전이 같으면
+재시작 후에도 재사용하며, URL에 타자가 지정되어 있으면 목록과 분석 요청을 동시에 보낸다.
+투수·타자 목록과 투구 분석은 현재 경기·리비전 선택과 투구 제한 SQL을 공유한다. 모델 종료 경기,
+카운트 종결, 배합·궤적 순서와 맞대결 비교군은 각 기능의 표본 규칙을 따른다.
+계약·제외 기준·가설의 한계는
 [타자 선구안 분석](docs/batter-discipline-analysis.md)을 따른다. DB migration/봉인 fact는 변경하지 않는다.
 `courseComparison`은 기존 SQL 존 판정 가능 표본과 포심 비교 가능 공통 표본의 기본 코스 지표를
 구분한다. 같은 공통 타자 투구에 대해 실제 코스·카운트·구종·타석·구속대만 맞춘 리그와,
@@ -570,6 +576,7 @@ current 전환의 성공·실패 뒤 해당 경기만 무효화하며 동시 조
 workspace 항목은 파일 상태를,
 database 항목은 relational fact에서 집계한 `gameDate`, `teams`, `currentRevision`, `revisionCount`를
 필수로 가진다. Database는 이 요약만으로 목록을 그리고 선택한 경기의 revision 상세만 한 번 조회한다.
+revision 상세는 이력과 현재 포인터를 한 SQL 문에서 읽고 revision 오름차순을 유지한다.
 route page는 lazy chunk로 로드하며 기록정정·Database는 공통 운영 콘솔 shell과 선택 가능한 고정
 높이 virtual list를 사용한다. 상단에는 상태와 핵심 명령, 왼쪽에는 검색·범위 목록, 오른쪽에는 선택
 상세와 sticky action bar를 둔다. 900px 이하에서는 DOM의 목록 상태와 scroll을 유지한 채 목록과
@@ -728,6 +735,7 @@ background discovery를 생성한다. 저장된 조회와 시각을 먼저 표�
 일정, workspace current 표시 요약과 DB typed catalog를 서버에서 중복 제거해 결합하며 원장 read나
 compile을 하지 않는다. 작업본이 대표 저장 상태이고 DB 저장 여부는 따로 표시한다. 실제 날짜가 없는
 원천 실패는 별도 목록이며, 불완전 일정의 미수집 수는 `null`/`—`다.
+수집 화면의 조회는 같은 인벤토리에서 현황, 실행 가능 건수, 선택적 경기 목록을 계산한다.
 
 탐색·검색·표시 필터와 실행 기간·조건·선택은 독립적이다. 기본 대상은 미수집, 원천 실패는 별도
 재시도다. 서버가 조건과 포함/제외 ID를 검증한 뒤 선택 ID와 최대 50,000경기 집합을 불변 저장한다.

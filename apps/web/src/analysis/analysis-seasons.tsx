@@ -14,7 +14,13 @@ function useAnalysisSeasonsQuery(enabled: boolean) {
         await requestJson("/api/v2/analysis/seasons", { signal }),
       ),
     staleTime: 10_000,
-    refetchInterval: 15_000,
+    refetchInterval: ({ state }) =>
+      state.status !== "success" ||
+      state.data?.preparation.some(
+        ({ state }) => state === "pending" || state === "classifying" || state === "models",
+      )
+        ? 15_000
+        : 60_000,
     enabled,
   });
 }

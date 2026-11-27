@@ -17,15 +17,17 @@ import {
 } from "@kbo/contracts";
 import { analyzeMatchup, summarizeDirectMatchup } from "@kbo/game-core";
 import {
-  ANALYSIS_GAME_WHERE,
   analysisScopeParameters,
   analysisSourceHash,
+  scopedAnalysisGamesSql,
 } from "./analysis-scope.js";
 import { readPitchOutcomeRows } from "./pitch-outcomes.js";
 import {
   effectiveBattingSideSql,
   gameBattingProfileJoinSql,
+  gamePitchRowsSql,
   pitchEligibilitySql,
+  pitchPlateAppearanceJoinSql,
   pitchTrackingJoinsSql,
 } from "./analysis-pitch-input.js";
 export class MatchupRepository {
@@ -39,8 +41,7 @@ export class MatchupRepository {
     const { rows } = await withAnalysisSnapshot(this.pool, (client) =>
       client.query<Record<string, unknown>>(
         `WITH selected_games AS MATERIALIZED (
-          SELECT r.game_id, r.revision FROM analytics.current_analysis_games r
-          WHERE ${ANALYSIS_GAME_WHERE}
+          ${scopedAnalysisGamesSql()}
         ), observations AS (
           SELECT p.${opponent} AS id, count(*) AS pitches, 0 AS pa
           FROM selected_games r JOIN baseball.pitch_facts p USING (game_id, revision)
@@ -101,19 +102,19 @@ export class MatchupRepository {
       // Aggregate conditions in SQL instead of transporting the full league's tracking trajectories.
       const groups = await client.query<Record<string, unknown>>(
         `WITH selected_games AS MATERIALIZED (
-    SELECT r.game_id,r.revision FROM analytics.current_analysis_games r WHERE ${ANALYSIS_GAME_WHERE}
+    ${scopedAnalysisGamesSql()}
    ), eligible AS (
     SELECT eligible.* FROM selected_games r CROSS JOIN LATERAL (
-    SELECT p.pitch_type AS "pitchType",p.before_balls AS balls,p.before_strikes AS strikes,
-      ${effectiveBattingSideSql} AS stance,floor(p.speed_kph/5)::integer AS "speedBand",p.pitcher_id,p.batter_id,p.swing,p.whiff,p.called_strike
-    FROM baseball.pitch_facts p
-    ${pitchTrackingJoinsSql}
-    ${gameBattingProfileJoinSql("p")}
-    LEFT JOIN baseball.plate_appearance_facts pa ON pa.game_id=p.game_id AND pa.revision=p.revision AND pa.start_event_id=p.plate_appearance_event_id
-    WHERE p.game_id=r.game_id AND p.revision=r.revision AND p.actual AND p.pitch_type IS NOT NULL AND p.speed_kph>0 AND p.speed_kph<500
-    AND ${effectiveBattingSideSql} IS NOT NULL
-    AND ${pitchEligibilitySql}
-    OFFSET 0) eligible
+      ${gamePitchRowsSql({
+        source: "facts",
+        select: `p.pitch_type AS "pitchType",p.before_balls AS balls,p.before_strikes AS strikes,
+          ${effectiveBattingSideSql} AS stance,floor(p.speed_kph/5)::integer AS "speedBand",
+          p.pitcher_id,p.batter_id,p.swing,p.whiff,p.called_strike`,
+        joins: `${pitchTrackingJoinsSql()} ${gameBattingProfileJoinSql("p")} ${pitchPlateAppearanceJoinSql}`,
+        pitchPredicate: `p.pitch_type IS NOT NULL AND p.speed_kph>0 AND p.speed_kph<500
+          AND ${effectiveBattingSideSql} IS NOT NULL AND ${pitchEligibilitySql}`,
+      })}
+    ) eligible
    ), targets AS (SELECT DISTINCT "pitchType",balls,strikes,stance,"speedBand" FROM eligible WHERE pitcher_id=$5)
    SELECT 'pitcher' AS kind,"pitchType",balls,strikes,stance,"speedBand",count(*)::integer AS pitches,count(*) FILTER(WHERE swing)::integer AS swings,count(*) FILTER(WHERE whiff)::integer AS whiffs,count(*) FILTER(WHERE called_strike)::integer AS "calledStrikes"
    FROM eligible WHERE pitcher_id=$5 GROUP BY "pitchType",balls,strikes,stance,"speedBand"

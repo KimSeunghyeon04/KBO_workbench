@@ -11,11 +11,12 @@ import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type { Pool, PoolClient } from "pg";
 import {
-  ANALYSIS_GAME_WHERE,
   analysisScopeParameters,
   analysisSourceHash,
+  scopedAnalysisGamesSql,
 } from "./analysis-scope.js";
 import { readPitchRows, type PitchAnalysisComputation } from "./pitch-analysis-repository.js";
+import { gamePitchRowsSql } from "./analysis-pitch-input.js";
 import { calculatePitchCalibration } from "./pitch-calibration.js";
 import type { PitchCalibrationWorkspace } from "./pitch-calibration-workspace.js";
 import type { AnalysisCoverageWorkspace } from "./analysis-coverage-workspace.js";
@@ -93,7 +94,7 @@ export class AnalysisCoverageRepository {
         (
           await client.query<Record<string, unknown>>(
             `WITH selected_games AS MATERIALIZED (
-            SELECT r.game_id,r.revision FROM analytics.current_analysis_games r WHERE ${ANALYSIS_GAME_WHERE}
+            ${scopedAnalysisGamesSql()}
           ) SELECT h.game_id AS "gameId",h.revision,h.player_id AS "playerId",h.height_cm AS height
           FROM selected_games r CROSS JOIN LATERAL (
             SELECT h.* FROM analytics.game_batter_heights h WHERE h.game_id=r.game_id AND h.revision=r.revision OFFSET 0
@@ -173,15 +174,16 @@ async function readCoverageGames(
   // Bound the zone view by game and aggregate each grain before joining it.
   const result = await client.query<Record<string, unknown>>(
     `WITH selected_games AS MATERIALIZED (
-      SELECT r.* FROM analytics.current_analysis_games r WHERE ${ANALYSIS_GAME_WHERE}
+      ${scopedAnalysisGamesSql("r.game_id,r.revision,r.document_hash,r.game_date,r.stadium,r.competition")}
     ) SELECT r.game_id AS "gameId",r.revision,r.document_hash AS "documentHash",
       to_char(r.game_date,'YYYY-MM-DD') AS "gameDate",r.stadium,r.competition,
       p.actual AS "actualPitches",p.types AS "withPitchType",p.speeds AS "withSpeed",p.zones AS "zoneKnown",
       a.completed AS "completedPlateAppearances"
     FROM selected_games r CROSS JOIN LATERAL (
-      SELECT count(*)::integer AS actual,count(pitch_type)::integer AS types,
-        count(speed_kph)::integer AS speeds,count(in_zone)::integer AS zones
-      FROM analytics.current_pitches p WHERE p.game_id=r.game_id AND p.revision=r.revision AND p.actual
+      ${gamePitchRowsSql({
+        select: `count(*)::integer AS actual,count(p.pitch_type)::integer AS types,
+          count(p.speed_kph)::integer AS speeds,count(p.in_zone)::integer AS zones`,
+      })}
     ) p CROSS JOIN LATERAL (
       SELECT count(*)::integer AS completed FROM baseball.plate_appearance_facts pa
       WHERE pa.game_id=r.game_id AND pa.revision=r.revision AND pa.completed AND pa.counts_as_plate_appearance

@@ -29,6 +29,7 @@ afterEach(() => {
   focusManager.setFocused(undefined);
   for (const client of clients) client.clear();
   clients.length = 0;
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -144,6 +145,71 @@ async function refreshSeasons(client: QueryClient) {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
+
+it("polls settled seasons less often and preserves the status payload and season order", async () => {
+  vi.useFakeTimers();
+  const ready = {
+    sourceHash: "a".repeat(64),
+    seasons: [2026, 2024],
+    preparation: [
+      prepared(2024, "b", { state: "failed", error: "fixture failure" }),
+      prepared(2026, "a"),
+    ],
+  };
+  const training = {
+    ...ready,
+    preparation: [ready.preparation[0], prepared(2026, "a", { state: "models" })],
+  };
+  const readStatus = vi
+    .fn<() => Promise<Response>>()
+    .mockResolvedValueOnce(Response.json(ready))
+    .mockResolvedValueOnce(Response.json(training))
+    .mockResolvedValueOnce(Response.json(ready))
+    .mockResolvedValueOnce(Response.json(null, { status: 503 }))
+    .mockResolvedValueOnce(Response.json(ready));
+  vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+    const url = new URL(String(input), "http://localhost");
+    if (url.pathname.endsWith("/analysis/seasons")) return readStatus();
+    return Promise.resolve(
+      Response.json({
+        season: 2026,
+        scope: resolveAnalysisScope({ season: 2026, competition: "regular" }),
+        pitchers: [],
+      }),
+    );
+  });
+  const client = show();
+  const advance = (milliseconds: number) => act(() => vi.advanceTimersByTimeAsync(milliseconds));
+  await advance(0);
+  expect(readStatus).toHaveBeenCalledTimes(1);
+  expect(client.getQueryData(["analysis-seasons"])).toEqual(ready);
+  await advance(1);
+  expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+    "2026",
+    "2024",
+  ]);
+
+  await advance(59_998);
+  expect(readStatus).toHaveBeenCalledTimes(1);
+  await advance(1);
+  expect(readStatus).toHaveBeenCalledTimes(2);
+  expect(client.getQueryData(["analysis-seasons"])).toEqual(training);
+
+  await advance(14_999);
+  expect(readStatus).toHaveBeenCalledTimes(2);
+  await advance(1);
+  expect(readStatus).toHaveBeenCalledTimes(3);
+  expect(client.getQueryData(["analysis-seasons"])).toEqual(ready);
+  await advance(59_999);
+  expect(readStatus).toHaveBeenCalledTimes(3);
+  await advance(1);
+  expect(readStatus).toHaveBeenCalledTimes(4);
+  await advance(14_999);
+  expect(readStatus).toHaveBeenCalledTimes(4);
+  await advance(1);
+  expect(readStatus).toHaveBeenCalledTimes(5);
+  expect(client.getQueryData(["analysis-seasons"])).toEqual(ready);
+});
 
 it.each([false, true])("waits for the latest season on entry (stale cache: %s)", async (stale) => {
   const seasons = Promise.withResolvers<Response>();

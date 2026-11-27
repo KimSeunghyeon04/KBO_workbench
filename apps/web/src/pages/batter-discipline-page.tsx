@@ -8,7 +8,11 @@ import { useQuery } from "@tanstack/react-query";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { DisciplineQuerySchema, type DisciplinePoint } from "@kbo/contracts";
+import {
+  DisciplineParamsSchema,
+  DisciplineQuerySchema,
+  type DisciplinePoint,
+} from "@kbo/contracts";
 import { Value } from "@sinclair/typebox/value";
 import { getBatterDiscipline } from "../api/batter-discipline-client";
 import { batterCatalogQueryOptions } from "../api/analysis-catalog-query-options";
@@ -50,10 +54,16 @@ export function BatterDisciplinePage() {
       ? catalog.data?.batters[0]
       : catalog.data?.batters.find((b) => b.batterId === requested);
   const batterId = requested ?? batter?.batterId ?? "";
+  const canStartWhileCatalogLoads =
+    catalog.isPending &&
+    requested !== null &&
+    requested !== "." &&
+    requested !== ".." &&
+    Value.Check(DisciplineParamsSchema, { batterId });
   const analysis = useQuery({
     queryKey: ["batter-discipline", batterId, candidate],
     meta: analysisQueryMeta(candidate),
-    enabled: valid && batter !== undefined,
+    enabled: valid && (batter !== undefined || canStartWhileCatalogLoads),
     queryFn: ({ signal }) => {
       if (!Value.Check(DisciplineQuerySchema, candidate))
         throw new Error("잘못된 선구안 필터입니다.");
@@ -70,7 +80,7 @@ export function BatterDisciplinePage() {
   }, [season, batterId]);
   const axis = params.get("axis") === "x" ? "x" : params.get("axis") === "timing" ? "timing" : "z";
   const difference = params.get("map") === "difference";
-  const data = analysis.data;
+  const data = batter === undefined ? undefined : analysis.data;
   const points = data?.points.filter((p) => cell === null || p.cell === cell) ?? [];
   const selected = points.find((p) => identity(p) === selection);
   const shown = points.slice(page * 20, page * 20 + 20);
@@ -222,7 +232,10 @@ export function BatterDisciplinePage() {
         </label>
       </AnalysisFilterBar>
       {!valid && <p role="alert">분석 조건이 올바르지 않습니다. 조건 초기화로 다시 시작하세요.</p>}
-      <AnalysisQueryError queries={[catalog, analysis]} enabled={valid} />
+      <AnalysisQueryError
+        queries={batter === undefined ? [catalog] : [catalog, analysis]}
+        enabled={valid}
+      />
       {catalog.isPending || (valid && batter !== undefined && analysis.isPending) ? (
         <p className="panel" role="status">
           선구안 분석 중입니다. 시즌 첫 조회는 조금 걸릴 수 있습니다.

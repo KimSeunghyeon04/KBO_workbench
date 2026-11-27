@@ -1,8 +1,12 @@
-import { resolveAnalysisScope } from "@kbo/contracts";
+import { resolveAnalysisScope, type DisciplineQuery } from "@kbo/contracts";
+import { mkdtempDisposable } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { Worker } from "node:worker_threads";
 import Fastify from "fastify";
 import { Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
-import { BatterDisciplineRepository } from "@kbo/persistence";
+import { BatterDisciplineRepository, DisciplinePreparedWorkspace } from "@kbo/persistence";
 import { BatterDisciplineService } from "../src/batter-discipline-service.js";
 import { batterDisciplineRoutes } from "../src/routes/batter-discipline.js";
 import { installHttpErrorHandler } from "../src/http-error-handler.js";
@@ -53,6 +57,175 @@ describe("batter discipline API and worker", () => {
     ]);
     await service.close();
     expect((await pending).every((p) => p.status === "rejected")).toBe(true);
+  });
+
+  it("reuses prepared rows across workers and rebuilds outdated or damaged files", async () => {
+    await using directory = await mkdtempDisposable(path.join(tmpdir(), "discipline-prepared-"));
+    const scope = { season: 2024, competition: "regular" } as const;
+    const guard = vi.fn(async () => {});
+    const store = new DisciplinePreparedWorkspace(directory.path, guard);
+    await store.write(scope, Buffer.from("incomplete"));
+    guard.mockClear();
+    const original = disciplineSnapshot([disciplineRow({ pitchId: "new-pitch" })]);
+    const snapshot = vi.fn(async () => ({ ...original, sourceHash: "b".repeat(64) }));
+    const sourceHash = vi.fn(async () => "b".repeat(64)).mockResolvedValueOnce("a".repeat(64));
+    const cache = { store, sourceHash, reportError: vi.fn() };
+    const analyze = async (query: DisciplineQuery = { season: 2024 }) => {
+      const service = new BatterDisciplineService({ snapshot }, cache);
+      try {
+        return await service.analyze(query, "b1");
+      } finally {
+        await service.close();
+      }
+    };
+
+    const first = await analyze();
+    expect(first.sourceHash).toBe("b".repeat(64));
+    expect(first.points.map(({ pitchId }) => pitchId)).toEqual(["new-pitch"]);
+    expect(first.coverage.actualPitches).toBe(1);
+    expect(guard).toHaveBeenCalledTimes(1);
+    snapshot.mockClear();
+    expect(await analyze({ season: 2024, competition: "regular" })).toEqual({
+      ...first,
+      query: { season: 2024, competition: "regular" },
+    });
+    expect(snapshot).not.toHaveBeenCalled();
+
+    const updated = { ...original, sourceHash: "c".repeat(64), rows: [] };
+    sourceHash.mockResolvedValue(updated.sourceHash);
+    snapshot.mockResolvedValue(updated);
+    expect((await analyze()).coverage.actualPitches).toBe(0);
+    expect(snapshot).toHaveBeenCalledTimes(1);
+
+    await store.write(scope, Buffer.from("damaged"));
+    snapshot.mockClear();
+    expect((await analyze()).sourceHash).toBe(updated.sourceHash);
+    expect(snapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it("responds in pitch order during a blocked save and drains the latest prepared rows on close", async () => {
+    let source = disciplineSnapshot([
+      disciplineRow({ pitchId: "pitch-b", swing: true }),
+      disciplineRow({ pitchId: "pitch-a" }),
+    ]);
+    const snapshot = vi.fn(async () => source);
+    const firstWriteStarted = Promise.withResolvers<undefined>();
+    const firstWrite = Promise.withResolvers<undefined>();
+    const lastWriteStarted = Promise.withResolvers<undefined>();
+    const lastWrite = Promise.withResolvers<undefined>();
+    let saved: Uint8Array | undefined;
+    const cache = {
+      store: {
+        read: async () => saved,
+        write: vi
+          .fn<DisciplinePreparedWorkspace["write"]>()
+          .mockImplementationOnce(async (_scope, artifact) => {
+            firstWriteStarted.resolve(undefined);
+            await firstWrite.promise;
+            saved = artifact;
+          })
+          .mockImplementationOnce(async (_scope, artifact) => {
+            lastWriteStarted.resolve(undefined);
+            await lastWrite.promise;
+            saved = artifact;
+          }),
+      },
+      sourceHash: async () => source.sourceHash,
+      reportError: vi.fn(),
+    };
+    const service = new BatterDisciplineService({ snapshot }, cache);
+    const query = { season: 2024 };
+    try {
+      const result = service.analyze(query, "b1");
+      await firstWriteStarted.promise;
+      const first = await Promise.race([
+        result,
+        new Promise<null>((resolve) => setImmediate(() => resolve(null))),
+      ]);
+      expect(first?.coverage.actualPitches).toBe(2);
+      expect(first?.points.map(({ pitchId }) => pitchId)).toEqual(["pitch-b", "pitch-a"]);
+
+      source = {
+        ...disciplineSnapshot([disciplineRow({ pitchId: "intermediate" })]),
+        sourceHash: "b".repeat(64),
+      };
+      expect((await service.analyze(query, "b1")).points.map(({ pitchId }) => pitchId)).toEqual([
+        "intermediate",
+      ]);
+      source = {
+        ...disciplineSnapshot([disciplineRow({ pitchId: "latest" })]),
+        sourceHash: "c".repeat(64),
+      };
+      const latest = await service.analyze(query, "b1");
+      expect(latest.points.map(({ pitchId }) => pitchId)).toEqual(["latest"]);
+      expect(cache.store.write).toHaveBeenCalledOnce();
+
+      const closed = vi.fn();
+      const workerStopped = Promise.withResolvers<undefined>();
+      const terminate = Worker.prototype.terminate;
+      const terminating = vi.spyOn(Worker.prototype, "terminate").mockImplementationOnce(function (
+        this: Worker,
+      ) {
+        return terminate.call(this).then((code) => {
+          workerStopped.resolve(undefined);
+          return code;
+        });
+      });
+      try {
+        const closing = service.close().then(closed);
+        await workerStopped.promise;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        firstWrite.resolve(undefined);
+        await lastWriteStarted.promise;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(closed).not.toHaveBeenCalled();
+        lastWrite.resolve(undefined);
+        await closing;
+      } finally {
+        terminating.mockRestore();
+      }
+      expect(cache.store.write).toHaveBeenCalledTimes(2);
+
+      snapshot.mockClear();
+      const reopened = new BatterDisciplineService({ snapshot }, cache);
+      try {
+        expect(await reopened.analyze(query, "b1")).toEqual(latest);
+        expect(snapshot).not.toHaveBeenCalled();
+      } finally {
+        await reopened.close();
+      }
+    } finally {
+      firstWrite.resolve(undefined);
+      lastWrite.resolve(undefined);
+      await service.close();
+    }
+  });
+
+  it("returns a correct response when saving the prepared rows fails", async () => {
+    const snapshot = vi.fn(async () => disciplineSnapshot());
+    const failure = new Error("read-only cache storage");
+    const reportError = vi.fn();
+    const sourceHash = vi.fn(async () => "a".repeat(64));
+    const service = new BatterDisciplineService(
+      { snapshot },
+      {
+        sourceHash,
+        reportError,
+        store: {
+          read: async () => undefined,
+          write: async () => {
+            throw failure;
+          },
+        },
+      },
+    );
+    try {
+      expect((await service.analyze({ season: 2024 }, "b1")).coverage.actualPitches).toBe(1);
+      expect(sourceHash).not.toHaveBeenCalled();
+    } finally {
+      await service.close();
+    }
+    expect(reportError).toHaveBeenCalledWith(failure);
   });
   it("validates filters and returns a strict API response", async () => {
     let firstPeriodHash = "a".repeat(64);

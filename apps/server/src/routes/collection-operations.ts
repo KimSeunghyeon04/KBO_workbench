@@ -10,6 +10,8 @@ import {
   CollectionOverviewQuerySchema,
   CollectionGamesQuerySchema,
   CollectionGamePageSchema,
+  CollectionViewQuerySchema,
+  CollectionViewSchema,
   CollectionSelectionCreateSchema,
   CollectionSelectionSchema,
   CollectionHistoryPageSchema,
@@ -82,6 +84,17 @@ export const collectionOperationsRoutes: FastifyPluginAsyncTypebox<RouteContext>
       },
     },
     async (request) => service.games(request.params.id, request.query),
+  );
+  app.post(
+    "/api/v2/collection-discoveries/:id/view",
+    {
+      schema: {
+        params,
+        body: CollectionViewQuerySchema,
+        response: { 200: CollectionViewSchema, ...errors },
+      },
+    },
+    async (request) => service.view(request.params.id, request.body),
   );
   app.post(
     "/api/v2/collection-selections",

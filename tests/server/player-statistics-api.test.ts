@@ -33,12 +33,11 @@ function connection() {
   const pool = new Pool();
   const client = Object.assign(new Client(), { release: vi.fn() });
   const connect = vi.spyOn(pool, "connect").mockResolvedValue(client);
-  const query = vi.spyOn(client, "query").mockResolvedValue({
-    rows: [],
-    command: "",
-    rowCount: 0,
-    fields: [],
-    oid: 0,
+  const query = vi.spyOn(client, "query").mockImplementation((statement) => {
+    const rows = String(statement).includes("SELECT dataset.hash, sources.*")
+      ? [{ hash: null, gameId: null }]
+      : [];
+    return Promise.resolve({ rows, command: "SELECT", rowCount: rows.length, fields: [], oid: 0 });
   });
   return { pool, connect, query };
 }

@@ -99,6 +99,10 @@ export {
 } from "./pitch-analysis-repository.js";
 export { PitchReferenceWorkspace } from "./pitch-reference-workspace.js";
 export { BatterDisciplineRepository } from "./batter-discipline-repository.js";
+export {
+  DisciplinePreparedWorkspace,
+  type DisciplineCacheScope,
+} from "./discipline-prepared-workspace.js";
 export { BatterStrikeZoneRepository } from "./batter-strike-zone-repository.js";
 export { PlayerHeightRepository } from "./player-height-repository.js";
 export { PlayerBattingProfileRepository } from "./player-batting-profile-repository.js";

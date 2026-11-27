@@ -28,7 +28,7 @@ import {
   readApprovalEvidence,
   readApprovalHistory,
 } from "./record-correction-publication.js";
-import { loadNotice } from "./record-correction-sources.js";
+import { loadNotice, loadNotices } from "./record-correction-sources.js";
 import {
   RecordCorrectionStaleError,
   type RecordCorrectionApprovalEvidence,
@@ -87,10 +87,12 @@ export class RecordCorrectionCases {
       const row = await activeAssessment(client, notice.noticeId);
       if (row === undefined || row.notice_hash !== notice.noticeHash)
         throw new RecordCorrectionStaleError("평가 중 기록정정 공지 발행이 변경되었습니다.");
-      const selection = await readSelection(client, notice.noticeId);
       const matchup = noticeMatchup(notice);
       const games = await readMatchupCandidates(client, matchup);
       const peers = await scopedNotices(client, matchup);
+      const peer = peers.find((item) => item.notice.noticeId === notice.noticeId);
+      const selection =
+        peer === undefined ? await readSelection(client, notice.noticeId) : peer.selection;
       const actionSequence = (await nextActionSequence(client, notice.noticeId)) - 1;
       await client.query("COMMIT");
       return {
@@ -587,8 +589,23 @@ export class RecordCorrectionCases {
       readonly status?: RecordCorrectionCaseStatus;
       readonly search?: string;
     } = {},
-    matchups?: readonly Matchup[],
   ): Promise<RecordCorrectionCase[]> {
+    const noticeIds = await this.listCaseNoticeIds(filters);
+    const cases = await Promise.all(noticeIds.map((noticeId) => this.case(noticeId)));
+    return cases.filter(
+      (item): item is RecordCorrectionCase =>
+        item !== null && (filters.status === undefined || filters.status === item.status),
+    );
+  }
+
+  private async listCaseNoticeIds(
+    filters: {
+      readonly season?: number;
+      readonly status?: RecordCorrectionCaseStatus;
+      readonly search?: string;
+    },
+    matchups?: readonly Matchup[],
+  ): Promise<string[]> {
     const conditions: string[] = [];
     const values: unknown[] = [];
     if (filters.season !== undefined) {
@@ -625,18 +642,11 @@ export class RecordCorrectionCases {
        ORDER BY n.game_date DESC,n.record_number DESC,a.notice_id`,
       values,
     );
-    const cases = await Promise.all(result.rows.map((row) => this.case(row.notice_id)));
-    return cases.filter(
-      (item): item is RecordCorrectionCase =>
-        item !== null && (filters.status === undefined || filters.status === item.status),
-    );
+    return result.rows.map(({ notice_id }) => notice_id);
   }
 
-  public async listCasesForImport(
-    gameId: string,
-    revision: number,
-  ): Promise<RecordCorrectionCase[]> {
-    return this.listCases({}, await readRevisionMatchups(this.pool, gameId, revision));
+  public async listNoticeIdsForImport(gameId: string, revision: number): Promise<string[]> {
+    return this.listCaseNoticeIds({}, await readRevisionMatchups(this.pool, gameId, revision));
   }
 
   public async listCaseSummaries(
@@ -789,18 +799,29 @@ async function activeAssessment(
   ).rows[0];
 }
 
+const matchCandidateColumns = `c.candidate_id AS "candidateId",c.game_id AS "gameId",
+  c.game_revision AS revision,c.document_hash AS "documentHash",c.event_id AS "eventId",
+  c.batter_player_id AS "batterPlayerId",c.pitcher_player_id AS "pitcherPlayerId",
+  c.label,c.confidence_reason AS "confidenceReason"`;
+
+function selectedCandidateSql(
+  noticeId: Parameters<typeof currentRecordCorrectionSelectionSql>[0],
+): string {
+  return `SELECT ${matchCandidateColumns}
+    FROM (${currentRecordCorrectionSelectionSql(noticeId)}) decision
+    JOIN record_correction.match_candidates c
+      ON (c.notice_id,c.case_version,c.candidate_id)=
+        (${noticeId},decision.case_version,decision.candidate_id)`;
+}
+
 async function readSelection(
   client: PoolClient,
   noticeId: string,
 ): Promise<RecordCorrectionMatchCandidate | null> {
-  const result = await client.query<{ case_version: number; candidate_id: string }>(
-    currentRecordCorrectionSelectionSql("$1"),
-    [noticeId],
-  );
-  const selection = result.rows[0];
-  if (selection === undefined) return null;
-  const candidates = await readAssessmentCandidates(client, noticeId, selection.case_version);
-  return candidates.find((candidate) => candidate.candidateId === selection.candidate_id) ?? null;
+  const result = await client.query<RecordCorrectionMatchCandidate>(selectedCandidateSql("$1"), [
+    noticeId,
+  ]);
+  return result.rows[0] ?? null;
 }
 
 async function writeCandidates(
@@ -842,24 +863,24 @@ async function scopedNotices(
   matchup: Matchup,
 ): Promise<RecordCorrectionMatchupContext["notices"]> {
   const result = await client.query<
-    Pick<AssessmentRow, "season" | "source_revision" | "notice_sequence"> & { notice_id: string }
+    Pick<AssessmentRow, "season" | "source_revision" | "notice_sequence"> & {
+      selection: RecordCorrectionMatchCandidate | null;
+    }
   >(
-    `SELECT a.notice_id,a.season,a.source_revision,a.notice_sequence
+    `SELECT a.season,a.source_revision,a.notice_sequence,row_to_json(candidate) AS selection
      FROM record_correction.active_assessments a
      JOIN record_correction.notices n ON (n.season,n.revision,n.notice_sequence)=
        (a.season,a.source_revision,a.notice_sequence)
+     LEFT JOIN LATERAL (${selectedCandidateSql("a.notice_id")}) candidate ON TRUE
      WHERE a.season=$1 AND n.game_date=$2 AND n.away_team_name=$3 AND n.home_team_name=$4
        AND a.status <> 'dismissed' ORDER BY a.notice_id`,
     [...matchup],
   );
-  const notices = [];
-  for (const row of result.rows) {
-    notices.push({
-      notice: await loadNotice(client, row.season, row.source_revision, row.notice_sequence),
-      selection: await readSelection(client, row.notice_id),
-    });
-  }
-  return notices;
+  const notices = await loadNotices(client, result.rows);
+  return notices.map((notice, index) => ({
+    notice,
+    selection: result.rows[index]?.selection ?? null,
+  }));
 }
 
 async function recordApproval(
@@ -920,11 +941,9 @@ async function readAssessmentCandidates(
   caseVersion: number,
 ): Promise<RecordCorrectionMatchCandidate[]> {
   const result = await executor.query<RecordCorrectionMatchCandidate>(
-    `SELECT candidate_id AS "candidateId",game_id AS "gameId",game_revision AS revision,
-            document_hash AS "documentHash",event_id AS "eventId",batter_player_id AS "batterPlayerId",
-            pitcher_player_id AS "pitcherPlayerId",label,confidence_reason AS "confidenceReason"
-     FROM record_correction.match_candidates
-     WHERE notice_id=$1 AND case_version=$2 ORDER BY candidate_order`,
+    `SELECT ${matchCandidateColumns}
+     FROM record_correction.match_candidates c
+     WHERE c.notice_id=$1 AND c.case_version=$2 ORDER BY c.candidate_order`,
     [noticeId, caseVersion],
   );
   return result.rows;

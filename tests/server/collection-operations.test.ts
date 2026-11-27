@@ -64,6 +64,69 @@ function catalog(
 }
 
 describe("period collection operations", () => {
+  it("projects overview, ordered games and eligibility from one inventory with independent filters", async () => {
+    await using temp = await mkdtempDisposable(path.join(tmpdir(), "kbo-single-inventory-"));
+    const workspace = await StagingWorkspace.open(temp.path);
+    let stored: GameCatalogItem[] = [];
+    const database = vi.fn(async () => ({ games: stored }));
+    const service = new CollectionOperationsService(
+      {
+        discoverRange: async () => [
+          entry("tie-b", "2026-04-02"),
+          entry("tie-a", "2026-04-02"),
+          entry("later", "2026-05-01"),
+        ],
+      },
+      workspace,
+      database,
+    );
+    try {
+      await workspace.saveSourceFailure("unknown-failure", [], null);
+      const { discoveryId } = await service.create({ ...range, idempotencyKey: "one-inventory" });
+      await service.wait(discoveryId);
+      const overview = { startDate: "2026-04-01", endDate: "2026-04-02", groupBy: "day" } as const;
+      const games = { search: "tie", page: 2, limit: 1 };
+      const eligibility = {
+        startDate: "2026-05-01",
+        endDate: "2026-05-01",
+        state: "uncollected",
+      } as const;
+      const first = await service.view(discoveryId, { overview, games, eligibility });
+      expect(database).toHaveBeenCalledTimes(1);
+      expect(first.overview.groups.map(({ key, counts }) => [key, counts.total])).toEqual([
+        ["2026-04-01", 0],
+        ["2026-04-02", 2],
+      ]);
+      expect(first.overview.unknownDateCount).toBe(1);
+      expect(first.games).toMatchObject({
+        total: 2,
+        page: 2,
+        limit: 1,
+        games: [{ gameId: "tie-b" }],
+      });
+      expect(first.eligibleTotal).toBe(1);
+      expect(first.overview).toEqual(await service.overview(discoveryId, overview));
+      expect(first.games).toEqual(await service.games(discoveryId, games));
+
+      stored = [catalog("later", "database", "2026-05-01")];
+      const next = await service.view(discoveryId, { overview, eligibility });
+      expect(next).toEqual({ overview: first.overview, eligibleTotal: 0 });
+      expect(
+        await service.view(discoveryId, {
+          overview,
+          games: { unknownDate: true },
+          eligibility: { state: "source_failure", unknownDate: true },
+        }),
+      ).toMatchObject({
+        games: { total: 1, games: [{ gameId: "unknown-failure" }] },
+        eligibleTotal: 1,
+      });
+    } finally {
+      await service.close();
+      await workspace.close();
+    }
+  });
+
   it("이전 수집에서 확인한 실패 경기 날짜는 재시작 뒤 빈 일정에서도 유지한다", async () => {
     await using temp = await mkdtempDisposable(path.join(tmpdir(), "kbo-known-collection-game-"));
     const first = await StagingWorkspace.open(temp.path);

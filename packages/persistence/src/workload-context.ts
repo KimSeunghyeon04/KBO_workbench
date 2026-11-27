@@ -3,9 +3,9 @@ import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { WorkloadAppearanceSchema, type AnalysisScope } from "@kbo/contracts";
 import {
-  ANALYSIS_GAME_WHERE,
   analysisScopeParameters,
   analysisSourceHash,
+  scopedAnalysisGamesSql,
 } from "./analysis-scope.js";
 
 /** Both workload consumers use all collected appearance history and the scoped target games. */
@@ -27,7 +27,10 @@ export async function readWorkloadContext(
     Type.Array(Type.Object({ id: Type.String() }, { additionalProperties: false })),
     (
       await client.query<Record<string, unknown>>(
-        `SELECT r.game_id AS id FROM analytics.current_analysis_games r WHERE ${ANALYSIS_GAME_WHERE} AND EXISTS(SELECT 1 FROM baseball.pitcher_game_facts f WHERE f.game_id=r.game_id AND f.revision=r.revision AND f.player_id=$5) ORDER BY r.game_id COLLATE "C"`,
+        `${scopedAnalysisGamesSql(
+          "r.game_id AS id",
+          "EXISTS(SELECT 1 FROM baseball.pitcher_game_facts f WHERE f.game_id=r.game_id AND f.revision=r.revision AND f.player_id=$5)",
+        )} ORDER BY r.game_id COLLATE "C"`,
         [...analysisScopeParameters(scope), pitcherId],
       )
     ).rows,

@@ -11,6 +11,7 @@ import {
   type AnalysisScopeQuery,
 } from "@kbo/contracts";
 import { readWorkloadContext } from "./workload-context.js";
+import { pitchTrackingJoinsSql } from "./analysis-pitch-input.js";
 
 export class WorkloadComparisonRepository {
   public constructor(private readonly pool: Pool) {}
@@ -54,8 +55,7 @@ export class WorkloadComparisonRepository {
           coalesce(sum(p.speed_kph ORDER BY p.pitch_sequence) FILTER(WHERE p.speed_kph>0 AND p.speed_kph<'Infinity'::float8),0) AS "speedSum",
           count(*) FILTER(WHERE p.swing)::integer AS swings,count(*) FILTER(WHERE p.whiff)::integer AS whiffs
         FROM numbered p JOIN firsts USING(game_id,revision,half)
-        LEFT JOIN baseball.pitch_tracking_links l ON l.game_id=p.game_id AND l.revision=p.revision AND l.pitch_id=p.pitch_id
-        LEFT JOIN workbench.tracking_observations t ON t.game_id=l.game_id AND t.revision=l.revision AND t.tracking_id=l.tracking_id
+        ${pitchTrackingJoinsSql()}
         GROUP BY p.game_id,p.revision,firsts.observed_role,p.bucket,p.meeting,p.pitch_type,t.stance,p.before_balls,p.before_strikes
         ORDER BY p.game_id COLLATE "C",p.bucket,p.meeting,p.pitch_type COLLATE "C",t.stance COLLATE "C",p.before_balls,p.before_strikes`,
         [selected, pitcherId],

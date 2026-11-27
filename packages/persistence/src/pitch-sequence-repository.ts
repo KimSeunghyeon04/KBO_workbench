@@ -11,11 +11,17 @@ import {
 } from "@kbo/contracts";
 import { analyzePitchSequences } from "@kbo/game-core";
 import {
-  ANALYSIS_GAME_WHERE,
   analysisScopeParameters,
   analysisSourceHash,
+  scopedAnalysisGamesSql,
 } from "./analysis-scope.js";
-import { pitchGeometrySql, pitchEligibilitySql } from "./analysis-pitch-input.js";
+import {
+  gamePitchRowsSql,
+  pitchGeometrySql,
+  pitchEligibilitySql,
+  pitchPlateAppearanceJoinSql,
+  pitchViewObservationJoinSql,
+} from "./analysis-pitch-input.js";
 export class PitchSequenceRepository {
   public constructor(private readonly pool: Pool) {}
   public async analyze(input: PitchSequenceQuery, pitcherId: string) {
@@ -32,12 +38,14 @@ export class PitchSequenceRepository {
       const sourceHash = await analysisSourceHash(client, scope);
       const result = await client.query<Record<string, unknown>>(
         `WITH selected_games AS MATERIALIZED (
-    SELECT r.* FROM analytics.current_analysis_games r WHERE ${ANALYSIS_GAME_WHERE}
-    AND EXISTS(SELECT 1 FROM baseball.pitch_facts own WHERE own.game_id=r.game_id AND own.revision=r.revision AND own.pitcher_id=$5)
+    ${scopedAnalysisGamesSql(
+      "r.game_id,r.revision,r.stadium",
+      "EXISTS(SELECT 1 FROM baseball.pitch_facts own WHERE own.game_id=r.game_id AND own.revision=r.revision AND own.pitcher_id=$5)",
+    )}
    ), ordered AS (
     SELECT p.*,r.stadium,e.event_sequence,lag(e.event_sequence) OVER(PARTITION BY p.game_id,p.revision ORDER BY p.pitch_sequence) AS previous_event_sequence
     FROM selected_games r CROSS JOIN LATERAL (
-      SELECT p.* FROM analytics.current_pitches p WHERE p.game_id=r.game_id AND p.revision=r.revision OFFSET 0
+      ${gamePitchRowsSql({ includeNonActual: true })}
     ) p
     JOIN workbench.relay_event_facts e ON e.game_id=p.game_id AND e.revision=p.revision AND e.event_id=p.pitch_id
    ) SELECT p.game_id AS "gameId",p.revision,to_char(p.game_date,'YYYY-MM-DD') AS "gameDate",p.stadium,p.pitch_id AS "pitchId",p.pitch_sequence AS "pitchSequence",p.plate_appearance_event_id AS "paId",
@@ -46,8 +54,8 @@ export class PitchSequenceRepository {
     EXISTS(SELECT 1 FROM workbench.relay_substitutions s WHERE s.game_id=p.game_id AND s.revision=p.revision AND s.event_sequence>p.previous_event_sequence AND s.event_sequence<p.event_sequence
      AND (s.incoming_player_id IN (p.pitcher_id,p.batter_id) OR s.outgoing_player_id IN (p.pitcher_id,p.batter_id))) AS "interveningChange",
     p.tracking_id AS "trackingId",COALESCE(t.measurement_profile_id='naver_pts_v1',FALSE) AS supported,${pitchGeometrySql}
-    FROM ordered p LEFT JOIN workbench.tracking_observations t ON t.game_id=p.game_id AND t.revision=p.revision AND t.tracking_id=p.tracking_id
-    LEFT JOIN baseball.plate_appearance_facts pa ON pa.game_id=p.game_id AND pa.revision=p.revision AND pa.start_event_id=p.plate_appearance_event_id
+    FROM ordered p ${pitchViewObservationJoinSql}
+    ${pitchPlateAppearanceJoinSql}
     ORDER BY p.game_id COLLATE "C",p.pitch_sequence`,
         [...analysisScopeParameters(scope), pitcherId],
       );

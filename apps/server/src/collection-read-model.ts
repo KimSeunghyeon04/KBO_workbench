@@ -3,6 +3,11 @@ import {
   isCalendarDate,
   type CollectionCounts,
   type CollectionDateRange,
+  type CollectionDiscovery,
+  type CollectionGamePage,
+  type CollectionGamesQuery,
+  type CollectionOverview,
+  type CollectionOverviewQuery,
   type CollectionGameSummary,
   type CollectionScheduleEntry,
   type CollectionItemResult,
@@ -116,4 +121,77 @@ export function pageOf<T>(
     throw new InvalidCollectionRequestError("페이지는 1 이상, 페이지 크기는 1~200이어야 합니다.");
   }
   return { items: items.slice((page - 1) * limit, page * limit), total: items.length, page, limit };
+}
+
+export function summarizeCollectionOverview(
+  discovery: CollectionDiscovery,
+  inventory: readonly CollectionGameSummary[],
+  range: CollectionDateRange,
+  groupBy: CollectionOverviewQuery["groupBy"] = "month",
+): CollectionOverview {
+  const games = inventory.filter((game) => inCollectionRange(game, range));
+  const grouped = new Map<string, CollectionGameSummary[]>();
+  for (const game of games) {
+    if (game.gameDate === null) continue;
+    const key = groupBy === "month" ? game.gameDate.slice(0, 7) : game.gameDate;
+    const bucket = grouped.get(key) ?? [];
+    bucket.push(game);
+    grouped.set(key, bucket);
+  }
+  const groups: CollectionOverview["groups"] = [];
+  let cursor = range.startDate;
+  while (cursor <= range.endDate) {
+    const date = new Date(`${cursor}T00:00:00Z`);
+    const end =
+      groupBy === "month"
+        ? new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0))
+            .toISOString()
+            .slice(0, 10)
+        : cursor;
+    const endDate = end > range.endDate ? range.endDate : end;
+    const groupRange = { startDate: cursor, endDate };
+    groups.push({
+      key: groupBy === "month" ? cursor.slice(0, 7) : cursor,
+      ...groupRange,
+      counts: collectionCounts(
+        grouped.get(groupBy === "month" ? cursor.slice(0, 7) : cursor) ?? [],
+        discovery.complete,
+      ),
+    });
+    const next = new Date(`${endDate}T00:00:00Z`);
+    next.setUTCDate(next.getUTCDate() + 1);
+    cursor = next.toISOString().slice(0, 10);
+  }
+  return {
+    discovery,
+    counts: collectionCounts(games, discovery.complete),
+    groups,
+    unknownDateCount: inventory.filter((game) => game.gameDate === null).length,
+  };
+}
+
+export function filterCollectionGames(
+  inventory: readonly CollectionGameSummary[],
+  range: CollectionDateRange,
+  query: CollectionGamesQuery,
+): CollectionGameSummary[] {
+  const search = query.search?.trim().toLocaleLowerCase("ko-KR") ?? "";
+  return inventory.filter(
+    (game) =>
+      (query.unknownDate === true ? game.gameDate === null : inCollectionRange(game, range)) &&
+      (query.state === undefined || game.state === query.state) &&
+      (search === "" ||
+        (game.label + " " + game.gameId + " " + (game.gameDate ?? ""))
+          .toLocaleLowerCase("ko-KR")
+          .includes(search)),
+  );
+}
+
+export function collectionGamePage(
+  inventory: readonly CollectionGameSummary[],
+  range: CollectionDateRange,
+  query: CollectionGamesQuery,
+): CollectionGamePage {
+  const page = pageOf(filterCollectionGames(inventory, range, query), query.page, query.limit);
+  return { games: page.items, total: page.total, page: page.page, limit: page.limit };
 }

@@ -145,12 +145,16 @@ WebKit이 포함되어 있으며 별도 display 서버를 요구하지 않는다
 경기 ID는 한 번만 집계하며 작업본 상태가 우선이고 DB 저장 여부는 별도로 유지한다. 일정에 없는
 보유 경기도 실제 경기일이 범위에 들어오면 포함한다. 날짜 미확인 원천 실패는 기간 집계에서 제외한다.
 현황·검색·페이지 조회는 전체 원장 read/hydration/compile을 수행하지 않는다.
+수집 화면은 한 번 읽은 인벤토리에서 현황, 실행 가능 건수, 열린 경기 목록을 계산한다.
+현황, 실행 대상, 목록의 기간·필터는 각각 적용하며 선택 확정에서는 최신 상태를 다시 검증한다.
 
 - `POST/GET /api/v2/collection-discoveries`: 일정 조회 생성과 범위별 저장 조회 목록
 - `GET/DELETE /api/v2/collection-discoveries/:id`: 진행 조회·취소
 - `GET /api/v2/collection-discoveries/:id/overview`: 월/일 집계 (`startDate`, `endDate`, `groupBy`)
 - `GET /api/v2/collection-discoveries/:id/games`: 범위·팀/날짜/ID 검색·상태·페이지 (`search`, `state`,
   `unknownDate`, `page`, `limit`); 기본 50건, 최대 200건
+- `POST /api/v2/collection-discoveries/:id/view`: 읽기 전용 화면 조회. `overview`, `eligibility`, 선택적
+  `games` 조건으로 현황·실행 가능 건수·열린 경기 목록을 반환한다.
 - `POST /api/v2/collection-selections`: `all_matching` 또는 `explicit`, 포함/제외 ID로 선택 확정
 - `POST /api/v2/collection-jobs`: 기존 scope와 `{kind:"selection",selectionId}` 지원
 - `GET /api/v2/collection-jobs?activeOnly=true`: 진행 작업 snapshot

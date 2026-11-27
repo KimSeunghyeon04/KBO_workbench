@@ -5,7 +5,11 @@ import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useNavigate } from "react-router-dom";
-import type { CollectionDiscovery, CollectionGameSummary } from "@kbo/contracts";
+import type {
+  CollectionDiscovery,
+  CollectionGameSummary,
+  CollectionViewQuery,
+} from "@kbo/contracts";
 import { CollectPage } from "../../apps/web/src/pages/collect-page.js";
 import {
   collectionLevel,
@@ -61,35 +65,41 @@ function setup(complete = true) {
       return Response.json({
         discoveries: [{ ...discovery, complete, status: complete ? "succeeded" : "failed" }],
       });
-    if (url.pathname.endsWith("/overview")) {
-      const month = url.searchParams.get("groupBy") === "month";
+    if (url.pathname.endsWith("/view")) {
+      expect(init?.method).toBe("POST");
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+      const query = JSON.parse(String(init?.body)) as CollectionViewQuery;
+      const month = query.overview.groupBy === "month";
+      const response = {
+        overview: {
+          discovery: { ...discovery, complete },
+          counts: { ...counts, uncollected: complete ? 600 : null },
+          unknownDateCount: 0,
+          groups: [
+            {
+              key: month ? "2026-04" : "2026-04-01",
+              startDate: "2026-04-01",
+              endDate: month ? "2026-04-30" : "2026-04-01",
+              counts,
+            },
+          ],
+        },
+        eligibleTotal: query.eligibility.state === "source_failure" ? 0 : 600,
+      };
+      if (query.games === undefined) return Response.json(response);
+      const { page = 1, limit = 50, state } = query.games;
       return Response.json({
-        discovery: { ...discovery, complete },
-        counts: { ...counts, uncollected: complete ? 600 : null },
-        unknownDateCount: 0,
-        groups: [
-          {
-            key: month ? "2026-04" : "2026-04-01",
-            startDate: "2026-04-01",
-            endDate: month ? "2026-04-30" : "2026-04-01",
-            counts,
-          },
-        ],
+        ...response,
+        games: {
+          games: state === "quarantine" ? [] : [game(page === 1 ? "first" : "second")],
+          total: state === "quarantine" ? 0 : 600,
+          page,
+          limit,
+        },
       });
     }
     if (url.pathname === `/api/v2/collection-discoveries/${discovery.discoveryId}`)
       return Response.json({ ...discovery, complete, status: complete ? "succeeded" : "failed" });
-    if (url.pathname.endsWith("/games")) {
-      const page = Number(url.searchParams.get("page") ?? 1),
-        limit = Number(url.searchParams.get("limit") ?? 50);
-      const filtered = url.searchParams.get("state") === "quarantine";
-      return Response.json({
-        games: filtered ? [] : [game(page === 1 ? "first" : "second")],
-        total: filtered ? 0 : 600,
-        page,
-        limit,
-      });
-    }
     if (url.pathname === "/api/v2/collection-selections") {
       expect(init?.method).toBe("POST");
       return Response.json(
@@ -144,6 +154,12 @@ describe("기간별 수집 화면", () => {
     const { user, fetch, client } = setup();
     await screen.findByRole("heading", { name: "월별 현황" });
     expect(await screen.findByRole("button", { name: "미수집 600경기 수집" })).toBeTruthy();
+    const initialViews = fetch.mock.calls.filter(([input]) => String(input).endsWith("/view"));
+    expect(initialViews).toHaveLength(1);
+    expect(JSON.parse(String(initialViews[0]?.[1]?.body))).toEqual({
+      overview: { ...range, groupBy: "month" },
+      eligibility: { ...range, state: "uncollected", unknownDate: false },
+    });
     await user.click(await screen.findByRole("button", { name: "2026-04", exact: true }));
     await screen.findByRole("heading", { name: "날짜별 현황" });
     await user.click(await screen.findByRole("button", { name: "2026-04-01", exact: true }));
@@ -214,6 +230,56 @@ describe("기간별 수집 화면", () => {
     const button = await screen.findByRole("button", { name: "미수집 —경기 수집" });
     expect(button.hasAttribute("disabled")).toBe(true);
     await waitFor(() => expect(screen.getByText(/미수집 수는 아직 알 수 없습니다/)).toBeTruthy());
+    client.clear();
+  });
+  it("실행 조건을 바꾸면 새 건수를 읽는 동안 이전 건수로 실행할 수 없다", async () => {
+    const { client, fetch, user } = setup();
+    await screen.findByRole("button", { name: "미수집 600경기 수집" });
+    const activeFetch = fetch.getMockImplementation();
+    if (activeFetch === undefined) throw new Error("테스트 fetch가 없습니다.");
+    const requested = Promise.withResolvers<undefined>();
+    const release = Promise.withResolvers<undefined>();
+    fetch.mockImplementation(async (input, init) => {
+      if (String(input).endsWith("/view") && typeof init?.body === "string") {
+        const query = JSON.parse(init.body) as CollectionViewQuery;
+        if (query.eligibility.state === "source_failure") {
+          requested.resolve(undefined);
+          await release.promise;
+        }
+      }
+      return activeFetch(input, init);
+    });
+    try {
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: "수집 조건" }),
+        "source_failure",
+      );
+      await requested.promise;
+      expect(
+        screen.getByRole("button", { name: "원천 실패 —경기 재시도" }).hasAttribute("disabled"),
+      ).toBe(true);
+      release.resolve(undefined);
+      const button = await screen.findByRole("button", { name: "원천 실패 0경기 재시도" });
+      expect(button.hasAttribute("disabled")).toBe(true);
+    } finally {
+      release.resolve(undefined);
+      client.clear();
+    }
+  });
+  it("검색어가 너무 길어도 현황과 실행 가능 건수를 읽는다", async () => {
+    const { client, fetch, user } = setup();
+    await screen.findByRole("button", { name: "미수집 600경기 수집" });
+    const search = screen.getByRole("searchbox");
+    await user.click(search);
+    await user.paste("a".repeat(201));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "검색어는 200자 이하로 입력해 주세요.",
+    );
+    expect(screen.getByRole("heading", { name: "월별 현황" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "미수집 600경기 수집" }).hasAttribute("disabled"),
+    ).toBe(false);
+    expect(fetch.mock.calls.filter(([input]) => String(input).endsWith("/view"))).toHaveLength(1);
     client.clear();
   });
   it("한국 날짜, URL 우선순위, 마지막 탐색 위치와 범위별 시작 단계를 복원한다", () => {

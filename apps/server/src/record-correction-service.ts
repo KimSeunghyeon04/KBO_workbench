@@ -64,7 +64,7 @@ type Repository = Pick<
   | "case"
   | "caseSnapshot"
   | "listCases"
-  | "listCasesForImport"
+  | "listNoticeIdsForImport"
   | "listCaseSummaries"
   | "markProposalApplied"
   | "reviewAction"
@@ -585,8 +585,8 @@ export class RecordCorrectionService {
   }
 
   public async afterImport(gameId: string, revision: number): Promise<void> {
-    const cases = await this.repository.listCasesForImport(gameId, revision);
-    for (const item of cases) await this.assessForJob(item.noticeId);
+    const noticeIds = await this.repository.listNoticeIdsForImport(gameId, revision);
+    for (const noticeId of noticeIds) await this.assessForJob(noticeId);
   }
 
   public async reconcilePending(onError: (error: unknown) => void): Promise<void> {

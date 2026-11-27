@@ -180,11 +180,8 @@ export class RecordCorrectionRepository {
     return this.cases.listCases(filters);
   }
 
-  public async listCasesForImport(
-    gameId: string,
-    revision: number,
-  ): Promise<RecordCorrectionCase[]> {
-    return this.cases.listCasesForImport(gameId, revision);
+  public async listNoticeIdsForImport(gameId: string, revision: number): Promise<string[]> {
+    return this.cases.listNoticeIdsForImport(gameId, revision);
   }
 
   public async listCaseSummaries(

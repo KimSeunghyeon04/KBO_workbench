@@ -4,10 +4,10 @@ import type { PoolClient } from "pg";
 import type { AnalysisScope } from "@kbo/contracts";
 import {
   ANALYSIS_COMPETITION_DATASET,
-  ANALYSIS_GAME_WHERE,
   ANALYSIS_SOURCE_COLUMNS,
   analysisManifestHash,
   analysisScopeParameters,
+  scopedAnalysisGamesSql,
 } from "./analysis-scope.js";
 
 const sourceSchema = Type.Object(
@@ -23,9 +23,9 @@ const sourceSchema = Type.Object(
 export async function readPitchOutcomeSources(client: PoolClient, scope: AnalysisScope) {
   const result = await client.query<Record<string, unknown>>(
     `WITH selected_games AS MATERIALIZED (
-      SELECT r.game_id,r.revision,r.document_hash,r.competition,r.competition_dataset_hash,
-        r.source_bundle_hash,r.season
-      FROM analytics.current_analysis_games r WHERE ${ANALYSIS_GAME_WHERE}
+      ${scopedAnalysisGamesSql(
+        "r.game_id,r.revision,r.document_hash,r.competition,r.competition_dataset_hash,r.source_bundle_hash,r.season",
+      )}
     ), supplements AS (
       SELECT r.game_id,r.source_bundle_hash,profile.dataset_hash AS batting_profile, (
         SELECT jsonb_agg(jsonb_build_array(b.extraction_version,b.dataset_hash) ORDER BY b.extraction_version)

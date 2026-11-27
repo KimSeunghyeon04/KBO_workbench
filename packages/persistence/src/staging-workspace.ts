@@ -65,6 +65,7 @@ import { ParkEnvironmentWorkspace } from "./park-environment-workspace.js";
 import { PitchCalibrationWorkspace } from "./pitch-calibration-workspace.js";
 import { PitchQualityWorkspace } from "./pitch-quality-workspace.js";
 import { PitchReferenceWorkspace } from "./pitch-reference-workspace.js";
+import { DisciplinePreparedWorkspace } from "./discipline-prepared-workspace.js";
 import { RunExpectancyWorkspace } from "./run-expectancy-workspace.js";
 import { WorkspaceCatalog, workspaceCatalogItem } from "./workspace-catalog.js";
 import {
@@ -114,6 +115,7 @@ export class StagingWorkspace {
   public readonly collection: CollectionWorkspace;
   public readonly imports: ImportWorkspace;
   public readonly pitchReferences: PitchReferenceWorkspace;
+  public readonly disciplinePrepared: DisciplinePreparedWorkspace;
   public readonly analysisCoverage: AnalysisCoverageWorkspace;
   public readonly pitchCalibrations: PitchCalibrationWorkspace;
   public readonly runExpectancy: RunExpectancyWorkspace;
@@ -163,6 +165,10 @@ export class StagingWorkspace {
       await this.verifyLock();
     });
     this.pitchReferences = new PitchReferenceWorkspace(this.root, async () => {
+      this.assertOpen();
+      await this.verifyLock();
+    });
+    this.disciplinePrepared = new DisciplinePreparedWorkspace(this.root, async () => {
       this.assertOpen();
       await this.verifyLock();
     });

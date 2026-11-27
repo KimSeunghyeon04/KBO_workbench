@@ -52,7 +52,6 @@ import {
   OPTIONAL_SEASON_ANALYSIS_GAME_WHERE,
   analysisScopeParameters,
   analysisSourceHash,
-  recheckAnalysisSourceHash,
 } from "./analysis-scope.js";
 
 // Team affiliation is the game snapshot. Player rows deliberately remain separated by that team.
@@ -60,10 +59,36 @@ const identity = `CASE WHEN $5='player' THEN f.player_identity_key ELSE t.team_i
   CASE WHEN $5='player' THEN f.player_id ELSE NULL END AS "playerId",
   CASE WHEN $5='player' THEN COALESCE(roster.name,f.player_id) ELSE t.team_name END AS name,
   t.team_id AS "teamId",t.team_name AS "teamName"`;
-const joins = `JOIN analytics.current_analysis_games r USING(game_id,revision)
-  JOIN workbench.game_team_snapshots t ON t.game_id=f.game_id AND t.revision=f.revision AND t.side=f.side
+const gameTeamJoin = `JOIN workbench.game_team_snapshots t
+  ON t.game_id=f.game_id AND t.revision=f.revision AND t.side=f.side`;
+const rankingJoins = `${gameTeamJoin}
   LEFT JOIN LATERAL(SELECT min(player_name COLLATE "C") AS name FROM workbench.game_roster_snapshots s
     WHERE s.game_id=f.game_id AND s.revision=f.revision AND s.side=f.side AND s.player_id=f.player_id) roster ON TRUE`;
+function selectedStatPlayer(bySource: boolean, actor: "player" | "batter" | "pitcher" = "player") {
+  return bySource
+    ? `f.${actor}_id=$5`
+    : `f.${actor}_identity_key IN (SELECT identity_key FROM catalog.player_identities WHERE player_id=$5)`;
+}
+
+const gameFactPlayers = {
+  all: "",
+  canonical: ` AND ${selectedStatPlayer(false)}`,
+  source: ` AND ${selectedStatPlayer(true)}`,
+  optionalRankingSource: " AND ($6::text IS NULL OR f.player_id=$6)",
+};
+
+function playerGameFactsFrom(
+  kind: "batting" | "pitching",
+  player: keyof typeof gameFactPlayers,
+  joins = "",
+  allowAllSeasons = false,
+) {
+  return `FROM analytics.current_player_game_${kind} f
+    JOIN analytics.current_analysis_games r USING(game_id,revision)
+    ${joins}
+    WHERE ${allowAllSeasons ? OPTIONAL_SEASON_ANALYSIS_GAME_WHERE : ANALYSIS_GAME_WHERE}${gameFactPlayers[player]}`;
+}
+
 const battingTotalsSql = `count(DISTINCT game_id)::integer AS games,
     sum(plate_appearances)::integer AS "plateAppearances",sum(at_bats)::integer AS "atBats",
     sum(hits)::integer AS hits,sum(doubles)::integer AS doubles,sum(triples)::integer AS triples,
@@ -80,25 +105,19 @@ const pitchingTotalsSql = `count(*)::integer AS games,sum(bf)::integer AS "batte
     sum(hbp)::integer AS "hitByPitch",sum(so)::integer AS strikeouts,sum(pitches)::integer AS pitches,sum(strikes)::integer AS strikes,
     count(er)::integer AS "knownErGames",COALESCE(sum(outs) FILTER(WHERE er IS NOT NULL),0)::integer AS "knownErOuts",
     COALESCE(sum(er),0)::integer AS "knownEarnedRuns"`;
-const battingSql = `WITH selected AS (SELECT ${identity},f.* FROM analytics.current_player_game_batting f ${joins}
-  WHERE ${ANALYSIS_GAME_WHERE} AND ($6::text IS NULL OR f.player_id=$6))
+const battingSql = `WITH selected AS (SELECT ${identity},f.*
+  ${playerGameFactsFrom("batting", "optionalRankingSource", rankingJoins)})
   SELECT identity,"playerId",min(name COLLATE "C") AS name,"teamId",min("teamName" COLLATE "C") AS "teamName",
     ${battingTotalsSql}
   FROM selected GROUP BY identity,"playerId","teamId" ORDER BY identity COLLATE "C","teamId" COLLATE "C"`;
-const pitchingSql = `WITH selected AS (SELECT ${identity},f.* FROM analytics.current_player_game_pitching f ${joins}
-  WHERE ${ANALYSIS_GAME_WHERE} AND ($6::text IS NULL OR f.player_id=$6)), per_game AS (
+const pitchingSql = `WITH selected AS (SELECT ${identity},f.*
+  ${playerGameFactsFrom("pitching", "optionalRankingSource", rankingJoins)}), per_game AS (
   SELECT identity,"playerId","teamId",game_id,min(name COLLATE "C") AS name,min("teamName" COLLATE "C") AS "teamName",
     ${pitchingGameTotalsSql}
   FROM selected GROUP BY identity,"playerId","teamId",game_id)
   SELECT identity,"playerId",min(name COLLATE "C") AS name,"teamId",min("teamName" COLLATE "C") AS "teamName",
     ${pitchingTotalsSql}
   FROM per_game GROUP BY identity,"playerId","teamId" ORDER BY identity COLLATE "C","teamId" COLLATE "C"`;
-
-function selectedStatPlayer(bySource: boolean, actor: "player" | "batter" | "pitcher" = "player") {
-  return bySource
-    ? `f.${actor}_id=$5`
-    : `f.${actor}_identity_key IN (SELECT identity_key FROM catalog.player_identities WHERE player_id=$5)`;
-}
 
 function playerSeasonSql(kind: "batting" | "pitching", bySource: boolean) {
   const totals =
@@ -109,10 +128,7 @@ function playerSeasonSql(kind: "batting" | "pitching", bySource: boolean) {
          ) per_game GROUP BY season`;
   return `WITH selected AS (
     SELECT f.*,r.season,r.game_date,t.team_id,t.team_name
-    FROM analytics.current_player_game_${kind} f
-    JOIN analytics.current_analysis_games r USING(game_id,revision)
-    JOIN workbench.game_team_snapshots t ON t.game_id=f.game_id AND t.revision=f.revision AND t.side=f.side
-    WHERE ${OPTIONAL_SEASON_ANALYSIS_GAME_WHERE} AND ${selectedStatPlayer(bySource)}
+    ${playerGameFactsFrom(kind, bySource ? "source" : "canonical", gameTeamJoin, true)}
   ), clubs AS (
     SELECT season,team_id,min(team_name COLLATE "C") AS name,min(game_date) AS first_date
     FROM selected GROUP BY season,team_id
@@ -138,21 +154,21 @@ function playerGamesSql(role: PlayerGameRecordsQuery["role"], bySource: boolean)
       sum(f.hits)::integer AS hits,sum(f.walks)::integer AS walks,
       sum(f.strikeouts)::integer AS strikeouts,sum(f.runs)::integer AS runs,
       ${role === "batter" ? batting : pitching}
-    FROM analytics.current_player_game_${kind} f
-    JOIN analytics.current_analysis_games r USING(game_id,revision)
-    JOIN workbench.game_team_snapshots t ON t.game_id=f.game_id AND t.revision=f.revision AND t.side=f.side
-    JOIN workbench.game_team_snapshots opponent
-      ON opponent.game_id=f.game_id AND opponent.revision=f.revision AND opponent.side<>f.side
-    WHERE ${ANALYSIS_GAME_WHERE} AND ${selectedStatPlayer(bySource)}
+    ${playerGameFactsFrom(
+      kind,
+      bySource ? "source" : "canonical",
+      `${gameTeamJoin}
+       JOIN workbench.game_team_snapshots opponent
+         ON opponent.game_id=f.game_id AND opponent.revision=f.revision AND opponent.side<>f.side`,
+    )}
     GROUP BY f.game_id,f.revision,r.game_date
     ORDER BY r.game_date DESC,f.game_id COLLATE "C" DESC`;
 }
 
 function leagueTotalsSql(role: PlayerGameRecordsQuery["role"], bySource: boolean | undefined) {
   const kind = role === "batter" ? "batting" : "pitching";
-  const selected = `SELECT f.* FROM analytics.current_player_game_${kind} f
-    JOIN analytics.current_analysis_games r USING(game_id,revision)
-    WHERE ${ANALYSIS_GAME_WHERE}${bySource === undefined ? "" : ` AND ${selectedStatPlayer(bySource)}`}`;
+  const subject = bySource === undefined ? "all" : bySource ? "source" : "canonical";
+  const selected = `SELECT f.* ${playerGameFactsFrom(kind, subject)}`;
   return role === "batter"
     ? `SELECT ${battingTotalsSql} FROM (${selected}) selected HAVING count(*)>0`
     : `WITH selected AS (${selected}), per_game AS (
@@ -406,7 +422,7 @@ export class PlayerStatisticsRepository {
     };
   }
   public readSourceHash(input: AnalysisScopeQuery) {
-    return recheckAnalysisSourceHash(this.pool, resolveAnalysisScope(input, "regular"));
+    return analysisSourceHash(this.pool, resolveAnalysisScope(input, "regular"));
   }
   public async battingWithManifest(input: BattingStatisticsQuery) {
     const query = Value.Decode(BattingStatisticsQuerySchema, input);

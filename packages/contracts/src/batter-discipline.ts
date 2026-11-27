@@ -7,6 +7,7 @@ const id = Type.String({ minLength: 1, maxLength: 200 });
 const count = Type.Integer({ minimum: 0 });
 const numberOrNull = Type.Union([Type.Number(), Type.Null()]);
 const textOrNull = Type.Union([Type.String(), Type.Null()]);
+export const MAX_DISCIPLINE_CACHE_BYTES = 32 * 1024 * 1024;
 export const DisciplineQuerySchema = Type.Object(
   {
     ...AnalysisScopeQuerySchema.properties,

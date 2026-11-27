@@ -8,17 +8,19 @@ describe("database game catalog", () => {
     const query = vi.fn(async () => ({
       rows: [
         {
-          game_id: "anon-game-1",
+          gameId: "anon-game-1",
           season: 2026,
-          game_date: "2026-08-30",
-          current_revision: 2,
-          revision_count: 2,
-          away_team_id: "away",
-          away_team_name: "비식별 원정",
-          home_team_id: "home",
-          home_team_name: "비식별 홈",
-          updated_at: "2026-08-30T00:00:00.000Z",
-          warning_count: 1,
+          authority: "database",
+          gameDate: "2026-08-30",
+          currentRevision: 2,
+          revisionCount: 2,
+          awayTeamId: "away",
+          awayName: "비식별 원정",
+          homeTeamId: "home",
+          homeName: "비식별 홈",
+          updatedAt: "2026-08-30T00:00:00.000Z",
+          blockingFindings: 0,
+          warningFindings: 1,
         },
       ],
     }));
@@ -42,6 +44,5 @@ describe("database game catalog", () => {
       },
     ]);
     expect(query).toHaveBeenCalledTimes(1);
-    expect(String(query.mock.calls[0]?.[0])).toContain("COUNT(*)::integer AS revision_count");
   });
 });

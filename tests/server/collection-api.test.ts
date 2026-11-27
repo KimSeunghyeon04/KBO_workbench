@@ -91,6 +91,30 @@ describe("collection HTTP API", () => {
       });
       expect(page.statusCode).toBe(200);
       expect(page.json()).toMatchObject({ total: 1, page: 1, limit: 50 });
+      const inventoryUrl = "/api/v2/collection-discoveries/" + id;
+      const overview = await app.inject({ method: "GET", url: inventoryUrl + "/overview" });
+      const viewQuery = {
+        overview: {},
+        games: { page: 1, limit: 50, unknownDate: false },
+        eligibility: { state: "uncollected" },
+      };
+      const combined = await app.inject({
+        method: "POST",
+        url: inventoryUrl + "/view",
+        payload: viewQuery,
+      });
+      expect(combined.statusCode).toBe(200);
+      expect(combined.json()).toEqual({
+        overview: overview.json(),
+        games: page.json(),
+        eligibleTotal: 1,
+      });
+      const invalid = await app.inject({
+        method: "POST",
+        url: inventoryUrl + "/view",
+        payload: { ...viewQuery, games: { ...viewQuery.games, limit: 201 } },
+      });
+      expect(invalid.statusCode).toBe(400);
       const selected = await app.inject({
         method: "POST",
         url: "/api/v2/collection-selections",

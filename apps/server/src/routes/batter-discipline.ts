@@ -17,6 +17,7 @@ import { compareDisciplinePeriods } from "@kbo/game-core";
 import { readAnalysisPeriodPair, periodSnapshot } from "../analysis-period-pair.js";
 import {
   BatterDisciplineRepository,
+  type DisciplinePreparedWorkspace,
   type PitchReferenceWorkspace,
   type PitchAnalysisComputation,
 } from "@kbo/persistence";
@@ -27,6 +28,7 @@ import { BoundedReadCache } from "../bounded-read-cache.js";
 type Options = Pick<RouteContext, "pool"> & {
   references: Pick<PitchReferenceWorkspace, "getOrCreate">;
   computeReference?: PitchAnalysisComputation["reference"];
+  disciplinePrepared?: Pick<DisciplinePreparedWorkspace, "read" | "write">;
 };
 export const batterDisciplineRoutes: FastifyPluginAsyncTypebox<Options> = async (app, context) => {
   const repository = new BatterDisciplineRepository(
@@ -34,7 +36,16 @@ export const batterDisciplineRoutes: FastifyPluginAsyncTypebox<Options> = async 
     context.references,
     context.computeReference,
   );
-  const service = new BatterDisciplineService(repository);
+  const service = new BatterDisciplineService(
+    repository,
+    context.disciplinePrepared === undefined
+      ? undefined
+      : {
+          store: context.disciplinePrepared,
+          sourceHash: (query) => repository.readSourceHash(query),
+          reportError: (err) => app.log.warn({ err }, "Discipline prepared cache unavailable"),
+        },
+  );
   const periods = new BoundedReadCache<DisciplineResponse>(16 * 1024 * 1024, 16, 300_000);
   const readPeriod = async (query: DisciplineQuery, batterId: string) => {
     const key = canonicalStringify([query, batterId]);

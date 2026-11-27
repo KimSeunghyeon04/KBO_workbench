@@ -54,6 +54,7 @@ export function createApp(
     pool: context.pool,
     careerRoot: context.config.workspacePath,
     references: context.runtime.workspace.pitchReferences,
+    disciplinePrepared: context.runtime.workspace.disciplinePrepared,
     calibrations: context.runtime.workspace.pitchCalibrations,
     summaries: context.runtime.workspace.analysisCoverage,
     runModels: context.runtime.workspace.runExpectancy,

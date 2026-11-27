@@ -410,6 +410,37 @@ export async function loadNotice(
   revision: number,
   noticeSequence: number,
 ): Promise<RecordCorrectionNotice> {
+  const [notice] = await loadNotices(pool, [
+    { season, source_revision: revision, notice_sequence: noticeSequence },
+  ]);
+  if (notice === undefined) throw new Error("record correction notice source가 없습니다.");
+  return notice;
+}
+
+interface NoticeParticipantRow {
+  readonly participant_index: number;
+  readonly raw_team_name: string | null;
+  readonly raw_player_name: string;
+  readonly role: RecordCorrectionNotice["participants"][number]["role"];
+  readonly parenthesized: boolean;
+}
+
+interface NoticeStatRow {
+  readonly stat_index: number;
+  readonly participant_index: number | null;
+  readonly raw_stat_name: string;
+  readonly stat_code: RecordCorrectionNotice["statChanges"][number]["statCode"];
+  readonly scope: RecordCorrectionNotice["statChanges"][number]["scope"];
+  readonly before_value: number;
+  readonly after_value: number;
+  readonly support_kind: RecordCorrectionNotice["statChanges"][number]["supportKind"];
+}
+
+export async function loadNotices(
+  pool: Pick<Pool, "query">,
+  locations: readonly { season: number; source_revision: number; notice_sequence: number }[],
+): Promise<RecordCorrectionNotice[]> {
+  if (locations.length === 0) return [];
   const result = await pool.query<{
     readonly notice_id: string;
     readonly notice_hash: string;
@@ -433,42 +464,38 @@ export async function loadNotice(
     readonly after_record_text: string;
     readonly content_text: string;
     readonly correction_date_text: string;
+    readonly participants: readonly NoticeParticipantRow[];
+    readonly stats: readonly NoticeStatRow[];
   }>(
-    `SELECT n.*,n.game_date::text AS game_date,p.request_key FROM record_correction.notices n
+    `SELECT n.*,n.game_date::text AS game_date,p.request_key,
+       COALESCE(participants.rows,'[]'::json) AS participants,COALESCE(stats.rows,'[]'::json) AS stats
+     FROM unnest($1::int[], $2::int[], $3::int[]) WITH ORDINALITY
+       AS requested(season,revision,notice_sequence,position)
+     JOIN record_correction.notices n USING (season,revision,notice_sequence)
      JOIN record_correction.source_pages p
        ON p.season=n.season AND p.revision=n.revision
       AND p.page_sequence=n.source_page_sequence
-     WHERE n.season=$1 AND n.revision=$2 AND n.notice_sequence=$3`,
-    [season, revision, noticeSequence],
+     LEFT JOIN LATERAL (
+       SELECT json_agg(participant ORDER BY participant_index) AS rows
+       FROM record_correction.notice_participants participant
+       WHERE (participant.season,participant.revision,participant.notice_sequence)=
+         (n.season,n.revision,n.notice_sequence)
+     ) participants ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT json_agg(stat ORDER BY stat_index) AS rows
+       FROM record_correction.notice_stat_changes stat
+       WHERE (stat.season,stat.revision,stat.notice_sequence)=(n.season,n.revision,n.notice_sequence)
+     ) stats ON TRUE
+     ORDER BY requested.position`,
+    [
+      locations.map(({ season }) => season),
+      locations.map(({ source_revision }) => source_revision),
+      locations.map(({ notice_sequence }) => notice_sequence),
+    ],
   );
-  const row = result.rows[0];
-  if (row === undefined) throw new Error("record correction notice source가 없습니다.");
-  const participants = await pool.query<{
-    readonly participant_index: number;
-    readonly raw_team_name: string | null;
-    readonly raw_player_name: string;
-    readonly role: RecordCorrectionNotice["participants"][number]["role"];
-    readonly parenthesized: boolean;
-  }>(
-    `SELECT * FROM record_correction.notice_participants
-     WHERE season=$1 AND revision=$2 AND notice_sequence=$3 ORDER BY participant_index`,
-    [season, revision, noticeSequence],
-  );
-  const stats = await pool.query<{
-    readonly stat_index: number;
-    readonly participant_index: number | null;
-    readonly raw_stat_name: string;
-    readonly stat_code: RecordCorrectionNotice["statChanges"][number]["statCode"];
-    readonly scope: RecordCorrectionNotice["statChanges"][number]["scope"];
-    readonly before_value: number;
-    readonly after_value: number;
-    readonly support_kind: RecordCorrectionNotice["statChanges"][number]["supportKind"];
-  }>(
-    `SELECT * FROM record_correction.notice_stat_changes
-     WHERE season=$1 AND revision=$2 AND notice_sequence=$3 ORDER BY stat_index`,
-    [season, revision, noticeSequence],
-  );
-  return {
+  if (result.rows.length !== locations.length)
+    throw new Error("record correction notice source가 없습니다.");
+  return result.rows.map((row) => ({
     noticeId: row.notice_id,
     noticeHash: row.notice_hash,
     sourceRequestKey: row.request_key,
@@ -491,14 +518,14 @@ export async function loadNotice(
     afterRecordText: row.after_record_text,
     contentText: row.content_text,
     correctionDateText: row.correction_date_text,
-    participants: participants.rows.map((participant) => ({
+    participants: row.participants.map((participant) => ({
       participantIndex: participant.participant_index,
       rawTeamName: participant.raw_team_name,
       rawPlayerName: participant.raw_player_name,
       role: participant.role,
       parenthesized: participant.parenthesized,
     })),
-    statChanges: stats.rows.map((stat) => ({
+    statChanges: row.stats.map((stat) => ({
       statIndex: stat.stat_index,
       participantIndex: stat.participant_index,
       rawStatName: stat.raw_stat_name,
@@ -511,5 +538,5 @@ export async function loadNotice(
           ? stat.support_kind
           : recordCorrectionSupportKind(stat.scope, stat.stat_code),
     })),
-  };
+  }));
 }

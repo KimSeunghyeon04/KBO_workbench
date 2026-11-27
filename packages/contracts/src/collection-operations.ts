@@ -118,11 +118,12 @@ export const CollectionOverviewSchema = Type.Object(
   },
   strict,
 );
+export const COLLECTION_SEARCH_MAX_LENGTH = 200;
 export const CollectionGamesQuerySchema = Type.Object(
   {
     startDate: Type.Optional(date),
     endDate: Type.Optional(date),
-    search: Type.Optional(Type.String({ maxLength: 200 })),
+    search: Type.Optional(Type.String({ maxLength: COLLECTION_SEARCH_MAX_LENGTH })),
     state: Type.Optional(CollectionGameStateSchema),
     unknownDate: Type.Optional(Type.Boolean()),
     page: Type.Optional(Type.Integer({ minimum: 1 })),
@@ -144,6 +145,26 @@ export const CollectionGamePageSchema = Type.Object(
     total: count,
     page: count,
     limit: count,
+  },
+  strict,
+);
+export const CollectionViewQuerySchema = Type.Object(
+  {
+    overview: CollectionOverviewQuerySchema,
+    games: Type.Optional(CollectionGamesQuerySchema),
+    eligibility: Type.Pick(
+      CollectionGamesQuerySchema,
+      ["startDate", "endDate", "state", "unknownDate"],
+      strict,
+    ),
+  },
+  strict,
+);
+export const CollectionViewSchema = Type.Object(
+  {
+    overview: CollectionOverviewSchema,
+    games: Type.Optional(CollectionGamePageSchema),
+    eligibleTotal: count,
   },
   strict,
 );
@@ -256,6 +277,8 @@ export type CollectionOverview = Static<typeof CollectionOverviewSchema>;
 export type CollectionGamesQuery = Static<typeof CollectionGamesQuerySchema>;
 export type CollectionOverviewQuery = Static<typeof CollectionOverviewQuerySchema>;
 export type CollectionGamePage = Static<typeof CollectionGamePageSchema>;
+export type CollectionViewQuery = Static<typeof CollectionViewQuerySchema>;
+export type CollectionView = Static<typeof CollectionViewSchema>;
 export type CollectionSelectionCreate = Static<typeof CollectionSelectionCreateSchema>;
 export type CollectionSelection = Static<typeof CollectionSelectionSchema>;
 export type CollectionSelectionEntry = Static<typeof CollectionSelectionEntrySchema>;

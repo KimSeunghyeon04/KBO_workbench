@@ -51,6 +51,82 @@ function show(
   );
 }
 describe("batter discipline view", () => {
+  it.each([
+    { explicit: true, available: true },
+    { explicit: true, available: false },
+    { explicit: false, available: true },
+  ])(
+    "loads the explicit batter while the catalog is pending (%j)",
+    async ({ explicit, available }) => {
+      let finishCatalog: ((response: Response) => void) | undefined;
+      const analyzed = vi.fn();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: RequestInfo | URL) => {
+          const url = new URL(String(input), "http://localhost");
+          if (url.pathname.endsWith("/batter-discipline")) {
+            return new Promise<Response>((resolve) => {
+              finishCatalog = resolve;
+            });
+          }
+          analyzed(url.pathname);
+          return Response.json(response());
+        }),
+      );
+      show(`/analysis/batter-discipline?season=2024${explicit ? "&batter=b1" : ""}`);
+      await waitFor(() => expect(finishCatalog).toBeDefined());
+      if (explicit) {
+        await waitFor(() =>
+          expect(analyzed).toHaveBeenCalledWith("/api/v2/analysis/batter-discipline/b1"),
+        );
+      } else {
+        expect(analyzed).not.toHaveBeenCalled();
+      }
+      expect(screen.queryByLabelText("코스별 스윙 지도")).toBeNull();
+      const batterId = available ? "b1" : "b2";
+      await act(async () =>
+        finishCatalog?.(
+          Response.json({
+            season: 2024,
+            scope: resolveAnalysisScope({ season: 2024 }),
+            batters: [{ batterId, name: batterId, pitches: 1 }],
+          }),
+        ),
+      );
+      if (available) {
+        await screen.findByLabelText("코스별 스윙 지도");
+      } else {
+        await screen.findByText("선택한 타자(ID b1)의 실제 투구가 이 조회 범위에 없습니다.");
+        expect(screen.queryByLabelText("코스별 스윙 지도")).toBeNull();
+      }
+      expect(analyzed).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("retries failed analysis for a batter confirmed by the catalog", async () => {
+    const catalog = vi.fn(() =>
+      Response.json({
+        season: 2024,
+        scope: resolveAnalysisScope({ season: 2024 }),
+        batters: [{ batterId: "b1", name: "타자", pitches: 1 }],
+      }),
+    );
+    const analyze = vi
+      .fn(() => Response.json(response()))
+      .mockImplementationOnce(() => Response.json({}, { status: 503 }));
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) =>
+      new URL(String(input), "http://localhost").pathname.endsWith("/batter-discipline")
+        ? catalog()
+        : analyze(),
+    );
+    show("/analysis/batter-discipline?season=2024&batter=b1");
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+    await screen.findByLabelText("코스별 스윙 지도");
+    expect(catalog).toHaveBeenCalledTimes(1);
+    expect(analyze).toHaveBeenCalledTimes(2);
+  });
+
   it.each([false, true])(
     "keeps the same batter across seasons and shows a missing-player state (explicit=%s)",
     async (explicit) => {

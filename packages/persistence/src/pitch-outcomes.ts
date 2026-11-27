@@ -13,17 +13,17 @@ import {
   type TerminalPaRow,
 } from "@kbo/contracts";
 import {
-  ANALYSIS_GAME_WHERE,
   analysisScopeParameters,
+  scopedAnalysisGamesSql,
   analysisSourceHash,
 } from "./analysis-scope.js";
 
 import {
   effectiveBattingSideSql,
   gameBattingProfileJoinSql,
-  pitchGeometrySql,
-  pitchEligibilitySql,
   lastPitchesCteSql,
+  pitchTrackingJoinsSql,
+  scopedTrackedPitchRowsSql,
 } from "./analysis-pitch-input.js";
 import { readPitchOutcomeSources } from "./pitch-outcome-sources.js";
 import { readGamePitcherHands, type ResolvePitcherHand } from "./pitcher-hands.js";
@@ -177,30 +177,18 @@ export async function readPitchOutcomeRows(
     opponentColumn = role === "pitcher" ? "batter_id" : "pitcher_id",
     parameters = [...analysisScopeParameters(scope), actorId, opponentId ?? null];
   const pitches = await client.query<Record<string, unknown>>(
-    `WITH selected_games AS MATERIALIZED (
-      SELECT r.game_id,r.revision FROM analytics.current_analysis_games r WHERE ${ANALYSIS_GAME_WHERE}
-    ) SELECT p.game_id AS "gameId",p.revision,p.pitch_id AS "pitchId",
-      p.pitch_sequence AS "pitchSequence",p.plate_appearance_event_id AS "paId",to_char(p.game_date,'YYYY-MM-DD') AS "gameDate",
-      p.pitcher_id AS "pitcherId",p.batter_id AS "batterId",p.pitch_type AS "pitchType",${effectiveBattingSideSql} AS stance,p.before_balls AS balls,p.before_strikes AS strikes,
-      p.pitch_call AS "pitchCall",p.swing,p.whiff,p.called_strike AS "calledStrike",p.csw,p.in_play AS "inPlay",
-      p.season,p.batter_height_cm AS "batterHeightCm",p.tracking_id AS "trackingId",p.in_zone AS "inZone",
-      COALESCE(t.measurement_profile_id='naver_pts_v1',FALSE) AS supported,
-      ${pitchEligibilitySql} AS eligible,
-      ${pitchGeometrySql}
-      FROM selected_games r CROSS JOIN LATERAL (
-        SELECT p.* FROM analytics.current_pitches p
-        WHERE p.game_id=r.game_id AND p.revision=r.revision AND p.actual AND p.${actorColumn}=$5
-          AND ($6::text IS NULL OR p.${opponentColumn}=$6) OFFSET 0
-      ) p
-      LEFT JOIN workbench.tracking_observations t ON t.game_id=p.game_id AND t.revision=p.revision AND t.tracking_id=p.tracking_id
-      ${gameBattingProfileJoinSql("p")}
-      LEFT JOIN baseball.plate_appearance_facts pa ON pa.game_id=p.game_id AND pa.revision=p.revision AND pa.start_event_id=p.plate_appearance_event_id
-      ORDER BY p.game_id COLLATE "C",p.pitch_sequence`,
+    scopedTrackedPitchRowsSql({
+      select: `${effectiveBattingSideSql} AS stance,p.pitcher_id AS "pitcherId",
+        p.pitch_sequence AS "pitchSequence",p.plate_appearance_event_id AS "paId",
+        p.pitch_call AS "pitchCall",p.called_strike AS "calledStrike",p.csw,p.in_play AS "inPlay"`,
+      pitchPredicate: `p.${actorColumn}=$5 AND ($6::text IS NULL OR p.${opponentColumn}=$6)`,
+      joins: gameBattingProfileJoinSql("p"),
+    }),
     parameters,
   );
   const paResult = await client.query<Record<string, unknown>>(
     `WITH selected_games AS (
-      SELECT r.game_id,r.revision,r.game_date FROM analytics.current_analysis_games r WHERE ${ANALYSIS_GAME_WHERE}
+      ${scopedAnalysisGamesSql("r.game_id,r.revision,r.game_date")}
     ), selected_pas AS (
       SELECT pa.game_id,pa.revision,pa.start_event_id AS pa_id FROM baseball.plate_appearance_facts pa
         JOIN selected_games r USING(game_id,revision) WHERE pa.${actorColumn}=$5
@@ -221,8 +209,7 @@ export async function readPitchOutcomeRows(
     FROM selected_pas s JOIN baseball.plate_appearance_facts pa ON pa.game_id=s.game_id AND pa.revision=s.revision AND pa.start_event_id=s.pa_id
     JOIN selected_games r ON r.game_id=pa.game_id AND r.revision=pa.revision
     LEFT JOIN last_pitches q ON q.game_id=pa.game_id AND q.revision=pa.revision AND q.plate_appearance_event_id=pa.start_event_id
-    LEFT JOIN baseball.pitch_tracking_links l ON l.game_id=q.game_id AND l.revision=q.revision AND l.pitch_id=q.pitch_id
-    LEFT JOIN workbench.tracking_observations t ON t.game_id=l.game_id AND t.revision=l.revision AND t.tracking_id=l.tracking_id
+    ${pitchTrackingJoinsSql("q")}
     ${gameBattingProfileJoinSql("q")}
     ORDER BY pa.game_id COLLATE "C",pa.plate_appearance_index`,
     parameters,

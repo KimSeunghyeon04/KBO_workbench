@@ -15,6 +15,8 @@ import {
   type CollectionGamesQuery,
   type CollectionOverview,
   type CollectionOverviewQuery,
+  type CollectionView,
+  type CollectionViewQuery,
   type CollectionScheduleEntry,
   type CollectionSelectionCreate,
   type CollectionSelection,
@@ -29,10 +31,12 @@ import {
 } from "./jobs/collection-job-manager.js";
 import {
   assertCollectionRange,
-  collectionCounts,
+  collectionGamePage,
   collectionInventory,
+  filterCollectionGames,
   inCollectionRange,
   pageOf,
+  summarizeCollectionOverview,
 } from "./collection-read-model.js";
 
 interface DiscoveryTask {
@@ -232,63 +236,34 @@ export class CollectionOperationsService {
   public async overview(id: string, query: CollectionOverviewQuery): Promise<CollectionOverview> {
     const discovery = await this.get(id);
     const range = rangeFor(discovery, query);
-    const inventory = await this.inventory(id);
-    const games = inventory.filter((game) => inCollectionRange(game, range));
-    const groupBy = query.groupBy ?? "month";
-    const grouped = new Map<string, CollectionGameSummary[]>();
-    for (const game of games) {
-      if (game.gameDate === null) continue;
-      const key = groupBy === "month" ? game.gameDate.slice(0, 7) : game.gameDate;
-      const bucket = grouped.get(key) ?? [];
-      bucket.push(game);
-      grouped.set(key, bucket);
-    }
-    const groups: CollectionOverview["groups"] = [];
-    let cursor = range.startDate;
-    while (cursor <= range.endDate) {
-      const date = new Date(`${cursor}T00:00:00Z`);
-      const end =
-        groupBy === "month"
-          ? new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0))
-              .toISOString()
-              .slice(0, 10)
-          : cursor;
-      const endDate = end > range.endDate ? range.endDate : end;
-      const groupRange = { startDate: cursor, endDate };
-      groups.push({
-        key: groupBy === "month" ? cursor.slice(0, 7) : cursor,
-        ...groupRange,
-        counts: collectionCounts(
-          grouped.get(groupBy === "month" ? cursor.slice(0, 7) : cursor) ?? [],
-          discovery.complete,
-        ),
-      });
-      const next = new Date(`${endDate}T00:00:00Z`);
-      next.setUTCDate(next.getUTCDate() + 1);
-      cursor = next.toISOString().slice(0, 10);
-    }
-    return {
-      discovery,
-      counts: collectionCounts(games, discovery.complete),
-      groups,
-      unknownDateCount: inventory.filter((game) => game.gameDate === null).length,
-    };
+    return summarizeCollectionOverview(discovery, await this.inventory(id), range, query.groupBy);
   }
   public async games(id: string, query: CollectionGamesQuery) {
     const discovery = await this.get(id);
     const range = rangeFor(discovery, query);
-    const search = query.search?.trim().toLocaleLowerCase("ko-KR") ?? "";
-    const games = (await this.inventory(id)).filter(
-      (game) =>
-        (query.unknownDate === true ? game.gameDate === null : inCollectionRange(game, range)) &&
-        (query.state === undefined || game.state === query.state) &&
-        (search === "" ||
-          `${game.label} ${game.gameId} ${game.gameDate ?? ""}`
-            .toLocaleLowerCase("ko-KR")
-            .includes(search)),
-    );
-    const page = pageOf(games, query.page, query.limit);
-    return { games: page.items, total: page.total, page: page.page, limit: page.limit };
+    return collectionGamePage(await this.inventory(id), range, query);
+  }
+  public async view(id: string, query: CollectionViewQuery): Promise<CollectionView> {
+    const discovery = await this.get(id);
+    const overviewRange = rangeFor(discovery, query.overview);
+    const eligibilityRange = rangeFor(discovery, query.eligibility);
+    const visibleGames =
+      query.games === undefined
+        ? undefined
+        : { query: query.games, range: rangeFor(discovery, query.games) };
+    const inventory = await this.inventory(id);
+    return {
+      overview: summarizeCollectionOverview(
+        discovery,
+        inventory,
+        overviewRange,
+        query.overview.groupBy,
+      ),
+      ...(visibleGames === undefined
+        ? {}
+        : { games: collectionGamePage(inventory, visibleGames.range, visibleGames.query) }),
+      eligibleTotal: filterCollectionGames(inventory, eligibilityRange, query.eligibility).length,
+    };
   }
   public async select(input: CollectionSelectionCreate): Promise<CollectionSelection> {
     const request = Value.Decode(CollectionSelectionCreateSchema, input);

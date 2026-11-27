@@ -5,8 +5,10 @@ import {
   RunValueResponseSchema,
   CountRunValueResponseSchema,
   WinProbabilityResponseSchema,
+  type AnalysisPlay,
 } from "@kbo/contracts";
 import { RunValueRepository, type RunExpectancyWorkspace } from "@kbo/persistence";
+import { BoundedReadCache } from "../bounded-read-cache.js";
 import { apiError } from "./http.js";
 import type { RouteContext } from "./context.js";
 export const runValueRoutes: FastifyPluginAsyncTypebox<
@@ -14,7 +16,9 @@ export const runValueRoutes: FastifyPluginAsyncTypebox<
     models: Pick<RunExpectancyWorkspace, "read" | "readCount" | "readWin">;
   }
 > = async (app, { pool, models }) => {
-  const repository = new RunValueRepository(pool);
+  const replayPlays = new BoundedReadCache<readonly AnalysisPlay[]>(16 * 1024 * 1024, 32, 300_000);
+  const repository = new RunValueRepository(pool, replayPlays);
+  app.addHook("onClose", async () => replayPlays.clear());
   app.get(
     "/api/v2/analysis/win-probability/games/:gameId",
     {

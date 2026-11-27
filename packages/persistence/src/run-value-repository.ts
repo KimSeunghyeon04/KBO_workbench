@@ -7,6 +7,7 @@ import {
   RunTrainingGameSchema,
   RunValueResponseSchema,
   canonicalStringify,
+  type AnalysisPlay,
   type RunObservation,
   type RunExpectancyModel,
   type CountRunObservation,
@@ -26,13 +27,29 @@ import {
   winInningLimit,
 } from "@kbo/game-core";
 import { readAnalysisPlays } from "./analysis-plays.js";
-import { regularModelScopeHash } from "./analysis-scope.js";
+import { normalGameEndSql } from "./normal-game-end.js";
+import { readRegularModelScopeHashes, type RegularModelScopeHash } from "./analysis-scope.js";
 const gameColumns = `r.game_id AS "gameId",r.revision,r.season,to_char(r.game_date,'YYYY-MM-DD') AS "gameDate",r.scheduled_innings AS "scheduledInnings",r.game_status AS status,r.document_hash AS "documentHash",
- (r.game_status='final' AND r.scheduled_innings=9 AND f.final_inning>=9
-  AND NOT EXISTS(SELECT 1 FROM workbench.relay_administrative a WHERE a.game_id=r.game_id AND a.revision=r.revision AND a.administrative_code IN ('called_game','forfeit'))
-  AND NOT EXISTS(SELECT 1 FROM baseball.plate_appearance_facts pa WHERE pa.game_id=r.game_id AND pa.revision=r.revision AND pa.termination_reason IN ('called_game','forfeit'))) AS "normalEnd"`;
+ ${normalGameEndSql} AS "normalEnd"`;
+const replayGameRows = Type.Array(
+  Type.Object(
+    {
+      ...RunTrainingGameSchema.properties,
+      regular: Type.Boolean(),
+      projectionHash: Type.String({ pattern: "^[0-9a-f]{64}$" }),
+    },
+    { additionalProperties: false },
+  ),
+);
+interface ReplayPlaysCache {
+  get(key: string): Promise<readonly AnalysisPlay[]> | undefined;
+  load(key: string, read: () => Promise<readonly AnalysisPlay[]>): Promise<readonly AnalysisPlay[]>;
+}
 export class RunValueRepository {
-  public constructor(private readonly pool: Pool) {}
+  public constructor(
+    private readonly pool: Pool,
+    private readonly replayPlays?: ReplayPlaysCache,
+  ) {}
   public async training(
     through: number,
     signal?: AbortSignal,
@@ -152,30 +169,34 @@ export class RunValueRepository {
     expectedSeason?: number,
   ) {
     return withAnalysisSnapshot(this.pool, async (client, release) => {
-      const games = Value.Decode(
-          Type.Array(RunTrainingGameSchema),
-          (
-            await client.query<Record<string, unknown>>(
-              `SELECT ${gameColumns} FROM workbench.game_revisions r JOIN baseball.game_final_states f USING(game_id,revision) WHERE r.game_id=$1 AND r.revision=$2 AND r.sealed`,
-              [gameId, revision],
-            )
-          ).rows,
-        ),
-        game = games[0];
-      if (game === undefined || (expectedSeason !== undefined && game.season !== expectedSeason)) {
+      const { rows } = await client.query<Record<string, unknown>>(
+        `SELECT ${gameColumns},r.projection_hash AS "projectionHash",
+          COALESCE((SELECT c.competition='regular' FROM analytics.current_analysis_games c
+            WHERE c.game_id=r.game_id LIMIT 1),FALSE) AS regular
+        FROM workbench.game_revisions r JOIN baseball.game_final_states f USING(game_id,revision)
+        WHERE r.game_id=$1 AND r.revision=$2 AND r.sealed`,
+        [gameId, revision],
+      );
+      const row = Value.Decode(replayGameRows, rows)[0];
+      if (row === undefined || (expectedSeason !== undefined && row.season !== expectedSeason)) {
         await release();
         return null;
       }
-      const confirmed = await client.query<{ regular: boolean }>(
-        `SELECT competition='regular' AS regular FROM analytics.current_analysis_games WHERE game_id=$1`,
-        [gameId],
-      );
+      const { regular, projectionHash, ...game } = row;
       const modelCurrent =
-        confirmed.rows[0]?.regular === true &&
+        regular &&
         model !== null &&
         model.sourceHash === runTrainingHash(await readRunManifest(client, model.trainedThrough));
-      const plays = await readAnalysisPlays(client, [gameId], revision);
-      await release();
+      const readPlays = async () => {
+        const plays = await readAnalysisPlays(client, [gameId], revision);
+        await release();
+        return plays;
+      };
+      // Only the sealed inputs can outlive this snapshot. Competition and model validity stay live.
+      const key = JSON.stringify([gameId, revision, game.documentHash, projectionHash]);
+      const cached = this.replayPlays?.get(key);
+      if (cached !== undefined) await release();
+      const plays = await (cached ?? this.replayPlays?.load(key, readPlays) ?? readPlays());
       return { game, plays, modelCurrent };
     });
   }
@@ -186,7 +207,11 @@ export function runTrainingHash(
   return createHash("sha256").update(canonicalStringify(manifest)).digest("hex");
 }
 
-export async function readRunManifest(client: PoolClient, through: number) {
+export async function readRunManifest(
+  client: PoolClient,
+  through: number,
+  sharedScopeHashes?: RegularModelScopeHash[],
+) {
   const games = Value.Decode(
     Type.Array(RunTrainingGameSchema),
     (
@@ -196,11 +221,6 @@ export async function readRunManifest(client: PoolClient, through: number) {
       )
     ).rows,
   );
-  const scopeHashes: { season: number; hash: string }[] = [];
-  for (let season = 2020; season <= through + 1; season++)
-    scopeHashes.push({
-      season,
-      hash: await regularModelScopeHash(client, season),
-    });
+  const scopeHashes = sharedScopeHashes ?? (await readRegularModelScopeHashes(client, through));
   return { version: 1 as const, through, games, scopeHashes };
 }

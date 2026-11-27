@@ -89,14 +89,26 @@ it.each([
       .sort();
   const requests = requiredRequests();
   expect(requests.length).toBeGreaterThan(0);
+  const retriedRequests =
+    _name === "discipline"
+      ? requests.filter((url) =>
+          new URL(url, "http://localhost").pathname.endsWith("/batter-discipline"),
+        )
+      : requests;
+  if (_name === "discipline") {
+    expect(requests).toHaveLength(2);
+    expect(retriedRequests).toHaveLength(1);
+  }
   fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
-  await waitFor(() => expect(requiredRequests()).toHaveLength(requests.length * 2));
+  await waitFor(() =>
+    expect(requiredRequests()).toHaveLength(requests.length + retriedRequests.length),
+  );
   await waitFor(() => {
     expect(screen.getByRole<HTMLButtonElement>("button", { name: "다시 시도" }).disabled).toBe(
       false,
     );
   });
-  expect(requiredRequests()).toEqual([...requests, ...requests].sort());
+  expect(requiredRequests()).toEqual([...requests, ...retriedRequests].sort());
   if (_name === "matchups") {
     const opponentRequests = () =>
       fetch.mock.calls.filter(([url]) => String(url).includes("/matchups/opponents?"));

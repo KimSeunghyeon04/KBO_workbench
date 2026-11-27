@@ -32,6 +32,9 @@ frame의 단위는 원장 행이 아니라 DB `play_facts`의 상태 변경 단�
 3. frame 순서·상태 전후·PA bridge·movement와 저장 hash
 4. 실제 pitch마다 canonical tracking 0..1과 `trackingId`별 관측 보존
 
+선택한 리비전의 봉인 여부와 typed projection hash 검증은 DB 교정 초안과 공유한다. 교정 초안은
+현재 리비전과 원장 문서 hash를 추가로 확인한다.
+
 DB 적재 시에는 DB에서 다시 읽은 원장 fact를 전체 compile해 저장된 play·상태·PA·기록과 일치하는지
 이미 확인한다. 공개 replay 요청은 최종 typed fact를 직접 읽는다. 불일치는 frame을 반환하지 않고
 `persistence` integrity 오류로 종료한다.
@@ -53,9 +56,15 @@ relay event의 선택 속성 `pitch`는 DB `baseball.pitch_facts`에서 읽은 `
 - `GET /api/v2/games/{gameId}/revisions/{revision}/replay-manifest`
 - `GET /api/v2/games/{gameId}/revisions/{revision}/replay-frames?limit=250&cursor=...`
 
+리비전 이력은 현재 포인터와 오름차순 이력을 같은 SQL 문에서 읽는다.
+읽는 중 새 리비전이 봉인되어도 한 응답에 같은 시점의 포인터와 목록이 들어간다.
+
 manifest에는 revision, document/projection/frame hash, frame·tracking 수, 팀, 최종 상태와 validation
 요약이 들어간다. cursor는 경기 ID·revision·hash·다음 위치에 결합된 opaque 값이다. 변조하거나 다른
 경기·revision에 재사용할 수 없고 한 page는 최대 1,000 frame이다.
+
+득점가치, 투구 득점가치, 승리확률은 패널을 열 때 읽는다. 같은 경기·리비전·문서와 projection hash의
+봉인 플레이와 주자 이동을 공유하며, 현재 경기 분류와 모델 원천 지문은 요청마다 검증한다.
 
 각 frame은 play 전후 상태, 원장 행, 현재 수비진·PA·tracking과 함께 DB typed runner movement를
 포함한다. movement에는 주자와 책임 투수, 출발·도착 base, 결과, 아웃 유형, 원천/파생 구분과 source

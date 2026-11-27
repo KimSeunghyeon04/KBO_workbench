@@ -5,6 +5,7 @@ import {
   HealthStatusSchema,
   SystemStatusSchema,
   type FailureDiagnostic,
+  type GameCatalogItem,
 } from "@kbo/contracts";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 
@@ -43,25 +44,12 @@ export const systemRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app,
         readStatus().then((status) => status.database),
         context.runtime.workspace.catalog(),
       ]);
-      if (!database.healthy) {
-        return {
-          database,
-          counts: {
-            readyToImport: workspaceCatalog.games.filter((game) => game.authority === "staging")
-              .length,
-            stored: 0,
-          },
-        };
-      }
-      const storedIds = new Set(await context.runtime.revisionStore.storedGameIds());
+      const storedGameIds = database.healthy
+        ? await context.runtime.revisionStore.storedGameIds()
+        : [];
       return {
         database,
-        counts: {
-          readyToImport: workspaceCatalog.games.filter(
-            (game) => game.authority === "staging" && !storedIds.has(game.gameId),
-          ).length,
-          stored: storedIds.size,
-        },
+        counts: databaseGameCounts(workspaceCatalog.games, storedGameIds),
       };
     },
   );
@@ -75,7 +63,6 @@ export const systemRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app,
         context.runtime.workspace.catalog(),
         context.runtime.revisionStore.storedGameIds(),
       ]);
-      const storedIds = new Set(storedGameIds);
       const jobs = context.runtime.collectionJobs.list();
       return {
         status: system.status,
@@ -85,15 +72,21 @@ export const systemRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app,
           reviewRequired: catalog.games.filter(
             (game) => game.authority === "quarantine" || game.authority === "source_failure",
           ).length,
-          readyToImport: catalog.games.filter(
-            (game) => game.authority === "staging" && !storedIds.has(game.gameId),
-          ).length,
-          stored: storedIds.size,
+          ...databaseGameCounts(catalog.games, storedGameIds),
         },
       };
     },
   );
 };
+
+function databaseGameCounts(games: readonly GameCatalogItem[], storedGameIds: readonly string[]) {
+  const stored = new Set(storedGameIds);
+  return {
+    readyToImport: games.filter((game) => game.authority === "staging" && !stored.has(game.gameId))
+      .length,
+    stored: stored.size,
+  };
+}
 
 function recentFailures(runtime: RouteContext["runtime"]): FailureDiagnostic[] {
   return [

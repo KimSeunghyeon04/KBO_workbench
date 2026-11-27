@@ -16,11 +16,13 @@ import {
 import { analyzeParkEnvironment } from "@kbo/game-core";
 import {
   analysisSourceHash,
-  regularModelScopeHash,
+  readRegularModelScopeHashes,
+  type RegularModelScopeHash,
   ANALYSIS_GAME_WHERE,
   analysisScopeParameters,
 } from "./analysis-scope.js";
 import { analysisVenueId } from "./analysis-venues.js";
+import { normalGameEndSql } from "./normal-game-end.js";
 export class ParkEnvironmentRepository {
   public constructor(private readonly pool: Pool) {}
   public async read(
@@ -64,13 +66,12 @@ export class ParkEnvironmentRepository {
     });
   }
 }
-export async function parkManifest(client: PoolClient, through: number) {
-  const seasons: { season: number; hash: string }[] = [];
-  for (let season = 2020; season <= through + 1; season++)
-    seasons.push({
-      season,
-      hash: await regularModelScopeHash(client, season),
-    });
+export async function parkManifest(
+  client: PoolClient,
+  through: number,
+  sharedScopeHashes?: RegularModelScopeHash[],
+) {
+  const seasons = sharedScopeHashes ?? (await readRegularModelScopeHashes(client, through));
   const games = Value.Decode(
     Type.Array(
       Type.Object(
@@ -96,7 +97,7 @@ async function readParkRows(
 ): Promise<ParkEnvironmentRow[]> {
   const result = await client.query<Record<string, unknown>>(
     `WITH games AS (
-    SELECT r.*,(r.game_status='final' AND r.scheduled_innings=9 AND f.final_inning>=9 AND NOT EXISTS(SELECT 1 FROM workbench.relay_administrative a WHERE a.game_id=r.game_id AND a.revision=r.revision AND a.administrative_code IN('called_game','forfeit')) AND NOT EXISTS(SELECT 1 FROM baseball.plate_appearance_facts pa WHERE pa.game_id=r.game_id AND pa.revision=r.revision AND pa.termination_reason IN('called_game','forfeit'))) AS normal_end,f.final_away_score AS away_score,f.final_home_score AS home_score
+    SELECT r.*,${normalGameEndSql} AS normal_end,f.final_away_score AS away_score,f.final_home_score AS home_score
     FROM analytics.current_analysis_games r JOIN baseball.game_final_states f USING(game_id,revision) WHERE ${ANALYSIS_GAME_WHERE} AND r.game_status='final'
   ), pas AS (
     SELECT p.game_id,p.revision,p.half,count(*) FILTER(WHERE p.counts_as_plate_appearance)::integer AS pa,count(*) FILTER(WHERE p.result='home_run' AND p.counts_as_plate_appearance)::integer AS hr

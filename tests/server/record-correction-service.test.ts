@@ -415,9 +415,9 @@ async function setup(
     pendingNoticeIds: async () => [],
     case: async () => currentCase,
     listCases: async () => (currentCase === null ? [] : [currentCase]),
-    listCasesForImport: async (gameId: string) =>
+    listNoticeIdsForImport: async (gameId: string) =>
       currentCase !== null && candidates.some((candidate) => candidate.gameId === gameId)
-        ? [currentCase]
+        ? [currentCase.notice.noticeId]
         : [],
     listCaseSummaries: async () => [],
     markProposalApplied,

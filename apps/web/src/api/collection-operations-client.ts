@@ -1,20 +1,19 @@
 import { Value } from "@sinclair/typebox/value";
 import { type Static, type TSchema } from "@sinclair/typebox";
-import { queryOptions } from "@tanstack/react-query";
+import { hashKey, queryOptions } from "@tanstack/react-query";
 import {
   CollectionDiscoverySchema,
   CollectionDiscoveryListSchema,
-  CollectionOverviewSchema,
-  CollectionGamePageSchema,
+  CollectionViewSchema,
   CollectionSelectionSchema,
   CollectionHistoryPageSchema,
   CollectionHistoryRecordSchema,
   CollectionHistoryItemsSchema,
   CollectionJobListSchema,
   type CollectionDateRange,
+  type CollectionDiscovery,
   type CollectionDiscoveryCreate,
-  type CollectionGamesQuery,
-  type CollectionOverviewQuery,
+  type CollectionViewQuery,
   type CollectionSelectionCreate,
 } from "@kbo/contracts";
 import { requestJson } from "./transport";
@@ -55,19 +54,37 @@ export const discoveryOptions = (id: string) =>
     enabled: id !== "",
     queryFn: ({ signal }) => get(idPath(id), CollectionDiscoverySchema, signal),
   });
-export const overviewOptions = (id: string, query: CollectionOverviewQuery) =>
+export const collectionViewOptions = (
+  id: string,
+  status: CollectionDiscovery["status"],
+  query: CollectionViewQuery,
+) =>
   queryOptions({
-    queryKey: [...collectionOperationKey, "overview", id, query],
+    queryKey: [...collectionOperationKey, "view", id, query, status] as const,
     enabled: id !== "",
-    queryFn: ({ signal }) =>
-      get(`${idPath(id)}/overview?${queryString(query)}`, CollectionOverviewSchema, signal),
-  });
-export const collectionGamesOptions = (id: string, query: CollectionGamesQuery) =>
-  queryOptions({
-    queryKey: [...collectionOperationKey, "games", id, query],
-    enabled: id !== "",
-    queryFn: ({ signal }) =>
-      get(`${idPath(id)}/games?${queryString(query)}`, CollectionGamePageSchema, signal),
+    refetchOnMount: "always",
+    queryFn: async ({ signal }) =>
+      Value.Decode(
+        CollectionViewSchema,
+        await requestJson(`${idPath(id)}/view`, {
+          method: "POST",
+          signal,
+          body: JSON.stringify(query),
+        }),
+      ),
+    placeholderData: (previous, previousQuery) => {
+      const previousScope = previousQuery?.queryKey[3];
+      if (
+        previous === undefined ||
+        previousQuery?.queryKey[2] !== id ||
+        previousQuery?.queryKey[4] !== status ||
+        previousScope === undefined ||
+        hashKey([previousScope.overview, previousScope.eligibility]) !==
+          hashKey([query.overview, query.eligibility])
+      )
+        return undefined;
+      return { overview: previous.overview, eligibleTotal: previous.eligibleTotal };
+    },
   });
 export const activeCollectionOptions = () =>
   queryOptions({

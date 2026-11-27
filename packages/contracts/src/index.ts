@@ -1,5 +1,6 @@
 export { isCalendarDate } from "./calendar-date.js";
 export {
+  COLLECTION_SEARCH_MAX_LENGTH,
   CollectionDateRangeSchema,
   CollectionScheduleEntrySchema,
   CollectionScheduleEntriesSchema,
@@ -14,6 +15,8 @@ export {
   CollectionGamesQuerySchema,
   CollectionOverviewQuerySchema,
   CollectionGamePageSchema,
+  CollectionViewQuerySchema,
+  CollectionViewSchema,
   CollectionSelectionCreateSchema,
   CollectionSelectionSchema,
   CollectionSelectionEntrySchema,
@@ -36,6 +39,8 @@ export {
   type CollectionGamesQuery,
   type CollectionOverviewQuery,
   type CollectionGamePage,
+  type CollectionViewQuery,
+  type CollectionView,
   type CollectionSelectionCreate,
   type CollectionSelection,
   type CollectionSelectionEntry,
@@ -467,6 +472,7 @@ export {
   type PitchExpectation,
 } from "./pitch-expectation.js";
 export {
+  MAX_DISCIPLINE_CACHE_BYTES,
   DisciplineQuerySchema,
   DisciplineParamsSchema,
   DisciplineCatalogSchema,
