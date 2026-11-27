@@ -4,6 +4,7 @@ import { AnalysisEvidenceLink } from "../analysis/analysis-evidence-link";
 import { PitchQualityPanel } from "../analysis/pitch-quality-panel";
 import { PitchAnglesPanel } from "../analysis/pitch-angles-panel";
 import { PitchProfilePanel } from "../analysis/pitch-profile-panel";
+import { PitchReleasePanel } from "../analysis/pitch-release-panel";
 import { PlayerPeriodComparison } from "../analysis/player-period-comparison";
 import { canonicalStringify, resolveAnalysisScope } from "@kbo/contracts";
 import { AnalysisScopeFields, analysisScopeSummary } from "../analysis/analysis-scope-fields";
@@ -367,7 +368,8 @@ export function PitchAnalysisPage(): React.JSX.Element {
                 투수 전체 {data.actualPitchCount.toLocaleString()}구 · 계산{" "}
                 {data.points.length.toLocaleString()}구 · 트래킹 없음{" "}
                 {data.missingTrackingCount.toLocaleString()}구 · 계산 제외{" "}
-                {data.invalidTrackingCount.toLocaleString()}구
+                {data.invalidTrackingCount.toLocaleString()}구 · 릴리스 추정 없음{" "}
+                {(data.missingReleaseCount ?? 0).toLocaleString()}구
               </span>
             </div>
           </section>
@@ -442,15 +444,16 @@ export function PitchAnalysisPage(): React.JSX.Element {
               포함하며, 적용 여부를 투구별로 표시합니다.
             </p>
             <p>
-              해당 시즌에 DB에 저장된 경기의 현재 리비전 중 ‘직구’를 포심으로 사용합니다. 좌·우완을
-              합산하고 투구마다 같은 가중치를 줍니다. 투수·구종 필터는 기준 집단을 바꾸지 않습니다.
+              해당 시즌에 저장된 종료 경기에서 릴리스 위치를 추정할 수 있는 ‘직구’를 포심으로
+              사용합니다. 좌·우완을 합산하고 투구마다 같은 가중치를 줍니다. 투수·구종 필터는 기준
+              집단을 바꾸지 않습니다.
             </p>
             <p>
-              50피트에서의 출발 위치와 초기 진행 방향을 정렬합니다. 각 공의 비행 시간은 유지하고,
-              평균 궤적이 플레이트에 닿는 한 시각에서 모든 공의 좌우(X)·높이(Z)·플레이트까지
-              거리(Y)를 비교합니다. 십자선은 그 순간의 평균 포심입니다. 거리 양수는 플레이트 이전,
-              음수는 통과 이후입니다. 축별 확대는 분포를 보기 위한 표시 비율이며 실제 길이 비율로
-              전환할 수 있습니다.
+              시즌 구종별 추정 릴리스 깊이에서 각 공의 출발 위치와 진행 방향을 정렬합니다. 평균
+              궤적이 플레이트에 닿는 한 시각에서 모든 공의 좌우(X)·높이(Z)·플레이트까지 거리(Y)를
+              비교합니다. 십자선은 그 순간의 평균 포심입니다. 거리 양수는 플레이트 이전, 음수는 통과
+              이후입니다. 축별 확대는 분포를 보기 위한 표시 비율이며 실제 길이 비율로 전환할 수
+              있습니다.
             </p>
             <p>
               색은 선택한 중계 구종 또는 클러스터를 나타냅니다. 도착 시간 차이는 공을 선택하면
@@ -486,12 +489,14 @@ export function PitchAnalysisPage(): React.JSX.Element {
           </p>
           <p>
             트래킹 누락 {data.missingTrackingCount.toLocaleString()}구 · 궤적 부적합{" "}
-            {data.invalidTrackingCount.toLocaleString()}구 · 기준 미확보{" "}
+            {data.invalidTrackingCount.toLocaleString()}구 · 릴리스 추정 없음{" "}
+            {(data.missingReleaseCount ?? 0).toLocaleString()}구 · 기준 포심 미확보{" "}
             {Math.max(
               0,
               data.actualPitchCount -
                 data.missingTrackingCount -
                 data.invalidTrackingCount -
+                (data.missingReleaseCount ?? 0) -
                 data.points.length,
             ).toLocaleString()}
             구
@@ -510,6 +515,7 @@ export function PitchAnalysisPage(): React.JSX.Element {
             구종·클러스터 선택은 적용하지 않습니다.
           </p>
           <PitchProfilePanel profile={data.profile} />
+          <PitchReleasePanel groups={data.releaseGroups ?? []} />
           <PlayerPeriodComparison
             kind="pitch-shape"
             query={{ season, ...scope.options }}

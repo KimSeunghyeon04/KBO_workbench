@@ -1,21 +1,36 @@
-import type { PitchSequenceResponse } from "@kbo/contracts";
-import { pitchPositionAtPlane } from "@kbo/game-core";
+import type { PitchReleaseGroup, PitchSequenceResponse } from "@kbo/contracts";
+import { pitchPositionAtPlane, pitchReleaseDepths } from "@kbo/game-core";
 import { pitchCallLabel } from "../events/relay-text";
 const n = (value: number | null) => value?.toFixed(2) ?? "—";
 const signed = (value: number | null) => (value !== null && value > 0 ? `+${n(value)}` : n(value));
 
 export function PitchSequenceTrajectory({
   selected,
+  releaseGroups,
 }: {
   selected: PitchSequenceResponse["pairs"][number];
+  releaseGroups: readonly PitchReleaseGroup[];
 }) {
-  const curves = [selected.previous, selected.current].map((row) =>
-    Array.from({ length: 41 }, (_, i) => {
-      const y = 49.99 - (i * (49.99 - 1.4167)) / 40,
-        point = pitchPositionAtPlane(row, y);
+  const depths = pitchReleaseDepths(releaseGroups);
+  const curves = [selected.previous, selected.current].map((row) => {
+    const estimatedY = depths.get(row.pitchType ?? "");
+    const releaseY =
+      estimatedY !== undefined && pitchPositionAtPlane(row, estimatedY, estimatedY)?.timeMs === 0
+        ? estimatedY
+        : undefined;
+    const first = releaseY ?? row.y0;
+    const last = row.crossPlateY ?? 17 / 12;
+    if (first === null || first <= last) return [];
+    return Array.from({ length: 41 }, (_, i) => {
+      const y = i === 40 ? last : first - (i * (first - last)) / 40;
+      const point = pitchPositionAtPlane(row, y, releaseY);
       return point === null ? null : { y, ...point };
-    }).filter((p) => p !== null),
-  );
+    }).filter((p) => p !== null);
+  });
+  const yValues = curves.flatMap((curve) => curve.map((point) => point.y));
+  const minY = Math.min(23.8, ...yValues),
+    maxY = Math.max(23.8, ...yValues);
+  const plotX = (y: number) => 45 + ((maxY - y) / (maxY - minY || 1)) * 410;
   return (
     <div className="sequence-trajectory">
       <p>
@@ -26,7 +41,7 @@ export function PitchSequenceTrajectory({
         주황 점선: 첫 공 · 녹색 실선: 두 번째 공 · 세로 점선: 23.8ft 비교면
       </p>
       <p>
-        면 간격 {n(selected.planeDistanceCm)} cm · 두 번째−첫 번째 시간{" "}
+        면 간격 {n(selected.planeDistanceCm)} cm · 릴리스 기준 두 번째−첫 번째 시간{" "}
         {signed(selected.planeTimeDifferenceMs)} ms · 두 번째−첫 번째 구속{" "}
         {signed(selected.speedDifferenceKph)} km/h
       </p>
@@ -59,14 +74,14 @@ export function PitchSequenceTrajectory({
                     {n(min)}
                   </text>
                   <line
-                    x1={45 + (50 - 23.8) * 8.5}
-                    x2={45 + (50 - 23.8) * 8.5}
+                    x1={plotX(23.8)}
+                    x2={plotX(23.8)}
                     y1="20"
                     y2="200"
                     stroke="#aaa"
                     strokeDasharray="3"
                   />
-                  <text x={45 + (50 - 23.8) * 8.5 + 5} y="16">
+                  <text x={plotX(23.8) + 5} y="16">
                     23.8 ft
                   </text>
                   {curves.map((c, i) => (
@@ -77,18 +92,15 @@ export function PitchSequenceTrajectory({
                       strokeWidth="3"
                       strokeDasharray={i === 0 ? "7 4" : undefined}
                       points={c
-                        .map(
-                          (p) =>
-                            `${45 + (50 - p.y) * 8.5},${200 - ((p[axis] - min) / (max - min)) * 180}`,
-                        )
+                        .map((p) => `${plotX(p.y)},${200 - ((p[axis] - min) / (max - min)) * 180}`)
                         .join(" ")}
                     />
                   ))}
                   <text x="45" y="220">
-                    50 ft
+                    {n(maxY)} ft
                   </text>
-                  <text x="395" y="220">
-                    1.42 ft
+                  <text x="455" y="220" textAnchor="end">
+                    {n(minY)} ft
                   </text>
                 </svg>
               </figure>
@@ -99,9 +111,8 @@ export function PitchSequenceTrajectory({
       <details className="analysis-caption">
         <summary>좌표와 해석 기준</summary>{" "}
         <p>
-          홈플레이트 뒤 꼭짓점 원점, y=23.8ft 비교면. 주황 점선: 첫 공, 녹색 실선: 두 번째 공. 원천
-          모델의 기하 비교이며 타자의 인식 시점이나 최적 배합 점수가 아닙니다. 끝점 구장 보정을 중간
-          궤적에 적용하지 않습니다.
+          홈플레이트 뒤 꼭짓점이 원점입니다. 두 공의 시즌 구종별 추정 릴리스부터 23.8피트까지 걸린
+          시간을 비교합니다. 추정치가 없으면 원본 구간을 그리고 시간차는 비워 둡니다.
         </p>
       </details>
     </div>

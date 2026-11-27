@@ -19,8 +19,53 @@ import {
   StagingWorkspace,
 } from "@kbo/persistence";
 import { calibrationRows, emptyCalibration } from "../helpers/pitch-calibration.js";
+import { pitchFrom50Feet } from "../helpers/pitch-trajectory.js";
 
 describe("daily park calibration integration", () => {
+  it("transports a fitted 50-ft park bias to the release tangent before comparing movement", () => {
+    const training = calibrationRows();
+    const calibration = calculatePitchCalibration(2025, "a".repeat(64), training);
+    const template = training.at(-1);
+    if (template === undefined) throw new Error("Missing fixture");
+    const fitRows = Array.from({ length: 144 }, (_, i) => {
+      const sign = (bit: number) => ((i & bit) === 0 ? -1 : 1);
+      return {
+        ...template,
+        gameId: `fit-${Math.floor(i / 48)}`,
+        pitchId: `pitch-${i}`,
+        trackingId: `tracking-${i}`,
+        x0: 1 + sign(1) / 10,
+        y0: 55,
+        z0: 6 + sign(2) / 10,
+        vx0: sign(4) * 2,
+        vy0: -100,
+        vz0: sign(8) * 2,
+        ax: 0,
+        ay: 0,
+        az: 0,
+      };
+    });
+    const reference = preparePitchAnalysisReference(fitRows, emptyCalibration(2025), true);
+    const result = calculatePitchAnalysisSample(
+      2025,
+      template.pitcherId,
+      calibration.sourceHash,
+      [{ ...template, ...pitchFrom50Feet }],
+      reference,
+      calibration,
+      fitRows,
+    );
+    const referenceTime = (55 - 17 / 24) / 100;
+    const cm = (referenceTime ** 2 * 30.48) / 2;
+    const scale = 124.6 / 125.4;
+    expect(result.points[0]).toMatchObject({
+      calibrationStatus: "applied",
+      calibrationXcm: expect.closeTo(5.2 * scale * cm, 7),
+      calibrationZcm: expect.closeTo(-1.6 * scale * cm, 7),
+      xCm: expect.closeTo((8 + 40 / 125.4 - 5.2 * scale) * cm, 7),
+      zCm: expect.closeTo((-30 - 40 / 125.4 + 1.6 * scale) * cm, 7),
+    });
+  });
   it("recovers known biases, standardizes the plane and subtracts acceleration before comparison", () => {
     const rows = calibrationRows();
     const original = structuredClone(rows);

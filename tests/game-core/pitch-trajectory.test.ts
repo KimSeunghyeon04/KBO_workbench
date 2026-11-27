@@ -9,6 +9,18 @@ import {
 } from "@kbo/game-core";
 import { pitchFrom50Feet, pitchFrom55Feet } from "../helpers/pitch-trajectory.js";
 
+it("rebases the same pitch at 55 ft with its own release velocity and tangent", () => {
+  for (const input of [pitchFrom50Feet, pitchFrom55Feet]) {
+    const release = alignPitchTrajectory(input, 55);
+    expect(release).toMatchObject({ distance: 53.24, vy: expect.closeTo(-125.4), ay: 20 });
+    expect(release?.arrivalSeconds).toBeCloseTo(0.44, 10);
+    expect(release?.lateralAcceleration).toBeCloseTo(8 + 40 / 125.4, 10);
+    expect(release?.verticalAcceleration).toBeCloseTo(-30 - 40 / 125.4, 10);
+    expect(alignPitchTrajectory(input)?.arrivalSeconds).toBeCloseTo(0.4, 10);
+  }
+  expect(alignPitchTrajectory({ ...pitchFrom50Feet, vy0: -1, ay: -10 }, 55)).toBeNull();
+});
+
 const input: PitchTrajectoryInput = {
   x0: -1,
   y0: 50,

@@ -1,26 +1,86 @@
 import { expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
-import { PitchSequenceResponseSchema, resolveAnalysisScope } from "@kbo/contracts";
+import {
+  PitchSequenceResponseSchema,
+  resolveAnalysisScope,
+  type PitchReleaseGroup,
+} from "@kbo/contracts";
 import { analyzePitchSequences, pitchPositionAtPlane } from "@kbo/game-core";
 import { independentSequenceSamples, pitchSequenceRow as row } from "../helpers/pitch-sequence.js";
 import { pitchFrom50Feet, pitchFrom55Feet } from "../helpers/pitch-trajectory.js";
 const query = { season: 2024 },
   scope = resolveAnalysisScope(query, "regular");
+const fastballRelease: PitchReleaseGroup = {
+  pitchType: "직구",
+  games: 3,
+  pitches: 120,
+  estimate: { xCm: 100, heightCm: 140, extensionCm: 5.5 * 30.48 },
+};
+const releases = [fastballRelease];
 
 it("uses one clock for a pair with different original reference planes", () => {
   const previous = row(0, { ...pitchFrom50Feet, speedKph: 139 }),
     current = row(1, { ...pitchFrom55Feet, speedKph: 141 });
-  const position = pitchPositionAtPlane(current, 1.76);
-  expect(position?.timeMs).toBeCloseTo(400, 9);
+  const position = pitchPositionAtPlane(current, 1.76, 55);
+  expect(position?.timeMs).toBeCloseTo(440, 9);
   expect(position?.xCm).toBeCloseTo(2.6544 * 30.48, 10);
   expect(position?.zCm).toBeCloseTo(2.216 * 30.48, 10);
-  const { pairs, coverage } = analyzePitchSequences(query, "p", scope, "hash", [previous, current]);
+  const { pairs, coverage } = analyzePitchSequences(
+    query,
+    "p",
+    scope,
+    "hash",
+    [previous, current],
+    releases,
+  );
   expect(coverage.geometryPairs).toBe(1);
   expect(pairs[0]?.planeDistanceCm).toBeCloseTo(0, 9);
   expect(pairs[0]?.planeTimeDifferenceMs).toBeCloseTo(0, 9);
   expect(pairs[0]?.arrivalDistanceCm).toBeCloseTo(0, 9);
   expect(pairs[0]?.speedDifferenceKph).toBe(2);
-  expect(pitchPositionAtPlane({ ...current, y0: 49 }, 23.8)).toBeNull();
+  expect(pitchPositionAtPlane(previous, 55, 55)).toMatchObject({
+    timeMs: 0,
+    xCm: expect.closeTo(30.48),
+  });
+});
+
+it("changes elapsed time by release depth and keeps measured geometry when an estimate is missing", () => {
+  const previous = row(0, { y0: 50, vy0: -100, ay: 0 });
+  const current = { ...previous, pitchSequence: 1, pitchId: "e1", pitchType: "슬라이더" };
+  const slider = {
+    ...fastballRelease,
+    pitchType: "슬라이더",
+    estimate: {
+      xCm: -85,
+      heightCm: 190,
+      extensionCm: 6.5 * 30.48,
+    },
+  };
+  const pair = analyzePitchSequences(
+    query,
+    "p",
+    scope,
+    "hash",
+    [previous, current],
+    [...releases, slider],
+  ).pairs[0];
+  expect(pair).toMatchObject({ planeDistanceCm: 0, arrivalDistanceCm: 0 });
+  expect(pair?.planeTimeDifferenceMs).toBeCloseTo(-10, 9);
+  const missing = analyzePitchSequences(query, "p", scope, "hash", [previous, current], releases);
+  expect(missing.pairs[0]).toMatchObject({
+    planeDistanceCm: 0,
+    arrivalDistanceCm: 0,
+    planeTimeDifferenceMs: null,
+  });
+  expect(missing.groups[0]).toMatchObject({ planeDistancePairs: 1, planeTimeDifferencePairs: 0 });
+});
+
+it("uses the original spatial interval if the estimated start is physically invalid for one pitch", () => {
+  const pitch = row(0, { z0: 0.1, vz0: 10 });
+  expect(pitchPositionAtPlane(pitch, 53, 55)).toBeNull();
+  const point = pitchPositionAtPlane(pitch, 23.8, 55);
+  expect(point).toEqual(pitchPositionAtPlane(pitch, 23.8));
+  expect(point?.timeMs).toBeNull();
 });
 it("forms pairs before type filtering and preserves missing tracking as an intervening pitch", () => {
   const rows = [
@@ -62,11 +122,18 @@ it("splits automatic/no-pitch boundaries, player changes and PA boundaries witho
 it("keeps geometric distance symmetric and differences signed, rejecting invalid forward crossings", () => {
   const a = row(0),
     b = row(1, { vy0: -120, speedKph: 130, x0: 1 });
-  const p = analyzePitchSequences(query, "p", scope, "hash", [a, b]).pairs[0];
-  const reversed = analyzePitchSequences(query, "p", scope, "hash", [
-    { ...b, pitchSequence: 0 },
-    { ...a, pitchSequence: 1 },
-  ]).pairs[0];
+  const p = analyzePitchSequences(query, "p", scope, "hash", [a, b], releases).pairs[0];
+  const reversed = analyzePitchSequences(
+    query,
+    "p",
+    scope,
+    "hash",
+    [
+      { ...b, pitchSequence: 0 },
+      { ...a, pitchSequence: 1 },
+    ],
+    releases,
+  ).pairs[0];
   expect(p?.planeDistanceCm).toBe(reversed?.planeDistanceCm);
   expect(p?.speedDifferenceKph).toBe(-10);
   expect(reversed?.speedDifferenceKph).toBe(10);
@@ -78,7 +145,14 @@ it("keeps geometric distance symmetric and differences signed, rejecting invalid
 });
 
 it("reports independent mean denominators without dropping valid zeros or changing outcome denominators", () => {
-  const response = analyzePitchSequences(query, "p", scope, "hash", independentSequenceSamples());
+  const response = analyzePitchSequences(
+    query,
+    "p",
+    scope,
+    "hash",
+    independentSequenceSamples(),
+    releases,
+  );
   expect(Value.Check(PitchSequenceResponseSchema, response)).toBe(true);
   expect(response.groups).toEqual([
     {

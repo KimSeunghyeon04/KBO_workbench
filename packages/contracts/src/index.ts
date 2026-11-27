@@ -448,6 +448,7 @@ export {
   PitchAnalysisPointSchema,
   PitchAnalysisResponseSchema,
   PITCH_ANALYSIS_MODEL_VERSION,
+  PITCH_RELEASE_REFERENCE_VERSION,
   PitchReferenceKeySchema,
   PitchReferenceSchema,
   PitchReferenceEnvelopeSchema,
@@ -694,6 +695,13 @@ export {
   type PitcherChangesResponse,
   type PitchChangeObservation,
 } from "./pitcher-changes.js";
+export {
+  PitchReleaseQuerySchema,
+  PitchReleaseResponseSchema,
+  type PitchReleaseQuery,
+  type PitchReleaseGroup,
+  type PitchReleaseResponse,
+} from "./pitch-release.js";
 export {
   PitchSequenceQuerySchema,
   PitchSequenceRowSchema,

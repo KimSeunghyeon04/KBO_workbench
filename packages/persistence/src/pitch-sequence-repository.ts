@@ -2,14 +2,22 @@ import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import type { Pool } from "pg";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
+import { createHash } from "node:crypto";
 import {
   PitchSequenceQuerySchema,
   PitchSequenceRowSchema,
   PitchSequenceResponseSchema,
   resolveAnalysisScope,
+  canonicalStringify,
+  type PitchReleaseGroup,
   type PitchSequenceQuery,
 } from "@kbo/contracts";
-import { analyzePitchSequences } from "@kbo/game-core";
+import { analyzePitchSequences, estimatePitchReleases } from "@kbo/game-core";
+import {
+  pitchReferenceScope,
+  readSeasonPitchReleaseRows,
+  type PitchAnalysisRow,
+} from "./pitch-analysis-repository.js";
 import {
   analysisScopeParameters,
   analysisSourceHash,
@@ -23,7 +31,12 @@ import {
   pitchViewObservationJoinSql,
 } from "./analysis-pitch-input.js";
 export class PitchSequenceRepository {
-  public constructor(private readonly pool: Pool) {}
+  public constructor(
+    private readonly pool: Pool,
+    private readonly estimateReleases: (
+      rows: readonly PitchAnalysisRow[],
+    ) => Promise<PitchReleaseGroup[]> = async (rows) => estimatePitchReleases(rows),
+  ) {}
   public async analyze(input: PitchSequenceQuery, pitcherId: string) {
     const query = Value.Decode(PitchSequenceQuerySchema, input),
       { season, balls, strikes, pitchType, stance, cohort, previousType, ...options } = query;
@@ -35,7 +48,15 @@ export class PitchSequenceRepository {
     void previousType;
     const scope = resolveAnalysisScope({ season, ...options }, "regular");
     return withAnalysisSnapshot(this.pool, async (client, release) => {
-      const sourceHash = await analysisSourceHash(client, scope);
+      const sampleHash = await analysisSourceHash(client, scope);
+      const releaseScope = pitchReferenceScope(scope);
+      const releaseHash =
+        scope.dateFrom === null && scope.dateTo === null
+          ? sampleHash
+          : await analysisSourceHash(client, releaseScope);
+      const sourceHash = createHash("sha256")
+        .update(canonicalStringify({ sampleHash, releaseHash, timing: "season-release-v1" }))
+        .digest("hex");
       const result = await client.query<Record<string, unknown>>(
         `WITH selected_games AS MATERIALIZED (
     ${scopedAnalysisGamesSql(
@@ -59,11 +80,13 @@ export class PitchSequenceRepository {
     ORDER BY p.game_id COLLATE "C",p.pitch_sequence`,
         [...analysisScopeParameters(scope), pitcherId],
       );
+      const releaseRows = await readSeasonPitchReleaseRows(client, releaseScope, pitcherId);
       await release();
       const rows = Value.Decode(Type.Array(PitchSequenceRowSchema), result.rows);
+      const groups = await this.estimateReleases(releaseRows);
       return Value.Decode(
         PitchSequenceResponseSchema,
-        analyzePitchSequences(query, pitcherId, scope, sourceHash, rows),
+        analyzePitchSequences(query, pitcherId, scope, sourceHash, rows, groups),
       );
     });
   }

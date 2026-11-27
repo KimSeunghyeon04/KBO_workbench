@@ -85,6 +85,7 @@ export { analyzeBatterCountFlow, analyzePitchCountFlow } from "./pitch-count-flo
 export { analyzeBatterProfile } from "./batter-profile.js";
 export { analyzePitcherChanges } from "./pitcher-changes.js";
 export { analyzePitchSequences, pitchPositionAtPlane } from "./pitch-sequence.js";
+export { estimatePitchReleases, pitchReleaseDepths } from "./pitch-release.js";
 export {
   baserunningOpportunities,
   summarizeBaserunningOpportunities,

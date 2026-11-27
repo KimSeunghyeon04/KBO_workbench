@@ -7,11 +7,12 @@ import {
 } from "@kbo/contracts";
 import { PitchSequenceRepository } from "@kbo/persistence";
 import type { RouteContext } from "./context.js";
-export const pitchSequenceRoutes: FastifyPluginAsyncTypebox<Pick<RouteContext, "pool">> = async (
-  app,
-  { pool },
-) => {
-  const repository = new PitchSequenceRepository(pool);
+import type { ComputationRunner } from "../computation.js";
+import { createPitchReleaseComputation } from "../pitch-analysis-computation.js";
+export const pitchSequenceRoutes: FastifyPluginAsyncTypebox<
+  Pick<RouteContext, "pool"> & { computation: ComputationRunner }
+> = async (app, { pool, computation }) => {
+  const repository = new PitchSequenceRepository(pool, createPitchReleaseComputation(computation));
   app.get(
     "/api/v2/analysis/pitch-sequences/:pitcherId",
     {

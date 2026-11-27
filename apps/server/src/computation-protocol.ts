@@ -22,6 +22,7 @@ import type {
   MatchupModelResponse,
   MatchupQuery,
   PitchAnglesResponse,
+  PitchReleaseGroup,
   AnalysisScopeQuery,
   WorkloadAppearance,
   WorkloadComparisonCell,
@@ -65,6 +66,10 @@ export type Computation =
       scope: AnalysisScope;
       pitcherId: string;
       sourceHash: string;
+    }
+  | {
+      kind: "pitch_release";
+      rows: readonly PitchAnalysisRow[];
     }
   | {
       kind: "matchup_summary";
@@ -150,6 +155,7 @@ export type Computation =
       kind: "pitch_reference";
       rows: readonly PitchAnalysisRow[];
       calibration?: PitchCalibrationSeason;
+      releaseBased?: boolean;
     }
   | {
       kind: "pitch_sample";
@@ -159,10 +165,12 @@ export type Computation =
       rows: readonly PitchAnalysisRow[];
       reference: PitchReference["reference"];
       calibration: PitchCalibrationSeason;
+      releaseRows?: readonly PitchAnalysisRow[];
     };
 export type ComputationResult =
   | { kind: "workload_comparison"; value: WorkloadComparisonResponse }
   | { kind: "pitch_angles"; value: PitchAnglesResponse }
+  | { kind: "pitch_release"; value: PitchReleaseGroup[] }
   | { kind: "matchup_summary"; value: MatchupModelResponse }
   | { kind: "pitch_quality_model"; value: PitchQualityModel }
   | { kind: "pitch_quality_summary"; value: PitchQualityResponse }

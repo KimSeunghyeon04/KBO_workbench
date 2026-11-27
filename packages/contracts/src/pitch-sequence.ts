@@ -2,6 +2,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import { AnalysisScopeSchema } from "./analysis-scope.js";
 import { PitchOutcomeQuerySchema } from "./pitch-outcomes.js";
 import { PitchCallSchema } from "./game-document/events.js";
+import { PitchReleaseGroupSchema } from "./pitch-release.js";
 const strict = { additionalProperties: false } as const,
   text = Type.String(),
   nullableText = Type.Union([text, Type.Null()]),
@@ -82,6 +83,7 @@ export const PitchSequenceResponseSchema = Type.Object(
     scope: AnalysisScopeSchema,
     sourceHash: text,
     planeYFeet: Type.Literal(23.8),
+    releaseGroups: Type.Array(PitchReleaseGroupSchema),
     coverage: Type.Object(
       {
         targetPitches: count,

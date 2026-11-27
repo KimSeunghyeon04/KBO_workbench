@@ -41,8 +41,21 @@ export function crossingTime(distance: number, vy: number, ay: number): number |
   return time > 0 && Number.isFinite(time) && vy + ay * time < 0 ? time : null;
 }
 
+/** Signed time along the same inbound branch, including before the original reference plane. */
+export function pitchTimeAtPlane(y0: number, vy0: number, ay: number, y: number): number | null {
+  const distance = y0 - y;
+  if (distance === 0) return 0;
+  if (distance > 0) return crossingTime(distance, vy0, ay);
+  const backward = crossingTime(-distance, vy0, -ay);
+  return backward === null ? null : -backward;
+}
+
 /** Position and velocity at a plane reached by the original trajectory. */
-export function pitchStateAtPlane(input: Omit<PitchTrajectoryInput, "crossPlateY">, y: number) {
+export function pitchStateAtPlane(
+  input: Omit<PitchTrajectoryInput, "crossPlateY">,
+  y: number,
+  allowBackward = false,
+) {
   const { x0, y0, z0, vx0, vy0, vz0, ax, ay, az } = input;
   if (
     x0 === null ||
@@ -58,11 +71,11 @@ export function pitchStateAtPlane(input: Omit<PitchTrajectoryInput, "crossPlateY
     z0 < 0 ||
     vy0 >= 0 ||
     y < 0 ||
-    y > y0
+    (!allowBackward && y > y0)
   )
     return null;
 
-  const seconds = y0 === y ? 0 : crossingTime(y0 - y, vy0, ay);
+  const seconds = pitchTimeAtPlane(y0, vy0, ay, y);
   if (seconds === null) return null;
   const state = {
     y,
@@ -93,9 +106,13 @@ export function pitchApproachAngles(input: PitchTrajectoryInput, plateYFeet: num
   return Object.values(result).every(Number.isFinite) ? result : null;
 }
 
-export function alignPitchTrajectory(input: PitchTrajectoryInput): AlignedPitchTrajectory | null {
+export function alignPitchTrajectory(
+  input: PitchTrajectoryInput,
+  releaseY?: number,
+): AlignedPitchTrajectory | null {
   const { ax, ay, az, crossPlateY } = input;
-  const start = pitchComparisonStart(input);
+  const start =
+    releaseY === undefined ? pitchComparisonStart(input) : pitchStateAtPlane(input, releaseY, true);
   if (
     start === null ||
     ax === null ||

@@ -17,13 +17,14 @@ import { createHash } from "node:crypto";
 import {
   canonicalStringify,
   PITCH_ANALYSIS_MODEL_VERSION,
-  PITCH_REFERENCE_VERSION,
+  PITCH_RELEASE_REFERENCE_VERSION,
   PITCH_CALIBRATION_PARAMETERS,
   PitchAnalysisSampleSchema,
   type PitchAnalysisCatalog,
   type PitchAnalysisSample,
   type PitchReference,
   type PitchCalibrationSeason,
+  type PitchReleaseGroup,
 } from "@kbo/contracts";
 import {
   alignPitchTrajectory,
@@ -31,6 +32,8 @@ import {
   comparePitchTrajectory,
   fitPitchReferenceDistribution,
   classifyPitchReference,
+  estimatePitchReleases,
+  pitchReleaseDepths,
 } from "@kbo/game-core";
 import { type Static, Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
@@ -60,6 +63,7 @@ const rowSchema = Type.Object(
     revision: Type.Integer(),
     pitchId: Type.String(),
     gameDate: Type.String(),
+    gameFinal: Type.Optional(Type.Boolean()),
     pitcherId: Type.String(),
     stadium: textOrNull,
     stance: textOrNull,
@@ -100,6 +104,7 @@ export interface PitchAnalysisComputation {
   reference(
     rows: readonly PitchRow[],
     calibration: PitchCalibrationSeason | null,
+    releaseBased?: boolean,
   ): Promise<PitchReference["reference"]>;
   sample(
     season: number,
@@ -108,6 +113,7 @@ export interface PitchAnalysisComputation {
     rows: readonly PitchRow[],
     reference: PitchReference["reference"],
     calibration: PitchCalibrationSeason,
+    releaseRows?: readonly PitchRow[],
   ): Promise<PitchAnalysisSample>;
 }
 interface SampleCache {
@@ -131,10 +137,18 @@ const trajectoryColumns = ["x0", "y0", "z0", "vx0", "vy0", "vz0", "ax", "ay", "a
   .join(",");
 
 function pitchAnalysisSourceHash(referenceHash: string, scope: AnalysisScope): string {
-  return createHash("sha256").update(canonicalStringify({ referenceHash, scope })).digest("hex");
+  return createHash("sha256")
+    .update(
+      canonicalStringify({
+        referenceHash,
+        scope,
+        referenceVersion: PITCH_RELEASE_REFERENCE_VERSION,
+      }),
+    )
+    .digest("hex");
 }
 
-function pitchReferenceScope(scope: AnalysisScope): AnalysisScope {
+export function pitchReferenceScope(scope: AnalysisScope): AnalysisScope {
   return { ...scope, dateFrom: null, dateTo: null };
 }
 
@@ -190,7 +204,7 @@ export class PitchAnalysisRepository {
       const sourceHash = pitchAnalysisSourceHash(referenceHash, scope);
       const sampleKey = {
         modelVersion: PITCH_ANALYSIS_MODEL_VERSION,
-        referenceVersion: PITCH_REFERENCE_VERSION,
+        referenceVersion: PITCH_RELEASE_REFERENCE_VERSION,
         season,
         sourceHash,
         calibrationVersion: PITCH_CALIBRATION_PARAMETERS.modelVersion,
@@ -202,13 +216,21 @@ export class PitchAnalysisRepository {
         return structuredClone(await cached);
       }
       const calculateSample = async () => {
-        let seasonRows: PitchRow[] | undefined;
+        let referenceRows: PitchRow[] | undefined;
         let targetRows: PitchRow[] | undefined;
+        let releaseRows: PitchRow[] | undefined;
+        const readTargetRows = async () => {
+          targetRows ??= await readPitchRows(client, season, pitcherId, false, scope);
+          releaseRows ??= await readSeasonPitchReleaseRows(client, referenceScope, pitcherId);
+          return { targetRows, releaseRows };
+        };
         const calculateCalibration = async (previous: PitchCalibrationSeason | null) => {
-          seasonRows = await readPitchRows(client, season, null, true, referenceScope);
+          const seasonRows = await readPitchRows(client, season, null, true, referenceScope);
           targetRows = seasonRows.filter(
             (r) => r.pitcherId === pitcherId && inAnalysisPeriod(r.gameDate, scope),
           );
+          releaseRows = seasonRows.filter((r) => r.gameFinal && r.pitcherId === pitcherId);
+          referenceRows = seasonRows.filter((r) => r.gameFinal && r.pitchType === "직구");
           await releaseSnapshot();
           return this.computation.calibration(season, referenceHash, seasonRows, previous);
         };
@@ -225,24 +247,22 @@ export class PitchAnalysisRepository {
               );
         const key = {
           modelVersion: PITCH_ANALYSIS_MODEL_VERSION,
-          referenceVersion: PITCH_REFERENCE_VERSION,
+          referenceVersion: PITCH_RELEASE_REFERENCE_VERSION,
           season,
           sourceHash: referenceHash,
           calibrationHash: pitchCalibrationHash(calibration),
         } as const;
         const calculateReference = async () => {
-          const referenceRows =
-            seasonRows?.filter((r) => r.pitchType === "직구") ??
-            (await readPitchRows(client, season, null, false, referenceScope));
-          targetRows ??= await readPitchRows(client, season, pitcherId, false, scope);
+          referenceRows ??= await readSeasonPitchReleaseRows(client, referenceScope, null);
+          await readTargetRows();
           await releaseSnapshot();
-          return this.computation.reference(referenceRows, calibration);
+          return this.computation.reference(referenceRows, calibration, true);
         };
         const reference =
           this.references === undefined
             ? await calculateReference()
             : await this.references.getOrCreate(key, calculateReference);
-        const rows = targetRows ?? (await readPitchRows(client, season, pitcherId, false, scope));
+        const { targetRows: rows, releaseRows: seasonReleaseRows } = await readTargetRows();
         await releaseSnapshot();
         return Value.Decode(
           PitchAnalysisSampleSchema,
@@ -253,6 +273,7 @@ export class PitchAnalysisRepository {
             rows,
             reference,
             calibration,
+            seasonReleaseRows,
           ),
         );
       };
@@ -279,12 +300,12 @@ export async function readPitchRows(
   const result = await client.query<Record<string, unknown>>(
     `
         WITH selected_games AS MATERIALIZED (
-          ${scopedAnalysisGamesSql("r.game_id,r.revision,r.game_date,r.stadium", finalOnly ? "r.game_status='final'" : undefined)}
+          ${scopedAnalysisGamesSql("r.game_id,r.revision,r.game_date,r.stadium,r.game_status", finalOnly ? "r.game_status='final'" : undefined)}
         ) SELECT pitch.* FROM selected_games r CROSS JOIN LATERAL (
           ${gamePitchRowsSql({
             source: "facts",
             select: `p.game_id AS "gameId",p.revision,p.pitch_id AS "pitchId",p.pitch_sequence AS "pitchSequence",
-              to_char(r.game_date,'YYYY-MM-DD') AS "gameDate",p.pitcher_id AS "pitcherId",
+              to_char(r.game_date,'YYYY-MM-DD') AS "gameDate",(r.game_status='final') AS "gameFinal",p.pitcher_id AS "pitcherId",
               p.pitch_type AS "pitchType",p.speed_kph AS "speedKph",t.tracking_id AS "trackingId",
               r.stadium,t.stance,p.before_balls AS balls,p.before_strikes AS strikes,p.swing,p.whiff,
               COALESCE(t.measurement_profile_id='naver_pts_v1',FALSE) AS supported,${trajectoryColumns}`,
@@ -303,21 +324,57 @@ export async function readPitchRows(
   });
 }
 
-function prepareRows(rows: readonly PitchRow[], calibration: PitchCalibrationSeason | null) {
+export function readSeasonPitchReleaseRows(
+  client: PoolClient,
+  scope: AnalysisScope,
+  pitcherId: string | null,
+) {
+  return readPitchRows(client, scope.season, pitcherId, false, pitchReferenceScope(scope), true);
+}
+
+function prepareRows(
+  rows: readonly PitchRow[],
+  calibration: PitchCalibrationSeason | null,
+  releases?: ReadonlyMap<string, ReadonlyMap<string, number>>,
+) {
   const lookup = calibration === null ? null : pitchCalibrationLookup(calibration);
   return rows.map((row) => {
     const adjustment = lookup?.(row) ?? { status: "insufficient_data" as const, coefficient: null };
-    const trajectory =
+    const at50 =
       calibration === null
         ? row.supported && row.trackingId !== null
-          ? alignPitchTrajectory(row)
+          ? alignPitchTrajectory(row, releases === undefined ? undefined : 50)
           : null
-        : middlePlaneTrajectory(row);
+        : middlePlaneTrajectory(row, releases === undefined ? undefined : 50);
+    const releaseY =
+      row.pitchType === null ? undefined : releases?.get(row.pitcherId)?.get(row.pitchType);
+    const trajectory =
+      releases === undefined
+        ? at50
+        : releaseY === undefined || at50 === null
+          ? null
+          : calibration === null
+            ? alignPitchTrajectory(row, releaseY)
+            : middlePlaneTrajectory(row, releaseY);
+    const coefficient = adjustment.coefficient;
+    // Tangent-relative acceleration is (a_axis * vy - v_axis * ay) / vy.
+    // Its numerator is constant under the PTS fit, so transport the fitted 50-ft bias by vy50/vy.
+    const scale = trajectory === null || at50 === null ? 1 : at50.vy / trajectory.vy;
+    const scaled =
+      coefficient === null || scale === 1
+        ? coefficient
+        : {
+            ...coefficient,
+            lateralBias: coefficient.lateralBias * scale,
+            verticalBias: coefficient.verticalBias * scale,
+          };
     return {
       row,
-      ...adjustment,
-      trajectory:
-        trajectory === null ? null : calibratePitchTrajectory(trajectory, adjustment.coefficient),
+      status: adjustment.status,
+      coefficient: scaled,
+      speedKphAt50Feet: at50?.speedKph ?? 0,
+      missingRelease: releases !== undefined && at50 !== null && releaseY === undefined,
+      trajectory: trajectory === null ? null : calibratePitchTrajectory(trajectory, scaled),
     };
   });
 }
@@ -325,11 +382,23 @@ function prepareRows(rows: readonly PitchRow[], calibration: PitchCalibrationSea
 export function prepareReference(
   rows: readonly PitchRow[],
   calibration: PitchCalibrationSeason | null = null,
+  releaseBased = false,
 ): PitchReference["reference"] {
-  const referenceRows = prepareRows(
-    rows.filter((row) => row.pitchType === "직구"),
-    calibration,
-  );
+  const fastballs = rows.filter((row) => row.pitchType === "직구");
+  let releases: Map<string, ReadonlyMap<string, number>> | undefined;
+  if (releaseBased) {
+    const byPitcher = new Map<string, PitchRow[]>();
+    for (const row of fastballs) {
+      const group = byPitcher.get(row.pitcherId);
+      if (group === undefined) byPitcher.set(row.pitcherId, [row]);
+      else group.push(row);
+    }
+    releases = new Map();
+    for (const [pitcherId, group] of byPitcher) {
+      releases.set(pitcherId, pitchReleaseDepths(estimatePitchReleases(group)));
+    }
+  }
+  const referenceRows = prepareRows(fastballs, calibration, releases);
   const referenceSamples = referenceRows.flatMap(({ trajectory }) =>
     trajectory === null ? [] : [trajectory],
   );
@@ -355,7 +424,12 @@ export function prepareReference(
       sampleCount: referenceSamples.length,
       excludedCount: referenceRows.length - referenceSamples.length,
       arrivalMs: reference.arrivalSeconds * 1000,
-      speedKphAt50Feet: reference.speedKph,
+      speedKphAt50Feet: releaseBased
+        ? referenceRows.reduce(
+            (sum, row) => sum + (row.trajectory === null ? 0 : row.speedKphAt50Feet),
+            0,
+          ) / referenceSamples.length
+        : reference.speedKph,
       firstGameDate,
       lastGameDate,
     },
@@ -369,14 +443,28 @@ export function analyzeRows(
   rows: readonly PitchRow[],
   baseline: PitchReference["reference"],
   calibration: PitchCalibrationSeason,
+  releaseRows?: readonly PitchRow[],
 ): PitchAnalysisSample {
-  const selected = prepareRows(rows, calibration);
+  const releaseGroups: PitchReleaseGroup[] | undefined =
+    releaseRows === undefined ? undefined : estimatePitchReleases(releaseRows);
+  const selected = prepareRows(
+    rows,
+    calibration,
+    releaseGroups === undefined
+      ? undefined
+      : new Map([[pitcherId, pitchReleaseDepths(releaseGroups)]]),
+  );
   const points: PitchAnalysisSample["points"] = [];
   let invalidTrackingCount = 0;
   let missingTrackingCount = 0;
-  for (const { row, trajectory, status, coefficient } of selected) {
+  let missingReleaseCount = 0;
+  for (const { row, trajectory, status, coefficient, missingRelease } of selected) {
     if (row.trackingId === null) {
       missingTrackingCount++;
+      continue;
+    }
+    if (missingRelease) {
+      missingReleaseCount++;
       continue;
     }
     if (trajectory === null) {
@@ -425,6 +513,7 @@ export function analyzeRows(
     actualPitchCount: selected.length,
     missingTrackingCount,
     invalidTrackingCount,
+    ...(releaseGroups === undefined ? {} : { releaseGroups, missingReleaseCount }),
     calibration: {
       modelVersion: PITCH_CALIBRATION_PARAMETERS.modelVersion,
       profileHash: pitchCalibrationHash(calibration),

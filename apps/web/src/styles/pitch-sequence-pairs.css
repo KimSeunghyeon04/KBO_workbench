@@ -99,6 +99,10 @@
   margin-block: 1rem;
 }
 
+.sequence-release {
+  margin-block: 16px;
+}
+
 .sequence-trajectory figure {
   margin: 0;
 }

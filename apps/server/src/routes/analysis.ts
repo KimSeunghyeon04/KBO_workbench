@@ -29,6 +29,7 @@ import { pitchQualityRoutes } from "./pitch-quality.js";
 import { parkEnvironmentRoutes } from "./park-environment.js";
 import { pitchLocationRoutes } from "./pitch-location.js";
 import { pitchAnglesRoutes } from "./pitch-angles.js";
+import { pitchReleaseRoutes } from "./pitch-release.js";
 
 type Options = Pick<RouteContext, "pool"> & {
   careerRoot?: string;
@@ -65,6 +66,7 @@ export const analysisRoutes: FastifyPluginAsyncTypebox<Options> = async (app, co
   });
   await app.register(pitchLocationRoutes, { pool: context.pool, outcomeSamples });
   await app.register(pitchAnglesRoutes, { pool: context.pool, computation: workers });
+  await app.register(pitchReleaseRoutes, { pool: context.pool, computation: workers });
   await app.register(runValueRoutes, { pool: context.pool, models: context.runModels });
   await app.register(pitchQualityRoutes, {
     pool: context.pool,
@@ -79,7 +81,7 @@ export const analysisRoutes: FastifyPluginAsyncTypebox<Options> = async (app, co
   });
   await app.register(pitcherWorkloadRoutes, { pool: context.pool, computation: workers });
   await app.register(baserunningAnalysisRoutes, { pool: context.pool });
-  await app.register(pitchSequenceRoutes, { pool: context.pool });
+  await app.register(pitchSequenceRoutes, { pool: context.pool, computation: workers });
   await app.register(pitcherChangesRoutes, { ...context, computation });
   await app.register(batterProfileRoutes, { pool: context.pool, outcomeSamples });
   app.addHook("onClose", async () => {

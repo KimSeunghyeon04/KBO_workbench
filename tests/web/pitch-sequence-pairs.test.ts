@@ -3,7 +3,11 @@ import { createElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { resolveAnalysisScope } from "@kbo/contracts";
+import {
+  resolveAnalysisScope,
+  type PitchReleaseGroup,
+  type PitchSequenceResponse,
+} from "@kbo/contracts";
 import { analyzePitchSequences } from "@kbo/game-core";
 import { PitchSequencePairs } from "../../apps/web/src/analysis/pitch-sequence-pairs.js";
 import { getPitchSequences } from "../../apps/web/src/api/pitch-sequence-client.js";
@@ -16,19 +20,42 @@ afterEach(() => {
 
 const query = { season: 2024 };
 const scope = resolveAnalysisScope(query, "regular");
+const releaseGroups: PitchReleaseGroup[] = [
+  {
+    pitchType: "직구",
+    pitches: 120,
+    games: 3,
+    estimate: { xCm: -37, heightCm: 180, extensionCm: 188 },
+  },
+  { pitchType: "커브", pitches: 42, games: 3, estimate: null },
+];
+
+function renderPairs(data: PitchSequenceResponse) {
+  render(createElement(MemoryRouter, null, createElement(PitchSequencePairs, { data })));
+}
 
 it("shows each mean's valid sample, missing means, and the distinct outcome denominators", () => {
-  const data = analyzePitchSequences(query, "p", scope, "hash", [
-    ...independentSequenceSamples(),
-    pitchSequenceRow(6, { paId: "pa4", pitchType: "커브" }),
-    pitchSequenceRow(7, {
-      paId: "pa4",
-      pitchType: "커브",
-      trackingId: null,
-      speedKph: null,
-    }),
-  ]);
-  render(createElement(MemoryRouter, null, createElement(PitchSequencePairs, { data })));
+  const data = analyzePitchSequences(
+    query,
+    "p",
+    scope,
+    "hash",
+    [
+      ...independentSequenceSamples(),
+      pitchSequenceRow(6, { paId: "pa4", pitchType: "커브" }),
+      pitchSequenceRow(7, {
+        paId: "pa4",
+        pitchType: "커브",
+        trackingId: null,
+        speedKph: null,
+      }),
+    ],
+    releaseGroups,
+  );
+  renderPairs(data);
+  const graph = within(screen.getByRole("img", { name: "수평 궤적 비교" }));
+  expect(graph.getByText("54.33 ft")).toBeTruthy();
+  expect(screen.getByText(/릴리스 기준 두 번째−첫 번째 시간/)).toBeTruthy();
   fireEvent.click(screen.getByText("조합별 상세 성적과 계산 기준"));
   const table = within(screen.getByRole("table", { name: "두 구종 조합" }));
   const measured = table.getByRole("row", { name: /직구 → 직구/ });
@@ -75,12 +102,25 @@ it("decodes server-provided sample counts and rejects a response that omits one"
 });
 
 it("selects every group and resets pair navigation without losing missing tracking evidence", () => {
-  const data = analyzePitchSequences(query, "p", scope, "hash", [
-    ...independentSequenceSamples(),
-    pitchSequenceRow(6, { paId: "pa4", pitchType: "커브" }),
-    pitchSequenceRow(7, { paId: "pa4", pitchType: "커브", trackingId: null }),
-  ]);
-  render(createElement(MemoryRouter, null, createElement(PitchSequencePairs, { data })));
+  const data = analyzePitchSequences(
+    query,
+    "p",
+    scope,
+    "hash",
+    [
+      ...independentSequenceSamples(),
+      pitchSequenceRow(6, { paId: "pa4", pitchType: "커브" }),
+      pitchSequenceRow(7, { paId: "pa4", pitchType: "커브", trackingId: null }),
+    ],
+    releaseGroups,
+  );
+  renderPairs(data);
+  const release = within(
+    screen.getByRole("table", { name: "시즌 구종별 릴리스와 익스텐션 추정치" }),
+  );
+  const first = within(release.getByRole("row", { name: /첫 공 · 직구/ }));
+  expect(first.getByRole("cell", { name: "188" })).toBeTruthy();
+  expect(first.getByRole("cell", { name: "120구 · 3경기" })).toBeTruthy();
   expect(screen.getByRole("table", { name: "두 구종 조합" }).closest("details")?.open).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "다음 쌍" }));
   expect(screen.getByRole("heading", { name: /선택 목록 2번째 쌍/ })).toBeTruthy();
@@ -89,7 +129,10 @@ it("selects every group and resets pair navigation without losing missing tracki
   });
   expect(screen.getByRole("heading", { name: /커브 → 커브 · 선택 목록 1번째 쌍/ })).toBeTruthy();
   expect(screen.getByRole("button", { name: "다음 쌍" }).hasAttribute("disabled")).toBe(true);
-  expect(screen.getByRole("status").textContent).toContain("일부 좌표가 누락");
+  expect(screen.getByText(/일부 좌표가 누락/)).toBeTruthy();
+  const curve = within(release.getByRole("row", { name: /첫 공 · 커브/ }));
+  expect(curve.getAllByRole("cell", { name: "—" })).toHaveLength(3);
+  expect(curve.getByRole("cell", { name: "42구 · 3경기" })).toBeTruthy();
   expect(screen.queryByRole("img", { name: "수평 궤적 비교" })).toBeNull();
   fireEvent.change(screen.getByRole("combobox", { name: "비교할 조합" }), {
     target: { value: "" },

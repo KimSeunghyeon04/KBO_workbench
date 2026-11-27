@@ -759,6 +759,49 @@ try {
       }}}}}}));
   // Season selectors now come from imported facts, including historical model-period examples.
   const competitions = new GameCompetitionRepository(pool);
+  async function importReleaseSample(season, sample) {
+    const document = structuredClone(fixture);
+    const gameId = `release-sample-${season}-${sample}`;
+    document.revisionBase = { kind: "new_game" };
+    document.source.sourceGameId = gameId;
+    document.metadata = { ...document.metadata, gameId, season, gameDate: `${season}-06-02`, status: "final" };
+    document.officialRecords = { batters: [], pitchers: [] };
+    document.events = document.events.slice(0, 2);
+    document.trackingCandidates = [];
+    function append(kind, payload) {
+      const sequence = document.events.length;
+      const eventId = `e${sequence}`;
+      document.events.push({ identity: { kind: "source", eventId, endpoint: "relay", blockIndex: 0, eventIndex: sequence },
+        sequence, inning: 1, half: "top", kind, payload });
+      return eventId;
+    }
+    const { pitcherId, batterId } = document.events[1].payload;
+    for (let i = 0; i < 96; i++) {
+      const fastball = i % 2 === 0;
+      const sign = (bit) => ((i >> 1) & bit) === 0 ? -1 : 1;
+      const sourcePitchId = `p${i}`;
+      const speedKph = (season === 2024 ? 140 : 145) - (fastball ? 0 : 12);
+      const eventId = append("pitch", { sourcePitchId, pitchType: fastball ? "\uC9C1\uAD6C" : "\uC2AC\uB77C\uC774\uB354",
+        call: i < 2 ? "called_strike" : i === 95 ? "swinging_strike" : "foul", speedKph });
+      const y0 = sample === 0 ? 50 : 55;
+      const vy0 = -speedKph / 1.09728;
+      const time = (y0 - (fastball ? 55 : 54)) / vy0;
+      const vx = sign(4) * 2, vz = sign(8) * 2;
+      const ax = (fastball ? -8 : 8) + sample, az = -15 - sample;
+      document.trackingCandidates.push({
+        trackingId: `t${i}`, source: { endpoint: "tracking", blockIndex: 0, rowIndex: i },
+        sourcePitchId, sourcePitchOrdinal: i + 1, sequence: i, inning: 1, half: "top",
+        plateAppearanceEventId: "e1", pitcherId, batterId,
+        x0: 1 + sign(1) / 10 + vx * time + ax * time ** 2 / 2, y0,
+        z0: 6 + sign(2) / 10 + vz * time + az * time ** 2 / 2,
+        vx0: vx + ax * time, vy0, vz0: vz + az * time, ax, ay: 0, az,
+        crossPlateX: 0.1, crossPlateY: 1.4167, stance: "R",
+        resolution: { kind: "linked", pitchEventId: eventId },
+      });
+    }
+    append("plate_result", { result: "strikeout", batterId, pitcherId });
+    await store.importRevision(parseStagingGameDocumentV2(document));
+  }
   for (const season of [2020, 2021, 2022, 2023, 2024, 2025]) {
     const document = structuredClone(fixture);
     document.revisionBase = { kind: "new_game" };
@@ -820,6 +863,9 @@ try {
         t.az += sample % 2 === 0 ? 2 : -2;
       }
       await store.importRevision(parseStagingGameDocumentV2(extra));
+    }
+    if (season === 2024 || season === 2025) {
+      for (let sample = 0; sample < 3; sample++) await importReleaseSample(season, sample);
     }
   }
 } finally { await pool.end(); }
@@ -1046,13 +1092,17 @@ try {
   await assertPlayerDestination("/analysis/pitch-location", { pitcher, pitchType: null, stance: null, balls: null, strikes: null, cohort: null });
   const flowRequest = page.waitForResponse(res => new URL(res.url()).pathname.endsWith("/count-flow") && res.ok());
   await page.getByRole("tab", { name: "\uad6c\uc885 \ubc30\ud569", exact: true }).click();
-  const flowResponse = await (await flowRequest).json();
+  const flowResult = await flowRequest;
+  const flowResponse = await flowResult.json();
   await page.locator(".outcome-arsenal").waitFor();
-  const profileArsenal = await page.evaluate(async id => {
-    const response = await fetch(`/api/v2/analysis/pitch-location/${encodeURIComponent(id)}?season=2024&competition=unknown`);
+  const locationUrl = new URL(flowResult.url());
+  locationUrl.pathname = locationUrl.pathname.replace(/\/count-flow$/, "");
+  locationUrl.searchParams.delete("include");
+  const profileArsenal = await page.evaluate(async url => {
+    const response = await fetch(url);
     if (!response.ok) throw new Error("Profile arsenal API failed.");
     return response.json();
-  }, pitcher);
+  }, locationUrl.pathname + locationUrl.search);
   if (profileArsenal.arsenal.some(group => group.stance === null) ||
       !profileArsenal.arsenal.some(group => group.stance === "L" && group.pitches > 0)) {
     throw new Error("Untracked pitches must use declared batter profiles without inventing locations.");
@@ -1300,7 +1350,7 @@ try {
     }
     if (url.includes("pitch-sequences")) {
       await page.locator(".sequence-group-header select").selectOption({ index: 1 });
-      await page.locator(".sequence-comparison h3").waitFor();
+      await page.locator(".sequence-comparison .analysis-comparison-target").waitFor();
       await page.locator(".sequence-group-details > summary").click();
       await page.locator(".sequence-group-details table").waitFor();
       await page.getByRole("button", { name: "\uADA4\uC801 \uBE44\uAD50", exact: true }).first().press("Enter");
@@ -1456,16 +1506,19 @@ try {
   if (($currentModels.models.modelHash -join ",") -ne $modelHashes) { throw "Historical publication changed the 2025 models." }
   $referenceFiles = @{}
   foreach ($season in @(2024, 2025)) {
-    $catalog = Invoke-RestMethod -Uri "$baseUrl/api/v2/analysis/pitch-shape?season=$season"
+    $catalog = Invoke-RestMethod -Uri "$baseUrl/api/v2/analysis/pitch-shape?season=$season&competition=unknown"
     $pitcherId = $catalog.pitchers[0].pitcherId
-    $uri = "$baseUrl/api/v2/analysis/pitch-shape/${pitcherId}?season=$season"
+    $uri = "$baseUrl/api/v2/analysis/pitch-shape/${pitcherId}?season=$season&competition=unknown"
     $response = Invoke-RestMethod -Uri $uri
     $referenceResponses[$uri] = $response | ConvertTo-Json -Depth 100 -Compress
+    if ($null -eq $response.baseline -or $response.points.Count -eq 0) {
+      throw "Release-based reference fixture did not produce points."
+    }
     if ($response.calibration.plane -ne "middle" -or
         ($response.calibration.calibratedCount + $response.calibration.uncalibratedCount) -ne $response.points.Count) {
       throw "Pitch calibration coverage does not match points."
     }
-    $referencePath = Join-Path $workspacePath "analysis/pitch-reference/v$($response.modelVersion)/reference-v3/$($response.calibration.profileHash)/$season/$($response.referenceSourceHash).json"
+    $referencePath = Join-Path $workspacePath "analysis/pitch-reference/v$($response.modelVersion)/reference-v4/$($response.calibration.profileHash)/$season/$($response.referenceSourceHash).json"
     $calibrationPath = Join-Path $workspacePath "analysis/pitch-calibration/v$($response.calibration.modelVersion)/$season/$($response.referenceSourceHash).json"
     foreach ($cachePath in @($referencePath, $calibrationPath)) {
       $referenceFiles[$cachePath] = @{

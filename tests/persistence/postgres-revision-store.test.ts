@@ -89,7 +89,10 @@ import { seedBatterHeights, batterHeightDataset } from "../helpers/registry-heig
 import { makeDocument, safe, scored } from "../helpers/game-document.js";
 import { recordCorrectionVenueFixture } from "../helpers/record-correction-fixture.js";
 import { plateTracking, plateZoneCases } from "../helpers/tracking-geometry.js";
-import { pitchAnalysisFixture } from "../helpers/pitch-analysis-fixture.js";
+import {
+  pitchAnalysisFixture,
+  releasePitchAnalysisFixture,
+} from "../helpers/pitch-analysis-fixture.js";
 import { disciplineEligibilityFixture } from "../helpers/discipline-eligibility-fixture.js";
 import { competitionFixture } from "../helpers/game-competition.js";
 import { analysisSourceHash } from "../../packages/persistence/src/analysis-scope.js";
@@ -1792,7 +1795,8 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     const after = await pitch.analyze(2024, "hp1", { competition: "regular" });
     expect(after.sourceHash).not.toBe(before.sourceHash);
     expect(after.actualPitchCount).toBe(4);
-    expect(after.baseline?.candidateCount).toBe(3);
+    expect(after.baseline).toBeNull();
+    expect(after.missingReleaseCount).toBe(2);
     expect((await pitch.catalog(2024, { competition: "postseason" })).pitchers[0]?.pitches).toBe(4);
     const narrow = await pitch.analyze(2024, "hp1", {
       competition: "regular",
@@ -3504,7 +3508,8 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     await store.importRevision(draft);
     const updated = await repository.analyze(2024, "hp1", { competition: "unknown" });
     expect(updated.sourceHash).not.toBe(expected.sourceHash);
-    expect(updated.points.every((point) => point.revision === 2)).toBe(true);
+    expect(updated.points).toHaveLength(0);
+    expect(updated.missingReleaseCount).toBe(2);
     expect(computation.sample).toHaveBeenCalledTimes(2);
     expect(updated).toEqual(
       await new PitchAnalysisRepository(pool).analyze(2024, "hp1", { competition: "unknown" }),
@@ -3621,13 +3626,10 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       competition: "unknown",
     });
     expect(snapshot.sourceHash).not.toBe(shape.sourceHash);
-    expect(snapshot.reference?.summary).toMatchObject({
-      candidateCount: shape.baseline?.candidateCount,
-      sampleCount: shape.baseline?.sampleCount,
-    });
-    // Discipline keeps the source front plane; movement uses the middle plane.
+    expect(snapshot.reference?.summary).toMatchObject({ candidateCount: 3, sampleCount: 1 });
+    // The discipline baseline can use a sample below the release estimator's threshold.
     expect(snapshot.reference?.summary.arrivalMs).toBeCloseTo(358.4986883527349, 8);
-    expect(shape.baseline?.arrivalMs).toBeCloseTo(363.9073091983306, 8);
+    expect(shape.baseline).toBeNull();
     expect(snapshot.rows).toHaveLength(4);
     const result = analyzeBatterDiscipline(prepareDisciplineSeason(snapshot), "a1", {
       season: 2024,
@@ -6152,8 +6154,8 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
   });
 
   it("포심 분포와 결과를 같은 snapshot에서 읽고 실제 스윙 판정을 보존한다", async () => {
-    for (let i = 0; i < 6; i++) {
-      const base = pitchAnalysisFixture(2024);
+    for (let i = 0; i < 3; i++) {
+      const base = releasePitchAnalysisFixture(2024, i);
       await store.importRevision(
         parseStagingGameDocumentV2({
           ...base,
@@ -6169,20 +6171,13 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
                 }
               : e,
           ),
-          trackingCandidates: base.trackingCandidates.map((t) => ({
-            ...t,
-            ax: i - 8,
-            vy0: -140 - i,
-            az: i % 2 === 0 ? -15 : -18,
-          })),
         }),
       );
     }
     const repository = new PitchAnalysisRepository(pool);
     const data = await repository.analyze(2024, "hp1", { competition: "unknown" });
-    // The third tracking now has az too, so each game contributes two valid fastballs.
-    expect(data.referenceDistribution?.sampleCount).toBe(12);
-    expect(data.referenceDistribution?.central90.includedCount).toBeGreaterThanOrEqual(11);
+    expect(data.referenceDistribution?.sampleCount).toBe(144);
+    expect(data.referenceDistribution?.central90.includedCount).toBeGreaterThanOrEqual(130);
     expect(data.referenceDistribution).toEqual(
       (await repository.analyze(2024, "hp2", { competition: "unknown" })).referenceDistribution,
     );
@@ -6198,7 +6193,50 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(data.points.every((p) => p.referenceBand !== null)).toBe(true);
   });
 
-  it("시즌 평균 포심은 투수 선택과 독립이고 current revision만 사용한다", async () => {
+  it("uses the finalized season release clock for a date-filtered shape and sequence", async () => {
+    for (let i = 0; i < 3; i++) await store.importRevision(releasePitchAnalysisFixture(2024, i));
+    const openGame = releasePitchAnalysisFixture(2024, 3);
+    await store.importRevision(
+      parseStagingGameDocumentV2({
+        ...openGame,
+        metadata: { ...openGame.metadata, status: "suspended" },
+      }),
+    );
+    const scope = { competition: "unknown", dateFrom: "2024-06-01", dateTo: "2024-06-01" } as const;
+    const shape = await new PitchAnalysisRepository(pool).analyze(2024, "hp1", scope);
+    expect(shape.actualPitchCount).toBe(96);
+    expect(shape.points).toHaveLength(96);
+    expect(
+      shape.releaseGroups?.map((group) => [group.pitchType, group.pitches, group.games]),
+    ).toEqual([
+      ["슬라이더", 144, 3],
+      ["직구", 144, 3],
+    ]);
+    const t = (55 - 17 / 24) / 100;
+    expect(shape.baseline?.sampleCount).toBe(144);
+    expect(shape.baseline?.arrivalMs).toBeCloseTo(t * 1000, 8);
+    expect(shape.points.find((pitch) => pitch.pitchType === "슬라이더")).toMatchObject({
+      arrivalMs: expect.closeTo((t - 0.01) * 1000, 7),
+      timingDifferenceMs: expect.closeTo(-10, 7),
+      xCm: expect.closeTo((16 * t ** 2 * 30.48) / 2, 7),
+    });
+    const repository = new PitchSequenceRepository(pool);
+    const result = await repository.analyze({ season: 2024, ...scope }, "hp1");
+    expect(result.releaseGroups).toEqual(shape.releaseGroups);
+    expect(result.pairs[0]?.planeTimeDifferenceMs).toBeCloseTo(-10, 8);
+    expect(result.pairs[1]?.planeTimeDifferenceMs).toBeCloseTo(10, 8);
+    const later = releasePitchAnalysisFixture(2024, 2);
+    const draft = await store.loadCorrectionDraft(later.metadata.gameId, 1);
+    await store.importRevision(draft);
+    const updated = await repository.analyze({ season: 2024, ...scope }, "hp1");
+    expect(updated.sourceHash).not.toBe(result.sourceHash);
+    expect(updated.pairs).toEqual(result.pairs);
+    const updatedShape = await new PitchAnalysisRepository(pool).analyze(2024, "hp1", scope);
+    expect(updatedShape.sourceHash).not.toBe(shape.sourceHash);
+    expect(updatedShape.points).toEqual(shape.points);
+  }, 15_000);
+
+  it("릴리스를 추정할 수 없는 시즌은 기준 포심 없이 표본 제외 사유를 제공한다", async () => {
     const repository = new PitchAnalysisRepository(pool);
     await store.importRevision(pitchAnalysisFixture(2024));
     await store.importRevision(pitchAnalysisFixture(2025));
@@ -6207,29 +6245,21 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     const second = await repository.analyze(2025, "hp2", { competition: "unknown" });
     const previousSeason = await repository.analyze(2024, "hp1", { competition: "unknown" });
     expect(first.baseline).toEqual(second.baseline);
-    expect(first.baseline).toMatchObject({ candidateCount: 6, sampleCount: 2, excludedCount: 4 });
-    expect(previousSeason.baseline).toMatchObject({ candidateCount: 3, sampleCount: 1 });
-    expect(previousSeason.baseline?.arrivalMs).not.toBe(first.baseline?.arrivalMs);
+    expect(first.baseline).toBeNull();
+    expect(previousSeason.baseline).toBeNull();
     expect(first).toMatchObject({
       actualPitchCount: 4,
       missingTrackingCount: 1,
       invalidTrackingCount: 1,
+      missingReleaseCount: 2,
     });
-    expect(first.points).toHaveLength(2);
+    expect(first.points).toHaveLength(0);
     expect(first.calibration).toMatchObject({
       plane: "middle",
       calibratedCount: 0,
-      uncalibratedCount: 2,
+      uncalibratedCount: 0,
     });
-    expect(
-      first.points.every(
-        (point) => point.calibrationStatus !== "applied" && point.calibrationXcm === null,
-      ),
-    ).toBe(true);
     expect(first.referenceDistribution).toBeNull();
-    expect(first.points.every((p) => p.swing && p.whiff && p.referenceBand === null)).toBe(true);
-    expect(first.points.every((point) => !("clusterId" in point))).toBe(true);
-    expect(first.points[1]?.timingDifferenceMs).toBeGreaterThan(0);
     expect((await repository.catalog(2025, { competition: "unknown" })).pitchers).toHaveLength(2);
     const empty = await repository.analyze(2023, "hp1");
     expect(empty.baseline).toBeNull();
@@ -6240,7 +6270,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     const after = await repository.analyze(2025, "hp1", { competition: "unknown" });
     expect(after.baseline).toEqual(first.baseline);
     expect(after.sourceHash).not.toBe(first.sourceHash);
-    expect(after.points.every((point) => point.revision === 2)).toBe(true);
+    expect(after.points).toHaveLength(0);
     expect(
       (await store.revisions("analysis-2025-hp1")).revisions.find(
         (revision) => revision.revision === 1,
@@ -6294,7 +6324,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       });
       const updated = await repository.analyze(2024, "hp1", { competition: "unknown" });
       expect(updated.sourceHash).not.toBe(first.sourceHash);
-      expect(updated.baseline?.arrivalMs).not.toBe(first.baseline?.arrivalMs);
+      expect(updated.baseline).toBeNull();
       expect(updated).toEqual(await uncached.analyze(2024, "hp1", { competition: "unknown" }));
       expect(calculations).toBe(2);
       expect(calibrationCalculations).toBe(2);

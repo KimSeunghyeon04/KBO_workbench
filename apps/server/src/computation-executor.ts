@@ -9,6 +9,7 @@ import {
   summarizePitchQuality,
   summarizeMatchupModel,
   analyzePitchAngles,
+  estimatePitchReleases,
   comparePitcherWorkload,
   trainParkEnvironment,
 } from "@kbo/game-core";
@@ -79,6 +80,8 @@ export function compute(input: Computation): ComputationResult | Promise<Computa
         kind: input.kind,
         value: analyzePitchAngles(input.rows, input.scope, input.pitcherId, input.sourceHash),
       };
+    case "pitch_release":
+      return { kind: input.kind, value: estimatePitchReleases(input.rows) };
     case "matchup_summary":
       return {
         kind: input.kind,
@@ -204,7 +207,11 @@ export function compute(input: Computation): ComputationResult | Promise<Computa
     case "pitch_reference":
       return {
         kind: input.kind,
-        value: preparePitchAnalysisReference(input.rows, input.calibration ?? null),
+        value: preparePitchAnalysisReference(
+          input.rows,
+          input.calibration ?? null,
+          input.releaseBased,
+        ),
       };
     case "pitch_calibration":
       return {
@@ -226,6 +233,7 @@ export function compute(input: Computation): ComputationResult | Promise<Computa
           input.rows,
           input.reference,
           input.calibration,
+          input.releaseRows,
         ),
       };
   }

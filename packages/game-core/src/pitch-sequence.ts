@@ -3,20 +3,22 @@ import type {
   PitchSequenceQuery,
   PitchSequenceResponse,
   AnalysisScope,
+  PitchReleaseGroup,
 } from "@kbo/contracts";
-import { pitchComparisonStart, pitchStateAtPlane } from "./pitch-trajectory.js";
+import { pitchReleaseDepths } from "./pitch-release.js";
+import { pitchStateAtPlane } from "./pitch-trajectory.js";
 import { matchesPitchOutcome } from "./pitch-outcomes.js";
 /** Provider coordinates, with no endpoint bias correction extended to the middle of the trajectory. */
-export function pitchPositionAtPlane(row: PitchSequenceRow, y: number) {
+export function pitchPositionAtPlane(row: PitchSequenceRow, y: number, releaseY?: number) {
   if (!row.supported || row.trackingId === null) return null;
-  const start = pitchComparisonStart(row);
-  if (start === null || y >= start.y) return null;
-  const point = pitchStateAtPlane(row, y);
+  const start =
+    releaseY === undefined || y > releaseY ? null : pitchStateAtPlane(row, releaseY, true);
+  const point = start?.y === y ? start : pitchStateAtPlane(row, y, start !== null);
   if (point === null) return null;
   return {
     xCm: point.x * 30.48,
     zCm: point.z * 30.48,
-    timeMs: (point.seconds - start.seconds) * 1000,
+    timeMs: start === null ? null : (point.seconds - start.seconds) * 1000,
   };
 }
 export function analyzePitchSequences(
@@ -25,7 +27,9 @@ export function analyzePitchSequences(
   scope: AnalysisScope,
   sourceHash: string,
   input: readonly PitchSequenceRow[],
+  releaseGroups: readonly PitchReleaseGroup[] = [],
 ): PitchSequenceResponse {
+  const releaseDepths = pitchReleaseDepths(releaseGroups);
   const rows = [...input].sort((a, b) =>
     a.gameId === b.gameId
       ? a.revision === b.revision
@@ -80,8 +84,10 @@ export function analyzePitchSequences(
       (query.cohort === "discipline" && !current.eligible)
     )
       continue;
-    const a = pitchPositionAtPlane(previous, 23.8),
-      b = pitchPositionAtPlane(current, 23.8);
+    const a = pitchPositionAtPlane(previous, 23.8, releaseDepths.get(previous.pitchType ?? "")),
+      b = pitchPositionAtPlane(current, 23.8, releaseDepths.get(current.pitchType ?? ""));
+    const aTime = a?.timeMs ?? null,
+      bTime = b?.timeMs ?? null;
     const ap =
         previous.crossPlateY === null ? null : pitchPositionAtPlane(previous, previous.crossPlateY),
       bp = current.crossPlateY === null ? null : pitchPositionAtPlane(current, current.crossPlateY);
@@ -89,7 +95,7 @@ export function analyzePitchSequences(
       previous,
       current,
       planeDistanceCm: a === null || b === null ? null : Math.hypot(a.xCm - b.xCm, a.zCm - b.zCm),
-      planeTimeDifferenceMs: a === null || b === null ? null : b.timeMs - a.timeMs,
+      planeTimeDifferenceMs: aTime === null || bTime === null ? null : bTime - aTime,
       speedDifferenceKph:
         previous.speedKph === null || current.speedKph === null
           ? null
@@ -116,6 +122,7 @@ export function analyzePitchSequences(
     scope,
     sourceHash,
     planeYFeet: 23.8,
+    releaseGroups: [...releaseGroups],
     coverage,
     pairs,
     groups: [...groups]

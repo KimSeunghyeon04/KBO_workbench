@@ -86,6 +86,15 @@ function response(season: number, pitcherId: string, k = 2): PitchAnalysisRespon
     actualPitchCount: 4,
     missingTrackingCount: 1,
     invalidTrackingCount: 1,
+    missingReleaseCount: 0,
+    releaseGroups: [
+      {
+        pitchType: "직구",
+        pitches: 192,
+        games: 5,
+        estimate: { xCm: 42, heightCm: 188, extensionCm: 175 },
+      },
+    ],
     points: ["직구", "슬라이더"].map((pitchType, index) => ({
       gameId: `game-${season}`,
       revision: 1,
@@ -347,20 +356,15 @@ describe("투구 움직임 화면", () => {
   });
   it("잘못된 URL 군집 수는 요청하지 않고 초기화로 복구한다", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
-    const fetcher = vi.fn(
-      async (input: string | URL | Request) =>
-        new Response(
-          JSON.stringify(
-            String(input).includes("/hp1?")
-              ? response(2024, "hp1")
-              : {
-                  season: 2024,
-                  scope: resolveAnalysisScope({ season: 2024 }),
-                  pitchers: [{ pitcherId: "hp1", name: "투수 A", pitches: 4 }],
-                },
-          ),
-        ),
-    );
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input), "http://localhost");
+      const scope = resolveAnalysisScope({ season: 2024 });
+      return Response.json(
+        url.pathname.endsWith("/hp1")
+          ? response(2024, "hp1")
+          : { season: 2024, scope, pitchers: [{ pitcherId: "hp1", name: "투수 A", pitches: 4 }] },
+      );
+    });
     vi.stubGlobal("fetch", fetcher);
     const client = createAnalysisQueryClient();
     const user = userEvent.setup();
@@ -383,6 +387,10 @@ describe("투구 움직임 화면", () => {
     expect(fetcher.mock.calls.every(([url]) => !String(url).includes("/hp1?"))).toBe(true);
     await user.click(screen.getByRole("button", { name: "중계 구종 수로 초기화" }));
     expect(await screen.findByLabelText("군집 수")).toHaveProperty("value", "2");
+    const releases = within(
+      await screen.findByRole("table", { name: "시즌 구종별 릴리스와 익스텐션 추정치" }),
+    );
+    expect(releases.getByText("175")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
     client.clear();
   });
