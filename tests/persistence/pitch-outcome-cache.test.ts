@@ -64,7 +64,7 @@ it("reuses pitch and PA input across count, pitch type and stance changes", asyn
   expect(reader.sqlCalls()).toBe(6);
 });
 
-it("keeps both period scopes separate and reuses each input while changing a shared filter", async () => {
+it("shares overlapping rows while retaining each period's scope, fingerprint and cache entry", async () => {
   const reader = outcomeReader();
   const scope = {
     season: 2024,
@@ -73,7 +73,7 @@ it("keeps both period scopes separate and reuses each input while changing a sha
     compareDateFrom: "2024-06-01",
   };
   const first = await reader.location.compare(scope, "p1");
-  expect(reader.sqlCalls()).toBe(9);
+  expect(reader.sqlCalls()).toBe(7);
   expect(first.first.scope.dateFrom).toBe("2024-04-01");
   expect(first.second.scope.dateFrom).toBe("2024-06-01");
   expect(first.second.sourceHash).not.toBe(first.first.sourceHash);

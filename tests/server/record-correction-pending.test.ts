@@ -207,6 +207,7 @@ async function setup(root: string, name: Parameters<typeof recordCorrectionFixtu
       pendingNoticeIds: async () => [],
       listNoticeIdsForImport: async () => [],
       case: async () => item,
+      caseDetails: async () => [],
       caseSnapshot: async () =>
         item === null
           ? null

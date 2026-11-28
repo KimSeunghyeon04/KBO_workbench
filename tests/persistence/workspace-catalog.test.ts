@@ -16,6 +16,46 @@ function item(gameId: string, warningFindings = 0): GameCatalogItem {
 }
 
 describe("workspace 표시 요약 인덱스", () => {
+  it("keeps stage search order, empty pages and the unfiltered workspace seasons", async () => {
+    const catalog = new WorkspaceCatalog(async () => null);
+    const game = (gameId: string, gameDate: string, home: string): GameCatalogItem => ({
+      ...item(gameId),
+      authority: "staging",
+      gameDate,
+      teams: { away: { teamId: "a", name: "원정 A" }, home: { teamId: "h", name: home } },
+    });
+    const older = game("older", "2026-04-01", "홈 B");
+    const first = game("Z", "2026-04-02", "홈 B");
+    const second = game("a", "2026-04-02", "홈 B");
+    for (const row of [older, second, first, game("excluded", "2026-04-03", "홈 C")])
+      catalog.seed(row);
+    catalog.seed({ ...item("past-source"), season: 2025 });
+    catalog.seed({ ...item("unknown-season"), season: null });
+    const query = { season: 2026, search: "  A 홈 b  ", limit: 2 };
+    expect(await catalog.stagingPage(query)).toEqual({
+      games: [first, second],
+      total: 3,
+      page: 1,
+      limit: 2,
+      seasons: [2026, 2025],
+    });
+    expect(await catalog.stagingPage({ ...query, page: 2 })).toEqual({
+      games: [older],
+      total: 3,
+      page: 2,
+      limit: 2,
+      seasons: [2026, 2025],
+    });
+    expect(await catalog.stagingPage({ ...query, page: 3 })).toEqual({
+      games: [],
+      total: 3,
+      page: 3,
+      limit: 2,
+      seasons: [2026, 2025],
+    });
+    expect(await catalog.seasons()).toEqual([2026, 2025]);
+  });
+
   it("counts the current authorities without cloning and sorting the list", async () => {
     const load = vi.fn(async (id: string) => ({ ...item(id), authority: "staging" as const }));
     const catalog = new WorkspaceCatalog(load);

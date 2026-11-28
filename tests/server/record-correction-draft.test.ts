@@ -66,6 +66,7 @@ describe("기록정정 초안의 current revision과 작업본 보존", () => {
     const compute = vi.spyOn(inlineComputation, "run");
     try {
       await fixture.open();
+      fixture.case.mockClear();
       const read = vi.spyOn(fixture.workspace, "readCurrentDocumentSnapshot");
       const catalog = vi.spyOn(fixture.workspace, "correctionGameCatalog");
       const rows = await fixture.listCaseSummaries();
@@ -88,6 +89,7 @@ describe("기록정정 초안의 current revision과 작업본 보존", () => {
       fixture.listCaseSummaries.mockResolvedValueOnce([completed, withoutGame]);
       expect(await fixture.service.listCaseSummaries()).toEqual([completed, withoutGame]);
       expect(catalog).not.toHaveBeenCalled();
+      expect(fixture.caseDetails).not.toHaveBeenCalled();
       fixture.listCaseSummaries.mockResolvedValueOnce([completed, ...rows, withoutGame]);
       const list = await fixture.service.listCaseSummaries();
       expect(list).toEqual([
@@ -99,6 +101,10 @@ describe("기록정정 초안의 current revision과 작업본 보존", () => {
         withoutGame,
       ]);
       expect(catalog).toHaveBeenCalledExactlyOnceWith([fixture.document.metadata.gameId]);
+      expect(fixture.caseDetails).toHaveBeenCalledExactlyOnceWith(
+        rows.map(({ noticeId }) => noticeId),
+      );
+      expect(fixture.case).not.toHaveBeenCalled();
       expect(read).toHaveBeenCalledTimes(1);
       const initialProposals = compute.mock.calls.filter(
         ([input]) => input.kind === "proposal",
@@ -462,9 +468,15 @@ async function setup(root: string, copies = 1) {
       afterRecordText: notice.afterRecordText,
     })),
   );
+  const readCase = vi.fn(async () => item);
+  // Storage may return a different order from the notice list.
+  const caseDetails = vi.fn(async (ids: readonly string[]) =>
+    [...ids].reverse().map((noticeId) => ({ ...item, noticeId })),
+  );
   const service = new RecordCorrectionService(
     {
-      case: async () => item,
+      case: readCase,
+      caseDetails,
       caseSnapshot: async () => ({ item, assessmentCurrent, publication, decisionSequence }),
       assess,
       pendingNoticeIds: async () => [],
@@ -527,6 +539,8 @@ async function setup(root: string, copies = 1) {
     sessions,
     service,
     listCaseSummaries,
+    case: readCase,
+    caseDetails,
     document,
     notice,
     assess,

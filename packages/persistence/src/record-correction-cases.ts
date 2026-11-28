@@ -44,6 +44,7 @@ import {
 import { RevisionConflictError } from "./revision-types.js";
 
 interface AssessmentRow {
+  readonly notice_id: string;
   readonly season: number;
   readonly source_revision: number;
   readonly notice_sequence: number;
@@ -591,11 +592,8 @@ export class RecordCorrectionCases {
     } = {},
   ): Promise<RecordCorrectionCase[]> {
     const noticeIds = await this.listCaseNoticeIds(filters);
-    const cases = await Promise.all(noticeIds.map((noticeId) => this.case(noticeId)));
-    return cases.filter(
-      (item): item is RecordCorrectionCase =>
-        item !== null && (filters.status === undefined || filters.status === item.status),
-    );
+    const cases = await this.caseDetails(noticeIds);
+    return cases.filter((item) => filters.status === undefined || filters.status === item.status);
   }
 
   private async listCaseNoticeIds(
@@ -727,50 +725,68 @@ export class RecordCorrectionCases {
   }
 
   public async caseSnapshot(noticeId: string): Promise<RecordCorrectionCaseSnapshot | null> {
+    return (await this.readCaseSnapshots([noticeId]))[0] ?? null;
+  }
+
+  public async caseDetails(noticeIds: readonly string[]): Promise<RecordCorrectionCase[]> {
+    return (await this.readCaseSnapshots(noticeIds)).map(({ item }) => item);
+  }
+
+  private async readCaseSnapshots(
+    noticeIds: readonly string[],
+  ): Promise<RecordCorrectionCaseSnapshot[]> {
+    const ids = [...new Set(noticeIds)];
+    if (ids.length === 0) return [];
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      const row = await activeAssessment(client, noticeId);
-      if (row === undefined) {
-        await client.query("COMMIT");
-        return null;
-      }
-      const notice = await loadNotice(client, row.season, row.source_revision, row.notice_sequence);
-      const pending = !row.assessment_current && row.status !== "dismissed";
-      const candidates =
-        pending && row.reason_code !== "manual_candidate_selected"
-          ? []
-          : await readAssessmentCandidates(client, noticeId, row.case_version);
-      await client.query("COMMIT");
-      return {
-        assessmentCurrent: row.assessment_current,
-        publication: row.publication,
-        decisionSequence: row.decision_sequence,
-        item: {
-          noticeId,
-          season: row.season,
-          sourceRevision: row.source_revision,
-          caseVersion: row.case_version,
-          status: row.effective_status,
-          gameId: pending ? null : row.game_id,
-          gameRevision: pending ? null : row.game_revision,
-          eventId: pending ? null : row.event_id,
-          reasonCode:
-            pending && row.checked_matchup_generation !== null
-              ? "awaiting_assessment"
-              : row.reason_code,
-          reasonMessage:
-            pending && row.checked_matchup_generation !== null
+      const byId = new Map(
+        (await activeAssessments(client, ids)).map((row) => [row.notice_id, row]),
+      );
+      const rows = ids.flatMap((id) => {
+        const row = byId.get(id);
+        return row === undefined ? [] : [row];
+      });
+      const notices = await loadNotices(client, rows);
+      const candidates = await readAssessmentCandidateGroups(
+        client,
+        rows.filter(
+          (row) => !assessmentPending(row) || row.reason_code === "manual_candidate_selected",
+        ),
+      );
+      const result = rows.map((row, index) => {
+        const notice = notices[index];
+        if (notice === undefined) throw new Error("record correction notice source가 없습니다.");
+        const pending = assessmentPending(row);
+        const awaiting = pending && row.checked_matchup_generation !== null;
+        return {
+          assessmentCurrent: row.assessment_current,
+          publication: row.publication,
+          decisionSequence: row.decision_sequence,
+          item: {
+            noticeId: row.notice_id,
+            season: row.season,
+            sourceRevision: row.source_revision,
+            caseVersion: row.case_version,
+            status: row.effective_status,
+            gameId: pending ? null : row.game_id,
+            gameRevision: pending ? null : row.game_revision,
+            eventId: pending ? null : row.event_id,
+            reasonCode: awaiting ? "awaiting_assessment" : row.reason_code,
+            reasonMessage: awaiting
               ? "현재 경기와 검토 근거를 재평가하고 있습니다."
               : row.reason_message,
-          proposalHash: pending ? null : row.proposal_hash,
-          appliedRevision: pending ? null : row.applied_revision,
-          assessedAt: iso(row.assessed_at),
-          notice,
-          candidates,
-          ...(pending ? { assessmentPending: true as const } : {}),
-        },
-      };
+            proposalHash: pending ? null : row.proposal_hash,
+            appliedRevision: pending ? null : row.applied_revision,
+            assessedAt: iso(row.assessed_at),
+            notice,
+            candidates: candidates.get(row.notice_id) ?? [],
+            ...(pending ? { assessmentPending: true as const } : {}),
+          },
+        };
+      });
+      await client.query("COMMIT");
+      return result;
     } catch (error: unknown) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
@@ -778,6 +794,10 @@ export class RecordCorrectionCases {
       client.release();
     }
   }
+}
+
+function assessmentPending(row: AssessmentRow): boolean {
+  return !row.assessment_current && row.status !== "dismissed";
 }
 
 async function lockNotice(client: PoolClient, noticeId: string): Promise<void> {
@@ -791,12 +811,19 @@ async function activeAssessment(
   client: PoolClient,
   noticeId: string,
 ): Promise<AssessmentRow | undefined> {
+  return (await activeAssessments(client, [noticeId]))[0];
+}
+
+async function activeAssessments(
+  client: PoolClient,
+  noticeIds: readonly string[],
+): Promise<AssessmentRow[]> {
   return (
     await client.query<AssessmentRow>(
-      "SELECT * FROM record_correction.active_assessments WHERE notice_id=$1",
-      [noticeId],
+      "SELECT * FROM record_correction.active_assessments WHERE notice_id=ANY($1::text[])",
+      [noticeIds],
     )
-  ).rows[0];
+  ).rows;
 }
 
 const matchCandidateColumns = `c.candidate_id AS "candidateId",c.game_id AS "gameId",
@@ -940,13 +967,34 @@ async function readAssessmentCandidates(
   noticeId: string,
   caseVersion: number,
 ): Promise<RecordCorrectionMatchCandidate[]> {
-  const result = await executor.query<RecordCorrectionMatchCandidate>(
-    `SELECT ${matchCandidateColumns}
-     FROM record_correction.match_candidates c
-     WHERE c.notice_id=$1 AND c.case_version=$2 ORDER BY c.candidate_order`,
-    [noticeId, caseVersion],
+  const groups = await readAssessmentCandidateGroups(executor, [
+    { notice_id: noticeId, case_version: caseVersion },
+  ]);
+  return groups.get(noticeId) ?? [];
+}
+
+async function readAssessmentCandidateGroups(
+  executor: Pool | PoolClient,
+  assessments: readonly Pick<AssessmentRow, "notice_id" | "case_version">[],
+): Promise<Map<string, RecordCorrectionMatchCandidate[]>> {
+  const groups = new Map<string, RecordCorrectionMatchCandidate[]>();
+  if (assessments.length === 0) return groups;
+  const result = await executor.query<RecordCorrectionMatchCandidate & { notice_id: string }>(
+    `SELECT c.notice_id,${matchCandidateColumns}
+     FROM unnest($1::text[],$2::integer[]) WITH ORDINALITY requested(notice_id,case_version,position)
+     JOIN record_correction.match_candidates c USING (notice_id,case_version)
+     ORDER BY requested.position,c.candidate_order`,
+    [
+      assessments.map(({ notice_id }) => notice_id),
+      assessments.map(({ case_version }) => case_version),
+    ],
   );
-  return result.rows;
+  for (const { notice_id, ...candidate } of result.rows) {
+    const group = groups.get(notice_id);
+    if (group === undefined) groups.set(notice_id, [candidate]);
+    else group.push(candidate);
+  }
+  return groups;
 }
 
 async function isCurrentSealedRevision(

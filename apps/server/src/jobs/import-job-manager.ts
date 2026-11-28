@@ -596,42 +596,45 @@ export class ImportJobManager {
     return ordered;
   }
   public history(query: ImportHistoryQuery): ImportHistory {
-    const scope = this.orderedJobs().filter(
-      (job) => query.batchId === undefined || job.batchId === query.batchId,
-    );
     const search = (query.search ?? "").trim().toLocaleLowerCase("ko-KR");
-    const filtered = scope.filter(
-      (job) =>
-        (query.status === undefined || job.status === query.status) &&
-        (search === "" ||
-          `${job.gameId} ${job.jobId} ${job.error ?? ""}`
-            .toLocaleLowerCase("ko-KR")
-            .includes(search)),
-    );
     const page = query.page ?? 1,
       limit = query.limit ?? 50;
+    const offset = (page - 1) * limit;
     const summary = {
-      total: scope.length,
+      total: 0,
       queued: 0,
       running: 0,
       succeeded: 0,
       failed: 0,
       cancelled: 0,
     };
-    for (const job of scope) if (job.status !== "cancelling") summary[job.status] += 1;
-    return {
-      jobs: filtered.slice((page - 1) * limit, page * limit).map((job) => ({ ...job })),
-      activeJobs: scope
-        .filter(
-          (job) => job.status === "running" || (job.followUpPending === true && job.error === null),
-        )
-        .slice(0, 200)
-        .map((job) => ({ ...job })),
-      total: filtered.length,
-      page,
-      limit,
-      summary,
-    };
+    let total = 0;
+    const jobs: ImportJob[] = [];
+    const activeJobs: ImportJob[] = [];
+    for (const job of this.orderedJobs()) {
+      if (query.batchId !== undefined && job.batchId !== query.batchId) continue;
+      summary.total += 1;
+      if (job.status !== "cancelling") summary[job.status] += 1;
+      const followUp = job.followUpPending === true && job.error === null;
+      if (activeJobs.length < 200 && (job.status === "running" || followUp))
+        activeJobs.push({ ...job });
+      if (
+        (query.status !== undefined && job.status !== query.status) ||
+        (search !== "" &&
+          !`${job.gameId} ${job.jobId} ${job.error ?? ""}`
+            .toLocaleLowerCase("ko-KR")
+            .includes(search))
+      )
+        continue;
+      const index = total++;
+      if (
+        index >= offset &&
+        index < offset + limit &&
+        (query.view !== "activity" || !isTerminal(job.status) || followUp)
+      )
+        jobs.push({ ...job });
+    }
+    return { jobs, activeJobs, total, page, limit, summary };
   }
   public async cancel(jobId: string): Promise<ImportJob> {
     const job = this.internal(jobId);

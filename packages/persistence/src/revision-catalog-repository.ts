@@ -115,9 +115,8 @@ export async function readDatabaseCatalogPage(
 ): Promise<DatabaseGames> {
   const page = query.page ?? 1,
     limit = query.limit ?? 50;
-  const [result, seasons] = await Promise.all([
-    pool.query<Record<string, unknown>>(
-      `WITH candidates AS (
+  const { rows } = await pool.query<Record<string, unknown>>(
+    `WITH candidates AS (
         ${catalogGames}
         WHERE ($1::integer IS NULL OR r.season=$1)
           AND strpos(lower(concat(r.game_id,' ',r.game_date::text,' ',away.team_name,' ',home.team_name)),lower($2::text))>0
@@ -127,28 +126,29 @@ export async function readDatabaseCatalogPage(
       ), totals AS (
         SELECT count(*)::integer AS total FROM candidates
       )
-      SELECT totals.total,${catalogColumns} FROM totals
+      SELECT totals.total,${catalogColumns}, ARRAY(
+        SELECT DISTINCT season FROM analytics.current_game_revisions ORDER BY season DESC
+      ) AS seasons FROM totals
       LEFT JOIN selected_page g ON TRUE
       LEFT JOIN LATERAL (
         SELECT count(*)::integer AS revision_count FROM workbench.game_revisions
         WHERE game_id=g.game_id AND sealed
       ) c ON TRUE
       ORDER BY g.game_date DESC,g.game_id COLLATE "C" ASC`,
-      [query.season ?? null, (query.search ?? "").trim(), limit, (page - 1) * limit],
-    ),
-    readDatabaseSeasons(pool),
-  ]);
+    [query.season ?? null, (query.search ?? "").trim(), limit, (page - 1) * limit],
+  );
   // The total includes candidates with both teams, while a displayed row also needs validation.
-  const rows = result.rows.flatMap(({ total, ...game }) => {
+  const games = rows.flatMap(({ total, seasons, ...game }) => {
     void total;
+    void seasons;
     return game.gameId === null ? [] : [game];
   });
   return Value.Decode(DatabaseGamesSchema, {
-    games: decodeCatalogRows(rows),
-    total: Value.Decode(totalSchema, result.rows[0]?.total),
+    games: decodeCatalogRows(games),
+    total: Value.Decode(totalSchema, rows[0]?.total),
     page,
     limit,
-    seasons,
+    seasons: rows[0]?.seasons,
   });
 }
 

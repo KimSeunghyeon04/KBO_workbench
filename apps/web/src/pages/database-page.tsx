@@ -48,12 +48,11 @@ export function DatabasePage(): React.JSX.Element {
   const searchInput = useRef<HTMLInputElement>(null);
   const overview = useQuery(databaseOverviewQueryOptions());
   const scopeValue = searchParams.get("scope");
+  const explicitScope: DatabaseScope | null =
+    scopeValue === "ready" || scopeValue === "stored" || scopeValue === "jobs" ? scopeValue : null;
+  const waitingForScope = explicitScope === null && overview.isPending;
   const scope: DatabaseScope =
-    scopeValue === "ready" || scopeValue === "stored" || scopeValue === "jobs"
-      ? scopeValue
-      : (overview.data?.counts.readyToImport ?? 0) > 0
-        ? "ready"
-        : "stored";
+    explicitScope ?? ((overview.data?.counts.readyToImport ?? 0) > 0 ? "ready" : "stored");
   const query = searchParams.get("q") ?? "";
   const season = searchParams.get("season") ?? "all";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
@@ -77,11 +76,12 @@ export function DatabasePage(): React.JSX.Element {
   const catalog = useQuery({
     queryKey: [...queryKeys.catalog, "database", gamesQuery],
     queryFn: ({ signal }) => getDatabaseGames(gamesQuery, signal),
-    enabled: scope !== "jobs",
+    enabled: scope !== "jobs" && !waitingForScope,
   });
   const historyQuery = {
     page: scope === "jobs" ? page : 1,
     limit: 50,
+    ...(scope === "jobs" ? {} : { view: "activity" as const }),
     ...(scope === "jobs" && query.trim() !== "" ? { search: query.trim() } : {}),
     ...(batchId === null ? {} : { batchId }),
     ...(resultFilter === "failed"
@@ -239,15 +239,56 @@ export function DatabasePage(): React.JSX.Element {
       void navigate(`/collect?kind=job&selected=${encodeURIComponent(created.jobId)}`);
     },
   });
-  const completed = `${summary?.succeeded ?? 0}:${summary?.failed ?? 0}:${summary?.cancelled ?? 0}:${selectedJob?.status ?? ""}:${selectedJob?.followUpPending ?? ""}:${history.data?.activeJobs?.length ?? 0}`;
+  const activity =
+    summary === undefined
+      ? null
+      : `${summary.succeeded}:${summary.failed}:${summary.cancelled}:${history.data?.activeJobs?.length ?? 0}`;
+  const selectedProgress =
+    selectedJob === null ? null : `${selectedJob.status}:${selectedJob.followUpPending ?? ""}`;
+  const previousActivity = useRef<{
+    batchId: string | null;
+    value: string;
+    jobId: string | null;
+    jobProgress: string | null;
+  } | null>(null);
   useEffect(() => {
+    if (activity === null) return;
+    const previous = previousActivity.current;
+    previousActivity.current = {
+      batchId,
+      value: activity,
+      jobId: selectedJobId,
+      jobProgress: selectedProgress,
+    };
+    const activityChanged = previous?.batchId === batchId && previous.value !== activity;
+    const selectedChanged =
+      previous?.jobId === selectedJobId &&
+      previous.jobProgress !== null &&
+      selectedProgress !== null &&
+      previous.jobProgress !== selectedProgress;
+    // An initial activity response can arrive after a visible catalog has already been read.
+    const finishedSinceCatalog =
+      previous === null &&
+      catalog.isSuccess &&
+      (summary?.succeeded ?? 0) + (summary?.failed ?? 0) + (summary?.cancelled ?? 0) > 0;
+    if (!activityChanged && !selectedChanged && !finishedSinceCatalog) return;
     void Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.databaseOverview }),
       queryClient.invalidateQueries({ queryKey: queryKeys.catalog }),
       queryClient.invalidateQueries({ queryKey: queryKeys.recordCorrections.all }),
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
     ]);
-  }, [completed, queryClient]);
+  }, [
+    activity,
+    batchId,
+    catalog.isSuccess,
+    queryClient,
+    selectedJobId,
+    selectedProgress,
+    summary?.succeeded,
+    summary?.failed,
+    summary?.cancelled,
+  ]);
   const error =
     overview.error ??
     catalog.error ??
@@ -261,7 +302,7 @@ export function DatabasePage(): React.JSX.Element {
     reopen.error ??
     recollect.error;
   const total = scope === "jobs" ? (history.data?.total ?? 0) : (catalog.data?.total ?? 0);
-  const pending = scope === "jobs" ? history.isFetching : catalog.isFetching;
+  const pending = scope === "jobs" ? history.isFetching : waitingForScope || catalog.isFetching;
   const hasFilters =
     query.trim() !== "" ||
     (scope === "jobs"

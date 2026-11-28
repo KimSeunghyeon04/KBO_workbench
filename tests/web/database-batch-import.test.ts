@@ -13,6 +13,42 @@ afterEach(() => {
 });
 
 describe("데이터베이스 운영 콘솔", () => {
+  it("첫 조회는 DB 상태가 기본 탭을 확정한 뒤 필요한 경기 목록만 요청한다", async () => {
+    const overview = Promise.withResolvers<Response>();
+    const authorities: (string | null)[] = [];
+    const historyViews: (string | null)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = new URL(String(input), "http://localhost");
+        if (url.pathname === "/api/v2/database/status") return overview.promise;
+        if (url.pathname === "/api/v2/import-history") {
+          historyViews.push(url.searchParams.get("view"));
+          return Response.json({ ...historyPage(completedJobs()), jobs: [] });
+        }
+        if (url.pathname === "/api/v2/database/games") {
+          authorities.push(url.searchParams.get("authority"));
+          return Response.json({ ...gameCatalog(), total: 2, page: 1, limit: 50, seasons: [2026] });
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      }),
+    );
+    const client = renderDatabase("/database");
+    await waitFor(() => expect(historyViews).toContain("activity"));
+    expect(authorities).toEqual([]);
+    overview.resolve(Response.json(databaseOverview()));
+    const list = await screen.findByRole("listbox", { name: "적재 대기 경기" });
+    await within(list).findByRole("option", { name: /anon-game-a/ });
+    expect(
+      within(list)
+        .getAllByRole("option")
+        .map((row) => row.textContent),
+    ).toEqual([expect.stringContaining("anon-game-a"), expect.stringContaining("anon-game-b")]);
+    expect(authorities).toEqual(["staging"]);
+    expect(historyViews).toEqual(["activity"]);
+    client.clear();
+  });
+
   it("모바일 경기 직접 링크에서 목록으로 돌아오면 상세를 닫고 같은 조회 범위를 유지한다", async () => {
     vi.stubGlobal("matchMedia", () => ({
       matches: true,

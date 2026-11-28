@@ -199,6 +199,10 @@ export class RecordCorrectionRepository {
     return this.cases.case(noticeId);
   }
 
+  public caseDetails(noticeIds: readonly string[]): Promise<RecordCorrectionCase[]> {
+    return this.cases.caseDetails(noticeIds);
+  }
+
   public caseSnapshot(noticeId: string): Promise<RecordCorrectionCaseSnapshot | null> {
     return this.cases.caseSnapshot(noticeId);
   }

@@ -222,6 +222,7 @@ export const ImportHistoryQuerySchema = Type.Object(
     search: Type.Optional(Type.String({ maxLength: 200 })),
     batchId: Type.Optional(IdSchema),
     status: Type.Optional(JobStatusSchema),
+    view: Type.Optional(Type.Literal("activity")),
   },
   strict,
 );

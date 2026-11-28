@@ -62,6 +62,7 @@ type Repository = Pick<
   | "assessmentBasis"
   | "pendingNoticeIds"
   | "case"
+  | "caseDetails"
   | "caseSnapshot"
   | "listCases"
   | "listNoticeIdsForImport"
@@ -368,6 +369,20 @@ export class RecordCorrectionService {
         (game) => game.gameId,
       ),
     );
+    const noticeIds = new Set(
+      items.flatMap((item) =>
+        item.gameId !== null && workingGames.has(item.gameId) && isPendingCase(item)
+          ? [item.noticeId]
+          : [],
+      ),
+    );
+    if (noticeIds.size === 0) return items;
+    const details = new Map(
+      (await this.repository.caseDetails([...noticeIds])).map((detail) => [
+        detail.noticeId,
+        detail,
+      ]),
+    );
     const result: RecordCorrectionListItem[] = [];
     const drafts = new Map<
       string,
@@ -380,8 +395,8 @@ export class RecordCorrectionService {
           items.slice(offset, offset + 4).map(async (item) => {
             if (item.gameId === null || !workingGames.has(item.gameId) || !isPendingCase(item))
               return item;
-            const detail = await this.repository.case(item.noticeId);
-            if (detail === null) return item;
+            const detail = details.get(item.noticeId);
+            if (detail === undefined) return item;
             const decorated = await this.withDraftProgress(normalizeCase(detail), drafts);
             return decorated.draftProgress === undefined
               ? item

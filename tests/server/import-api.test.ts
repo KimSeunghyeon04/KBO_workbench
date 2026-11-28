@@ -31,6 +31,7 @@ describe("import HTTP API", () => {
     });
     const pool = { end: vi.fn(async () => undefined) } as unknown as Pool;
     const readDocument = vi.spyOn(workspace, "readDocument");
+    const fullWorkspaceCatalog = vi.spyOn(workspace, "catalog");
     const hydrate = vi.fn(async () => {
       throw new Error("unexpected hydrate");
     });
@@ -85,6 +86,14 @@ describe("import HTTP API", () => {
     expect(page.json()).toMatchObject({ total: 10_000, page: 2, limit: 50 });
     expect(page.json<{ games: { gameId: string }[] }>().games).toHaveLength(50);
     expect(page.json<{ games: { gameId: string }[] }>().games[0]?.gameId).toBe("anon-00050");
+    const staging = await app.inject("/api/v2/database/games?authority=staging&search=golden-game");
+    expect(staging.statusCode).toBe(200);
+    expect(staging.json()).toMatchObject({
+      total: 1,
+      seasons: [2026],
+      games: [{ gameId: document.metadata.gameId, authority: "staging" }],
+    });
+    expect(fullWorkspaceCatalog).not.toHaveBeenCalled();
     expect(
       (
         await app.inject({

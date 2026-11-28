@@ -664,11 +664,26 @@ describe("적재 의도와 결과의 영속성", () => {
       idempotencyKey: "cancel-pending-batch",
     });
     await started.promise;
+    const queued = manager.history({ batchId: batch.batchId, limit: 2 });
+    expect(queued.summary).toMatchObject({ running: 1, queued: 2 });
+    expect(manager.history({ batchId: batch.batchId, limit: 2, view: "activity" })).toEqual(queued);
     await manager.cancelBatch(batch.batchId);
     expect(manager.history({ batchId: batch.batchId }).summary).toMatchObject({
       running: 1,
       cancelled: 2,
       queued: 0,
+    });
+    const history = manager.history({ batchId: batch.batchId, limit: 2 });
+    expect(manager.history({ batchId: batch.batchId, limit: 2, view: "activity" })).toEqual({
+      ...history,
+      jobs: history.jobs.filter((job) => job.status === "running"),
+    });
+    expect(
+      manager.history({ batchId: batch.batchId, status: "cancelled", view: "activity" }),
+    ).toMatchObject({
+      jobs: [],
+      total: 2,
+      activeJobs: [expect.objectContaining({ status: "running" })],
     });
     finish.resolve(undefined);
     for (const job of batch.jobs) await manager.waitForTerminal(job.jobId);

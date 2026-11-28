@@ -75,6 +75,9 @@ API composition root의 최대 2개 지속 worker는 같은 compiler·correction
 재생은 경기·revision이 지정된 링크를 바로 연다. 탐색할 때는 봉인 경기의 검색 페이지와 달력 집계를
 읽는다. 적재 이력은 hash/decode를 보존한 16개 병렬 읽기와 생성 시각·ID의 정렬 인덱스를
 사용하며, 변경되는 상태는 현재 job snapshot에서 읽는다.
+DB 관리가 경기 목록을 표시할 때는 `GET /api/v2/import-history?view=activity`로 요약, 활성
+작업, 기존 요청 페이지에서 경기 버튼의 상태에 영향을 주는 작업을 받는다. 작업 이력 탭은 전체 페이지를
+표시한다. 저장 경기 페이지는 목록·건수·DB 시즌 선택지를 한 문장으로 조회하고, 작업공간 시즌을 합친다.
 
 ## 3. StagingGameDocumentV2
 

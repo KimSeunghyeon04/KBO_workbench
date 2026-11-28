@@ -102,6 +102,10 @@ import {
   readRegularModelScopeHashes,
 } from "../../packages/persistence/src/analysis-scope.js";
 import { AnalysisPreparationManager } from "../../apps/server/src/jobs/analysis-preparation-manager.js";
+import {
+  readPitchOutcomePair,
+  readPitchOutcomes,
+} from "../../packages/persistence/src/pitch-outcomes.js";
 import { EXPECTED_MIGRATION_VERSION } from "../../apps/server/src/config.js";
 import { BoundedReadCache } from "../../apps/server/src/bounded-read-cache.js";
 import { ComputationPool } from "../../apps/server/src/computation-pool.js";
@@ -233,6 +237,34 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       { season: 2026, gameDate: "2026-08-30", count: 2 },
       { season: 2025, gameDate: "2025-07-01", count: 1 },
     ]);
+    const client = await pool.connect();
+    const statements = vi.spyOn(client, "query");
+    client.release();
+    try {
+      const criteria = {
+        authority: "database",
+        season: 2026,
+        search: "SAME-DAY",
+        limit: 2,
+      } as const;
+      expect(await store.catalogPage(criteria)).toEqual({
+        games: [oldOrder[2], oldOrder[1]],
+        total: 2,
+        page: 1,
+        limit: 2,
+        seasons: [2026, 2025],
+      });
+      expect(await store.catalogPage({ ...criteria, page: 2 })).toEqual({
+        games: [],
+        total: 2,
+        page: 2,
+        limit: 2,
+        seasons: [2026, 2025],
+      });
+      expect(statements).toHaveBeenCalledTimes(2);
+    } finally {
+      statements.mockRestore();
+    }
   });
 
   it("keeps historical source/cache periods independent of later season imports", async () => {
@@ -2238,6 +2270,93 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     );
   });
 
+  it("shares overlapping period SQL with independent source hashes, cache hits and stable sample order", async () => {
+    const source = pitchAnalysisFixture(2024);
+    for (const [gameId, gameDate] of [
+      ["z-before", "2024-06-01"],
+      ["a-common", "2024-06-02"],
+      ["m-after", "2024-06-03"],
+    ] as const) {
+      await store.importRevision(
+        parseStagingGameDocumentV2({
+          ...source,
+          metadata: { ...source.metadata, gameId, gameDate },
+          source: { ...source.source, sourceGameId: gameId },
+        }),
+      );
+    }
+    const first = resolveAnalysisScope({
+      season: 2024,
+      competition: "unknown",
+      dateTo: "2024-06-02",
+    });
+    const second = resolveAnalysisScope({
+      season: 2024,
+      competition: "unknown",
+      dateFrom: "2024-06-02",
+    });
+    const client = await pool.connect();
+    const statements = vi.spyOn(client, "query");
+    client.release();
+    const reads = () =>
+      statements.mock.calls.filter(
+        ([sql]) => typeof sql === "string" && /^\s*(WITH|SELECT)\b/i.test(sql),
+      ).length;
+    const orderedGameIds = (rows: readonly { gameId: string }[]) => [
+      ...new Set(rows.map(({ gameId }) => gameId)),
+    ];
+    try {
+      for (const [actor, role, resolveHand, queryCount] of [
+        ["a1", "batter", undefined, 4],
+        ["a1", "batter", resolveNaverPitcherHand, 5],
+        ["hp1", "pitcher", undefined, 4],
+      ] as const) {
+        const before = await readPitchOutcomes(pool, first, actor, role, undefined, resolveHand);
+        const after = await readPitchOutcomes(pool, second, actor, role, undefined, resolveHand);
+        expect(before.sourceHash).not.toBe(after.sourceHash);
+        statements.mockClear();
+        const pair = await readPitchOutcomePair(
+          pool,
+          first,
+          second,
+          actor,
+          role,
+          undefined,
+          resolveHand,
+        );
+        expect(pair).toEqual({ first: before, second: after });
+        expect(orderedGameIds(pair.first.rows)).toEqual(["a-common", "z-before"]);
+        expect(orderedGameIds(pair.second.rows)).toEqual(["a-common", "m-after"]);
+        expect(orderedGameIds(pair.first.plateAppearances)).toEqual(["a-common", "z-before"]);
+        expect(orderedGameIds(pair.second.plateAppearances)).toEqual(["a-common", "m-after"]);
+        expect(reads()).toBe(queryCount);
+      }
+      const cache = new BoundedReadCache<PitchOutcomeSnapshot>(1024 * 1024, 8, 60_000);
+      const cached = await readPitchOutcomes(pool, first, "a1", "batter", cache);
+      const secondOnly = await readPitchOutcomes(pool, second, "a1", "batter");
+      statements.mockClear();
+      expect(await readPitchOutcomePair(pool, first, second, "a1", "batter", cache)).toEqual({
+        first: cached,
+        second: secondOnly,
+      });
+      expect(reads()).toBe(4);
+      statements.mockClear();
+      expect(await readPitchOutcomePair(pool, first, second, "a1", "batter", cache)).toEqual({
+        first: cached,
+        second: secondOnly,
+      });
+      expect(reads()).toBe(2);
+      const disjoint = { ...first, dateTo: "2024-06-01" };
+      statements.mockClear();
+      const pair = await readPitchOutcomePair(pool, disjoint, second, "a1", "batter");
+      expect(orderedGameIds(pair.first.rows)).toEqual(["z-before"]);
+      expect(pair.second).toEqual(secondOnly);
+      expect(reads()).toBe(6);
+    } finally {
+      statements.mockRestore();
+    }
+  });
+
   it("keeps pitch outcomes separate from official terminal PA grain and current revision", async () => {
     const source = pitchAnalysisFixture(2024);
     await store.importRevision(source);
@@ -4017,6 +4136,29 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
         }
         const approvedIds = [specified.noticeId, manual.noticeId];
         const approvedCases = await Promise.all(approvedIds.map((id) => repository.case(id)));
+        const client = await pool.connect();
+        const statements = vi.spyOn(client, "query");
+        client.release();
+        try {
+          expect(
+            await repository.caseDetails([
+              manual.noticeId,
+              "absent",
+              specified.noticeId,
+              manual.noticeId,
+            ]),
+          ).toEqual([approvedCases[1], approvedCases[0]]);
+          expect(
+            statements.mock.calls.filter(
+              ([sql]) => typeof sql === "string" && /^\s*SELECT\b/i.test(sql),
+            ),
+          ).toHaveLength(3);
+          expect(
+            (await repository.listCases({ season: 2025 })).map(({ noticeId }) => noticeId),
+          ).toEqual([unrelated.noticeId, manual.noticeId, specified.noticeId, notice.noticeId]);
+        } finally {
+          statements.mockRestore();
+        }
         const approvedHistory = async () =>
           (
             await pool.query(

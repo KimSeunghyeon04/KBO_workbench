@@ -5,6 +5,7 @@ import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import {
   canonicalStringify,
+  inAnalysisPeriod,
   PitchOutcomeRowSchema,
   TerminalPaRowSchema,
   type AnalysisScope,
@@ -42,6 +43,13 @@ export interface PitchOutcomeCache {
   load(key: string, load: () => Promise<PitchOutcomeSnapshot>): Promise<PitchOutcomeSnapshot>;
 }
 
+interface PitchOutcomeRead {
+  readonly actorId: string;
+  readonly role: "pitcher" | "batter";
+  readonly cache: PitchOutcomeCache | undefined;
+  readonly resolveHand: ResolvePitcherHand | undefined;
+}
+
 /** Physical pitch rows and compiler PA rows are separate reads in one immutable-source snapshot. */
 export async function readPitchOutcomes(
   pool: Pool,
@@ -51,10 +59,11 @@ export async function readPitchOutcomes(
   cache?: PitchOutcomeCache,
   resolveHand?: ResolvePitcherHand,
 ) {
+  const read = { actorId, role, cache, resolveHand };
   const input = await withAnalysisSnapshot(pool, (client) =>
-    readPitchOutcomeInput(client, scope, actorId, role, cache, resolveHand),
+    readPitchOutcomeInput(client, scope, read),
   );
-  return finishPitchOutcomeInput(input, role, actorId, cache);
+  return finishPitchOutcomeInput(input, read);
 }
 
 export async function readPitchOutcomePair(
@@ -75,50 +84,116 @@ export async function readPitchOutcomePair(
     const snapshot = await readPitchOutcomes(pool, firstScope, actorId, role, cache, resolveHand);
     return { first: snapshot, second: snapshot };
   }
-  const [first, second] = await withAnalysisSnapshot(
-    pool,
-    async (client) =>
-      [
-        await readPitchOutcomeInput(client, firstScope, actorId, role, cache, resolveHand),
-        await readPitchOutcomeInput(client, secondScope, actorId, role, cache, resolveHand),
-      ] as const,
-  );
+  const read = { actorId, role, cache, resolveHand };
+  const sharedScope = overlappingReadScope(firstScope, secondScope);
+  const [first, second] = await withAnalysisSnapshot(pool, async (client, release) => {
+    if (sharedScope === undefined)
+      return [
+        await readPitchOutcomeInput(client, firstScope, read),
+        await readPitchOutcomeInput(client, secondScope, read),
+      ] as const;
+    const firstIdentity = await readPitchOutcomeIdentity(client, firstScope, read);
+    const secondIdentity = await readPitchOutcomeIdentity(client, secondScope, read);
+    if (firstIdentity.cached !== undefined || secondIdentity.cached !== undefined)
+      return [
+        await readKnownPitchOutcomeInput(client, firstIdentity, read),
+        await readKnownPitchOutcomeInput(client, secondIdentity, read),
+      ] as const;
+    const { rows, plateAppearances } = await readScopedPitchOutcomes(client, sharedScope, read);
+    await release();
+    const forScope = ({ scope, manifest, key }: typeof firstIdentity) => ({
+      scope,
+      manifest,
+      key,
+      rows: rows.filter((row) => inAnalysisPeriod(row.gameDate, scope)),
+      plateAppearances: plateAppearances.filter((row) => inAnalysisPeriod(row.gameDate, scope)),
+    });
+    return [forScope(firstIdentity), forScope(secondIdentity)] as const;
+  });
   return {
-    first: await finishPitchOutcomeInput(first, role, actorId, cache),
-    second: await finishPitchOutcomeInput(second, role, actorId, cache),
+    first: await finishPitchOutcomeInput(first, read),
+    second: await finishPitchOutcomeInput(second, read),
+  };
+}
+
+function overlappingReadScope(
+  first: AnalysisScope,
+  second: AnalysisScope,
+): AnalysisScope | undefined {
+  const { season, competition } = first;
+  if (
+    season !== second.season ||
+    competition !== second.competition ||
+    (first.dateTo !== null && second.dateFrom !== null && first.dateTo < second.dateFrom) ||
+    (second.dateTo !== null && first.dateFrom !== null && second.dateTo < first.dateFrom)
+  )
+    return undefined;
+  return {
+    season,
+    competition,
+    dateFrom:
+      first.dateFrom === null || second.dateFrom === null
+        ? null
+        : first.dateFrom < second.dateFrom
+          ? first.dateFrom
+          : second.dateFrom,
+    dateTo:
+      first.dateTo === null || second.dateTo === null
+        ? null
+        : first.dateTo > second.dateTo
+          ? first.dateTo
+          : second.dateTo,
   };
 }
 
 async function readPitchOutcomeInput(
   client: PoolClient,
   scope: AnalysisScope,
-  actorId: string,
-  role: "pitcher" | "batter",
-  cache?: PitchOutcomeCache,
-  resolveHand?: ResolvePitcherHand,
+  read: PitchOutcomeRead,
 ) {
-  const source = cache === undefined ? undefined : await readPitchOutcomeSources(client, scope);
-  const key =
-    source === undefined
-      ? undefined
-      : canonicalStringify([
-          role,
-          actorId,
-          source.manifest,
-          source.supplements,
-          ...(resolveHand === undefined ? [] : ["pitcher-hands"]),
-        ]);
-  const cached = key === undefined ? undefined : cache?.get(key);
+  const identity = await readPitchOutcomeIdentity(client, scope, read);
+  return readKnownPitchOutcomeInput(client, identity, read);
+}
+
+async function readPitchOutcomeIdentity(
+  client: PoolClient,
+  scope: AnalysisScope,
+  { actorId, role, cache, resolveHand }: PitchOutcomeRead,
+) {
+  if (cache === undefined)
+    return {
+      scope,
+      manifest: await analysisSourceHash(client, scope),
+      key: undefined,
+      cached: undefined,
+    };
+  const { manifest, supplements } = await readPitchOutcomeSources(client, scope);
+  const key = canonicalStringify([
+    role,
+    actorId,
+    manifest,
+    supplements,
+    ...(resolveHand === undefined ? [] : ["pitcher-hands"]),
+  ]);
+  return { scope, manifest, key, cached: cache.get(key) };
+}
+
+async function readKnownPitchOutcomeInput(
+  client: PoolClient,
+  { cached, ...identity }: Awaited<ReturnType<typeof readPitchOutcomeIdentity>>,
+  read: PitchOutcomeRead,
+) {
   if (cached !== undefined) return { cached };
+  return { ...identity, ...(await readScopedPitchOutcomes(client, identity.scope, read)) };
+}
+
+async function readScopedPitchOutcomes(
+  client: PoolClient,
+  scope: AnalysisScope,
+  { actorId, role, resolveHand }: PitchOutcomeRead,
+) {
   const outcomes = await readPitchOutcomeRows(client, scope, actorId, role);
-  return {
-    scope,
-    manifest: source?.manifest ?? (await analysisSourceHash(client, scope)),
-    key,
-    ...(resolveHand === undefined
-      ? outcomes
-      : await withPitcherHands(client, outcomes, resolveHand)),
-  };
+  return resolveHand === undefined ? outcomes : withPitcherHands(client, outcomes, resolveHand);
 }
 
 async function withPitcherHands(
@@ -145,10 +220,8 @@ async function withPitcherHands(
 }
 
 async function finishPitchOutcomeInput(
-  input: Awaited<ReturnType<typeof readPitchOutcomeInput>>,
-  role: "pitcher" | "batter",
-  actorId: string,
-  cache?: PitchOutcomeCache,
+  input: Awaited<ReturnType<typeof readKnownPitchOutcomeInput>>,
+  { role, actorId, cache }: PitchOutcomeRead,
 ): Promise<PitchOutcomeSnapshot> {
   // Wait for cache work and hash the full response inputs after returning the connection.
   if (input.cached !== undefined) return input.cached;

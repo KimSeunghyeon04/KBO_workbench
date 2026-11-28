@@ -42,6 +42,7 @@ import {
   type CorrectionJournal,
   type CurrentWorkspaceEntry,
   type GameCatalog,
+  type DatabaseGamesQuery,
   type GameCatalogItem,
   type ImportTarget,
   type RecordCorrectionApprovalReference,
@@ -441,6 +442,16 @@ export class StagingWorkspace {
   public catalogOverview() {
     this.assertOpen();
     return this.catalogIndex.overview();
+  }
+
+  public catalogSeasons() {
+    this.assertOpen();
+    return this.catalogIndex.seasons();
+  }
+
+  public stagingCatalogPage(query: Omit<DatabaseGamesQuery, "authority">) {
+    this.assertOpen();
+    return this.catalogIndex.stagingPage(query);
   }
 
   public async correctionGameCatalog(gameIds?: readonly string[]): Promise<CorrectionGameCatalog> {

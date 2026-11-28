@@ -1,9 +1,12 @@
 import {
   compareCanonicalStrings,
   type CurrentWorkspaceEntry,
+  type DatabaseGames,
+  type DatabaseGamesQuery,
   type GameCatalog,
   type GameCatalogItem,
   type StoredFinding,
+  type WorkspaceDocumentGameCatalogItem,
 } from "@kbo/contracts";
 
 /** Disposable display index; authoritative document reads and write tokens still use files. */
@@ -48,6 +51,45 @@ export class WorkspaceCatalog {
         else if (authority === "quarantine" || authority === "source_failure") reviewRequired++;
       }
       return { stagingGameIds, reviewRequired };
+    });
+  }
+
+  public seasons(): Promise<number[]> {
+    return this.read(() => catalogSeasons(this.items.values()));
+  }
+
+  public stagingPage(query: Omit<DatabaseGamesQuery, "authority">): Promise<DatabaseGames> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 50;
+    const search = (query.search ?? "").trim().toLocaleLowerCase("ko-KR");
+    return this.read(() => {
+      const matches: WorkspaceDocumentGameCatalogItem[] = [];
+      for (const game of this.items.values()) {
+        if (
+          game.authority !== "staging" ||
+          (query.season !== undefined && game.season !== query.season)
+        )
+          continue;
+        if (
+          search === "" ||
+          `${game.gameId} ${game.gameDate} ${game.teams.away.name} ${game.teams.home.name}`
+            .toLocaleLowerCase("ko-KR")
+            .includes(search)
+        )
+          matches.push(game);
+      }
+      matches.sort(
+        (a, b) =>
+          compareCanonicalStrings(b.gameDate, a.gameDate) ||
+          compareCanonicalStrings(a.gameId, b.gameId),
+      );
+      return {
+        games: structuredClone(matches.slice((page - 1) * limit, page * limit)),
+        total: matches.length,
+        page,
+        limit,
+        seasons: catalogSeasons(this.items.values()),
+      };
     });
   }
 
@@ -105,6 +147,12 @@ export function workspaceCatalogItem(
     authority: current.authority === "ready" ? "staging" : "quarantine",
     ...current.displaySummary,
   };
+}
+
+function catalogSeasons(games: Iterable<GameCatalogItem>): number[] {
+  const seasons = new Set<number>();
+  for (const { season } of games) if (season !== null) seasons.add(season);
+  return [...seasons].sort((a, b) => b - a);
 }
 
 function compareCatalogItems(left: GameCatalogItem, right: GameCatalogItem): number {
