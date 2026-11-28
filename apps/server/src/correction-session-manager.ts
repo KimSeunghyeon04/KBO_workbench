@@ -43,7 +43,7 @@ import {
 import { mergePersistentSourceFindings } from "./correction-snapshot.js";
 type CorrectionWorkspace = Pick<
   StagingWorkspace,
-  | "commitCorrection"
+  | "commitCorrectionSnapshot"
   | "readCurrentDocumentSnapshot"
   | "readOriginal"
   | "readSourceBundle"
@@ -343,13 +343,12 @@ export class CorrectionSessionManager {
                     recordCorrectionApprovals: session.recordCorrectionApprovals,
                   },
                 };
-          await this.workspace.commitCorrection(input);
+          const committed = await this.workspace.commitCorrectionSnapshot(input);
           session.baseDocumentHash = session.prepared.draftDocumentHash;
           session.prepared = { ...session.prepared, storedFindings: session.prepared.findings };
           session.authority = targetAuthority;
           delete session.snapshotId;
-          session.baseCurrentContentHash =
-            (await this.workspace.readCurrentDocumentSnapshot(session.gameId))?.contentHash ?? null;
+          session.baseCurrentContentHash = committed.contentHash;
           session.storedFindings = committedFindings;
           session.undoStack = [];
           session.redoStack = [];

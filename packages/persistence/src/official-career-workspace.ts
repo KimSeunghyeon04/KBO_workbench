@@ -1,12 +1,14 @@
 import path from "node:path";
-import { readFile } from "node:fs/promises";
 import {
   canonicalStringify,
   parseOfficialPlayerBirthYears,
   parseOfficialPlayerCareerDataset,
+  type OfficialPlayerCareerRecord,
+  type OfficialPlayerBirthYear,
 } from "@kbo/contracts";
 import { ImmutableTextArtifactStore } from "./immutable-artifact-store.js";
-import { atomicWrite, isMissing } from "./workspace-files.js";
+import { VerifiedJsonFiles } from "./verified-json-files.js";
+import { atomicWrite } from "./workspace-files.js";
 
 type CareerSourceKind = "profile" | "move" | "movement" | "alias";
 
@@ -57,21 +59,25 @@ export class OfficialCareerWorkspace {
   }
 }
 
-export function readOfficialPlayerCareers(root: string) {
-  return readRecords(careerPath(root, "verified.json"), parseOfficialPlayerCareerDataset);
+const careers = new VerifiedJsonFiles<OfficialPlayerCareerRecord[]>(16, 16 * 1024 * 1024);
+const birthYears = new VerifiedJsonFiles<OfficialPlayerBirthYear[]>(16, 16 * 1024 * 1024);
+
+export async function readOfficialPlayerCareers(root: string) {
+  return (
+    (await careers.read(
+      careerPath(root, "verified.json"),
+      (value) => parseOfficialPlayerCareerDataset(value).records,
+    )) ?? []
+  );
 }
 
-export function readOfficialPlayerBirthYears(root: string) {
-  return readRecords(careerPath(root, "birth-years.json"), parseOfficialPlayerBirthYears);
-}
-
-async function readRecords<T>(file: string, parse: (input: unknown) => { records: T[] }) {
-  try {
-    return parse(JSON.parse(await readFile(file, "utf8"))).records;
-  } catch (error) {
-    if (isMissing(error)) return [];
-    throw error;
-  }
+export async function readOfficialPlayerBirthYears(root: string) {
+  return (
+    (await birthYears.read(
+      careerPath(root, "birth-years.json"),
+      (value) => parseOfficialPlayerBirthYears(value).records,
+    )) ?? []
+  );
 }
 
 function careerPath(root: string, filename: string) {

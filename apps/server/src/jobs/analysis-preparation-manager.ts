@@ -145,10 +145,12 @@ export class AnalysisPreparationManager {
     });
   }
   private async adoptSchedule(dataset: GameCompetitionDataset) {
-    const games = await this.repository.games(dataset.season);
-    const links = linkKboCompetitionGames(dataset, games);
-    this.controller.signal.throwIfAborted();
-    return this.repository.adopt(dataset, false, links);
+    const signal = this.controller.signal;
+    signal.throwIfAborted();
+    return this.repository.adopt(dataset, false, (games) => {
+      signal.throwIfAborted();
+      return linkKboCompetitionGames(dataset, games);
+    });
   }
 
   private async classify(

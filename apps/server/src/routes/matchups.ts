@@ -24,8 +24,16 @@ export const matchupRoutes: FastifyPluginAsyncTypebox<
   }
 > = async (app, { pool, models, computation }) => {
   const directCohorts = new BoundedReadCache<PitchOutcomeCohort>(4 * 1024 * 1024, 32, 300_000);
-  const repository = new MatchupRepository(pool, directCohorts);
-  app.addHook("onClose", async () => directCohorts.clear());
+  const seasonRosters = new BoundedReadCache<{ id: string; name: string; teams: string[] }[]>(
+    8 * 1024 * 1024,
+    16,
+    300_000,
+  );
+  const repository = new MatchupRepository(pool, directCohorts, seasonRosters);
+  app.addHook("onClose", async () => {
+    directCohorts.clear();
+    seasonRosters.clear();
+  });
   app.get(
     "/api/v2/analysis/matchups/opponents",
     {

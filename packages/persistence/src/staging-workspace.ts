@@ -506,6 +506,14 @@ export class StagingWorkspace {
     season: number,
     gameId: string,
   ): Promise<StagingGameDocumentV2> {
+    return (await this.requiredDocument(authority, season, gameId)).document;
+  }
+
+  private async requiredDocument(
+    authority: "staging" | "quarantine",
+    season: number,
+    gameId: string,
+  ) {
     this.assertOpen();
     const current = await this.currentStorage.requiredCurrentEntry(gameId);
     if (current.authority !== currentDocumentAuthority(authority) || current.season !== season) {
@@ -515,8 +523,8 @@ export class StagingWorkspace {
       throw new Error(`source failure에는 원장 문서가 없습니다: ${gameId}`);
     }
     const document = await this.readCurrentDocument(current);
-    await this.readDocumentFindings(current, document);
-    return document;
+    const { envelope } = await this.readDocumentEnvelope(current, document);
+    return { entry: current, document, envelope };
   }
 
   /** Read the verified ready document and target from the same current entry. */
@@ -663,6 +671,13 @@ export class StagingWorkspace {
     input: StagingCorrectionCommit,
     failurePoint?: "after_journal" | "after_current",
   ): Promise<"staging" | "quarantine"> {
+    return (await this.commitCorrectionSnapshot(input, failurePoint)).authority;
+  }
+
+  public async commitCorrectionSnapshot(
+    input: StagingCorrectionCommit,
+    failurePoint?: "after_journal" | "after_current",
+  ): Promise<{ authority: "staging" | "quarantine"; contentHash: string }> {
     this.assertOpen();
     await this.verifyLock();
     const parsedInput = parseStagingCorrectionCommit(input);
@@ -673,6 +688,7 @@ export class StagingWorkspace {
     let existingApprovals: readonly RecordCorrectionApprovalReference[] | undefined;
     let fromSealedDraft: true | undefined;
     let independentRecordCorrection: true | undefined;
+    let base: { entry: CurrentWorkspaceEntry } | { contentHash: string | null };
     if (parsedInput.baseAuthority === "superseded") {
       snapshot = await this.readSupersededSnapshot(
         parsedInput.document.metadata.gameId,
@@ -683,13 +699,11 @@ export class StagingWorkspace {
       existingApprovals = snapshot.recordCorrectionApprovals;
       fromSealedDraft = snapshot.fromSealedDraft;
       independentRecordCorrection = snapshot.independentRecordCorrection;
+      base = { contentHash: snapshot.currentContentHash };
     } else {
-      current = await this.readDocument(
+      const { entry, document, envelope } = await this.requiredDocument(
         parsedInput.baseAuthority,
         parsedInput.document.metadata.season,
-        parsedInput.document.metadata.gameId,
-      );
-      const entry = await this.currentStorage.requiredCurrentEntry(
         parsedInput.document.metadata.gameId,
       );
       if (
@@ -700,7 +714,8 @@ export class StagingWorkspace {
           "보정 시작 이후 현재 작업 사본의 내용이나 승인 근거가 변경되었습니다.",
         );
       }
-      const { envelope } = await this.readDocumentEnvelope(entry, current);
+      current = document;
+      base = { entry };
       currentFindings = envelope.findings;
       existingApprovals = envelope.recordCorrectionApprovals;
       fromSealedDraft = envelope.fromSealedDraft;
@@ -737,24 +752,27 @@ export class StagingWorkspace {
       targetEnvelope,
       parsedInput.targetAuthority,
     );
-    await this.transitionDocument(
+    const committed = await this.transitionDocument(
       parsedInput.targetAuthority,
       parsedInput.document,
       targetEnvelope.findings,
       false,
       undefined,
       targetEnvelope,
-      async (transition, publish) => {
-        await this.journals.commitCorrection(
-          { ...parsedInput, findingEnvelope: targetEnvelope },
-          current,
-          transition,
-          (journal) => publish(journal.journalId),
-          failurePoint,
-        );
+      {
+        base,
+        commit: async (transition, publish) => {
+          await this.journals.commitCorrection(
+            { ...parsedInput, findingEnvelope: targetEnvelope },
+            current,
+            transition,
+            (journal) => publish(journal.journalId),
+            failurePoint,
+          );
+        },
       },
     );
-    return parsedInput.targetAuthority;
+    return { authority: parsedInput.targetAuthority, contentHash: committed.contentHash };
   }
 
   public async close(): Promise<void> {
@@ -778,22 +796,32 @@ export class StagingWorkspace {
       StoredFindingEnvelopeV2,
       "recordCorrectionApprovals" | "fromSealedDraft" | "independentRecordCorrection"
     >,
-    withCorrectionJournal?: (
-      transition: NonNullable<CorrectionJournal["transition"]>,
-      publish: (operationId?: string) => Promise<void>,
-    ) => Promise<void>,
+    correction?: {
+      base: { entry: CurrentWorkspaceEntry } | { contentHash: string | null };
+      commit(
+        transition: NonNullable<CorrectionJournal["transition"]>,
+        publish: (operationId?: string) => Promise<void>,
+      ): Promise<void>;
+    },
     guardDraft?: (publish: () => Promise<void>) => Promise<void>,
-  ): Promise<void> {
+  ): Promise<CurrentWorkspaceEntry> {
     this.assertOpen();
     const { gameId, season } = document.metadata;
     assertSeason(season);
     assertGameId(gameId);
     await this.verifyLock();
-    if (withCorrectionJournal === undefined) await this.recoverGameTransitions(gameId);
+    if (correction === undefined) await this.recoverGameTransitions(gameId);
     const previous = await this.currentStorage.readCurrentEntry(gameId);
     this.assertCollectionToken(previous, expectedToken);
+    if (
+      correction !== undefined &&
+      ("entry" in correction.base
+        ? !sameCurrentEntry(previous, correction.base.entry)
+        : (previous?.contentHash ?? null) !== correction.base.contentHash)
+    )
+      throw new StaleStagingDocumentError("보정 시작 이후 현재 작업 사본이 변경되었습니다.");
     if (preserveCurrentDocument && previous !== null && previous.authority !== "source_failure")
-      return;
+      return previous;
     const documentHash = stagingDocumentHash(document);
     const envelope = documentEnvelope(findings, provenance);
     const contentHash = sha256(canonicalStringify({ document, findingEnvelope: envelope }));
@@ -803,7 +831,8 @@ export class StagingWorkspace {
       previous.contentHash === contentHash
     ) {
       await guardDraft?.(async () => {});
-      return;
+      if (correction !== undefined) await this.readCurrentFindings(previous);
+      return previous;
     }
     const reusable = await this.reusableActiveDocument(gameId, contentHash);
     const generation =
@@ -829,10 +858,10 @@ export class StagingWorkspace {
       if (reusable === null) await this.writeDocumentArtifact(target, document, envelope);
       await this.transitionCurrent(previous, target, operationId);
     };
-    if (withCorrectionJournal !== undefined)
-      await withCorrectionJournal({ previous, target }, publish);
+    if (correction !== undefined) await correction.commit({ previous, target }, publish);
     else if (guardDraft !== undefined) await guardDraft(publish);
     else await publish();
+    return target;
   }
 
   private async writeDocumentArtifact(

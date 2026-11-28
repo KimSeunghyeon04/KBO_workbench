@@ -748,15 +748,25 @@ import { extractNaverPlayerHeights, extractNaverPlayerBattingProfiles } from "@k
 const fixture = JSON.parse(await readFile("/var/lib/kbo/original/2026/golden-game-1.json", "utf8"));
 const pool = new Pool();
 try {
-  const store = new GameRevisionStore(pool, process.env.EXPECTED_MIGRATION_VERSION,undefined,undefined,
-    async document=>extractNaverPlayerHeights({gameId:document.metadata.gameId,season:document.metadata.season,
-      sourceBundleHash:document.source.sourceBundleHash,payloads:{lineup:{result:{previewData:{awayTeamLineUp:{
-        fullLineUp:document.rosters.away.players.map(p=>({playerCode:p.playerId,height:"180.0"}))
-      }}}}}}),
-    async document=>extractNaverPlayerBattingProfiles({gameId:document.metadata.gameId,season:document.metadata.season,
-      sourceBundleHash:document.source.sourceBundleHash,payloads:{lineup:{result:{previewData:{awayTeamLineUp:{
-        fullLineUp:document.rosters.away.players.map(p=>({playerCode:p.playerId,batsThrows:"\uc88c\ud0c0"}))
-      }}}}}}));
+  const store = new GameRevisionStore(pool, process.env.EXPECTED_MIGRATION_VERSION, undefined, undefined,
+    async (document) => {
+      const bundle = {
+        gameId: document.metadata.gameId,
+        season: document.metadata.season,
+        sourceBundleHash: document.source.sourceBundleHash,
+        payloads: { lineup: { result: { previewData: { awayTeamLineUp: {
+          fullLineUp: document.rosters.away.players.map((player) => ({
+            playerCode: player.playerId,
+            height: "180.0",
+            batsThrows: "\uc88c\ud0c0",
+          })),
+        } } } } },
+      };
+      return {
+        heights: extractNaverPlayerHeights(bundle),
+        battingProfiles: extractNaverPlayerBattingProfiles(bundle),
+      };
+    });
   // Season selectors now come from imported facts, including historical model-period examples.
   const competitions = new GameCompetitionRepository(pool);
   async function importReleaseSample(season, sample) {
@@ -1038,6 +1048,22 @@ try {
   await splitTable.getByRole("rowheader", { name: "\ud648", exact: true }).waitFor();
   await page.getByLabel("\uce74\uc6b4\ud2b8\ubcc4\ub85c \ubcfc \uc0c1\ud669", { exact: true }).selectOption({ index: 1 });
   await page.getByRole("table", { name: "\uc120\ud0dd \uc0c1\ud669\uc758 \uce74\uc6b4\ud2b8\ubcc4 \uc131\uc801" }).waitFor();
+  const splitLink = await browser.newPage();
+  try {
+    const splitRequests = [];
+    splitLink.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.pathname === "/api/v2/analysis/statistics/player-splits") splitRequests.push(url);
+    });
+    await splitLink.goto(page.url());
+    await splitLink.getByRole("table", { name: "\uc0c1\ud669\ubcc4 \uc0c1\ub300 \uc131\uc801" }).waitFor();
+    await splitLink.getByRole("table", { name: "\uc120\ud0dd \uc0c1\ud669\uc758 \uce74\uc6b4\ud2b8\ubcc4 \uc131\uc801" }).waitFor();
+    if (splitRequests.length !== 1 || !splitRequests[0].searchParams.has("countFor")) {
+      throw new Error("The cold situational link must render both tables from one detail request.");
+    }
+  } finally {
+    await splitLink.close();
+  }
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 844 });
     if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)) throw new Error("Situational reports overflow the viewport.");

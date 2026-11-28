@@ -21,12 +21,11 @@ import { gamePitchRowsSql } from "./analysis-pitch-input.js";
 import { calculatePitchCalibration } from "./pitch-calibration.js";
 import type { PitchCalibrationWorkspace } from "./pitch-calibration-workspace.js";
 import type { AnalysisCoverageWorkspace } from "./analysis-coverage-workspace.js";
+import { seasonBatterHeightKeys } from "./season-batter-height-keys.js";
 import {
-  COVERAGE_SUMMARY_VERSION,
   CoverageGameSchema,
   buildCoverageSeason,
   coverageResponse,
-  coverageHash,
   type CoverageGame,
   type CoverageSeason,
 } from "./analysis-coverage-summary.js";
@@ -80,37 +79,12 @@ export class AnalysisCoverageRepository {
     const referenceScope = { ...scope, dateFrom: null, dateTo: null };
     return withAnalysisSnapshot(this.pool, async (client, release) => {
       const referenceHash = await analysisSourceHash(client, referenceScope);
-      const heights = Value.Decode(
-        Type.Array(
-          Type.Object(
-            {
-              gameId: Type.String(),
-              revision: Type.Integer(),
-              playerId: Type.String(),
-              height: Type.Union([Type.Integer(), Type.Null()]),
-            },
-            { additionalProperties: false },
-          ),
-        ),
-        (
-          await client.query<Record<string, unknown>>(
-            `WITH selected_games AS MATERIALIZED (
-            ${scopedAnalysisGamesSql()}
-          ) SELECT h.game_id AS "gameId",h.revision,h.player_id AS "playerId",h.height_cm AS height
-          FROM selected_games r CROSS JOIN LATERAL (
-            SELECT h.* FROM analytics.game_batter_heights h WHERE h.game_id=r.game_id AND h.revision=r.revision OFFSET 0
-          ) h ORDER BY h.game_id COLLATE "C",h.player_id COLLATE "C"`,
-            analysisScopeParameters(referenceScope),
-          )
-        ).rows,
-      );
-      const sourceKey = coverageHash({
-        version: COVERAGE_SUMMARY_VERSION,
-        scope: referenceScope,
+      const { coverageKey: sourceKey } = await seasonBatterHeightKeys(
+        client,
+        this.pool,
+        referenceScope,
         referenceHash,
-        heights,
-        calibration: PITCH_CALIBRATION_PARAMETERS,
-      });
+      );
       const result = (summary: CoverageSeason | null): CoverageInspection => ({
         sourceKey,
         scope,

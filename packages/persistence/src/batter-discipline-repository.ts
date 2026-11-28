@@ -4,11 +4,9 @@ import {
   type AnalysisScope,
   type AnalysisScopeOptions,
 } from "@kbo/contracts";
-import { scopedAnalysisGamesSql, analysisScopeParameters } from "./analysis-scope.js";
-import { createHash } from "node:crypto";
+import { analysisScopeParameters } from "./analysis-scope.js";
 import { setImmediate } from "node:timers/promises";
 import {
-  canonicalStringify,
   DisciplineCatalogSchema,
   DisciplineRowSchema,
   PITCH_ANALYSIS_MODEL_VERSION,
@@ -18,26 +16,17 @@ import {
   type DisciplineSnapshot,
   type DisciplineRow,
 } from "@kbo/contracts";
-import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { TypeCompiler } from "@sinclair/typebox/compiler";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { analysisPitchCatalogSql, scopedTrackedPitchRowsSql } from "./analysis-pitch-input.js";
 import type { PitchReferenceWorkspace } from "./pitch-reference-workspace.js";
 import { prepareReference, type PitchAnalysisComputation } from "./pitch-analysis-repository.js";
 
-import { readPitchRows } from "./pitch-trajectory-input.js";
+import { decodePitchAnalysisRow, type PitchAnalysisRow } from "./pitch-trajectory-input.js";
+import { seasonBatterHeightKeys } from "./season-batter-height-keys.js";
 
 const rowValidator = TypeCompiler.Compile(DisciplineRowSchema);
-const heightInputSchema = Type.Object(
-  {
-    gameId: Type.String(),
-    revision: Type.Integer(),
-    playerId: Type.Union([Type.String(), Type.Null()]),
-    heightCm: Type.Union([Type.Integer(), Type.Null()]),
-  },
-  { additionalProperties: false },
-);
 type DisciplineSourceScope = Pick<DisciplineQuery, "season" | "competition">;
 
 export class BatterDisciplineRepository {
@@ -68,24 +57,12 @@ export class BatterDisciplineRepository {
     const scope = disciplineSeasonScope(season, options);
     return withAnalysisReadSnapshot(this.pool, async (snapshot) => {
       const { client, release: releaseSnapshot } = snapshot;
-      const { referenceHash, sourceHash } = await disciplineSourceHashes(snapshot, scope);
+      const { referenceHash, sourceHash } = await this.sourceHashes(snapshot, scope);
       if (sourceHash === knownHash) {
         await releaseSnapshot();
         return { season, sourceHash, reference: null, rows: null };
       }
-      const result = await client.query<Record<string, unknown>>(
-        scopedTrackedPitchRowsSql({
-          select: "p.stance",
-          pitchPredicate: "p.batter_id IS NOT NULL",
-        }),
-        analysisScopeParameters(scope),
-      );
-      const rows: DisciplineRow[] = [];
-      for (const row of result.rows) {
-        if (!rowValidator.Check(row)) throw new Error("Invalid discipline tracking row");
-        rows.push(row);
-        if (rows.length % 2000 === 0) await setImmediate();
-      }
+      let rows: DisciplineRow[] | undefined;
       const reference = await this.references.getOrCreate(
         {
           season,
@@ -95,12 +72,17 @@ export class BatterDisciplineRepository {
           calibrationHash: null,
         },
         async () => {
-          const referenceRows = await readPitchRows(client, season, null, false, scope);
+          const inputs = await readDisciplineRows(client, scope, true);
+          rows = inputs.rows;
           await releaseSnapshot();
-          return this.computeReference(referenceRows, null);
+          return this.computeReference(inputs.referenceRows, null);
         },
-        releaseSnapshot,
+        async () => {
+          rows = (await readDisciplineRows(client, scope, false)).rows;
+          await releaseSnapshot();
+        },
       );
+      rows ??= (await readDisciplineRows(client, scope, false)).rows;
       await releaseSnapshot();
       return { season, sourceHash, reference, rows };
     });
@@ -110,7 +92,7 @@ export class BatterDisciplineRepository {
     const scope = disciplineSourceScope(input);
     return withAnalysisReadSnapshot(
       this.pool,
-      async (snapshot) => (await disciplineSourceHashes(snapshot, scope)).sourceHash,
+      async (snapshot) => (await this.sourceHashes(snapshot, scope)).sourceHash,
     );
   }
 
@@ -121,14 +103,69 @@ export class BatterDisciplineRepository {
     const a = disciplineSourceScope(first);
     const b = disciplineSourceScope(second);
     return withAnalysisReadSnapshot(this.pool, async (snapshot) => {
-      const { sourceHash: firstHash } = await disciplineSourceHashes(snapshot, a);
+      const { sourceHash: firstHash } = await this.sourceHashes(snapshot, a);
       const secondHash =
         a.season === b.season && a.competition === b.competition
           ? firstHash
-          : (await disciplineSourceHashes(snapshot, b)).sourceHash;
+          : (await this.sourceHashes(snapshot, b)).sourceHash;
       return [firstHash, secondHash];
     });
   }
+
+  private async sourceHashes(snapshot: AnalysisReadSnapshot, scope: AnalysisScope) {
+    const referenceHash = await snapshot.sourceHash(scope);
+    const { disciplineHash: sourceHash } = await seasonBatterHeightKeys(
+      snapshot.client,
+      this.pool,
+      scope,
+      referenceHash,
+    );
+    return { referenceHash, sourceHash };
+  }
+}
+
+async function readDisciplineRows(
+  client: PoolClient,
+  scope: AnalysisScope,
+  includeReference: boolean,
+) {
+  const result = await client.query<Record<string, unknown>>(
+    scopedTrackedPitchRowsSql({
+      select: includeReference
+        ? 'p.stance,p.pitcher_id AS "pitcherId",p.speed_kph AS "referenceSpeed",r.stadium,(r.game_status=\'final\') AS "gameFinal"'
+        : "p.stance",
+      pitchPredicate: includeReference
+        ? "p.batter_id IS NOT NULL OR p.pitch_type='직구'"
+        : "p.batter_id IS NOT NULL",
+      ...(includeReference ? { gameColumns: "r.game_id,r.revision,r.stadium,r.game_status" } : {}),
+    }),
+    analysisScopeParameters(scope),
+  );
+  const rows: DisciplineRow[] = [];
+  const referenceRows: PitchAnalysisRow[] = [];
+  let processed = 0;
+  for (const { pitcherId, referenceSpeed, stadium, gameFinal, ...row } of result.rows) {
+    if (row.batterId !== null) {
+      if (!rowValidator.Check(row)) throw new Error("Invalid discipline tracking row");
+      rows.push(row);
+    }
+    if (includeReference && row.pitchType === "직구") {
+      const { batterId, season, batterHeightCm, crossPlateX, eligible, inZone, ...geometry } = row;
+      void [batterId, season, batterHeightCm, crossPlateX, eligible, inZone];
+      referenceRows.push(
+        decodePitchAnalysisRow({
+          ...geometry,
+          pitcherId,
+          speedKph: referenceSpeed,
+          stadium,
+          gameFinal,
+        }),
+      );
+    }
+    processed += 1;
+    if (processed % 2000 === 0) await setImmediate();
+  }
+  return { rows, referenceRows };
 }
 
 function disciplineSourceScope({ season, competition }: DisciplineSourceScope): AnalysisScope {
@@ -138,32 +175,4 @@ function disciplineSourceScope({ season, competition }: DisciplineSourceScope): 
 function disciplineSeasonScope(season: number, options: AnalysisScopeOptions): AnalysisScope {
   const selectedScope = resolveAnalysisScope({ season, ...options });
   return { ...selectedScope, dateFrom: null, dateTo: null };
-}
-
-async function disciplineSourceHashes(snapshot: AnalysisReadSnapshot, scope: AnalysisScope) {
-  const { client } = snapshot;
-  const referenceHash = await snapshot.sourceHash(scope);
-  // Supplement imports can change effective heights without changing a sealed game hash.
-  const heights = await client.query<Record<string, unknown>>(
-    `
-    WITH selected_games AS MATERIALIZED (${scopedAnalysisGamesSql()})
-    SELECT r.game_id AS "gameId",r.revision,h.player_id AS "playerId",h.height_cm AS "heightCm"
-    FROM selected_games r LEFT JOIN LATERAL (
-      SELECT h.player_id,h.height_cm FROM analytics.game_batter_heights h
-      WHERE h.game_id=r.game_id AND h.revision=r.revision OFFSET 0
-    ) h ON TRUE
-    ORDER BY r.game_id COLLATE "C",h.player_id COLLATE "C"`,
-    analysisScopeParameters(scope),
-  );
-  const sourceHash = createHash("sha256")
-    .update(
-      canonicalStringify({
-        referenceHash,
-        referenceVersion: PITCH_REFERENCE_VERSION,
-        zonePolicy: "frozen-player-height-effective-season-v4",
-        heights: Value.Decode(Type.Array(heightInputSchema), heights.rows),
-      }),
-    )
-    .digest("hex");
-  return { referenceHash, sourceHash };
 }

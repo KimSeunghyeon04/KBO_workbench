@@ -4,13 +4,18 @@ import {
   ApiErrorSchema,
   AnalysisScopeQuerySchema,
   BaserunningResponseSchema,
+  type BaserunningResponse,
 } from "@kbo/contracts";
 import { BaserunningAnalysisRepository } from "@kbo/persistence";
 import type { RouteContext } from "./context.js";
+import { BoundedReadCache } from "../bounded-read-cache.js";
 export const baserunningAnalysisRoutes: FastifyPluginAsyncTypebox<
   Pick<RouteContext, "pool">
 > = async (app, { pool }) => {
-  const repository = new BaserunningAnalysisRepository(pool),
+  const summaries = new BoundedReadCache<
+    Pick<BaserunningResponse, "players" | "teams" | "sourceHash">
+  >(8 * 1024 * 1024, 16, 300_000);
+  const repository = new BaserunningAnalysisRepository(pool, summaries),
     response = { 200: BaserunningResponseSchema, 400: ApiErrorSchema, 500: ApiErrorSchema };
   app.get(
     "/api/v2/analysis/baserunning",

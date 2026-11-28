@@ -17,6 +17,17 @@ const gameSchema = Type.Object(
   { gameId: Type.String(), sourceGameId: Type.String(), gameDate: Type.String() },
   { additionalProperties: false },
 );
+const gamesSchema = Type.Array(gameSchema);
+type CompetitionGames = typeof gamesSchema.static;
+
+async function readGames(client: Pool | PoolClient, season: number): Promise<CompetitionGames> {
+  const result = await client.query<Record<string, unknown>>(
+    `SELECT game_id AS "gameId",source_game_id AS "sourceGameId",to_char(game_date,'YYYY-MM-DD') AS "gameDate"
+     FROM analytics.current_game_revisions WHERE season=$1 ORDER BY game_id COLLATE "C"`,
+    [season],
+  );
+  return Value.Decode(gamesSchema, result.rows);
+}
 const hashSchema = Type.Object({ hash: Type.String() }, { additionalProperties: false });
 const pointerHashesSchema = Type.Object(
   {
@@ -152,55 +163,49 @@ export class GameCompetitionRepository {
     });
   }
   public async games(season: number) {
-    return Value.Decode(
-      Type.Array(gameSchema),
-      (
-        await this.pool.query<Record<string, unknown>>(
-          `SELECT game_id AS "gameId",source_game_id AS "sourceGameId",to_char(game_date,'YYYY-MM-DD') AS "gameDate"
-       FROM analytics.current_game_revisions WHERE season=$1 ORDER BY game_id COLLATE "C"`,
-          [season],
-        )
-      ).rows,
-    );
+    return readGames(this.pool, season);
   }
   public async adopt(
     input: unknown,
     dryRun = false,
-    inputLinks: readonly CompetitionGameLink[] = [],
+    inputLinks:
+      | readonly CompetitionGameLink[]
+      | ((games: Readonly<CompetitionGames>) => readonly CompetitionGameLink[]) = [],
   ) {
     const dataset = parseGameCompetitionDataset(input);
-    const links = Value.Decode(Type.Array(CompetitionGameLinkSchema), inputLinks).sort((a, b) =>
-      a.sourceGameId < b.sourceGameId ? -1 : a.sourceGameId > b.sourceGameId ? 1 : 0,
-    );
-    const linkMap = new Map(links.map((l) => [l.sourceGameId, l]));
-    if (
-      linkMap.size !== links.length ||
-      new Set(links.map((l) => l.matchedSourceGameId)).size !== links.length ||
-      links.some(
-        (l) =>
-          !dataset.entries.some(
-            (e) => e.sourceGameId === l.sourceGameId && e.gameDate === l.gameDate,
-          ),
+    const validateLinks = (input: readonly CompetitionGameLink[]) => {
+      const links = Value.Decode(Type.Array(CompetitionGameLinkSchema), input).sort((a, b) =>
+        a.sourceGameId < b.sourceGameId ? -1 : a.sourceGameId > b.sourceGameId ? 1 : 0,
+      );
+      const linkMap = new Map(links.map((l) => [l.sourceGameId, l]));
+      if (
+        linkMap.size !== links.length ||
+        new Set(links.map((l) => l.matchedSourceGameId)).size !== links.length ||
+        links.some(
+          (l) =>
+            !dataset.entries.some(
+              (e) => e.sourceGameId === l.sourceGameId && e.gameDate === l.gameDate,
+            ),
+        )
       )
-    )
-      throw new Error("경기 ID 연결의 중복 또는 출처 불일치");
+        throw new Error("경기 ID 연결의 중복 또는 출처 불일치");
+      return { links, linkMap };
+    };
+    let resolveLinks: (games: Readonly<CompetitionGames>) => ReturnType<typeof validateLinks>;
+    if (typeof inputLinks === "function") {
+      resolveLinks = (games) => validateLinks(inputLinks(games));
+    } else {
+      const validated = validateLinks(inputLinks);
+      resolveLinks = () => validated;
+    }
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ");
       await client.query("SELECT pg_advisory_xact_lock(hashtext('analysis-competition'),$1)", [
         dataset.season,
       ]);
-      const games = Value.Decode(
-        Type.Array(gameSchema),
-        (
-          await client.query<Record<string, unknown>>(
-            `
-        SELECT game_id AS "gameId",source_game_id AS "sourceGameId",to_char(game_date,'YYYY-MM-DD') AS "gameDate"
-        FROM analytics.current_game_revisions WHERE season=$1 ORDER BY game_id COLLATE "C"`,
-            [dataset.season],
-          )
-        ).rows,
-      );
+      const games = await readGames(client, dataset.season);
+      const { links, linkMap } = resolveLinks(games);
       if (games.length > 0 && dataset.entries.length === 0)
         throw new CompetitionScheduleNoMatchesError(
           "저장 경기가 있는데 공식 일정이 모두 비어 있습니다.",

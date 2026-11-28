@@ -7,7 +7,7 @@ import {
 import { createHash } from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import {
   canonicalStringify,
   defaultAnalysisCompetition,
@@ -183,6 +183,24 @@ function leagueTotalsSql(role: PlayerGameRecordsQuery["role"], bySource: boolean
     ) SELECT ${pitchingTotalsSql} FROM per_game HAVING count(*)>0`;
 }
 
+type LeagueTotals =
+  typeof LeagueBattingTotalsSchema.static | typeof LeaguePitchingTotalsSchema.static;
+
+async function readLeagueTotals(
+  client: PoolClient,
+  role: PlayerGameRecordsQuery["role"],
+  scope: AnalysisScope,
+): Promise<LeagueTotals | null> {
+  const { rows } = await client.query<Record<string, unknown>>(
+    leagueTotalsSql(role, undefined),
+    analysisScopeParameters(scope),
+  );
+  if (rows[0] === undefined) return null;
+  return role === "batter"
+    ? Value.Decode(LeagueBattingTotalsSchema, rows[0])
+    : Value.Decode(LeaguePitchingTotalsSchema, rows[0]);
+}
+
 const splitAppearance = Type.Object(
   {
     gameId: Type.String({ minLength: 1 }),
@@ -258,6 +276,7 @@ function playerSplitSql({ role, source, split, countFor }: PlayerSplitQuery) {
 }
 
 export class PlayerStatisticsRepository {
+  private readonly leagueReferences = new Map<string, Promise<LeagueTotals | null>>();
   public constructor(private readonly pool: Pool) {}
   public async batting(input: BattingStatisticsQuery): Promise<BattingStatisticsResponse> {
     return (await this.battingWithManifest(input)).response;
@@ -284,20 +303,31 @@ export class PlayerStatisticsRepository {
     const { player, source, role, ...options } = query;
     const scope = resolveAnalysisScope(options);
     const parameters = analysisScopeParameters(scope);
-    const { playerTotals, leagueTotals } = await withAnalysisSnapshot(
-      this.pool,
-      async (client) => ({
-        playerTotals: (
-          await client.query<Record<string, unknown>>(leagueTotalsSql(role, source !== undefined), [
-            ...parameters,
-            player,
-          ])
-        ).rows[0],
-        leagueTotals: (
-          await client.query<Record<string, unknown>>(leagueTotalsSql(role, undefined), parameters)
-        ).rows[0],
-      }),
-    );
+    const { playerTotals, leagueTotals } = await withAnalysisSnapshot(this.pool, async (client) => {
+      const manifest = await analysisSourceHash(client, scope);
+      const playerTotals = (
+        await client.query<Record<string, unknown>>(leagueTotalsSql(role, source !== undefined), [
+          ...parameters,
+          player,
+        ])
+      ).rows[0];
+      const key = `${role}:${manifest}`;
+      let reference = this.leagueReferences.get(key);
+      if (reference === undefined) {
+        reference = readLeagueTotals(client, role, scope);
+        this.leagueReferences.set(key, reference);
+        if (this.leagueReferences.size > 32) {
+          const oldest = this.leagueReferences.keys().next().value;
+          if (oldest !== undefined) this.leagueReferences.delete(oldest);
+        }
+      }
+      try {
+        return { playerTotals, leagueTotals: await reference };
+      } catch (error) {
+        if (this.leagueReferences.get(key) === reference) this.leagueReferences.delete(key);
+        throw error;
+      }
+    });
     if (role === "batter") {
       return {
         query,

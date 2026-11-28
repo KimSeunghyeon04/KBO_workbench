@@ -167,15 +167,19 @@ export class WorkspaceCurrentStore {
     };
     const journalPath = this.transitionJournalPath(gameId, transitionId);
     await atomicWrite(this.root, journalPath, `${canonicalStringify(journal)}\n`);
-    await this.rollForwardWorkspaceTransition(journal);
+    await this.rollForwardWorkspaceTransition(journal, true);
     await unlink(journalPath);
   }
 
-  private async rollForwardWorkspaceTransition(journal: WorkspaceTransitionJournal): Promise<void> {
+  private async rollForwardWorkspaceTransition(
+    journal: WorkspaceTransitionJournal,
+    validatedTarget = false,
+  ): Promise<void> {
     this.assertWorkspaceTransitionContext(journal);
     const actual = await this.readCurrentEntry(journal.gameId);
     if (sameCurrentEntry(actual, journal.previous)) {
-      if (journal.target !== null) await this.readCurrentFindings(journal.target);
+      if (journal.target !== null && !validatedTarget)
+        await this.readCurrentFindings(journal.target);
       await this.writeCurrentEntry(journal.gameId, journal.target);
     } else if (!sameCurrentEntry(actual, journal.target) && journal.target !== null) {
       throw new WorkspacePersistenceBlockedError(

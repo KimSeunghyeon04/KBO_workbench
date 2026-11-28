@@ -155,8 +155,9 @@ export class CollectionJobManager {
     return cloneJob(job.snapshot);
   }
 
-  public list(): readonly CollectionJob[] {
+  public list(activeOnly = false): CollectionJob[] {
     return [...this.jobs.values()]
+      .filter(({ snapshot }) => !activeOnly || !isTerminal(snapshot.status))
       .map((job) => cloneJob(job.snapshot))
       .sort((left, right) => compareText(right.createdAt, left.createdAt));
   }

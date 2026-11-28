@@ -33,9 +33,10 @@ export class MatchupModelRepository {
         model = null;
         modelHash = null;
       }
-      const pitcherRows = await readPitchQualityRows(client, scope, pitcherId),
-        batterRows = await readPitchQualityRows(client, scope, batterId, "batter");
+      const rows = await readPitchQualityRows(client, scope, pitcherId, batterId);
       await release();
+      const pitcherRows = rows.filter((row) => row.pitcherId === pitcherId),
+        batterRows = rows.filter((row) => row.batterId === batterId);
       return {
         query,
         scope,

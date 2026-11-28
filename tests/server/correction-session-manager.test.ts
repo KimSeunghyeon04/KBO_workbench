@@ -410,10 +410,22 @@ describe("CorrectionSessionManager", () => {
     const redone = await manager.redo(created.sessionId, 2);
     expect(redone.session.draftDocumentHash).toBe(applied.session.draftDocumentHash);
 
+    const base = await workspace.readCurrentDocumentSnapshot(document.metadata.gameId);
+    const envelopeReads = vi.spyOn(
+      workspace as unknown as {
+        readDocumentEnvelope(current: { contentHash: string }, document: unknown): Promise<unknown>;
+      },
+      "readDocumentEnvelope",
+    );
     const committed = await manager.commit(created.sessionId, {
       expectedSessionVersion: 3,
       allowBlockingStaging: false,
     });
+    const verified = envelopeReads.mock.calls.map(([entry]) => entry.contentHash);
+    envelopeReads.mockRestore();
+    const persisted = await workspace.readCurrentDocumentSnapshot(document.metadata.gameId);
+    expect(persisted?.contentHash).not.toBe(base?.contentHash);
+    expect(verified).toEqual([base?.contentHash, persisted?.contentHash]);
     expect(committed).toMatchObject({
       committedAuthority: "staging",
       session: { sessionVersion: 4, dirty: false, canUndo: false },
@@ -444,12 +456,16 @@ describe("CorrectionSessionManager", () => {
       ) => workspace.readCurrentDocumentSnapshot(...args),
       readOriginal: (...args: Parameters<StagingWorkspace["readOriginal"]>) =>
         workspace.readOriginal(...args),
+      readSupersededSnapshot: (...args: Parameters<StagingWorkspace["readSupersededSnapshot"]>) =>
+        workspace.readSupersededSnapshot(...args),
       readSourceBundle: (...args: Parameters<StagingWorkspace["readSourceBundle"]>) =>
         workspace.readSourceBundle(...args),
-      commitCorrection: async (...args: Parameters<StagingWorkspace["commitCorrection"]>) => {
+      commitCorrectionSnapshot: async (
+        ...args: Parameters<StagingWorkspace["commitCorrectionSnapshot"]>
+      ) => {
         notifyCommitStarted?.();
         await release;
-        return workspace.commitCorrection(...args);
+        return workspace.commitCorrectionSnapshot(...args);
       },
     };
     const manager = new CorrectionSessionManager(delayedWorkspace, () => "session-race");

@@ -80,8 +80,22 @@ const rowSchema = Type.Object(
   { additionalProperties: false },
 );
 type DirectoryRow = Static<typeof rowSchema>;
+const directoryRowsSchema = Type.Array(rowSchema);
+const directoryFingerprintSql = `
+  SELECT encode(sha256(convert_to(jsonb_build_array(
+    (SELECT jsonb_agg(jsonb_build_array(game_id,revision,document_hash,projection_hash)
+      ORDER BY game_id COLLATE "C") FROM analytics.current_game_revisions),
+    (SELECT jsonb_agg(jsonb_build_array(game_id,revision) ORDER BY game_id COLLATE "C")
+      FROM analytics.current_analysis_games WHERE competition='allstar'),
+    (SELECT jsonb_agg(jsonb_build_array(identity_key,player_id) ORDER BY identity_key COLLATE "C")
+      FROM catalog.player_identities)
+  )::text,'UTF8')),'hex') AS fingerprint`;
+const fingerprintSchema = Type.Object({
+  fingerprint: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+});
 
 export class PlayerDirectoryRepository {
+  private currentDirectory?: { fingerprint: string; groups: Promise<Map<string, DirectoryRow[]>> };
   public constructor(
     private readonly pool: Pool,
     private readonly readCareers: () => Promise<
@@ -93,10 +107,8 @@ export class PlayerDirectoryRepository {
   ) {}
 
   public async list() {
-    const [rows, verified, births] = await Promise.all([
-      withAnalysisSnapshot(this.pool, async (client) => {
-        return (await client.query<Record<string, unknown>>(directorySql)).rows;
-      }),
+    const [players, verified, births] = await Promise.all([
+      this.readGroups(),
       this.readCareers(),
       this.readBirthYears(),
     ]);
@@ -104,12 +116,6 @@ export class PlayerDirectoryRepository {
     const birthByIdentity = new Map(
       births.map(({ playerId, name, birthYear }) => [`${playerId}\u0000${name}`, birthYear]),
     );
-    const players = new Map<string, DirectoryRow[]>();
-    for (const row of Value.Decode(Type.Array(rowSchema), rows)) {
-      const previous = players.get(row.identity);
-      if (previous) previous.push(row);
-      else players.set(row.identity, [row]);
-    }
     return Value.Decode(
       PlayerDirectorySchema,
       [...players].map(([identity, records]) => {
@@ -150,7 +156,7 @@ export class PlayerDirectoryRepository {
           identity,
           name,
           primaryPosition: records[0]?.primaryPosition ?? null,
-          teams: records[0]?.teams ?? [],
+          teams: records[0]?.teams.slice() ?? [],
           sourceIds,
           seasons,
           ...(career === undefined ? {} : { career }),
@@ -158,6 +164,35 @@ export class PlayerDirectoryRepository {
         };
       }),
     );
+  }
+
+  private readGroups(): Promise<Map<string, DirectoryRow[]>> {
+    return withAnalysisSnapshot(this.pool, async (client, release) => {
+      const { rows } = await client.query<Record<string, unknown>>(directoryFingerprintSql);
+      const { fingerprint } = Value.Decode(fingerprintSchema, rows[0]);
+      const current = this.currentDirectory;
+      if (current?.fingerprint === fingerprint) {
+        await release();
+        return current.groups;
+      }
+      const groups = client.query<Record<string, unknown>>(directorySql).then(({ rows }) => {
+        const players = new Map<string, DirectoryRow[]>();
+        for (const row of Value.Decode(directoryRowsSchema, rows)) {
+          const previous = players.get(row.identity);
+          if (previous) previous.push(row);
+          else players.set(row.identity, [row]);
+        }
+        return players;
+      });
+      const entry = { fingerprint, groups };
+      this.currentDirectory = entry;
+      try {
+        return await groups;
+      } catch (error) {
+        if (this.currentDirectory === entry) delete this.currentDirectory;
+        throw error;
+      }
+    });
   }
 }
 

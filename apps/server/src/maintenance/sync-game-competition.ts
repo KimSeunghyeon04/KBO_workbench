@@ -42,9 +42,10 @@ async function main() {
       await repository.games(season),
     );
     controller.signal.throwIfAborted();
-    const links = linkKboCompetitionGames(dataset, await repository.games(season));
-    controller.signal.throwIfAborted();
-    const result = await repository.adopt(dataset, dryRun, links);
+    const result = await repository.adopt(dataset, dryRun, (games) => {
+      controller.signal.throwIfAborted();
+      return linkKboCompetitionGames(dataset, games);
+    });
     controller.signal.throwIfAborted();
     if (workspace !== undefined && source !== undefined)
       await workspace.analysisPreparation.writeClassification(

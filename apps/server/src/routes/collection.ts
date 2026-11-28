@@ -43,9 +43,7 @@ export const collectionRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (
       },
     },
     async (request) => ({
-      jobs: [...context.runtime.collectionJobs.list()].filter(
-        (job) => request.query.activeOnly !== true || !isTerminal(job.status),
-      ),
+      jobs: context.runtime.collectionJobs.list(request.query.activeOnly),
     }),
   );
 

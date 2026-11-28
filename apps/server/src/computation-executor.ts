@@ -163,6 +163,16 @@ export function compute(input: Computation): ComputationResult | Promise<Computa
           value: extractNaverPlayerBattingProfiles(bundle),
         }),
       );
+    case "player_evidence":
+      return readImmutableSourceBundle(input.root, input.season, input.gameId, input.hash).then(
+        (bundle) => ({
+          kind: "player_evidence",
+          value: {
+            heights: extractNaverPlayerHeights(bundle),
+            battingProfiles: extractNaverPlayerBattingProfiles(bundle),
+          },
+        }),
+      );
     case "source_bundle":
       return readImmutableSourceBundle(input.root, input.season, input.gameId, input.hash).then(
         (bundle) => ({

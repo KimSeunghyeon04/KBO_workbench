@@ -13,6 +13,74 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it.each([false, true])(
+  "loads a count link from one detail response and recovers the summary on failure (%s)",
+  async (failDetail) => {
+    const rows = summarizePlayerSplits(
+      ["L", "R", "unknown"],
+      [
+        { bucket: "L", result: "single", countsAsAtBat: true },
+        { bucket: "unknown", result: "strikeout", countsAsAtBat: true },
+      ],
+    );
+    const requests = vi.fn(async (input: string) => {
+      const params = new URL(input, "http://localhost").searchParams;
+      const detail = params.has("countFor");
+      if (detail && failDetail) return new Response("unavailable", { status: 500 });
+      const first = rows[0];
+      if (first === undefined) throw new Error("Missing split fixture");
+      const { bucket, ...stats } = first;
+      expect(bucket).toBe("L");
+      return Response.json({
+        query: { ...Object.fromEntries(params), season: 2025 },
+        scope: { season: 2025, competition: "regular", dateFrom: null, dateTo: null },
+        rows,
+        ...(detail ? { byCount: [{ ...stats, count: { balls: 2, strikes: 1 } }] } : {}),
+      });
+    });
+    vi.stubGlobal("fetch", requests);
+    const client = createAnalysisQueryClient();
+    client.setQueryDefaults(["player-split-records"], { staleTime: 2_000 });
+    render(
+      createElement(
+        QueryClientProvider,
+        { client },
+        createElement(
+          MemoryRouter,
+          {
+            initialEntries: [
+              "/analysis/player-splits?season=2025&player=kbo%3A123&playerRole=batter&countFor=L",
+            ],
+          },
+          createElement(PlayerSplitsPage),
+        ),
+      ),
+    );
+    const summary = within(await screen.findByRole("table", { name: "상황별 타격 성적" }));
+    expect(summary.getAllByRole("rowheader").map((row) => row.textContent)).toEqual([
+      "좌완 상대",
+      "우완 상대",
+      "상대 손 미확인",
+    ]);
+    const buckets = () =>
+      requests.mock.calls.map(([input]) =>
+        new URL(input, "http://localhost").searchParams.get("countFor"),
+      );
+    if (failDetail) {
+      expect(buckets()).toEqual(["L", null]);
+      expect(screen.queryByRole("rowheader", { name: "2-1" })).toBeNull();
+    } else {
+      expect(await screen.findByRole("rowheader", { name: "2-1" })).toBeTruthy();
+      expect(buckets()).toEqual(["L"]);
+      fireEvent.change(screen.getByRole("combobox", { name: "카운트별로 볼 상황" }), {
+        target: { value: "" },
+      });
+      expect(summary.getByRole("rowheader", { name: "좌완 상대" })).toBeTruthy();
+      expect(buckets()).toEqual(["L"]);
+    }
+  },
+);
+
 it("shows the unknown-hand sample and preserves selection scope when switching to home and away", async () => {
   const scope = { season: 2025, competition: "regular", dateFrom: "2025-04-01", dateTo: null };
   const request = vi.fn(async (input: string) => {

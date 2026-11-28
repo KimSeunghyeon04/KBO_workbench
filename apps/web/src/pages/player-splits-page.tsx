@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Value } from "@sinclair/typebox/value";
+import { useEffect } from "react";
 import {
   PlayerSplitDimensionSchema,
   PlayerSplitQuerySchema,
@@ -85,6 +86,7 @@ function SplitTable({ data, byCount = false }: { data: PlayerSplitResponse; byCo
 }
 
 export function PlayerSplitsPage() {
+  const client = useQueryClient();
   const {
     params,
     season,
@@ -105,15 +107,6 @@ export function PlayerSplitsPage() {
   const valid = Value.Check(PlayerSplitQuerySchema, query);
   const error =
     scope.error ?? (query !== null && !valid ? "선수 조회 조건이 올바르지 않습니다." : null);
-  const records = useQuery({
-    queryKey: ["player-split-records", query],
-    meta: analysisQueryMeta(season),
-    enabled: error === null && valid && !loading,
-    queryFn: ({ signal }) => {
-      if (!Value.Check(PlayerSplitQuerySchema, query)) throw new Error("잘못된 상황별 조회 조건");
-      return getPlayerSplits(query, signal);
-    },
-  });
   const details = useQuery({
     queryKey: ["player-split-records", detailQuery],
     meta: analysisQueryMeta(season),
@@ -124,6 +117,36 @@ export function PlayerSplitsPage() {
       return getPlayerSplits(detailQuery, signal);
     },
   });
+  const needRecords =
+    detailQuery === null || (details.failureCount > 0 && details.data === undefined);
+  const records = useQuery({
+    queryKey: ["player-split-records", query],
+    meta: analysisQueryMeta(season),
+    enabled: needRecords && error === null && valid && !loading,
+    queryFn: ({ signal }) => {
+      if (!Value.Check(PlayerSplitQuerySchema, query)) throw new Error("잘못된 상황별 조회 조건");
+      return getPlayerSplits(query, signal);
+    },
+  });
+  useEffect(() => {
+    const data = details.data;
+    if (detailQuery === null || data === undefined || !Value.Check(PlayerSplitQuerySchema, query))
+      return;
+    const detail = client.getQueryState(["player-split-records", detailQuery]);
+    if (
+      detail?.data !== data ||
+      detail.isInvalidated ||
+      detail.dataUpdatedAt !== details.dataUpdatedAt
+    )
+      return;
+    const key = ["player-split-records", query];
+    if ((client.getQueryState(key)?.dataUpdatedAt ?? 0) >= detail.dataUpdatedAt) return;
+    client.setQueryData<PlayerSplitResponse>(
+      key,
+      { query, scope: data.scope, rows: data.rows },
+      { updatedAt: detail.dataUpdatedAt },
+    );
+  }, [client, query, detailQuery, details.data, details.dataUpdatedAt]);
   const data = details.data ?? records.data;
   const hasAppearances = data?.rows.some((row) => row.plateAppearances > 0);
   const labels = splitLabels(data?.query.role === "pitcher", split === "risp");
@@ -151,10 +174,14 @@ export function PlayerSplitsPage() {
       </label>
       {error !== null && <p role="alert">{error}</p>}
       {error === null && query === null && <p role="status">상황별 기록을 볼 선수를 선택하세요.</p>}
-      {error === null && (loading || records.isFetching) && (
-        <p role="status">상황별 기록을 읽고 있습니다.</p>
+      {error === null &&
+        (loading || records.isFetching || (data === undefined && details.isFetching)) && (
+          <p role="status">상황별 기록을 읽고 있습니다.</p>
+        )}
+      {error === null && needRecords && <AnalysisQueryError queries={[records]} />}
+      {error === null && bucket !== undefined && (!data || !hasAppearances) && (
+        <AnalysisQueryError queries={[details]} />
       )}
-      {error === null && <AnalysisQueryError queries={[records]} />}
       {data && !hasAppearances && <p role="status">선택한 범위에 완료 타석 기록이 없습니다.</p>}
       {data && hasAppearances && (
         <>

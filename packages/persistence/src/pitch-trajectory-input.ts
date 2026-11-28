@@ -42,6 +42,11 @@ export type PitchAnalysisRow = Static<typeof rowSchema>;
 // A season contains hundreds of thousands of these rows. Compile the same strict
 // boundary check once instead of interpreting its schema for every pitch.
 const pitchRowValidator = TypeCompiler.Compile(rowSchema);
+
+export function decodePitchAnalysisRow(row: unknown): PitchAnalysisRow {
+  if (!pitchRowValidator.Check(row)) throw new Error("Invalid pitch analysis tracking row");
+  return row;
+}
 const trajectoryColumns = ["x0", "y0", "z0", "vx0", "vy0", "vz0", "ax", "ay", "az", "cross_plate_y"]
   .map(
     (column) =>
@@ -83,8 +88,7 @@ export async function readPitchRows(
   );
   return result.rows.map(({ pitchSequence, ...row }) => {
     void pitchSequence;
-    if (!pitchRowValidator.Check(row)) throw new Error("Invalid pitch analysis tracking row");
-    return row;
+    return decodePitchAnalysisRow(row);
   });
 }
 

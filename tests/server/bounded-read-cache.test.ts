@@ -15,6 +15,20 @@ describe("verified read cache bounds", () => {
     now = 101;
     expect(cache.get("a")).toBeUndefined();
   });
+  it("checks pending and current keys without renewing their expiry", async () => {
+    let now = 0;
+    const cache = new BoundedReadCache<number>(100, 2, 100, () => now);
+    const deferred = Promise.withResolvers<number>();
+    const operation = cache.load("scope:a", () => deferred.promise);
+    expect(cache.hasPrefix("scope:")).toBe(true);
+    expect(cache.hasPrefix("other:")).toBe(false);
+    deferred.resolve(3);
+    await operation;
+    now = 50;
+    expect(cache.hasPrefix("scope:")).toBe(true);
+    now = 101;
+    expect(cache.hasPrefix("scope:")).toBe(false);
+  });
   it("accepts worker-measured byte sizes without serializing cached payloads again", async () => {
     const value = {
       toJSON: () => {

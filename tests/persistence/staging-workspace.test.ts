@@ -9,12 +9,55 @@ import { describe, expect, it } from "vitest";
 import { mapNaverGame } from "@kbo/collection";
 import { canonicalStringify, parseCurrentWorkspaceEntry } from "@kbo/contracts";
 import { applyCorrectionCommand } from "@kbo/correction";
-import { stagingDocumentHash } from "@kbo/game-core";
-import { StagingWorkspace, WorkspacePersistenceBlockedError } from "@kbo/persistence";
+import { compileStagingGameDocumentV2, stagingDocumentHash } from "@kbo/game-core";
+import {
+  StagingWorkspace,
+  StaleStagingDocumentError,
+  WorkspacePersistenceBlockedError,
+} from "@kbo/persistence";
 
 import { sanitizedNaverBundle } from "../helpers/naver.js";
 
 describe("staging workspace", () => {
+  it("rejects a correction if another writer operation replaces its verified base before publication", async () => {
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-correction-base-"));
+    const entered = Promise.withResolvers<undefined>();
+    const release = Promise.withResolvers<undefined>();
+    const targetStadium = "보정 구장";
+    const workspace = await StagingWorkspace.open(temporary.path, undefined, async (document) => {
+      if (document.metadata.stadium === targetStadium) {
+        entered.resolve(undefined);
+        await release.promise;
+      }
+      return compileStagingGameDocumentV2(document);
+    });
+    try {
+      const { document } = mapNaverGame(await sanitizedNaverBundle());
+      const { gameId, season } = document.metadata;
+      await workspace.saveReady(document, []);
+      const base = await workspace.readCurrentDocumentSnapshot(gameId);
+      if (base === null) throw new Error("Missing current fixture");
+      const correction = workspace.commitCorrection({
+        baseAuthority: "staging",
+        baseDocumentHash: stagingDocumentHash(document),
+        baseCurrentContentHash: base.contentHash,
+        targetAuthority: "staging",
+        document: { ...document, metadata: { ...document.metadata, stadium: targetStadium } },
+        findingEnvelope: { schemaVersion: 2, findings: [] },
+      });
+      const checked = expect(correction).rejects.toBeInstanceOf(StaleStagingDocumentError);
+      await Promise.race([entered.promise, correction]);
+      const latest = { ...document, metadata: { ...document.metadata, stadium: "최신 구장" } };
+      await workspace.saveReady(latest, []);
+      release.resolve(undefined);
+      await checked;
+      expect(await workspace.readDocument("staging", season, gameId)).toEqual(latest);
+    } finally {
+      release.resolve(undefined);
+      await workspace.close();
+    }
+  });
+
   it("조회한 catalog도 저장·실패 상태·적재 제거와 재시작을 즉시 반영한다", async () => {
     await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-catalog-updates-"));
     const workspace = await StagingWorkspace.open(temporary.path);

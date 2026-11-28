@@ -1,4 +1,4 @@
-import { mkdtempDisposable, writeFile, readFile } from "node:fs/promises";
+import { mkdtempDisposable, writeFile, readFile, utimes, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
@@ -60,7 +60,23 @@ it("publishes a complete hash-verified model under the writer lock and rejects c
       workspace.runExpectancy.save(model, manifest, controller.signal),
     ).rejects.toThrow();
     expect(await readFile(pointer, "utf8")).toBe(before);
-    await writeFile(path.join(temporary.path, "analysis", "run-expectancy", `${hash}.json`), "{}");
+    const artifact = path.join(temporary.path, "analysis", "run-expectancy", `${hash}.json`);
+    const timestamp = new Date("2026-06-01T00:00:00.000Z");
+    await utimes(artifact, timestamp, timestamp);
+    const warm = await workspace.runExpectancy.read(2024);
+    if (warm === null) throw new Error("Missing warm model");
+    warm.model.trainingSamples = 5;
+    expect(await workspace.runExpectancy.read(2024)).toEqual({ model, hash });
+    const original = await readFile(artifact, "utf8");
+    const corrupt = original.replace('"trainingSamples":0', '"trainingSamples":1');
+    expect(corrupt).not.toBe(original);
+    expect(corrupt.length).toBe(original.length);
+    await writeFile(artifact, corrupt);
+    await utimes(artifact, timestamp, timestamp);
+    expect(await workspace.runExpectancy.read(2024)).toBeNull();
+    await workspace.runExpectancy.save(model, manifest);
+    expect(await workspace.runExpectancy.read(2024)).toEqual({ model, hash });
+    await unlink(artifact);
     expect(await workspace.runExpectancy.read(2024)).toBeNull();
   } finally {
     await workspace.close();

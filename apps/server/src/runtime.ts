@@ -112,25 +112,13 @@ export async function createRuntime(config: AppConfig, pool: Pool): Promise<AppR
     createRevisionProjectionComputation(computation),
     async (document) => {
       const result = await computation.run({
-        kind: "player_heights",
+        kind: "player_evidence",
         root: config.workspacePath,
         season: document.metadata.season,
         gameId: document.metadata.gameId,
         hash: document.source.sourceBundleHash,
       });
-      if (result.kind !== "player_heights") throw new Error("Unexpected player height result");
-      return result.value;
-    },
-    async (document) => {
-      const result = await computation.run({
-        kind: "player_batting_profiles",
-        root: config.workspacePath,
-        season: document.metadata.season,
-        gameId: document.metadata.gameId,
-        hash: document.source.sourceBundleHash,
-      });
-      if (result.kind !== "player_batting_profiles")
-        throw new Error("Unexpected batting profile result");
+      if (result.kind !== "player_evidence") throw new Error("Unexpected player evidence result");
       return result.value;
     },
   );

@@ -162,6 +162,16 @@ export class RecordCorrectionJobs {
   }
 
   public async job(jobId: string): Promise<RecordCorrectionJob> {
+    const [job] = await this.readJobs(jobId);
+    if (job === undefined) throw new Error(`record correction job이 없습니다: ${jobId}`);
+    return job;
+  }
+
+  public async jobs(): Promise<RecordCorrectionJob[]> {
+    return this.readJobs();
+  }
+
+  private async readJobs(jobId?: string): Promise<RecordCorrectionJob[]> {
     const result = await this.pool.query<{
       readonly run_id: string;
       readonly status: RecordCorrectionJob["status"];
@@ -170,37 +180,37 @@ export class RecordCorrectionJobs {
       readonly started_at: Date | string | null;
       readonly finished_at: Date | string | null;
       readonly error_message: string | null;
-    }>("SELECT * FROM record_correction.collection_runs WHERE run_id=$1", [jobId]);
-    const row = result.rows[0];
-    if (row === undefined) throw new Error(`record correction job이 없습니다: ${jobId}`);
-    const seasons = await this.pool.query<{
-      readonly season: number;
-      readonly status: string;
+      readonly seasons: number[];
+      readonly completed_seasons: number;
     }>(
-      `SELECT season,status FROM record_correction.collection_run_seasons
-       WHERE run_id=$1 ORDER BY season_order`,
-      [jobId],
+      `WITH runs AS MATERIALIZED (
+         SELECT run_id,status,trigger_kind,created_at,started_at,finished_at,error_message
+         FROM record_correction.collection_runs
+         ${jobId === undefined ? "ORDER BY created_at DESC LIMIT 100" : "WHERE run_id=$1"}
+       ), seasons AS (
+         SELECT s.run_id,array_agg(s.season ORDER BY s.season_order) AS seasons,
+           count(*) FILTER (WHERE s.status IN ('succeeded','failed','no_change'))::integer
+             AS completed_seasons
+         FROM runs r JOIN record_correction.collection_run_seasons s USING (run_id)
+         GROUP BY s.run_id
+       )
+       SELECT r.*,coalesce(s.seasons,ARRAY[]::integer[]) AS seasons,
+         coalesce(s.completed_seasons,0) AS completed_seasons
+       FROM runs r LEFT JOIN seasons s USING (run_id)
+       ORDER BY r.created_at DESC`,
+      jobId === undefined ? [] : [jobId],
     );
-    return {
+    return result.rows.map((row) => ({
       jobId: row.run_id,
       status: row.status,
       trigger: row.trigger_kind,
-      seasons: seasons.rows.map((season) => season.season),
+      seasons: row.seasons,
       createdAt: iso(row.created_at),
       startedAt: nullableIso(row.started_at),
       finishedAt: nullableIso(row.finished_at),
-      completedSeasons: seasons.rows.filter((season) =>
-        ["succeeded", "failed", "no_change"].includes(season.status),
-      ).length,
-      totalSeasons: seasons.rows.length,
+      completedSeasons: row.completed_seasons,
+      totalSeasons: row.seasons.length,
       error: row.error_message,
-    };
-  }
-
-  public async jobs(): Promise<RecordCorrectionJob[]> {
-    const result = await this.pool.query<{ readonly run_id: string }>(
-      "SELECT run_id FROM record_correction.collection_runs ORDER BY created_at DESC LIMIT 100",
-    );
-    return Promise.all(result.rows.map((row) => this.job(row.run_id)));
+    }));
   }
 }

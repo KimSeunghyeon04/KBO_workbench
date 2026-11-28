@@ -82,6 +82,15 @@ export class BoundedReadCache<T> {
     return this.pending.get(key);
   }
 
+  public hasPrefix(prefix: string): boolean {
+    for (const key of this.pending.keys()) if (key.startsWith(prefix)) return true;
+    const now = this.now();
+    for (const [key, entry] of this.entries) {
+      if (key.startsWith(prefix) && now - entry.touchedAt < this.maxAgeMs) return true;
+    }
+    return false;
+  }
+
   public clear(): void {
     this.generation += 1;
     this.entries.clear();

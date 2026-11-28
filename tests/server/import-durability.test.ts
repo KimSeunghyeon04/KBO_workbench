@@ -410,6 +410,68 @@ describe("적재 의도와 결과의 영속성", () => {
     expect(await storage.jobs()).toEqual([]);
     await manager.close();
   });
+  it("reindexes a restored job once with the individual record's final status and batch", async () => {
+    await using directory = await mkdtempDisposable(path.join(tmpdir(), "kbo-import-index-"));
+    const storage = new ImportWorkspace(directory.path, async () => undefined);
+    const base = interruptedRecord("restored-job", true);
+    const retained = {
+      ...base.job,
+      batchId: "older-batch",
+      status: "failed" as const,
+      error: "retained error",
+    };
+    const embedded = { ...base, job: { ...base.job, batchId: "batch", status: "queued" as const } };
+    const individual = {
+      ...embedded,
+      job: { ...embedded.job, ...imported, status: "succeeded" as const },
+    };
+    await storage.saveRetainedJob(retained);
+    await storage.saveBatch({
+      request: { idempotencyKey: "import-index-batch" },
+      batch: {
+        batchId: "batch",
+        createdCount: 1,
+        skippedCount: 0,
+        jobs: [{ jobId: base.job.jobId, gameId: base.job.gameId, status: "queued" }],
+      },
+      records: [embedded],
+    });
+    await storage.saveJob(individual);
+    const manager = new ImportJobManager(
+      {
+        imports: storage,
+        catalog: async () => ({ games: [] }),
+        readDocument: async () => document,
+      },
+      { importRevision: vi.fn(async () => imported) },
+    );
+    try {
+      await manager.restore();
+      const history = manager.history({ batchId: "batch" });
+      expect(history.jobs).toEqual([individual.job]);
+      expect(history.activeJobs).toEqual([]);
+      expect(history.summary).toEqual({
+        total: 1,
+        succeeded: 1,
+        queued: 0,
+        running: 0,
+        failed: 0,
+        cancelled: 0,
+      });
+      history.summary.total = 40;
+      expect(manager.history({ batchId: "batch", view: "activity" })).toMatchObject({
+        jobs: [],
+        activeJobs: [],
+        total: 1,
+        summary: { total: 1 },
+      });
+      expect(manager.history({ batchId: "older-batch" })).toMatchObject({ jobs: [], total: 0 });
+      expect(manager.history({ search: " RETAINED ERROR " }).total).toBe(0);
+      expect(manager.list()).toEqual([individual.job]);
+    } finally {
+      await manager.close();
+    }
+  });
   it("확정 집합에서 제외할 때 새로 생긴 적재 가능 경기는 추가하지 않는다", async () => {
     await using directory = await mkdtempDisposable(path.join(tmpdir(), "kbo-import-selection-"));
     const storage = new ImportWorkspace(directory.path, async () => undefined);

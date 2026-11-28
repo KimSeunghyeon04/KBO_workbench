@@ -3,7 +3,6 @@ import { Value } from "@sinclair/typebox/value";
 import { parseSchedulePayload, type PlaywrightScheduleExplorer } from "@kbo/collection";
 import {
   canonicalStringify,
-  compareCanonicalStrings,
   CollectionDiscoveryCreateSchema,
   CollectionSelectionCreateSchema,
   CollectionScheduleEntriesSchema,
@@ -82,9 +81,7 @@ export class CollectionOperationsService {
     const request = Value.Decode(CollectionDiscoveryCreateSchema, input);
     const range = { startDate: request.startDate, endDate: request.endDate };
     assertCollectionRange(range);
-    const existing = (await this.workspace.collection.discoveries()).find(
-      (record) => record.idempotencyKey === request.idempotencyKey,
-    );
+    const existing = await this.workspace.collection.discoveryForKey(request.idempotencyKey);
     if (existing !== undefined) {
       if (canonicalStringify(existing.discovery.range) !== canonicalStringify(range))
         throw new IdempotencyConflictError("같은 요청 키의 일정 범위가 다릅니다.");
@@ -173,15 +170,7 @@ export class CollectionOperationsService {
   public async list(range: CollectionDateRange): Promise<{ discoveries: CollectionDiscovery[] }> {
     assertCollectionRange(range);
     return {
-      discoveries: (await this.workspace.collection.discoveries())
-        .map((record) => record.discovery)
-        .filter(
-          (discovery) =>
-            discovery.range.startDate === range.startDate &&
-            discovery.range.endDate === range.endDate,
-        )
-        .sort((a, b) => compareCanonicalStrings(b.createdAt, a.createdAt))
-        .slice(0, 50),
+      discoveries: await this.workspace.collection.discoveriesForRange(range),
     };
   }
   public async get(id: string): Promise<CollectionDiscovery> {
@@ -346,18 +335,15 @@ export class CollectionOperationsService {
     return record;
   }
   public async historyItems(id: string, page?: number, limit?: number, problemsOnly = false) {
-    await this.historyRecord(id);
-    const results = (await this.workspace.collection.results(id))
-      .filter(
-        (item) =>
-          !problemsOnly || ["quarantined", "source_failure", "interrupted"].includes(item.outcome),
-      )
-      .sort(
-        (a, b) =>
-          compareCanonicalStrings(a.finishedAt, b.finishedAt) ||
-          compareCanonicalStrings(a.gameId, b.gameId),
-      );
-    const slice = pageOf(results, page, limit);
+    const { job } = await this.historyRecord(id);
+    const pagination = pageOf([], page, limit);
+    const slice = await this.workspace.collection.resultPage(
+      id,
+      (pagination.page - 1) * pagination.limit,
+      pagination.limit,
+      problemsOnly,
+      job.status,
+    );
     const current = new Map(
       (
         await this.inventory(
@@ -369,8 +355,8 @@ export class CollectionOperationsService {
     return {
       items: slice.items.map((result) => ({ result, current: current.get(result.gameId) ?? null })),
       total: slice.total,
-      page: slice.page,
-      limit: slice.limit,
+      page: pagination.page,
+      limit: pagination.limit,
     };
   }
 }

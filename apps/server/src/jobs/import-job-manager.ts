@@ -26,6 +26,7 @@ import {
   type ImportOptions,
   type ImportWorkspace,
 } from "@kbo/persistence";
+import { ImportHistoryIndex, isTerminal } from "./import-history-index.js";
 
 interface ImportSourceWorkspace {
   readonly imports?: ImportWorkspace;
@@ -89,7 +90,7 @@ export class ImportJobManager {
   private readonly jobs = new Map<string, InternalImportJob>();
   private readonly jobIdsByGame = new Map<string, Set<string>>();
   private readonly retainedJobs = new Map<string, ImportJob>();
-  private orderedIds: readonly string[] | undefined;
+  private readonly historyIndex = new ImportHistoryIndex();
   private readonly pendingJobIds: string[] = [];
   private readonly idempotency = new Map<string, { fingerprint: string; jobId: string }>();
   private readonly batches = new Map<
@@ -130,8 +131,10 @@ export class ImportJobManager {
   public async restore({ background = false } = {}): Promise<void> {
     const storage = this.workspace.imports;
     if (storage === undefined) return;
-    this.orderedIds = undefined;
-    for (const job of await storage.retainedJobs()) this.retainedJobs.set(job.jobId, job);
+    for (const job of await storage.retainedJobs()) {
+      this.retainedJobs.set(job.jobId, job);
+      if (!this.jobs.has(job.jobId)) this.historyIndex.upsert(job);
+    }
     for (const record of await storage.batches()) {
       this.batches.set(record.request.idempotencyKey, {
         fingerprint: batchFingerprint(record.request),
@@ -278,7 +281,7 @@ export class ImportJobManager {
   private storageFailed(job: InternalImportJob, error: unknown): void {
     this.closed = true;
     this.armRetryTimer();
-    job.snapshot = {
+    this.setSnapshot(job, {
       ...job.snapshot,
       ...(job.snapshot.status === "succeeded"
         ? {}
@@ -287,7 +290,7 @@ export class ImportJobManager {
           : { status: "failed" as const, finishedAt: this.now().toISOString() }),
       error: `적재 이력 저장 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`,
       errorCategory: "persistence",
-    };
+    });
     for (const pending of this.jobs.values()) {
       if (
         pending.snapshot.status !== "queued" ||
@@ -296,14 +299,14 @@ export class ImportJobManager {
         pending.cancellation !== undefined
       )
         continue;
-      pending.snapshot = {
+      this.setSnapshot(pending, {
         ...pending.snapshot,
         status: "cancelled",
         interrupted: true,
         finishedAt: this.now().toISOString(),
         error: "이력 저장 장치 오류로 실행하지 않았습니다. 서버 복구 후 다시 선택하세요.",
         errorCategory: "persistence",
-      };
+      });
     }
   }
 
@@ -402,11 +405,16 @@ export class ImportJobManager {
       ...(publicationPending ? { publicationPending } : {}),
       ...(publicationFailure === undefined ? {} : { publicationFailure }),
     });
-    job.snapshot = snapshot;
+    this.setSnapshot(job, snapshot);
     if (publicationPending) job.publicationPending = true;
     else delete job.publicationPending;
     if (publicationFailure !== undefined) job.publicationFailure = publicationFailure;
     else delete job.publicationFailure;
+  }
+
+  private setSnapshot(job: InternalImportJob, snapshot: ImportJob): void {
+    job.snapshot = snapshot;
+    if (this.jobs.get(snapshot.jobId) === job) this.historyIndex.upsert(snapshot);
   }
 
   public create(request: ImportJobCreateRequest): Promise<ImportJob> {
@@ -576,68 +584,10 @@ export class ImportJobManager {
     return { ...this.internal(jobId).snapshot };
   }
   public list(): readonly ImportJob[] {
-    return this.orderedJobs().map((job) => ({ ...job }));
-  }
-  private orderedJobs(): ImportJob[] {
-    if (this.orderedIds === undefined) {
-      this.orderedIds = [
-        ...[...this.retainedJobs.values()].filter((job) => !this.jobs.has(job.jobId)),
-        ...[...this.jobs.values()].map((job) => job.snapshot),
-      ]
-        .sort(
-          (a, b) =>
-            compareCanonicalStrings(b.createdAt, a.createdAt) ||
-            compareCanonicalStrings(a.jobId, b.jobId),
-        )
-        .map((job) => job.jobId);
-    }
-    const ordered: ImportJob[] = [];
-    for (const id of this.orderedIds) {
-      const job = this.jobs.get(id)?.snapshot ?? this.retainedJobs.get(id);
-      if (job !== undefined) ordered.push(job);
-    }
-    return ordered;
+    return this.historyIndex.list();
   }
   public history(query: ImportHistoryQuery): ImportHistory {
-    const search = (query.search ?? "").trim().toLocaleLowerCase("ko-KR");
-    const page = query.page ?? 1,
-      limit = query.limit ?? 50;
-    const offset = (page - 1) * limit;
-    const summary = {
-      total: 0,
-      queued: 0,
-      running: 0,
-      succeeded: 0,
-      failed: 0,
-      cancelled: 0,
-    };
-    let total = 0;
-    const jobs: ImportJob[] = [];
-    const activeJobs: ImportJob[] = [];
-    for (const job of this.orderedJobs()) {
-      if (query.batchId !== undefined && job.batchId !== query.batchId) continue;
-      summary.total += 1;
-      if (job.status !== "cancelling") summary[job.status] += 1;
-      const followUp = job.followUpPending === true && job.error === null;
-      if (activeJobs.length < 200 && (job.status === "running" || followUp))
-        activeJobs.push({ ...job });
-      if (
-        (query.status !== undefined && job.status !== query.status) ||
-        (search !== "" &&
-          !`${job.gameId} ${job.jobId} ${job.error ?? ""}`
-            .toLocaleLowerCase("ko-KR")
-            .includes(search))
-      )
-        continue;
-      const index = total++;
-      if (
-        index >= offset &&
-        index < offset + limit &&
-        (query.view !== "activity" || !isTerminal(job.status) || followUp)
-      )
-        jobs.push({ ...job });
-    }
-    return { jobs, activeJobs, total, page, limit, summary };
+    return this.historyIndex.read(query);
   }
   public async cancel(jobId: string): Promise<ImportJob> {
     const job = this.internal(jobId);
@@ -770,7 +720,6 @@ export class ImportJobManager {
     };
   }
   private register(record: ImportJobRecord): void {
-    this.orderedIds = undefined;
     this.jobs.set(record.job.jobId, {
       request: record.request,
       sourceSeason: record.sourceSeason,
@@ -782,6 +731,7 @@ export class ImportJobManager {
         : { publicationFailure: record.publicationFailure }),
       execution: null,
     });
+    this.historyIndex.upsert(record.job);
     const gameIds = this.jobIdsByGame.get(record.job.gameId) ?? new Set<string>();
     gameIds.add(record.job.jobId);
     this.jobIdsByGame.set(record.job.gameId, gameIds);
@@ -1124,7 +1074,4 @@ function jobFingerprint(request: ImportJobCreateRequest): string {
 }
 function cloneBatch(batch: ImportReadyBatchCreated): ImportReadyBatchCreated {
   return { ...batch, jobs: batch.jobs.map((job) => ({ ...job })) };
-}
-function isTerminal(status: ImportJob["status"]): boolean {
-  return status === "cancelled" || status === "succeeded" || status === "failed";
 }

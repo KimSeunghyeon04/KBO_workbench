@@ -184,6 +184,12 @@ describe("collection HTTP API", () => {
     const response = await app.inject({ method: "GET", url: `/api/v2/collection-jobs/${jobId}` });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ status: "succeeded", completedItems: 1 });
+    const [history, active] = await Promise.all([
+      app.inject({ method: "GET", url: "/api/v2/collection-jobs" }),
+      app.inject({ method: "GET", url: "/api/v2/collection-jobs?activeOnly=true" }),
+    ]);
+    expect(history.json()).toEqual({ jobs: [response.json()] });
+    expect(active.json()).toEqual({ jobs: [] });
     const catalog = await app.inject({ method: "GET", url: "/api/v2/games?authority=staging" });
     expect(catalog.json()).toEqual({
       games: [expect.objectContaining({ gameId: bundle.gameId, authority: "staging" })],

@@ -102,12 +102,10 @@ export class GameRevisionStore {
       document,
     ) => compileStagingGameDocumentV2(document),
     private readonly projectionComputation: RevisionProjectionComputation = inlineProjection,
-    private readonly readPlayerHeights?: (
-      document: StagingGameDocumentV2,
-    ) => Promise<GamePlayerHeightDataset>,
-    private readonly readPlayerBattingProfiles?: (
-      document: StagingGameDocumentV2,
-    ) => Promise<GamePlayerBattingProfileDataset>,
+    private readonly readPlayerEvidence?: (document: StagingGameDocumentV2) => Promise<{
+      heights?: GamePlayerHeightDataset;
+      battingProfiles?: GamePlayerBattingProfileDataset;
+    }>,
   ) {}
 
   public async importRevision(
@@ -120,8 +118,7 @@ export class GameRevisionStore {
     const document = stagingDocument;
     const replay = stagingReplay;
     const documentHash = stagingDocumentHash(document);
-    const heights = await this.readPlayerHeights?.(document);
-    const battingProfiles = await this.readPlayerBattingProfiles?.(document);
+    const { heights, battingProfiles } = (await this.readPlayerEvidence?.(document)) ?? {};
     if (
       battingProfiles !== undefined &&
       (battingProfiles.gameId !== document.metadata.gameId ||

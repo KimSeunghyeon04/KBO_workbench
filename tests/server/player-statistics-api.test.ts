@@ -75,7 +75,7 @@ it("serves the unscoped player directory with identity, history and season avail
       },
     ],
   });
-  await new OfficialCareerWorkspace(temporary.path, "fixture").publishBirthYears({
+  const birthYears = {
     version: 1,
     records: [
       {
@@ -95,9 +95,14 @@ it("serves the unscoped player directory with identity, history and season avail
         },
       },
     ],
-  });
+  };
+  const workspace = new OfficialCareerWorkspace(temporary.path, "fixture");
+  await workspace.publishBirthYears(birthYears);
   const query = db.query.getMockImplementation();
   db.query.mockImplementation((...args) => {
+    if (String(args[0]).includes("AS fingerprint")) {
+      return Promise.resolve({ rows: [{ fingerprint: "a".repeat(64) }] });
+    }
     if (String(args[0]).startsWith("WITH appearances")) {
       return Promise.resolve({
         rows: ["10101", "10102"].map((id) => ({
@@ -135,6 +140,19 @@ it("serves the unscoped player directory with identity, history and season avail
         ...(id === "10101" ? { career, birthYear: 1991 } : {}),
       })),
     );
+    expect((await app.inject("/api/v2/analysis/players")).json()).toEqual(result.json());
+    await workspace.publishBirthYears({
+      ...birthYears,
+      records: birthYears.records.map((record) => ({ ...record, birthYear: 1992 })),
+    });
+    const updated = Value.Decode(
+      PlayerDirectorySchema,
+      (await app.inject("/api/v2/analysis/players")).json(),
+    );
+    expect(updated[0]).toMatchObject({ career, birthYear: 1992 });
+    expect(
+      db.query.mock.calls.filter(([statement]) => String(statement).startsWith("WITH appearances")),
+    ).toHaveLength(1);
   } finally {
     await app.close();
     await db.pool.end();

@@ -65,12 +65,11 @@ export const systemRoutes: FastifyPluginAsyncTypebox<RouteContext> = async (app,
         context.runtime.workspace.catalogOverview(),
       ]);
       const counts = await readCounts(catalog.stagingGameIds);
-      const jobs = context.runtime.collectionJobs.list();
+      const jobs = context.runtime.collectionJobs.list(true);
       return {
         status: system.status,
         counts: {
-          collecting: jobs.filter((job) => ["queued", "running", "cancelling"].includes(job.status))
-            .length,
+          collecting: jobs.length,
           reviewRequired: catalog.reviewRequired,
           ...counts,
         },
