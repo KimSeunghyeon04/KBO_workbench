@@ -539,6 +539,8 @@ export {
 export {
   AnalysisCoveragePreparationSchema,
   AnalysisCoverageResultSchema,
+  AnalysisCoverageStatusQuerySchema,
+  AnalysisCoverageStatusSchema,
   type AnalysisCoveragePreparation,
   type AnalysisCoverageResult,
   AnalysisCoverageQuerySchema,

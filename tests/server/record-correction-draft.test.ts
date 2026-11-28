@@ -123,7 +123,7 @@ describe("기록정정 초안의 current revision과 작업본 보존", () => {
   });
   it("제안 적용만으로 완료 표시하지 않고 저장·되돌림에 따라 목록과 상세 진행 상태를 재검증한다", async () => {
     await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-notice-progress-"));
-    const fixture = await setup(temporary.path);
+    const fixture = await setup(temporary.path, 8);
     try {
       expect((await fixture.service.case(fixture.notice.noticeId))?.draftProgress).toBeUndefined();
       const opened = await fixture.open();
@@ -149,7 +149,22 @@ describe("기록정정 초안의 current revision과 작업본 보존", () => {
         caseVersion: before?.caseVersion,
         draftProgress: { state: "ready_to_import", blockingCount: 0 },
       });
+      fixture.loadCorrectionDraft.mockClear();
       const list = await fixture.service.listCaseSummaries();
+      expect(list.map(({ noticeId }) => noticeId)).toEqual(
+        Array.from({ length: 8 }, (_, index) => fixture.notice.noticeId + "-" + index),
+      );
+      expect(list.map(({ draftProgress }) => draftProgress)).toEqual(
+        Array(8).fill(saved?.draftProgress),
+      );
+      expect(fixture.loadCorrectionDraft).toHaveBeenCalledOnce();
+      fixture.clearApprovals();
+      expect(
+        (await fixture.service.listCaseSummaries()).map(
+          ({ draftProgress }) => draftProgress?.state,
+        ),
+      ).toEqual(Array(8).fill("needs_review"));
+      expect(fixture.loadCorrectionDraft).toHaveBeenCalledTimes(2);
       expect(list[0]?.draftProgress).toEqual(saved?.draftProgress);
       expect(list[0]).not.toHaveProperty("notice");
       expect(fixture.assess).toHaveBeenCalledOnce();
@@ -546,6 +561,7 @@ async function setup(root: string, copies = 1) {
     assess,
     loadCorrectionDraft,
     eventId: event.identity.eventId,
+    clearApprovals: () => proofs.clear(),
     open: () => service.createDraft(notice.noticeId, item.caseVersion),
     setAssessmentPending: () => {
       assessmentCurrent = false;

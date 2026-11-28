@@ -2,7 +2,7 @@ import { resolveAnalysisScope, type PitchReleaseQuery } from "@kbo/contracts";
 import type { Pool } from "pg";
 import { analysisSourceHash } from "./analysis-scope.js";
 import { withAnalysisSnapshot } from "./analysis-snapshot.js";
-import { readSeasonPitchReleaseRows } from "./pitch-analysis-repository.js";
+import { readSeasonPitchReleaseRows } from "./pitch-trajectory-input.js";
 
 export class PitchReleaseRepository {
   public constructor(private readonly pool: Pool) {}

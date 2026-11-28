@@ -12,8 +12,10 @@ import {
   MatchupRepository,
   MatchupModelRepository,
   type MatchupModelWorkspace,
+  type PitchOutcomeCohort,
 } from "@kbo/persistence";
 import type { ComputationRunner } from "../computation.js";
+import { BoundedReadCache } from "../bounded-read-cache.js";
 import type { RouteContext } from "./context.js";
 export const matchupRoutes: FastifyPluginAsyncTypebox<
   Pick<RouteContext, "pool"> & {
@@ -21,7 +23,9 @@ export const matchupRoutes: FastifyPluginAsyncTypebox<
     computation: ComputationRunner;
   }
 > = async (app, { pool, models, computation }) => {
-  const repository = new MatchupRepository(pool);
+  const directCohorts = new BoundedReadCache<PitchOutcomeCohort>(4 * 1024 * 1024, 32, 300_000);
+  const repository = new MatchupRepository(pool, directCohorts);
+  app.addHook("onClose", async () => directCohorts.clear());
   app.get(
     "/api/v2/analysis/matchups/opponents",
     {

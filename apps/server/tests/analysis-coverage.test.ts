@@ -56,12 +56,17 @@ it("returns 202 without waiting, coalesces preparation, and exposes failure/retr
       });
     }
     expect(read).toHaveBeenCalledTimes(1);
+    const statusUrl = `/api/v2/analysis/coverage/status?sourceKey=${inspection.sourceKey}`;
+    expect((await app.inject(statusUrl)).json()).toEqual({ state: "preparing" });
+    expect((await app.inject("/api/v2/analysis/coverage/status?sourceKey=bad")).statusCode).toBe(
+      400,
+    );
+    expect(inspect).toHaveBeenCalledTimes(4);
     pending.reject(new Error("private database failure"));
     await vi.waitFor(async () =>
-      expect((await app.inject("/api/v2/analysis/coverage?season=2025")).json()).toMatchObject({
-        state: "failed",
-      }),
+      expect((await app.inject(statusUrl)).json()).toEqual({ state: "failed" }),
     );
+    expect(inspect).toHaveBeenCalledTimes(4);
     expect(read).toHaveBeenCalledTimes(1);
     read.mockImplementation(async () => {
       inspect.mockResolvedValue({ ...inspection, response: coverageFixture() });
@@ -72,9 +77,11 @@ it("returns 202 without waiting, coalesces preparation, and exposes failure/retr
         .statusCode,
     ).toBe(202);
     await vi.waitFor(async () =>
-      expect((await app.inject("/api/v2/analysis/coverage?season=2025")).json()).toEqual(
-        coverageFixture(),
-      ),
+      expect((await app.inject(statusUrl)).json()).toEqual({ state: "missing" }),
+    );
+    expect(inspect).toHaveBeenCalledTimes(5);
+    expect((await app.inject("/api/v2/analysis/coverage?season=2025")).json()).toEqual(
+      coverageFixture(),
     );
     expect(read).toHaveBeenCalledTimes(2);
     // Changing source while an earlier result exists must request a new preparation.

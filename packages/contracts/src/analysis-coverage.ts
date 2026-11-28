@@ -56,11 +56,18 @@ export const AnalysisCoverageResponseSchema = Type.Object(
 export type AnalysisCoverageCounts = Static<typeof AnalysisCoverageCountsSchema>;
 export type AnalysisCoverageResponse = Static<typeof AnalysisCoverageResponseSchema>;
 
+const sourceKey = Type.String({ pattern: "^[0-9a-f]{64}$" });
+const preparationStates = [Type.Literal("preparing"), Type.Literal("failed")] as const;
+export const AnalysisCoverageStatusQuerySchema = Type.Object({ sourceKey }, strict);
+export const AnalysisCoverageStatusSchema = Type.Object(
+  { state: Type.Union([...preparationStates, Type.Literal("missing")]) },
+  strict,
+);
 export const AnalysisCoveragePreparationSchema = Type.Object(
   {
-    state: Type.Union([Type.Literal("preparing"), Type.Literal("failed")]),
+    state: Type.Union([...preparationStates]),
     scope: AnalysisScopeSchema,
-    sourceKey: Type.String({ pattern: "^[0-9a-f]{64}$" }),
+    sourceKey,
   },
   strict,
 );

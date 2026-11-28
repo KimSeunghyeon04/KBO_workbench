@@ -22,6 +22,7 @@ export class PitchCalibrationWorkspace {
   public async getOrCreate(
     key: PitchCalibrationKey,
     calculate: (previous: PitchCalibrationSeason | null) => Promise<PitchCalibrationSeason>,
+    beforeWaiting?: () => Promise<void>,
   ): Promise<PitchCalibrationSeason> {
     if (!Value.Check(PitchCalibrationKeySchema, key)) throw new Error("Invalid calibration key");
     const directory = path.join(
@@ -36,6 +37,10 @@ export class PitchCalibrationWorkspace {
     if (operation === undefined) {
       operation = this.load(target, path.join(directory, "latest.json"), key, calculate);
       this.pending.set(target, operation);
+    } else if (beforeWaiting !== undefined) {
+      // Only the owner removes the pending entry. A joiner can release its DB snapshot first.
+      await beforeWaiting();
+      return structuredClone(await operation);
     }
     try {
       return structuredClone(await operation);

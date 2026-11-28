@@ -7,12 +7,13 @@ import {
   changeAnalysisParams,
   scopeFromParams,
 } from "../analysis/analysis-scope";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { skipToken, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import "../styles/pitch-analysis.css";
 import "../styles/analysis-coverage.css";
 import { Link, useSearchParams } from "react-router-dom";
 import type { AnalysisCoverageCounts, AnalysisCoverageResult } from "@kbo/contracts";
-import { getAnalysisCoverage } from "../api/analysis-coverage-client";
+import { getAnalysisCoverage, getAnalysisCoverageStatus } from "../api/analysis-coverage-client";
 
 const rate = (n: number, d: number) => (d === 0 ? "—" : `${((100 * n) / d).toFixed(1)}%`);
 function Counts({ counts: c }: { counts: AnalysisCoverageCounts }) {
@@ -74,13 +75,27 @@ export function AnalysisCoveragePage() {
   const query = useQuery<AnalysisCoverageResult>({
     queryKey,
     meta: analysisQueryMeta(season),
-    refetchInterval: (query) =>
-      query.state.data && "state" in query.state.data && query.state.data.state === "preparing"
-        ? 1000
-        : false,
     enabled: scope.error === null,
     queryFn: ({ signal }) => getAnalysisCoverage(season, signal, scope.options),
   });
+  const preparation = query.data && "state" in query.data ? query.data : undefined;
+  const sourceKey = preparation?.state === "preparing" ? preparation.sourceKey : undefined;
+  const status = useQuery({
+    queryKey: ["analysis-coverage-status", season, scope.options, sourceKey, query.dataUpdatedAt],
+    enabled: scope.error === null && sourceKey !== undefined,
+    queryFn:
+      sourceKey === undefined
+        ? skipToken
+        : ({ signal }) => getAnalysisCoverageStatus(sourceKey, signal),
+    refetchInterval: (result) =>
+      result.state.data === undefined || result.state.data.state === "preparing" ? 1000 : false,
+  });
+  const refetchCoverage = query.refetch;
+  useEffect(() => {
+    if (sourceKey !== undefined && status.data !== undefined && status.data.state !== "preparing") {
+      void refetchCoverage();
+    }
+  }, [sourceKey, status.data, refetchCoverage]);
   const retry = useMutation({
     mutationFn: ({
       selectedSeason,
@@ -93,7 +108,6 @@ export function AnalysisCoveragePage() {
       client.setQueryData(["analysis-coverage", variables.selectedSeason, variables.options], data),
   });
   const data = query.data && !("state" in query.data) ? query.data : undefined;
-  const preparation = query.data && "state" in query.data ? query.data : undefined;
   return (
     <div className="page-stack">
       <header className="page-header">
@@ -123,7 +137,10 @@ export function AnalysisCoveragePage() {
           분석 가능 표본을 확인하고 있습니다.
         </p>
       )}
-      <AnalysisQueryError queries={[query]} enabled={scope.error === null} />
+      <AnalysisQueryError
+        queries={sourceKey === undefined ? [query] : [query, status]}
+        enabled={scope.error === null}
+      />
       {preparation?.state === "preparing" && (
         <p className="panel" role="status">
           품질 요약을 준비하고 있습니다. 완료되면 자동으로 표시합니다.

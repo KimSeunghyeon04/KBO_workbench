@@ -3,7 +3,7 @@ import Fastify from "fastify";
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import { Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
-import { PitchAnalysisRepository } from "@kbo/persistence";
+import { calculatePitchCalibration, PitchAnalysisRepository } from "@kbo/persistence";
 import { PitchAnalysisResponseSchema } from "@kbo/contracts";
 import { Value } from "@sinclair/typebox/value";
 import { pitchAnalysisRoutes } from "../src/routes/pitch-analysis.js";
@@ -65,7 +65,9 @@ describe("pitch analysis HTTP contracts", () => {
       }
       expect(catalog).toHaveBeenCalledWith(2024, {});
 
-      analyze.mockClear();
+      const compare = vi
+        .spyOn(PitchAnalysisRepository.prototype, "compare")
+        .mockResolvedValue({ first: response, second: { ...response, season: 2025 } });
       const recheck = vi
         .spyOn(PitchAnalysisRepository.prototype, "readSourceHash")
         .mockResolvedValue(response.sourceHash);
@@ -73,10 +75,11 @@ describe("pitch analysis HTTP contracts", () => {
         "/api/v2/analysis/pitch-shape/p1/comparison?season=2024&dateFrom=2024-04-01&compareSeason=2025";
       const compared = await app.inject(comparison);
       expect(compared.statusCode, compared.body).toBe(200);
-      expect(analyze.mock.calls).toEqual([
-        [2024, "p1", { dateFrom: "2024-04-01" }],
-        [2025, "p1", {}],
-      ]);
+      expect(compare).toHaveBeenCalledExactlyOnceWith(
+        { season: 2024, dateFrom: "2024-04-01" },
+        { season: 2025 },
+        "p1",
+      );
       expect(recheck).toHaveBeenCalledExactlyOnceWith({ season: 2024, dateFrom: "2024-04-01" });
       recheck.mockResolvedValueOnce("c".repeat(64));
       expect((await app.inject(comparison)).statusCode).toBe(400);
@@ -86,4 +89,49 @@ describe("pitch analysis HTTP contracts", () => {
       vi.restoreAllMocks();
     }
   });
+});
+
+it("shares only the season-wide sources and release rows between dated shape inputs", async () => {
+  const fingerprint = "SELECT dataset.hash, sources.*";
+  const query = vi.fn(async (sql: string, params?: readonly unknown[]) => {
+    void params;
+    return { rows: sql.includes(fingerprint) ? [{ gameId: null, hash: null }] : [] };
+  });
+  const pool = { query, connect: async () => ({ query, release() {} }) } as unknown as Pool;
+  const app = Fastify();
+  try {
+    await app.register(pitchAnalysisRoutes, {
+      pool,
+      calibrations: {
+        getOrCreate: async ({ season, sourceHash }) =>
+          calculatePitchCalibration(season, sourceHash, []),
+      },
+      references: { getOrCreate: async () => null },
+    });
+    const response = await app.inject(
+      "/api/v2/analysis/pitch-shape/p1/comparison?season=2024&compareSeason=2024" +
+        "&competition=regular&dateFrom=2024-05-01&dateTo=2024-05-31" +
+        "&compareDateFrom=2024-05-15&compareDateTo=2024-06-15",
+    );
+    expect(response.statusCode, response.body).toBe(200);
+    const reads = query.mock.calls;
+    const manifest = reads.filter(([sql]) => sql.includes(fingerprint));
+    expect(manifest.map(([, params]) => params)).toEqual([
+      [2024, "regular", null, null],
+      [2024, "regular", null, null],
+    ]);
+    const release = reads.filter(([sql]) => sql.includes("AND (r.game_status='final')"));
+    expect(release.map(([, params]) => params)).toEqual([[2024, "regular", null, null, "p1"]]);
+    const target = reads.filter(
+      ([sql]) =>
+        sql.includes("WITH selected_games AS MATERIALIZED") &&
+        !sql.includes("AND (r.game_status='final')"),
+    );
+    expect(target.map(([, params]) => params)).toEqual([
+      [2024, "regular", "2024-05-01", "2024-05-31", "p1"],
+      [2024, "regular", "2024-05-15", "2024-06-15", "p1"],
+    ]);
+  } finally {
+    await app.close();
+  }
 });

@@ -1,4 +1,4 @@
-import { withAnalysisSnapshot } from "./analysis-snapshot.js";
+import { withAnalysisReadSnapshot, type AnalysisReadSnapshot } from "./analysis-snapshot.js";
 import { createHash } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { Type } from "@sinclair/typebox";
@@ -13,11 +13,7 @@ import {
   type PitchOutcomeRow,
   type TerminalPaRow,
 } from "@kbo/contracts";
-import {
-  analysisScopeParameters,
-  scopedAnalysisGamesSql,
-  analysisSourceHash,
-} from "./analysis-scope.js";
+import { analysisScopeParameters, scopedAnalysisGamesSql } from "./analysis-scope.js";
 
 import {
   effectiveBattingSideSql,
@@ -60,8 +56,8 @@ export async function readPitchOutcomes(
   resolveHand?: ResolvePitcherHand,
 ) {
   const read = { actorId, role, cache, resolveHand };
-  const input = await withAnalysisSnapshot(pool, (client) =>
-    readPitchOutcomeInput(client, scope, read),
+  const input = await withAnalysisReadSnapshot(pool, (snapshot) =>
+    readPitchOutcomeInput(snapshot, scope, read),
   );
   return finishPitchOutcomeInput(input, read);
 }
@@ -86,14 +82,15 @@ export async function readPitchOutcomePair(
   }
   const read = { actorId, role, cache, resolveHand };
   const sharedScope = overlappingReadScope(firstScope, secondScope);
-  const [first, second] = await withAnalysisSnapshot(pool, async (client, release) => {
+  const [first, second] = await withAnalysisReadSnapshot(pool, async (snapshot) => {
+    const { client, release } = snapshot;
     if (sharedScope === undefined)
       return [
-        await readPitchOutcomeInput(client, firstScope, read),
-        await readPitchOutcomeInput(client, secondScope, read),
+        await readPitchOutcomeInput(snapshot, firstScope, read),
+        await readPitchOutcomeInput(snapshot, secondScope, read),
       ] as const;
-    const firstIdentity = await readPitchOutcomeIdentity(client, firstScope, read);
-    const secondIdentity = await readPitchOutcomeIdentity(client, secondScope, read);
+    const firstIdentity = await readPitchOutcomeIdentity(snapshot, firstScope, read);
+    const secondIdentity = await readPitchOutcomeIdentity(snapshot, secondScope, read);
     if (firstIdentity.cached !== undefined || secondIdentity.cached !== undefined)
       return [
         await readKnownPitchOutcomeInput(client, firstIdentity, read),
@@ -147,27 +144,27 @@ function overlappingReadScope(
 }
 
 async function readPitchOutcomeInput(
-  client: PoolClient,
+  snapshot: AnalysisReadSnapshot,
   scope: AnalysisScope,
   read: PitchOutcomeRead,
 ) {
-  const identity = await readPitchOutcomeIdentity(client, scope, read);
-  return readKnownPitchOutcomeInput(client, identity, read);
+  const identity = await readPitchOutcomeIdentity(snapshot, scope, read);
+  return readKnownPitchOutcomeInput(snapshot.client, identity, read);
 }
 
 async function readPitchOutcomeIdentity(
-  client: PoolClient,
+  snapshot: AnalysisReadSnapshot,
   scope: AnalysisScope,
   { actorId, role, cache, resolveHand }: PitchOutcomeRead,
 ) {
   if (cache === undefined)
     return {
       scope,
-      manifest: await analysisSourceHash(client, scope),
+      manifest: await snapshot.sourceHash(scope),
       key: undefined,
       cached: undefined,
     };
-  const { manifest, supplements } = await readPitchOutcomeSources(client, scope);
+  const { manifest, supplements } = await readPitchOutcomeSources(snapshot.client, scope);
   const key = canonicalStringify([
     role,
     actorId,
@@ -255,23 +252,62 @@ export async function readPitchOutcomeRows(
   role: "pitcher" | "batter",
   opponentId?: string,
 ) {
+  const { rows, appearances } = await readPitchOutcomeCohort(
+    client,
+    scope,
+    actorId,
+    role,
+    opponentId,
+  );
+  return { rows, plateAppearances: appearances.map(({ row }) => row) };
+}
+
+export interface PitchOutcomeCohort {
+  rows: PitchOutcomeRow[];
+  appearances: { index: number; row: TerminalPaRow }[];
+}
+
+const indexedPaSchema = Type.Array(
+  Type.Object(
+    { ...TerminalPaRowSchema.properties, paIndex: Type.Integer() },
+    { additionalProperties: false },
+  ),
+);
+
+export async function readPitchOutcomeCohort(
+  client: PoolClient,
+  scope: AnalysisScope,
+  actorId: string,
+  role: "pitcher" | "batter",
+  opponentId?: string,
+  covered?: PitchOutcomeCohort,
+): Promise<PitchOutcomeCohort> {
   const actorColumn = role === "pitcher" ? "pitcher_id" : "batter_id",
     opponentColumn = role === "pitcher" ? "batter_id" : "pitcher_id",
     parameters = [...analysisScopeParameters(scope), actorId, opponentId ?? null];
+  const opponentPitch =
+    covered === undefined
+      ? `($6::text IS NULL OR p.${opponentColumn}=$6)`
+      : `p.${opponentColumn} IS DISTINCT FROM $6::text`;
   const pitches = await client.query<Record<string, unknown>>(
     scopedTrackedPitchRowsSql({
       select: `${effectiveBattingSideSql} AS stance,p.pitcher_id AS "pitcherId",
         p.pitch_sequence AS "pitchSequence",p.plate_appearance_event_id AS "paId",
         p.pitch_call AS "pitchCall",p.called_strike AS "calledStrike",p.csw,p.in_play AS "inPlay"`,
-      pitchPredicate: `p.${actorColumn}=$5 AND ($6::text IS NULL OR p.${opponentColumn}=$6)`,
+      pitchPredicate: `p.${actorColumn}=$5 AND ${opponentPitch}`,
       joins: gameBattingProfileJoinSql("p"),
     }),
     parameters,
   );
+  const coveredAppearances = covered?.appearances.map(({ row }) => ({
+    game_id: row.gameId,
+    revision: row.revision,
+    pa_id: row.paId,
+  }));
   const paResult = await client.query<Record<string, unknown>>(
     `WITH selected_games AS (
       ${scopedAnalysisGamesSql("r.game_id,r.revision,r.game_date")}
-    ), selected_pas AS (
+    ), candidates AS (
       SELECT pa.game_id,pa.revision,pa.start_event_id AS pa_id FROM baseball.plate_appearance_facts pa
         JOIN selected_games r USING(game_id,revision) WHERE pa.${actorColumn}=$5
           AND ($6::text IS NULL OR pa.${opponentColumn}=$6)
@@ -279,8 +315,18 @@ export async function readPitchOutcomeRows(
       SELECT p.game_id,p.revision,p.plate_appearance_event_id AS pa_id FROM baseball.pitch_facts p
         JOIN selected_games r USING(game_id,revision) WHERE p.${actorColumn}=$5 AND p.plate_appearance_event_id IS NOT NULL
           AND ($6::text IS NULL OR p.${opponentColumn}=$6)
+    ), selected_pas AS (
+      SELECT c.* FROM candidates c
+      ${
+        coveredAppearances === undefined
+          ? ""
+          : `WHERE NOT EXISTS (
+        SELECT 1 FROM json_to_recordset($7::json) AS cached(game_id text,revision integer,pa_id text)
+        WHERE (cached.game_id,cached.revision,cached.pa_id)=(c.game_id,c.revision,c.pa_id)
+      )`
+      }
     ), ${lastPitchesCteSql}
-    SELECT pa.game_id AS "gameId",pa.revision,to_char(r.game_date,'YYYY-MM-DD') AS "gameDate",pa.start_event_id AS "paId",
+    SELECT pa.game_id AS "gameId",pa.revision,to_char(r.game_date,'YYYY-MM-DD') AS "gameDate",pa.start_event_id AS "paId",pa.plate_appearance_index AS "paIndex",
       pa.batter_id AS "batterId",pa.pitcher_id AS "pitcherId",pa.completed,pa.counts_as_plate_appearance AS "countsAsPa",
       pa.counts_as_at_bat AS "countsAsAb",pa.counts_as_batter_faced AS "countsAsBf",pa.result,
       (NOT COALESCE(pa.is_bunt,FALSE) AND pa.result IS DISTINCT FROM 'intentional_walk' AND
@@ -294,9 +340,25 @@ export async function readPitchOutcomeRows(
     ${pitchTrackingJoinsSql("q")}
     ${gameBattingProfileJoinSql("q")}
     ORDER BY pa.game_id COLLATE "C",pa.plate_appearance_index`,
-    parameters,
+    coveredAppearances === undefined
+      ? parameters
+      : [...analysisScopeParameters(scope), actorId, null, JSON.stringify(coveredAppearances)],
   );
   const rows = Value.Decode(Type.Array(PitchOutcomeRowSchema), pitches.rows);
-  const plateAppearances = Value.Decode(Type.Array(TerminalPaRowSchema), paResult.rows);
-  return { rows, plateAppearances };
+  const appearances = Value.Decode(indexedPaSchema, paResult.rows).map(({ paIndex, ...row }) => ({
+    index: paIndex,
+    row,
+  }));
+  if (covered === undefined) return { rows, appearances };
+
+  const compareId = (first: string, second: string) =>
+    Buffer.compare(Buffer.from(first), Buffer.from(second));
+  return {
+    rows: [...covered.rows, ...rows].sort(
+      (a, b) => compareId(a.gameId, b.gameId) || a.pitchSequence - b.pitchSequence,
+    ),
+    appearances: [...covered.appearances, ...appearances].sort(
+      (a, b) => compareId(a.row.gameId, b.row.gameId) || a.index - b.index,
+    ),
+  };
 }

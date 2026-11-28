@@ -25,6 +25,7 @@ export class PitchReferenceWorkspace {
   public async getOrCreate(
     key: PitchReferenceKey,
     calculate: () => Promise<PitchReference["reference"]>,
+    beforeWaiting?: () => Promise<void>,
   ): Promise<PitchReference["reference"]> {
     if (!Value.Check(PitchReferenceKeySchema, key)) throw new Error("Invalid pitch reference key");
     const target = path.join(
@@ -41,6 +42,9 @@ export class PitchReferenceWorkspace {
     if (operation === undefined) {
       operation = this.loadOrCalculate(target, key, calculate);
       this.pending.set(target, operation);
+    } else if (beforeWaiting !== undefined) {
+      await beforeWaiting();
+      return structuredClone(await operation);
     }
     try {
       // A response consumer must not mutate another request's shared baseline.

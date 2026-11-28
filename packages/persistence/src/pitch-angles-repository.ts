@@ -2,7 +2,7 @@ import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import type { Pool } from "pg";
 import { createHash } from "node:crypto";
 import { canonicalStringify, resolveAnalysisScope, type AnalysisScopeQuery } from "@kbo/contracts";
-import { readPitchRows } from "./pitch-analysis-repository.js";
+import { readPitchRows } from "./pitch-trajectory-input.js";
 import { analysisSourceHash } from "./analysis-scope.js";
 export class PitchAnglesRepository {
   public constructor(private readonly pool: Pool) {}

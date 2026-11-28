@@ -1,6 +1,6 @@
 import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import { createHash } from "node:crypto";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import {
@@ -12,6 +12,7 @@ import {
   MatchupConditionCountsSchema,
   resolveAnalysisScope,
   canonicalStringify,
+  type AnalysisScope,
   type MatchupQuery,
   type MatchupOpponentsQuery,
 } from "@kbo/contracts";
@@ -21,7 +22,8 @@ import {
   analysisSourceHash,
   scopedAnalysisGamesSql,
 } from "./analysis-scope.js";
-import { readPitchOutcomeRows } from "./pitch-outcomes.js";
+import { readPitchOutcomeCohort, type PitchOutcomeCohort } from "./pitch-outcomes.js";
+import { readPitchOutcomeSources } from "./pitch-outcome-sources.js";
 import {
   effectiveBattingSideSql,
   gameBattingProfileJoinSql,
@@ -30,8 +32,15 @@ import {
   pitchPlateAppearanceJoinSql,
   pitchTrackingJoinsSql,
 } from "./analysis-pitch-input.js";
+interface MatchupCohortCache {
+  get(key: string): Promise<PitchOutcomeCohort> | undefined;
+  load(key: string, read: () => Promise<PitchOutcomeCohort>): Promise<PitchOutcomeCohort>;
+}
 export class MatchupRepository {
-  public constructor(private readonly pool: Pool) {}
+  public constructor(
+    private readonly pool: Pool,
+    private readonly directCohorts?: MatchupCohortCache,
+  ) {}
   public async opponents(input: MatchupOpponentsQuery) {
     const query = Value.Decode(MatchupOpponentsQuerySchema, input);
     const { role, playerId, ...scopeQuery } = query;
@@ -79,12 +88,27 @@ export class MatchupRepository {
     const query = Value.Decode(MatchupQuerySchema, input);
     const { pitcherId, batterId, ...scopeQuery } = query;
     const scope = resolveAnalysisScope(scopeQuery, "regular");
-    const { rows, plateAppearances } = await withAnalysisSnapshot(this.pool, (client) =>
-      readPitchOutcomeRows(client, scope, batterId, "batter", pitcherId),
-    );
+    const { rows, appearances } = await withAnalysisSnapshot(this.pool, async (client, release) => {
+      const read = async () => {
+        const cohort = await readPitchOutcomeCohort(client, scope, batterId, "batter", pitcherId);
+        await release();
+        return cohort;
+      };
+      const cache = this.directCohorts;
+      if (cache === undefined) return read();
+      const { key } = await readDirectSource(client, scope, batterId, pitcherId);
+      const cached = cache.get(key);
+      if (cached !== undefined) await release();
+      return cached ?? cache.load(key, read);
+    });
     return Value.Decode(
       DirectMatchupResponseSchema,
-      summarizeDirectMatchup(query, scope, rows, plateAppearances),
+      summarizeDirectMatchup(
+        query,
+        scope,
+        rows,
+        appearances.map(({ row }) => row),
+      ),
     );
   }
   public async analyze(input: MatchupQuery) {
@@ -92,13 +116,25 @@ export class MatchupRepository {
       { pitcherId, batterId, ...scopeQuery } = query,
       scope = resolveAnalysisScope(scopeQuery, "regular");
     return withAnalysisSnapshot(this.pool, async (client, release) => {
-      const manifest = await analysisSourceHash(client, scope);
-      const { rows, plateAppearances } = await readPitchOutcomeRows(
+      const source =
+        this.directCohorts === undefined
+          ? { manifest: await analysisSourceHash(client, scope), key: undefined }
+          : await readDirectSource(client, scope, batterId, pitcherId);
+      const covered =
+        source.key === undefined ? undefined : await this.directCohorts?.get(source.key);
+      const overlap =
+        covered !== undefined && (covered.rows.length > 0 || covered.appearances.length > 0)
+          ? covered
+          : undefined;
+      const { rows, appearances } = await readPitchOutcomeCohort(
         client,
         scope,
         batterId,
         "batter",
+        overlap === undefined ? undefined : pitcherId,
+        overlap,
       );
+      const plateAppearances = appearances.map(({ row }) => row);
       // Aggregate conditions in SQL instead of transporting the full league's tracking trajectories.
       const groups = await client.query<Record<string, unknown>>(
         `WITH selected_games AS MATERIALIZED (
@@ -156,7 +192,14 @@ export class MatchupRepository {
           });
       const sourceHash = createHash("sha256")
         .update(
-          canonicalStringify({ version: 1, manifest, rows, plateAppearances, target, league }),
+          canonicalStringify({
+            version: 1,
+            manifest: source.manifest,
+            rows,
+            plateAppearances,
+            target,
+            league,
+          }),
         )
         .digest("hex");
       return Value.Decode(
@@ -165,4 +208,17 @@ export class MatchupRepository {
       );
     });
   }
+}
+
+async function readDirectSource(
+  client: PoolClient,
+  scope: AnalysisScope,
+  batterId: string,
+  pitcherId: string,
+) {
+  const { manifest, supplements } = await readPitchOutcomeSources(client, scope, {
+    batterId,
+    pitcherId,
+  });
+  return { manifest, key: JSON.stringify([batterId, pitcherId, manifest, supplements]) };
 }

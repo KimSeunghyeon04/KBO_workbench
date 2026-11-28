@@ -21,7 +21,10 @@ export class AnalysisModelJobManager {
       AnalysisModelJobWorkspace,
       "latest" | "get" | "save" | "policy" | "setPolicy"
     >,
-    private readonly service: Pick<AnalysisModelService, "status" | "refresh">,
+    private readonly service: Pick<
+      AnalysisModelService,
+      "status" | "statusForKind" | "startTrainingJob"
+    >,
     private readonly now = () => new Date(),
     private readonly uuid = randomUUID,
     private readonly reportError: (error: unknown) => void = () => {},
@@ -125,38 +128,42 @@ export class AnalysisModelJobManager {
   }
   private async run(job: AnalysisModelJob, signal: AbortSignal) {
     try {
-      for (const step of job.steps) {
-        signal.throwIfAborted();
-        // Re-read after the preceding publication: matchup depends on the quality artifact hash.
-        const status = (await this.service.status(job.applicationSeason)).find(
-          (model) => model.kind === step.kind,
-        );
-        signal.throwIfAborted();
-        if (status?.state === "unsupported") {
-          step.state = "unsupported";
-          step.phase = "done";
-        } else if (!job.force && status?.state === "current") {
-          step.state = "skipped";
-          step.phase = "done";
-          step.modelHash = status.modelHash;
-        } else {
-          step.state = "running";
-          step.phase = "reading";
+      const training = this.service.startTrainingJob();
+      try {
+        for (const step of job.steps) {
+          signal.throwIfAborted();
+          // Re-read after the preceding publication: matchup depends on the quality artifact hash.
+          const status = await this.service.statusForKind(step.kind, job.applicationSeason);
+          signal.throwIfAborted();
+          if (status.state === "unsupported") {
+            step.state = "unsupported";
+            step.phase = "done";
+          } else if (!job.force && status.state === "current") {
+            step.state = "skipped";
+            step.phase = "done";
+            step.modelHash = status.modelHash;
+          } else {
+            step.state = "running";
+            step.phase = "reading";
+            await this.commit(job);
+            step.modelHash = await training.refresh(
+              step.kind,
+              signal,
+              async (phase) => {
+                signal.throwIfAborted();
+                step.phase = phase;
+                await this.commit(job);
+              },
+              job.applicationSeason,
+              status.sourceHash,
+            );
+            step.state = "published";
+            step.phase = "done";
+          }
           await this.commit(job);
-          step.modelHash = await this.service.refresh(
-            step.kind,
-            signal,
-            async (phase) => {
-              signal.throwIfAborted();
-              step.phase = phase;
-              await this.commit(job);
-            },
-            job.applicationSeason,
-          );
-          step.state = "published";
-          step.phase = "done";
         }
-        await this.commit(job);
+      } finally {
+        await training.close();
       }
       job.state = "succeeded";
     } catch (error) {

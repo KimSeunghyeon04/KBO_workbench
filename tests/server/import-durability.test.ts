@@ -18,6 +18,53 @@ const imported = {
 };
 
 describe("적재 의도와 결과의 영속성", () => {
+  it("reads the selected import document and target without scanning the full catalog in the worker", async () => {
+    await using directory = await mkdtempDisposable(path.join(tmpdir(), "kbo-import-scoped-"));
+    const workspace = await StagingWorkspace.open(directory.path);
+    const catalog = vi.spyOn(workspace, "catalog");
+    const importRevision = vi.fn(async (_input: unknown) => {
+      void _input;
+      return imported;
+    });
+    const manager = new ImportJobManager(workspace, { importRevision });
+    try {
+      await workspace.saveReady(document, []);
+      await workspace.saveSourceFailure("unrelated-failure", [], null);
+      const gameId = document.metadata.gameId;
+      const expectedTarget = await workspace.readImportTarget(gameId);
+      const input = await workspace.readImportInput(gameId);
+      expect(input).toEqual({ document, target: expectedTarget });
+      if (input?.target.artifact === undefined) throw new Error("Missing test import artifact");
+      input.target.artifact.generation += 1;
+      expect(await workspace.readImportTarget(gameId)).toEqual(expectedTarget);
+      const selection = await manager.createSelection({ gameIds: [gameId] });
+      expect(catalog.mock.calls).toEqual([[[gameId]]]);
+      expect(selection.count).toBe(1);
+      expect((await workspace.imports.selection(selection.selectionId))?.targets).toEqual([
+        expectedTarget,
+      ]);
+
+      catalog.mockClear();
+      const batch = await manager.createReadyBatch({
+        selectionId: selection.selectionId,
+        idempotencyKey: "one-import",
+      });
+      expect(batch.jobs.map((job) => job.gameId)).toEqual([gameId]);
+      const job = batch.jobs[0];
+      if (job === undefined) throw new Error("Missing test import job");
+      expect(await manager.waitForTerminal(job.jobId)).toMatchObject({
+        status: "succeeded",
+        revision: 1,
+        documentHash: imported.documentHash,
+      });
+      expect(importRevision).toHaveBeenCalledExactlyOnceWith(document);
+      expect(catalog).not.toHaveBeenCalled();
+    } finally {
+      await manager.close();
+      await workspace.close();
+    }
+  });
+
   it("DB 저장 뒤 정리가 진행 중인 작업은 완료 기록과 활동 요약에 함께 남긴다", async () => {
     const cleaning = Promise.withResolvers<undefined>();
     const finish = Promise.withResolvers<undefined>();

@@ -14,6 +14,14 @@ export async function getAnalysisModels(season = 2025, signal?: AbortSignal) {
     ),
   );
 }
+export async function getAnalysisModelJob(id: string, signal: AbortSignal) {
+  const job = Value.Decode(
+    AnalysisModelJobSchema,
+    await requestJson(`/api/v2/analysis/model-jobs/${encodeURIComponent(id)}`, { signal }),
+  );
+  if (job.id !== id) throw new Error("조회한 모델 작업이 일치하지 않습니다.");
+  return job;
+}
 export async function refreshAnalysisModels(
   requestId: string,
   force: boolean,

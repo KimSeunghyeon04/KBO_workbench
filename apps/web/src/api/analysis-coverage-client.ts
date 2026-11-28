@@ -1,9 +1,11 @@
 import {
+  AnalysisCoverageResultSchema,
+  AnalysisCoverageStatusSchema,
   canonicalStringify,
   resolveAnalysisScope,
+  validAnalysisCoverage,
   type AnalysisScopeOptions,
 } from "@kbo/contracts";
-import { AnalysisCoverageResultSchema, validAnalysisCoverage } from "@kbo/contracts";
 import { Value } from "@sinclair/typebox/value";
 import { requestJson } from "./transport";
 
@@ -28,4 +30,13 @@ export async function getAnalysisCoverage(
   )
     throw new Error("분석 범위 또는 표본 합계가 일치하지 않습니다.");
   return response;
+}
+
+export async function getAnalysisCoverageStatus(sourceKey: string, signal: AbortSignal) {
+  return Value.Decode(
+    AnalysisCoverageStatusSchema,
+    await requestJson(`/api/v2/analysis/coverage/status?${new URLSearchParams({ sourceKey })}`, {
+      signal,
+    }),
+  );
 }

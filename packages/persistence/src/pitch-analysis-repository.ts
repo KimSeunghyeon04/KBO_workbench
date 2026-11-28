@@ -1,17 +1,16 @@
-import { withAnalysisSnapshot } from "./analysis-snapshot.js";
+import {
+  readAnalysisPeriods,
+  withAnalysisReadSnapshot,
+  type AnalysisReadSnapshot,
+} from "./analysis-snapshot.js";
 import {
   resolveAnalysisScope,
-  inAnalysisPeriod,
   type AnalysisScope,
   type AnalysisScopeOptions,
   type AnalysisScopeQuery,
 } from "@kbo/contracts";
 import { summarizePitchProfile } from "@kbo/game-core";
-import {
-  analysisScopeParameters,
-  analysisSourceHash,
-  scopedAnalysisGamesSql,
-} from "./analysis-scope.js";
+import { analysisScopeParameters, analysisSourceHash } from "./analysis-scope.js";
 import { createHash } from "node:crypto";
 
 import {
@@ -34,15 +33,15 @@ import {
   classifyPitchReference,
   estimatePitchReleases,
 } from "@kbo/game-core";
-import { type Static, Type } from "@sinclair/typebox";
+import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import { TypeCompiler } from "@sinclair/typebox/compiler";
-import type { Pool, PoolClient } from "pg";
+import type { Pool } from "pg";
+import { analysisPitchCatalogSql } from "./analysis-pitch-input.js";
 import {
-  analysisPitchCatalogSql,
-  gamePitchRowsSql,
-  pitchTrackingJoinsSql,
-} from "./analysis-pitch-input.js";
+  pitchReferenceScope,
+  type PitchAnalysisRow as PitchRow,
+} from "./pitch-trajectory-input.js";
+import { preparePitchInputs } from "./pitch-trajectory-preparation.js";
 
 import type { PitchReferenceWorkspace } from "./pitch-reference-workspace.js";
 import type { PitchCalibrationWorkspace } from "./pitch-calibration-workspace.js";
@@ -54,44 +53,6 @@ import {
   pitchCalibrationLookup,
 } from "./pitch-calibration.js";
 
-const numberOrNull = Type.Union([Type.Number(), Type.Null()]);
-const textOrNull = Type.Union([Type.String(), Type.Null()]);
-const rowSchema = Type.Object(
-  {
-    gameId: Type.String(),
-    revision: Type.Integer(),
-    pitchId: Type.String(),
-    gameDate: Type.String(),
-    gameFinal: Type.Optional(Type.Boolean()),
-    pitcherId: Type.String(),
-    stadium: textOrNull,
-    stance: textOrNull,
-    balls: Type.Integer({ minimum: 0, maximum: 3 }),
-    strikes: Type.Integer({ minimum: 0, maximum: 2 }),
-    pitchType: textOrNull,
-    speedKph: numberOrNull,
-    swing: Type.Boolean(),
-    whiff: Type.Boolean(),
-    trackingId: textOrNull,
-    supported: Type.Boolean(),
-    x0: numberOrNull,
-    y0: numberOrNull,
-    z0: numberOrNull,
-    vx0: numberOrNull,
-    vy0: numberOrNull,
-    vz0: numberOrNull,
-    ax: numberOrNull,
-    ay: numberOrNull,
-    az: numberOrNull,
-    crossPlateY: numberOrNull,
-  },
-  { additionalProperties: false },
-);
-type PitchRow = Static<typeof rowSchema>;
-// A season contains hundreds of thousands of these rows. Compile the same strict
-// boundary check once instead of interpreting its schema for every pitch.
-const pitchRowValidator = TypeCompiler.Compile(rowSchema);
-export type PitchAnalysisRow = PitchRow;
 export interface PitchAnalysisComputation {
   calibration(
     season: number,
@@ -118,6 +79,11 @@ interface SampleCache {
   get(key: string): Promise<PitchAnalysisSample> | undefined;
   load(key: string, calculate: () => Promise<PitchAnalysisSample>): Promise<PitchAnalysisSample>;
 }
+interface PitchSampleInput {
+  readonly scope: AnalysisScope;
+  readonly sourceHash: string;
+  readonly cacheKey: string;
+}
 
 const catalogRowSchema = Type.Object(
   {
@@ -127,13 +93,6 @@ const catalogRowSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-const trajectoryColumns = ["x0", "y0", "z0", "vx0", "vy0", "vz0", "ax", "ay", "az", "cross_plate_y"]
-  .map(
-    (column) =>
-      `CASE WHEN t.${column} > '-Infinity'::double precision AND t.${column} < 'Infinity'::double precision THEN t.${column} ELSE NULL END AS "${column === "cross_plate_y" ? "crossPlateY" : column}"`,
-  )
-  .join(",");
-
 function pitchAnalysisSourceHash(referenceHash: string, scope: AnalysisScope): string {
   return createHash("sha256")
     .update(
@@ -146,20 +105,18 @@ function pitchAnalysisSourceHash(referenceHash: string, scope: AnalysisScope): s
     .digest("hex");
 }
 
-export function pitchReferenceScope(scope: AnalysisScope): AnalysisScope {
-  return { ...scope, dateFrom: null, dateTo: null };
-}
+export const inlinePitchAnalysisComputation: PitchAnalysisComputation = {
+  calibration: async (season, hash, rows, previous) =>
+    calculatePitchCalibration(season, hash, rows, previous),
+  reference: async (...args) => prepareReference(...args),
+  sample: async (...args) => analyzeRows(...args),
+};
 
 export class PitchAnalysisRepository {
   public constructor(
     private readonly pool: Pool,
     private readonly references?: Pick<PitchReferenceWorkspace, "getOrCreate">,
-    private readonly computation: PitchAnalysisComputation = {
-      calibration: async (season, hash, rows, previous) =>
-        calculatePitchCalibration(season, hash, rows, previous),
-      reference: async (...args) => prepareReference(...args),
-      sample: async (...args) => analyzeRows(...args),
-    },
+    private readonly computation = inlinePitchAnalysisComputation,
     private readonly samples?: SampleCache,
     private readonly calibrations?: Pick<PitchCalibrationWorkspace, "getOrCreate">,
   ) {}
@@ -196,138 +153,95 @@ export class PitchAnalysisRepository {
     options: AnalysisScopeOptions = {},
   ): Promise<PitchAnalysisSample> {
     const scope = resolveAnalysisScope({ season, ...options });
-    const referenceScope = pitchReferenceScope(scope);
-    return withAnalysisSnapshot(this.pool, async (client, releaseSnapshot) => {
-      const referenceHash = await analysisSourceHash(client, referenceScope);
+    return withAnalysisReadSnapshot(
+      this.pool,
+      async (snapshot) => (await this.analyzeInputs(snapshot, pitcherId, scope)).first,
+    );
+  }
+
+  public compare(first: AnalysisScopeQuery, second: AnalysisScopeQuery, pitcherId: string) {
+    return readAnalysisPeriods(
+      this.pool,
+      resolveAnalysisScope(first),
+      resolveAnalysisScope(second),
+      (snapshot, a, b) => this.analyzeInputs(snapshot, pitcherId, a, b),
+      pitchReferenceScope,
+    );
+  }
+
+  private async analyzeInputs(
+    snapshot: AnalysisReadSnapshot,
+    pitcherId: string,
+    firstScope: AnalysisScope,
+    secondScope?: AnalysisScope,
+  ) {
+    const referenceScope = pitchReferenceScope(firstScope);
+    const referenceHash = await snapshot.sourceHash(referenceScope);
+    const sampleInput = (scope: AnalysisScope): PitchSampleInput => {
       const sourceHash = pitchAnalysisSourceHash(referenceHash, scope);
-      const sampleKey = {
+      const cacheKey = canonicalStringify({
         modelVersion: PITCH_ANALYSIS_MODEL_VERSION,
         referenceVersion: PITCH_REFERENCE_VERSION,
-        season,
-        sourceHash,
         calibrationVersion: PITCH_CALIBRATION_PARAMETERS.modelVersion,
-      } as const;
-      const cacheKey = canonicalStringify({ ...sampleKey, pitcherId });
-      const cached = this.samples?.get(cacheKey);
-      if (cached !== undefined) {
-        await releaseSnapshot();
-        return structuredClone(await cached);
-      }
-      const calculateSample = async () => {
-        let referenceRows: PitchRow[] | undefined;
-        let targetRows: PitchRow[] | undefined;
-        let releaseRows: PitchRow[] | undefined;
-        const readTargetRows = async () => {
-          targetRows ??= await readPitchRows(client, season, pitcherId, false, scope);
-          releaseRows ??= await readSeasonPitchReleaseRows(client, referenceScope, pitcherId);
-          return { targetRows, releaseRows };
-        };
-        const calculateCalibration = async (previous: PitchCalibrationSeason | null) => {
-          const seasonRows = await readPitchRows(client, season, null, true, referenceScope);
-          targetRows = seasonRows.filter(
-            (r) => r.pitcherId === pitcherId && inAnalysisPeriod(r.gameDate, scope),
-          );
-          releaseRows = seasonRows.filter((r) => r.gameFinal && r.pitcherId === pitcherId);
-          referenceRows = seasonRows.filter((r) => r.gameFinal && r.pitchType === "직구");
-          await releaseSnapshot();
-          return this.computation.calibration(season, referenceHash, seasonRows, previous);
-        };
-        const calibration =
-          this.calibrations === undefined
-            ? await calculateCalibration(null)
-            : await this.calibrations.getOrCreate(
-                {
-                  modelVersion: PITCH_CALIBRATION_PARAMETERS.modelVersion,
-                  season,
-                  sourceHash: referenceHash,
-                },
-                calculateCalibration,
-              );
-        const key = {
-          modelVersion: PITCH_ANALYSIS_MODEL_VERSION,
-          referenceVersion: PITCH_REFERENCE_VERSION,
-          season,
-          sourceHash: referenceHash,
-          calibrationHash: pitchCalibrationHash(calibration),
-        } as const;
-        const calculateReference = async () => {
-          referenceRows ??= await readSeasonPitchReleaseRows(client, referenceScope, null);
-          await readTargetRows();
-          await releaseSnapshot();
-          return this.computation.reference(referenceRows, calibration);
-        };
-        const reference =
-          this.references === undefined
-            ? await calculateReference()
-            : await this.references.getOrCreate(key, calculateReference);
-        const { targetRows: rows, releaseRows: seasonReleaseRows } = await readTargetRows();
-        await releaseSnapshot();
+        season: scope.season,
+        sourceHash,
+        pitcherId,
+      });
+      return { scope, sourceHash, cacheKey };
+    };
+    const a = sampleInput(firstScope);
+    const b = secondScope === undefined ? undefined : sampleInput(secondScope);
+    const cachedA = this.samples?.get(a.cacheKey);
+    const cachedB = b === undefined ? undefined : this.samples?.get(b.cacheKey);
+    const missing: PitchSampleInput[] = [];
+    if (cachedA === undefined) missing.push(a);
+    if (b !== undefined && cachedB === undefined) missing.push(b);
+
+    let preparation: ReturnType<typeof preparePitchInputs> | undefined;
+    const load = (input: PitchSampleInput, earlier?: Promise<PitchAnalysisSample>) => {
+      const calculate = async () => {
+        const { calibration, reference, releaseRows, rowsFor } = await (preparation ??=
+          preparePitchInputs(snapshot, {
+            referenceScope,
+            referenceHash,
+            pitcherId,
+            scopes: missing.map(({ scope }) => scope),
+            includeSeasonReleaseRows: true,
+            computation: this.computation,
+            calibrations: this.calibrations,
+            references: this.references,
+          }));
+        // A failed comparison partner must not invalidate an independently usable cached sample.
+        await earlier?.catch(() => undefined);
         return Value.Decode(
           PitchAnalysisSampleSchema,
           await this.computation.sample(
-            season,
+            input.scope.season,
             pitcherId,
-            sourceHash,
-            rows,
+            input.sourceHash,
+            rowsFor(input.scope),
             reference,
             calibration,
-            seasonReleaseRows,
+            releaseRows,
           ),
         );
       };
-      // The key is checked in a fresh DB snapshot even on a cache hit. The loader reads
-      // rows from that same snapshot, so a concurrent seal cannot mix revisions.
-      const sample =
-        this.samples === undefined
-          ? await calculateSample()
-          : await this.samples.load(cacheKey, calculateSample);
-      await releaseSnapshot();
-      return structuredClone(sample);
-    });
+      return this.samples === undefined
+        ? calculate()
+        : this.samples.load(input.cacheKey, calculate);
+    };
+    // Register both samples before yielding. They share preparation but submit calculations in
+    // the same order as separate requests.
+    const first = cachedA ?? load(a);
+    const second = b === undefined ? first : (cachedB ?? load(b, first));
+    if (missing.length === 0) await snapshot.release();
+    void second.catch(() => undefined);
+    const firstResult = structuredClone(await first);
+    return {
+      first: firstResult,
+      second: b === undefined ? firstResult : structuredClone(await second),
+    };
   }
-}
-
-export async function readPitchRows(
-  client: PoolClient,
-  season: number,
-  pitcherId: string | null,
-  allPitchTypes = false,
-  scope: AnalysisScope = resolveAnalysisScope({ season }),
-  finalOnly = false,
-): Promise<PitchRow[]> {
-  const result = await client.query<Record<string, unknown>>(
-    `
-        WITH selected_games AS MATERIALIZED (
-          ${scopedAnalysisGamesSql("r.game_id,r.revision,r.game_date,r.stadium,r.game_status", finalOnly ? "r.game_status='final'" : undefined)}
-        ) SELECT pitch.* FROM selected_games r CROSS JOIN LATERAL (
-          ${gamePitchRowsSql({
-            source: "facts",
-            select: `p.game_id AS "gameId",p.revision,p.pitch_id AS "pitchId",p.pitch_sequence AS "pitchSequence",
-              to_char(r.game_date,'YYYY-MM-DD') AS "gameDate",(r.game_status='final') AS "gameFinal",p.pitcher_id AS "pitcherId",
-              p.pitch_type AS "pitchType",p.speed_kph AS "speedKph",t.tracking_id AS "trackingId",
-              r.stadium,t.stance,p.before_balls AS balls,p.before_strikes AS strikes,p.swing,p.whiff,
-              COALESCE(t.measurement_profile_id='naver_pts_v1',FALSE) AS supported,${trajectoryColumns}`,
-            joins: pitchTrackingJoinsSql(),
-            pitchPredicate: `($5::text IS NULL OR p.pitcher_id=$5)${allPitchTypes || pitcherId !== null ? "" : " AND p.pitch_type='직구'"}`,
-          })}
-        ) pitch
-        ORDER BY pitch."gameId" COLLATE "C", pitch."pitchSequence"
-      `,
-    [...analysisScopeParameters(scope), pitcherId],
-  );
-  return result.rows.map(({ pitchSequence, ...row }) => {
-    void pitchSequence;
-    if (!pitchRowValidator.Check(row)) throw new Error("Invalid pitch analysis tracking row");
-    return row;
-  });
-}
-
-export function readSeasonPitchReleaseRows(
-  client: PoolClient,
-  scope: AnalysisScope,
-  pitcherId: string | null,
-) {
-  return readPitchRows(client, scope.season, pitcherId, false, pitchReferenceScope(scope), true);
 }
 
 function prepareRows(rows: readonly PitchRow[], calibration: PitchCalibrationSeason | null) {
@@ -467,3 +381,5 @@ export function analyzeRows(
     points,
   };
 }
+
+export type { PitchAnalysisRow } from "./pitch-trajectory-input.js";

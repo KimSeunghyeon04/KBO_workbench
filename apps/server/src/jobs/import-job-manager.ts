@@ -30,7 +30,10 @@ import {
 interface ImportSourceWorkspace {
   readonly imports?: ImportWorkspace;
   withGameOperation?<T>(gameId: string, operation: () => Promise<T>): Promise<T>;
-  catalog(): Promise<GameCatalog>;
+  catalog(gameIds?: readonly string[]): Promise<GameCatalog>;
+  readImportInput?(
+    gameId: string,
+  ): Promise<{ document: StagingGameDocumentV2; target: ImportTarget } | null>;
   readImportTarget?(gameId: string): Promise<ImportTarget | null>;
   readImportTargets?(gameIds: readonly string[]): Promise<ImportTarget[]>;
   readDocument(
@@ -456,7 +459,7 @@ export class ImportJobManager {
       this.selections.set(selection.selectionId, record);
       return selection;
     }
-    const catalog = await this.workspace.catalog();
+    const catalog = await this.workspace.catalog(criteria.gameIds);
     const included = criteria.gameIds === undefined ? null : new Set(criteria.gameIds);
     const excluded = new Set(criteria.excludedGameIds ?? []);
     const search = (criteria.search ?? "").trim().toLocaleLowerCase("ko-KR");
@@ -929,19 +932,13 @@ export class ImportJobManager {
       try {
         if (job.target === null && this.workspace.readImportTarget !== undefined)
           throw new ImportSourceNotReadyError("접수 시 적재 가능 작업본이 없었습니다.");
-        const catalog = await this.workspace.catalog();
-        const source = catalog.games.find(
-          (game) => game.gameId === job.snapshot.gameId && game.authority === "staging",
-        );
-        if (source?.season === null || source === undefined)
+        const input =
+          this.workspace.readImportInput === undefined
+            ? await this.readLegacyImportInput(gameId)
+            : await this.workspace.readImportInput(gameId);
+        if (input === null)
           throw new ImportSourceNotReadyError("staging ready 상태인 경기를 찾을 수 없습니다.");
-        const document = await this.workspace.readDocument("staging", source.season, source.gameId);
-        const target =
-          this.workspace.readImportTarget === undefined
-            ? targetOf(document)
-            : await this.workspace.readImportTarget(source.gameId);
-        if (target === null || target.documentHash !== stagingDocumentHash(document))
-          throw new ImportSourceNotReadyError("적재 중 보정 작업 사본이 변경되었습니다.");
+        const { document, target } = input;
         if (
           job.request.expectedDocumentHash !== undefined &&
           job.request.expectedDocumentHash !== target.documentHash
@@ -954,7 +951,7 @@ export class ImportJobManager {
             "선택 이후 보정 문서가 변경되어 건너뛰었습니다. 다시 확인하고 선택하세요.",
           );
         job.target = target;
-        job.sourceSeason = source.season;
+        job.sourceSeason = document.metadata.season;
         const verifiedMatchupGeneration = await this.verifyRecordCorrection?.(document, target);
         const publication = this.importer.importPublication !== undefined;
         if (publication && target.artifact === undefined)
@@ -1086,6 +1083,22 @@ export class ImportJobManager {
       errorCategory: failure === undefined ? null : "persistence",
     });
   }
+  private async readLegacyImportInput(gameId: string) {
+    const catalog = await this.workspace.catalog([gameId]);
+    const source = catalog.games.find(
+      (game) => game.gameId === gameId && game.authority === "staging",
+    );
+    if (source === undefined || source.season === null) return null;
+    const document = await this.workspace.readDocument("staging", source.season, gameId);
+    const target =
+      this.workspace.readImportTarget === undefined
+        ? targetOf(document)
+        : await this.workspace.readImportTarget(gameId);
+    if (target === null || target.documentHash !== stagingDocumentHash(document))
+      throw new ImportSourceNotReadyError("적재 중 보정 작업 사본이 변경되었습니다.");
+    return { document, target };
+  }
+
   private withGame<T>(gameId: string, operation: () => Promise<T>): Promise<T> {
     return this.workspace.withGameOperation === undefined
       ? operation()

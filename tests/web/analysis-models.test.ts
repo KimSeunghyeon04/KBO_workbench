@@ -211,3 +211,64 @@ it("shares the URL season across the selector, model request, and accessible pre
   expect(requested).toEqual(["2024", "2026"]);
   client.clear();
 });
+
+it("polls the durable job and refreshes one full response for the selected season on completion", async () => {
+  const kinds = ["re24", "count", "win", "park", "quality", "matchup"] as const;
+  const id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+  let finished = false;
+  const job = () => ({
+    version: 2,
+    applicationSeason: 2025,
+    id,
+    force: false,
+    trigger: "manual",
+    sequence: finished ? 3 : 2,
+    state: finished ? "succeeded" : "running",
+    createdAt: "2026-09-21T00:00:00Z",
+    updatedAt: "2026-09-21T00:00:00Z",
+    error: null,
+    steps: kinds.map((kind) => ({
+      kind,
+      state: finished ? "skipped" : "pending",
+      phase: finished ? "done" : "waiting",
+      modelHash: null,
+    })),
+  });
+  const requests: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: string) => {
+      requests.push(input);
+      if (input === `/api/v2/analysis/model-jobs/${id}`) return Response.json(job());
+      expect(input).toBe("/api/v2/analysis/models?season=2024");
+      return Response.json({
+        models: kinds.map((kind) => {
+          const period = modelTrainingPeriod(kind, 2024);
+          return {
+            ...period,
+            kind,
+            state:
+              period.support === "eligible" ? (finished ? "current" : "missing") : "unsupported",
+            sourceHash: null,
+            modelHash: null,
+            adoptedTargets: 0,
+            totalTargets: 1,
+          };
+        }),
+        latestJob: job(),
+        policy: { version: 2, enabledSeasons: [] },
+        checkIntervalHours: 6,
+      });
+    }),
+  );
+  const client = createAnalysisQueryClient();
+  renderModels(client, "/analysis/models?season=2024");
+  await screen.findByRole("table", { name: "모델 상태" });
+  const modelsUrl = "/api/v2/analysis/models?season=2024";
+  const jobUrl = `/api/v2/analysis/model-jobs/${id}`;
+  await waitFor(() => expect(requests).toEqual([modelsUrl, jobUrl]));
+  finished = true;
+  expect(await screen.findAllByText("최신", {}, { timeout: 4500 })).toHaveLength(5);
+  expect(requests).toEqual([modelsUrl, jobUrl, jobUrl, modelsUrl]);
+  client.clear();
+}, 8000);

@@ -89,6 +89,8 @@ interface PreparedProposal {
   readonly approvalPlan?: RecordCorrectionApprovalPlan;
 }
 
+type AssessmentDocuments = Map<string, StagingGameDocumentV2>;
+
 const conflictingNotice =
   "같은 경기의 유효한 다른 공지와 충돌합니다. 공지와 경기·타석 선택을 검토하세요.";
 const unprovedDraft =
@@ -163,14 +165,22 @@ export class RecordCorrectionService {
     let after = "";
     for (;;) {
       const page = await this.repository.pendingNoticeIds(after, 32, season);
-      for (const noticeId of page) await this.assessForJob(noticeId);
+      const documents: AssessmentDocuments = new Map();
+      for (const noticeId of page) await this.assessForJob(noticeId, documents);
       const last = page.at(-1);
       if (last === undefined) return;
       after = last;
     }
   }
 
-  public async assessNotice(notice: RecordCorrectionNotice): Promise<RecordCorrectionCase> {
+  public assessNotice(notice: RecordCorrectionNotice): Promise<RecordCorrectionCase> {
+    return this.evaluateNotice(notice, new Map());
+  }
+
+  private async evaluateNotice(
+    notice: RecordCorrectionNotice,
+    capturedDocuments: AssessmentDocuments,
+  ): Promise<RecordCorrectionCase> {
     notice = normalizeKboRecordCorrectionNotice(notice);
     const {
       games: exactGameCandidates,
@@ -228,7 +238,12 @@ export class RecordCorrectionService {
     const candidates: RecordCorrectionMatchCandidate[] = [];
     const documents = new Map<string, StagingGameDocumentV2>();
     for (const game of gameCandidates) {
-      const document = await this.revisionStore.loadCorrectionDraft(game.gameId, game.revision);
+      const key = canonicalStringify([game.gameId, game.revision, game.documentHash]);
+      let document = capturedDocuments.get(key);
+      if (document === undefined) {
+        document = await this.revisionStore.loadCorrectionDraft(game.gameId, game.revision);
+        capturedDocuments.set(key, document);
+      }
       documents.set(game.gameId, document);
       candidates.push(...(await this.matchCandidates(notice, game, document)));
     }
@@ -426,7 +441,19 @@ export class RecordCorrectionService {
       saved.document,
     ).filter((finding) => finding.severity === "blocking").length;
     const base = await this.revisionStore.currentRevisionBase(gameId);
-    return { saved, blockingCount, base, documentHash };
+    const references = saved.recordCorrectionApprovals;
+    let approval: Promise<boolean> | undefined;
+    const approvalCurrent = () => {
+      if (!references?.length) return Promise.resolve(true);
+      return (approval ??= this.verifySavedApprovals(saved.document, documentHash, references).then(
+        () => true,
+        (error: unknown) => {
+          if (!(error instanceof RevisionConflictError)) throw error;
+          return false;
+        },
+      ));
+    };
+    return { saved, blockingCount, base, documentHash, approvalCurrent };
   }
 
   private async withDraftProgress(
@@ -465,21 +492,11 @@ export class RecordCorrectionService {
           ? null
           : await this.buildProposal(saved.document, item.notice, binding, documentHash);
       const corrected = built !== null && satisfiesOfficialAfterState(built);
-      let approvalCurrent = true;
-      if (corrected && saved.recordCorrectionApprovals?.length) {
-        try {
-          await this.verifySavedApprovals(
-            saved.document,
-            documentHash,
-            saved.recordCorrectionApprovals,
-          );
-        } catch (error: unknown) {
-          if (!(error instanceof RevisionConflictError)) throw error;
-          approvalCurrent = false;
-        }
-      }
       const ready =
-        corrected && approvalCurrent && blockingCount === 0 && saved.authority === "staging";
+        corrected &&
+        (await source.approvalCurrent()) &&
+        blockingCount === 0 &&
+        saved.authority === "staging";
       draftProgress = {
         state: ready ? "ready_to_import" : "needs_review",
         blockingCount,
@@ -607,33 +624,39 @@ export class RecordCorrectionService {
 
   public async afterImport(gameId: string, revision: number): Promise<void> {
     const noticeIds = await this.repository.listNoticeIdsForImport(gameId, revision);
-    for (const noticeId of noticeIds) await this.assessForJob(noticeId);
+    const documents: AssessmentDocuments = new Map();
+    for (const noticeId of noticeIds) await this.assessForJob(noticeId, documents);
   }
 
   public async reconcilePending(onError: (error: unknown) => void): Promise<void> {
     const pending = await this.repository.pendingNoticeIds(this.pendingCursor, 16);
     this.pendingCursor = pending.length < 16 ? "" : (pending.at(-1) ?? "");
+    const documents: AssessmentDocuments = new Map();
     for (const noticeId of pending) {
       try {
-        await this.assessForJob(noticeId);
+        await this.assessForJob(noticeId, documents);
       } catch (error: unknown) {
         onError(error);
       }
     }
   }
 
-  private async assessForJob(noticeId: string): Promise<RecordCorrectionCase | null> {
+  private async assessForJob(
+    noticeId: string,
+    documents: AssessmentDocuments = new Map(),
+  ): Promise<RecordCorrectionCase | null> {
     for (let attempt = 0; ; attempt += 1) {
       const current = await this.repository.case(noticeId);
       if (current === null || current.status === "dismissed") return current;
       try {
-        return await this.assessNotice(current.notice);
+        return await this.evaluateNotice(current.notice, documents);
       } catch (error: unknown) {
         if (
           attempt >= 2 ||
           !(error instanceof RevisionConflictError || error instanceof RecordCorrectionStaleError)
         )
           throw error;
+        documents.clear();
       }
     }
   }

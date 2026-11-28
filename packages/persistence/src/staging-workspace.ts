@@ -490,7 +490,7 @@ export class StagingWorkspace {
       throw new Error(`원장 current manifest에 season이 없습니다: ${gameId}`);
     }
     const document = await this.readCurrentDocument(current);
-    const envelope = await this.readDocumentEnvelope(current, document);
+    const { envelope } = await this.readDocumentEnvelope(current, document);
     return {
       ...approvalMetadata(envelope),
       contentHash: current.contentHash,
@@ -517,6 +517,18 @@ export class StagingWorkspace {
     const document = await this.readCurrentDocument(current);
     await this.readDocumentFindings(current, document);
     return document;
+  }
+
+  /** Read the verified ready document and target from the same current entry. */
+  public async readImportInput(gameId: string) {
+    this.assertOpen();
+    assertGameId(gameId);
+    await this.currentTransitions.get(gameId)?.catch(() => undefined);
+    const current = await this.currentStorage.readCurrentEntry(gameId);
+    if (current?.authority !== "ready" || current.season === null) return null;
+    const document = await this.readCurrentDocument(current);
+    const { target } = await this.readDocumentEnvelope(current, document);
+    return { document, target };
   }
 
   /** Capture a target identity from the live manifest; import still verifies the document. */
@@ -688,7 +700,7 @@ export class StagingWorkspace {
           "보정 시작 이후 현재 작업 사본의 내용이나 승인 근거가 변경되었습니다.",
         );
       }
-      const envelope = await this.readDocumentEnvelope(entry, current);
+      const { envelope } = await this.readDocumentEnvelope(entry, current);
       currentFindings = envelope.findings;
       existingApprovals = envelope.recordCorrectionApprovals;
       fromSealedDraft = envelope.fromSealedDraft;
@@ -930,19 +942,20 @@ export class StagingWorkspace {
     current: CurrentWorkspaceEntry,
     document: StagingGameDocumentV2,
   ): Promise<readonly StoredFinding[]> {
-    return (await this.readDocumentEnvelope(current, document)).findings;
+    return (await this.readDocumentEnvelope(current, document)).envelope.findings;
   }
 
   private async readDocumentEnvelope(
     current: CurrentWorkspaceEntry,
     document: StagingGameDocumentV2,
-  ): Promise<StoredFindingEnvelopeV2> {
+  ) {
     const envelope = await readVerifiedDocumentEnvelope(this.root, current, document);
+    const target = verifiedImportTarget(current, document, envelope);
     this.verifiedTargets.set(current.gameId, {
       manifest: canonicalStringify(current),
-      target: verifiedImportTarget(current, document, envelope),
+      target: structuredClone(target),
     });
-    return envelope;
+    return { envelope, target };
   }
 
   private async transitionCurrent(

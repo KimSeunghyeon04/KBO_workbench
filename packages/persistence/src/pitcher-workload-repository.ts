@@ -13,7 +13,7 @@ import {
   type AnalysisScopeQuery,
 } from "@kbo/contracts";
 import { analyzePitcherWorkload } from "@kbo/game-core";
-import { readWorkloadContext } from "./workload-context.js";
+import { readWorkloadContext, type WorkloadHistoryCache } from "./workload-context.js";
 import { readAnalysisPlays } from "./analysis-plays.js";
 import { pitchTrackingJoinsSql } from "./analysis-pitch-input.js";
 const workloadPitchRows = Type.Object(
@@ -24,12 +24,20 @@ const workloadPitchRows = Type.Object(
   { additionalProperties: false },
 );
 export class PitcherWorkloadRepository {
-  public constructor(private readonly pool: Pool) {}
+  public constructor(
+    private readonly pool: Pool,
+    private readonly historyCache?: WorkloadHistoryCache,
+  ) {}
   public async analyze(input: AnalysisScopeQuery, pitcherId: string) {
     const query = Value.Decode(AnalysisScopeQuerySchema, input),
       scope = resolveAnalysisScope(query, "regular");
     return withAnalysisSnapshot(this.pool, async (client, release) => {
-      const { manifest, history, selected } = await readWorkloadContext(client, scope, pitcherId);
+      const { manifest, history, selected } = await readWorkloadContext(
+        client,
+        scope,
+        pitcherId,
+        this.historyCache,
+      );
       const { rows } = await client.query<Record<string, unknown>>(
         `WITH selected_pitches AS MATERIALIZED (
           SELECT p.game_id,p.revision,p.pitch_id,p.pitch_sequence,p.plate_appearance_event_id,

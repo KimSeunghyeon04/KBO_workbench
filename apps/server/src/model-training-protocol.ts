@@ -1,5 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import {
+  AnalysisModelKindSchema,
+  AnalysisModelTrainingSeasonSchema,
   RunExpectancyModelSchema,
   CountRunModelSchema,
   WinModelSchema,
@@ -13,6 +15,15 @@ import {
   PitchQualityManifestSchema,
 } from "@kbo/persistence";
 const strict = { additionalProperties: false } as const;
+export const ModelTrainingRequestSchema = Type.Object(
+  {
+    kind: AnalysisModelKindSchema,
+    through: AnalysisModelTrainingSeasonSchema,
+    sourceHash: Type.Optional(Type.String({ pattern: "^[0-9a-f]{64}$" })),
+  },
+  strict,
+);
+export type ModelTrainingRequest = Static<typeof ModelTrainingRequestSchema>;
 export const ModelTrainingResultSchema = Type.Union([
   Type.Object(
     {

@@ -20,7 +20,11 @@ const sourceSchema = Type.Object(
 );
 
 /** Sealed facts use the regular manifest. Late supplements and zone policy have their own identity. */
-export async function readPitchOutcomeSources(client: PoolClient, scope: AnalysisScope) {
+export async function readPitchOutcomeSources(
+  client: PoolClient,
+  scope: AnalysisScope,
+  pair?: { batterId: string; pitcherId: string },
+) {
   const result = await client.query<Record<string, unknown>>(
     `WITH selected_games AS MATERIALIZED (
       ${scopedAnalysisGamesSql(
@@ -43,6 +47,17 @@ export async function readPitchOutcomeSources(client: PoolClient, scope: Analysi
       FROM selected_games r LEFT JOIN registry.game_batting_profile_bundles profile
         ON profile.game_id=r.game_id AND profile.source_bundle_hash=r.source_bundle_hash
         AND profile.season=r.season AND profile.sealed
+      ${
+        pair === undefined
+          ? ""
+          : `WHERE EXISTS (
+        SELECT 1 FROM baseball.pitch_facts p
+        WHERE p.game_id=r.game_id AND p.revision=r.revision AND p.batter_id=$5 AND p.pitcher_id=$6
+      ) OR EXISTS (
+        SELECT 1 FROM baseball.plate_appearance_facts pa
+        WHERE pa.game_id=r.game_id AND pa.revision=r.revision AND pa.batter_id=$5 AND pa.pitcher_id=$6
+      )`
+      }
     )
     SELECT (
       SELECT COALESCE(json_agg(g ORDER BY g."gameId" COLLATE "C"),'[]'::json)
@@ -56,7 +71,10 @@ export async function readPitchOutcomeSources(client: PoolClient, scope: Analysi
       (SELECT jsonb_agg(jsonb_build_array(version,checksum) ORDER BY version COLLATE "C")
         FROM workbench.schema_migrations)
     )::text,'UTF8')),'hex') AS supplements`,
-    analysisScopeParameters(scope),
+    [
+      ...analysisScopeParameters(scope),
+      ...(pair === undefined ? [] : [pair.batterId, pair.pitcherId]),
+    ],
   );
   const { sources, dataset, supplements } = Value.Decode(sourceSchema, result.rows[0]);
   return { manifest: analysisManifestHash(scope, sources, dataset), supplements };

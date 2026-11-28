@@ -2,33 +2,80 @@ import { Worker } from "node:worker_threads";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type { AnalysisModelKind } from "@kbo/contracts";
-import { ModelTrainingResultSchema, type ModelTrainingResult } from "./model-training-protocol.js";
+import {
+  ModelTrainingResultSchema,
+  type ModelTrainingRequest,
+  type ModelTrainingResult,
+} from "./model-training-protocol.js";
 const phaseSchema = Type.Object(
   { phase: Type.Literal("fitting") },
   { additionalProperties: false },
 );
-export async function runModelTraining(
-  kind: AnalysisModelKind,
-  baseDirectory: string,
+export class ModelTrainingSession {
+  private worker: Worker | undefined;
+  private failure: Error | undefined;
+  private active = false;
+  private closing: Promise<void> | undefined;
+
+  public constructor(private readonly baseDirectory: string) {}
+
+  public async run(
+    request: ModelTrainingRequest,
+    signal: AbortSignal,
+    onFit: () => Promise<void>,
+  ): Promise<ModelTrainingResult> {
+    signal.throwIfAborted();
+    if (this.failure !== undefined) throw this.failure;
+    if (this.closing !== undefined || this.active)
+      throw new Error("Training session is unavailable");
+    const worker = (this.worker ??= this.openWorker());
+    this.active = true;
+    try {
+      return await train(worker, request, signal, onFit, () => this.close());
+    } finally {
+      this.active = false;
+    }
+  }
+
+  public close() {
+    return (this.closing ??= (async () => {
+      await this.worker?.terminate();
+    })());
+  }
+
+  private openWorker() {
+    const worker = new Worker(new URL("./maintenance/model-training-worker.js", import.meta.url), {
+      workerData: this.baseDirectory,
+    });
+    worker.on("error", (error) => {
+      this.failure = error;
+    });
+    worker.once("exit", (code) => {
+      this.failure ??= new Error(`Training worker exited (${code})`);
+    });
+    return worker;
+  }
+}
+
+async function train(
+  worker: Worker,
+  request: ModelTrainingRequest,
   signal: AbortSignal,
   onFit: () => Promise<void>,
-  through = 2024,
-): Promise<ModelTrainingResult> {
-  signal.throwIfAborted();
-  const worker = new Worker(new URL("./maintenance/model-training-worker.js", import.meta.url), {
-    workerData: { kind, through, baseDirectory },
-  });
+  stop: () => Promise<void>,
+) {
+  const { kind, through } = request;
   let timeout: ReturnType<typeof setTimeout> | undefined;
-  let abort = () => {};
+  const cleanup: (() => void)[] = [];
   let phases = Promise.resolve();
   try {
     return await new Promise<ModelTrainingResult>((resolve, reject) => {
       let received = false;
-      abort = () => reject(new Error("Model training cancelled"));
+      const abort = () => reject(new Error("Model training cancelled"));
       signal.addEventListener("abort", abort, { once: true });
-      if (signal.aborted) abort();
+      cleanup.push(() => signal.removeEventListener("abort", abort));
       timeout = setTimeout(() => reject(new Error("Model training timed out")), 30 * 60_000);
-      worker.on("message", (message: unknown) => {
+      const onMessage = (message: unknown) => {
         if (Value.Check(phaseSchema, message)) {
           phases = phases.then(onFit);
           void phases.catch(reject);
@@ -44,18 +91,44 @@ export async function runModelTraining(
             })
             .catch(reject);
         }
-      });
-      worker.once("error", reject);
-      worker.once("exit", (code) => {
+      };
+      const onExit = (code: number) => {
         if (!received) reject(new Error(`Training worker exited (${code}) before completion`));
+      };
+      worker.on("message", onMessage);
+      worker.once("error", reject);
+      worker.once("exit", onExit);
+      cleanup.push(() => {
+        worker.off("message", onMessage);
+        worker.off("error", reject);
+        worker.off("exit", onExit);
       });
+      if (signal.aborted) abort();
+      else worker.postMessage(request);
     });
+  } catch (error) {
+    await stop();
+    throw error;
   } finally {
     clearTimeout(timeout);
-    signal.removeEventListener("abort", abort);
-    await worker.terminate();
+    for (const release of cleanup) release();
     // A cancellation can arrive during an atomic progress write. Finish it before the
     // manager records the terminal state, otherwise an older phase could overwrite it.
     await phases.catch(() => {});
+  }
+}
+
+export async function runModelTraining(
+  kind: AnalysisModelKind,
+  baseDirectory: string,
+  signal: AbortSignal,
+  onFit: () => Promise<void>,
+  through = 2024,
+): Promise<ModelTrainingResult> {
+  const session = new ModelTrainingSession(baseDirectory);
+  try {
+    return await session.run({ kind, through }, signal, onFit);
+  } finally {
+    await session.close();
   }
 }

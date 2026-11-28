@@ -1,10 +1,12 @@
 import { analysisQueryMeta } from "../analysis/analysis-query-meta";
 import { AnalysisSeasonOptions, useAnalysisSeason } from "../analysis/analysis-seasons";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { skipToken, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { AnalysisQueryError } from "../analysis/analysis-query-error";
 import { useSearchParams } from "react-router-dom";
 import type { AnalysisModelKind } from "@kbo/contracts";
 import {
+  getAnalysisModelJob,
   getAnalysisModels,
   refreshAnalysisModels,
   cancelModelRefresh,
@@ -45,8 +47,22 @@ export function AnalysisModelsPage() {
     queryKey: ["analysis-models", season],
     meta: analysisQueryMeta(season, "models"),
     queryFn: ({ signal }) => getAnalysisModels(season, signal),
-    refetchInterval: (result) => (result.state.data?.latestJob?.state === "running" ? 3000 : false),
   });
+  const latest = query.data?.latestJob;
+  const runningId = latest?.state === "running" ? latest.id : undefined;
+  const status = useQuery({
+    queryKey: ["analysis-model-job", runningId],
+    queryFn:
+      runningId === undefined ? skipToken : ({ signal }) => getAnalysisModelJob(runningId, signal),
+    refetchInterval: (result) =>
+      result.state.data === undefined || result.state.data.state === "running" ? 3000 : false,
+  });
+  const refetchModels = query.refetch;
+  useEffect(() => {
+    if (runningId !== undefined && status.data !== undefined && status.data.state !== "running") {
+      void refetchModels();
+    }
+  }, [runningId, season, status.data, refetchModels]);
   const changed = async () => {
     await client.invalidateQueries({ queryKey: ["analysis-models"] });
   };
@@ -62,8 +78,8 @@ export function AnalysisModelsPage() {
     onSuccess: changed,
   });
   const data = query.data,
-    job = data?.latestJob,
-    running = job?.state === "running",
+    job = runningId !== undefined && status.data?.state === "running" ? status.data : latest,
+    running = runningId !== undefined,
     trainable = data?.models.some((model) => model.support === "eligible") ?? false;
   const mutationError = refresh.error ?? cancel.error ?? policy.error;
   return (
@@ -90,7 +106,7 @@ export function AnalysisModelsPage() {
           </select>
         </label>
       </header>
-      <AnalysisQueryError queries={[query]} />
+      <AnalysisQueryError queries={running ? [query, status] : [query]} />
       {mutationError && <p role="alert">{mutationError.message}</p>}
       {query.isLoading && <p role="status">시즌별 모델 상태를 확인하고 있습니다.</p>}
       {data && (

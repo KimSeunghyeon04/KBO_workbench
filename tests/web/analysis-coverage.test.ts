@@ -60,7 +60,22 @@ it("rejects a response with a mismatched season or inconsistent counts", async (
 it("polls preparation to completion and offers an explicit retry after failure", async () => {
   const fixture = coverageFixture(2020);
   const preparing = { state: "preparing", scope: fixture.scope, sourceKey: "a".repeat(64) };
-  const fetcher = vi.fn(async () => new Response(JSON.stringify(preparing), { status: 202 }));
+  const paths: string[] = [];
+  let state = "preparing";
+  const fetcher = vi.fn(async (input: string) => {
+    const url = new URL(input, "http://localhost");
+    paths.push(url.pathname.split("/").at(-1) ?? "");
+    if (url.pathname.endsWith("/status")) {
+      expect(url.searchParams.get("sourceKey")).toBe(preparing.sourceKey);
+      return Response.json({ state });
+    }
+    expect(url.searchParams.get("season")).toBe("2020");
+    if (url.pathname.endsWith("/prepare")) {
+      state = "preparing";
+      return Response.json(preparing, { status: 202 });
+    }
+    return Response.json(state === "missing" ? fixture : { ...preparing, state });
+  });
   vi.stubGlobal("fetch", fetcher);
   const client = createAnalysisQueryClient();
   render(
@@ -75,20 +90,29 @@ it("polls preparation to completion and offers an explicit retry after failure",
     ),
   );
   expect(await screen.findByText(/품질 요약을 준비하고 있습니다/)).toBeTruthy();
-  fetcher.mockImplementation(
-    async () => new Response(JSON.stringify({ ...preparing, state: "failed" })),
-  );
+  await waitFor(() => expect(paths).toEqual(["coverage", "status"]));
+  state = "failed";
   expect(
     await screen.findByText(/품질 요약을 준비하지 못했습니다/, {}, { timeout: 2500 }),
   ).toBeTruthy();
-  fetcher.mockImplementation(async () => new Response(JSON.stringify(fixture)));
+  expect(paths).toEqual(["coverage", "status", "status", "coverage"]);
   fireEvent.click(screen.getByRole("button", { name: "다시 준비" }));
-  expect(await screen.findByText(/경기 종류 미분류 0경기/)).toBeTruthy();
-  expect(fetcher).toHaveBeenLastCalledWith(
-    expect.stringContaining("/coverage/prepare?"),
-    expect.objectContaining({ method: "POST" }),
-  );
-});
+  await waitFor(() => expect(paths.slice(-2)).toEqual(["prepare", "status"]));
+  expect(await screen.findByText(/품질 요약을 준비하고 있습니다/)).toBeTruthy();
+  state = "missing";
+  expect(await screen.findByText(/경기 종류 미분류 0경기/, {}, { timeout: 2500 })).toBeTruthy();
+  expect(paths).toEqual([
+    "coverage",
+    "status",
+    "status",
+    "coverage",
+    "prepare",
+    "status",
+    "status",
+    "coverage",
+  ]);
+  client.clear();
+}, 7500);
 
 it("rejects a preparation response for a different scope", async () => {
   vi.stubGlobal(

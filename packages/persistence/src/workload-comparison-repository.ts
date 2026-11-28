@@ -10,16 +10,24 @@ import {
   resolveAnalysisScope,
   type AnalysisScopeQuery,
 } from "@kbo/contracts";
-import { readWorkloadContext } from "./workload-context.js";
+import { readWorkloadContext, type WorkloadHistoryCache } from "./workload-context.js";
 import { pitchTrackingJoinsSql } from "./analysis-pitch-input.js";
 
 export class WorkloadComparisonRepository {
-  public constructor(private readonly pool: Pool) {}
+  public constructor(
+    private readonly pool: Pool,
+    private readonly historyCache?: WorkloadHistoryCache,
+  ) {}
   public async read(input: AnalysisScopeQuery, pitcherId: string) {
     const query = Value.Decode(AnalysisScopeQuerySchema, input),
       scope = resolveAnalysisScope(query, "regular");
     return withAnalysisSnapshot(this.pool, async (client, release) => {
-      const { manifest, history, selected } = await readWorkloadContext(client, scope, pitcherId);
+      const { manifest, history, selected } = await readWorkloadContext(
+        client,
+        scope,
+        pitcherId,
+        this.historyCache,
+      );
       // Rank actual pitches/encounters before any comparison eligibility filter.
       // Read the narrow typed facts, avoiding the wide trajectory/zone view entirely.
       const result = await client.query<Record<string, unknown>>(

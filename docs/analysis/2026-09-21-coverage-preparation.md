@@ -4,7 +4,9 @@
 
 자료 품질 GET은 현재 원천을 확인한 뒤 저장 요약을 반환한다. 요약이 없으면 202와
 `state: preparing`, 조회 scope, sourceKey를 반환하고 서버에서 준비한다. 화면은 1초 간격으로
-확인하며 완료 응답은 기존 `AnalysisCoverageResponse`와 같은 값·hash·분모를 유지한다.
+`GET /api/v2/analysis/coverage/status?sourceKey=…`에서 진행 상태만 확인한다.
+작업이 실패했거나 목록에서 사라지면 원래 시즌·경기 종류·날짜로 품질 GET을 다시 호출한다.
+완료 응답은 기존 `AnalysisCoverageResponse`와 같은 값·hash·분모를 유지한다.
 실패는 `state: failed`로 표시하고 `POST /api/v2/analysis/coverage/prepare`로 다시 준비한다.
 POST도 동일한 query를 사용한다. 동일 원천의 진행 중 요청과 완료된 요청은 중복 계산하지 않는다.
 
@@ -28,7 +30,7 @@ POST도 동일한 query를 사용한다. 동일 원천의 진행 중 요청과 �
 
 sourceKey는 시즌·경기 종류, current revision/document hash, 분류 dataset, 시즌 유효 신장,
 보정 파라미터, `COVERAGE_SUMMARY_VERSION`으로 결정한다. 궤적·존·집계 정의가 바뀌면 이 버전을
-올려야 한다. 매 요청에서 신선한 키를 확인하며 TTL은 메모리 보관에만 사용한다.
+올려야 한다. 결과 조회·준비 요청마다 신선한 키를 확인하며 TTL은 메모리 보관에만 사용한다.
 메모리 요약은 최대 16MiB/16건/미사용 5분이다.
 
 시즌 요약은 경기별 수를 저장하므로 기간 필터 변경은 원시 투구를 다시 읽지 않는다.

@@ -127,6 +127,65 @@ describe("period collection operations", () => {
     }
   });
 
+  it("rereads only selected games while preserving off-schedule failures, order and change detection", async () => {
+    await using temp = await mkdtempDisposable(
+      path.join(tmpdir(), "kbo-collection-selection-scope-"),
+    );
+    const workspace = await StagingWorkspace.open(temp.path);
+    let changeSelected = false;
+    const database = vi.fn(async (ids?: readonly string[]) => ({
+      games:
+        changeSelected && ids?.includes("selected-b")
+          ? [catalog("selected-b", "database", "2026-04-02")]
+          : [],
+    }));
+    const service = new CollectionOperationsService(
+      { discoverRange: async () => [entry("selected-b", "2026-04-02"), entry("not-selected")] },
+      workspace,
+      database,
+    );
+    try {
+      await workspace.saveSourceFailure("selected-a", [], null);
+      await workspace.saveSourceFailure("selected-b", [], null);
+      await workspace.saveSourceFailure("unknown-other", [], null);
+      await workspace.collection.saveResult("old-result-job", {
+        gameId: "selected-a",
+        gameDate: "2026-04-01",
+        label: "이전 수집 대진",
+        outcome: "source_failure",
+        message: "원천 응답 실패",
+        finishedAt: timestamp,
+      });
+      const discovery = await service.create({ ...range, idempotencyKey: "scoped-selection" });
+      await service.wait(discovery.discoveryId);
+      database.mockClear();
+      const query = selection(discovery.discoveryId, {
+        mode: "explicit",
+        target: "source_failure",
+        gameIds: ["selected-b", "selected-a"],
+      });
+      const result = await service.select(query);
+      expect(database.mock.calls).toEqual([[undefined], [["selected-a", "selected-b"]]]);
+      const persisted = await workspace.collection.selection(result.selectionId);
+      expect(
+        persisted?.entries.map(({ game }) => [
+          game.gameId,
+          game.gameDate,
+          game.scheduledAt,
+          game.label,
+        ]),
+      ).toEqual([
+        ["selected-a", "2026-04-01", null, "이전 수집 대진"],
+        ["selected-b", "2026-04-02", "2026-04-02T18:30:00+09:00", "비식별 원정 vs 비식별 홈"],
+      ]);
+      changeSelected = true;
+      await expect(service.select(query)).rejects.toThrow("대상 확정 중 저장 상태가 바뀌었습니다.");
+    } finally {
+      await service.close();
+      await workspace.close();
+    }
+  });
+
   it("이전 수집에서 확인한 실패 경기 날짜는 재시작 뒤 빈 일정에서도 유지한다", async () => {
     await using temp = await mkdtempDisposable(path.join(tmpdir(), "kbo-known-collection-game-"));
     const first = await StagingWorkspace.open(temp.path);

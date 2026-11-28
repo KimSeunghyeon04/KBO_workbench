@@ -112,11 +112,9 @@ export const playerStatisticsRoutes: FastifyPluginAsyncTypebox<
       const { role, ...periods } = request.query;
       const { first, second } = analysisPeriodQueries(periods);
       const playerId = request.params.playerId;
-      const common = { playerId, group: "player" as const, limit: 200, page: 1 };
       if (role === "batter") {
         const { first: a, second: b } = await readAnalysisPeriodPair(
-          () => repository.battingWithManifest({ ...first, ...common }),
-          () => repository.battingWithManifest({ ...second, ...common }),
+          () => repository.compareBatting(first, second, playerId),
           () => repository.readSourceHash(first),
         );
         const pair = { first: a.response, second: b.response };
@@ -141,8 +139,7 @@ export const playerStatisticsRoutes: FastifyPluginAsyncTypebox<
         };
       }
       const { first: a, second: b } = await readAnalysisPeriodPair(
-        () => repository.pitchingWithManifest({ ...first, ...common }),
-        () => repository.pitchingWithManifest({ ...second, ...common }),
+        () => repository.comparePitching(first, second, playerId),
         () => repository.readSourceHash(first),
       );
       const pair = { first: a.response, second: b.response };

@@ -15,7 +15,8 @@ import {
   analysisSourceHash,
   scopedAnalysisGamesSql,
 } from "./analysis-scope.js";
-import { readPitchRows, type PitchAnalysisComputation } from "./pitch-analysis-repository.js";
+import type { PitchAnalysisComputation } from "./pitch-analysis-repository.js";
+import { readPitchRows } from "./pitch-trajectory-input.js";
 import { gamePitchRowsSql } from "./analysis-pitch-input.js";
 import { calculatePitchCalibration } from "./pitch-calibration.js";
 import type { PitchCalibrationWorkspace } from "./pitch-calibration-workspace.js";

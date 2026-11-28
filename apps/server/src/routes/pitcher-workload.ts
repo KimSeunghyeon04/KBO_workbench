@@ -7,15 +7,19 @@ import {
   PitchAnalysisPitcherParamsSchema,
   WorkloadComparisonResponseSchema,
   InvalidAnalysisScopeError,
+  type WorkloadAppearance,
 } from "@kbo/contracts";
 import { PitcherWorkloadRepository, WorkloadComparisonRepository } from "@kbo/persistence";
 import type { RouteContext } from "./context.js";
 import type { ComputationRunner } from "../computation.js";
+import { BoundedReadCache } from "../bounded-read-cache.js";
 export const pitcherWorkloadRoutes: FastifyPluginAsyncTypebox<
   Pick<RouteContext, "pool"> & { computation: ComputationRunner }
 > = async (app, { pool, computation }) => {
-  const repository = new PitcherWorkloadRepository(pool);
-  const comparison = new WorkloadComparisonRepository(pool);
+  const history = new BoundedReadCache<WorkloadAppearance[]>(4 * 1024 * 1024, 32, 300_000);
+  const repository = new PitcherWorkloadRepository(pool, history);
+  const comparison = new WorkloadComparisonRepository(pool, history);
+  app.addHook("onClose", async () => history.clear());
   app.get(
     "/api/v2/analysis/pitcher-workload/:pitcherId/comparison",
     {

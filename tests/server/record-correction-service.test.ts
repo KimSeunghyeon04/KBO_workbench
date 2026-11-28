@@ -174,6 +174,52 @@ describe("RecordCorrectionService 매칭", () => {
     );
   });
 
+  it("reuses a sealed ledger in one reassessment and reads it again after a stale attempt", async () => {
+    const fixture = await setup([game("anon-game", "anon_DH1")]);
+    await fixture.service.assessNotice(fixture.notice);
+    const prior = await fixture.repository.case();
+    if (prior === null) throw new Error("Missing baseline notice");
+    const secondId = "2024:0:701";
+    fixture.repository.listNoticeIdsForImport = async () => [fixture.notice.noticeId, secondId];
+    fixture.repository.case = async (noticeId?: string) =>
+      noticeId === secondId
+        ? {
+            ...prior,
+            noticeId: secondId,
+            notice: {
+              ...prior.notice,
+              noticeId: secondId,
+              recordNumber: 701,
+              noticeHash: "b".repeat(64),
+            },
+          }
+        : prior;
+    fixture.assess.mockClear();
+    fixture.loadCorrectionDraft.mockClear();
+    await fixture.service.afterImport("anon-game", 1);
+    expect(
+      fixture.assess.mock.calls.map(([row]) => [row.noticeId, row.gameId, row.status]),
+    ).toEqual([
+      [fixture.notice.noticeId, "anon-game", "action_required"],
+      [secondId, "anon-game", "action_required"],
+    ]);
+    expect(fixture.loadCorrectionDraft.mock.calls).toEqual([["anon-game", 1]]);
+
+    fixture.assess.mockClear();
+    fixture.loadCorrectionDraft.mockClear();
+    fixture.assess.mockRejectedValueOnce(new RecordCorrectionStaleError("stale test case"));
+    await fixture.service.afterImport("anon-game", 1);
+    expect(fixture.assess.mock.calls.map(([row]) => row.noticeId)).toEqual([
+      fixture.notice.noticeId,
+      fixture.notice.noticeId,
+      secondId,
+    ]);
+    expect(fixture.loadCorrectionDraft.mock.calls).toEqual([
+      ["anon-game", 1],
+      ["anon-game", 1],
+    ]);
+  });
+
   it("복수 경기에서 DH identity를 확정할 수 없으면 단일 PA 후보여도 수동 검토한다", async () => {
     const bases = [game("anon-game-1", "anon_DH1"), game("anon-game-2", "anon_DH2")];
     const fixture = await setup(bases);

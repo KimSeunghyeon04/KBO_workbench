@@ -231,7 +231,13 @@ export class CollectionOperationsService {
         .filter((game) => game.authority === "source_failure")
         .map((game) => game.gameId),
     );
-    return collectionInventory(schedule, workspace.games, database.games, known);
+    const ids = gameIds === undefined ? null : new Set(gameIds);
+    return collectionInventory(
+      ids === null ? schedule : schedule.filter(({ gameId }) => ids.has(gameId)),
+      workspace.games,
+      database.games,
+      known,
+    );
   }
   public async overview(id: string, query: CollectionOverviewQuery): Promise<CollectionOverview> {
     const discovery = await this.get(id);
@@ -299,7 +305,12 @@ export class CollectionOperationsService {
     for (const game of chosen)
       entries.push({ game, workspaceToken: await this.workspace.collectionToken(game.gameId) });
     const current = new Map(
-      (await this.inventory(request.discoveryId)).map((game) => [game.gameId, game]),
+      (
+        await this.inventory(
+          request.discoveryId,
+          chosen.map(({ gameId }) => gameId),
+        )
+      ).map((game) => [game.gameId, game]),
     );
     if (
       entries.some(

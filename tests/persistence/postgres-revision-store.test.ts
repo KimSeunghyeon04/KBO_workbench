@@ -36,6 +36,7 @@ import {
   type ImportJobRecord,
   type ImportTarget,
   type PitchAnalysisSample,
+  type WorkloadAppearance,
   type RecordCorrectionCase,
   type RecordCorrectionNotice,
 } from "@kbo/contracts";
@@ -59,7 +60,9 @@ import {
   PlayerDirectoryRepository,
   PitchLocationRepository,
   type PitchOutcomeSnapshot,
+  type PitchOutcomeCohort,
   RunValueRepository,
+  type ReplayAnalysisGame,
   runTrainingHash,
   MatchupRepository,
   MatchupModelRepository,
@@ -366,11 +369,15 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       (await new PitchQualityRepository(pool).training(2024)).manifest,
     );
     expect(first).toEqual({ re24: run, count: run, win: run, park, quality, matchup: quality });
+    const kinds = ["re24", "count", "win", "park", "quality", "matchup"] as const;
+    for (const kind of kinds) expect(await sources.readForKind(2024, kind)).toBe(first[kind]);
     expect(await sources.read(2024)).toEqual(first);
     await seedBatterHeights(pool, game, 180);
     const height = await sources.read(2024);
     expect(height.quality).not.toBe(first.quality);
     expect(height.re24).toBe(first.re24);
+    expect(await sources.readForKind(2024, "matchup")).toBe(height.quality);
+    expect(await sources.readForKind(2024, "count")).toBe(first.count);
     expect(await sources.read(2024)).toEqual(height);
     expect(height.quality).toBe(
       pitchQualitySourceHash((await new PitchQualityRepository(pool).training(2024)).manifest),
@@ -1397,6 +1404,33 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     });
     expect(june.rows[0]).toMatchObject({ games: 1, plateAppearances: 1, atBats: 1 });
     expect(june.sourceHash).not.toBe(selectedBat.sourceHash);
+
+    const first = { ...query, dateTo: "2024-06-30" };
+    const expectedBatting = await Promise.all(
+      [first, query].map((scope) =>
+        repository.battingWithManifest({
+          ...scope,
+          group: "player",
+          playerId: "a1",
+          page: 1,
+          limit: 200,
+        }),
+      ),
+    );
+    const batting = await repository.compareBatting(first, query, "a1");
+    expect([batting.first, batting.second]).toEqual(expectedBatting);
+    expect(batting.first.response.rows[0]?.plateAppearances).toBe(1);
+    expect(batting.second.response.rows[0]?.plateAppearances).toBe(2);
+    const expectedPitching = await repository.pitchingWithManifest({
+      ...first,
+      group: "player",
+      playerId: "hp1",
+      page: 1,
+      limit: 200,
+    });
+    const pitching = await repository.comparePitching(first, first, "hp1");
+    expect(pitching).toEqual({ first: expectedPitching, second: expectedPitching });
+    expect(pitching.first.response.rows[0]?.battersFaced).toBe(1);
   });
 
   it("releases the read snapshot before calibration, reference and sample CPU work", async () => {
@@ -1436,6 +1470,56 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       ).toHaveLength(4);
     } finally {
       await single.end();
+    }
+  });
+
+  it("releases a joining comparison snapshot before waiting on in-flight calibration", async () => {
+    await store.importRevision(pitchAnalysisFixture(2024));
+    const single = new Pool({ connectionString: dsn, max: 1, connectionTimeoutMillis: 1000 });
+    await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-reference-pending-"));
+    const workspace = await StagingWorkspace.open(temporary.path);
+    const ownerReady = Promise.withResolvers<undefined>();
+    const joinerWaiting = Promise.withResolvers<undefined>();
+    const repository = new PitchAnalysisRepository(
+      single,
+      workspace.pitchReferences,
+      {
+        calibration: async (...args) => {
+          ownerReady.resolve(undefined);
+          await joinerWaiting.promise;
+          await single.query("SELECT 1");
+          return calculatePitchCalibration(...args);
+        },
+        reference: async (...args) => preparePitchAnalysisReference(...args),
+        sample: async (...args) => calculatePitchAnalysisSample(...args),
+      },
+      undefined,
+      {
+        getOrCreate: (key, calculate, beforeWaiting) =>
+          workspace.pitchCalibrations.getOrCreate(key, calculate, async () => {
+            joinerWaiting.resolve(undefined);
+            await beforeWaiting?.();
+          }),
+      },
+    );
+    try {
+      const scope = { season: 2024, competition: "unknown" } as const;
+      const owner = repository.analyze(2024, "hp1", { competition: "unknown" });
+      const comparison = ownerReady.promise.then(() =>
+        repository.compare(
+          { ...scope, dateTo: "2024-06-30" },
+          { ...scope, dateFrom: "2024-07-01" },
+          "hp1",
+        ),
+      );
+      const [first, pair] = await Promise.all([owner, comparison]);
+      expect(first.actualPitchCount).toBe(4);
+      expect(pair.first.actualPitchCount).toBe(4);
+      expect(pair.second.actualPitchCount).toBe(0);
+    } finally {
+      joinerWaiting.resolve(undefined);
+      await single.end();
+      await workspace.close();
     }
   });
 
@@ -2749,6 +2833,11 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       ],
     });
     await store.importRevision(final);
+    const suspended = releasePitchAnalysisFixture(2024, 0);
+    await store.importRevision({
+      ...suspended,
+      metadata: { ...suspended.metadata, status: "suspended" },
+    });
     const single = new Pool({ connectionString: dsn, max: 1, connectionTimeoutMillis: 2000 });
     await using temporary = await mkdtempDisposable(path.join(tmpdir(), "kbo-changes-cache-"));
     const workspace = await StagingWorkspace.open(temporary.path);
@@ -2760,16 +2849,17 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       await single.query("SELECT 1");
       return preparePitchAnalysisReference(...args);
     });
+    const sample = vi.fn(async (...args: Parameters<typeof calculatePitchAnalysisSample>) => {
+      await single.query("SELECT 1");
+      return calculatePitchAnalysisSample(...args);
+    });
     const repository = new PitcherChangesRepository(single, {
       calibrations: workspace.pitchCalibrations,
       references: workspace.pitchReferences,
       computation: {
         calibration,
         reference,
-        sample: async (...args) => {
-          await single.query("SELECT 1");
-          return calculatePitchAnalysisSample(...args);
-        },
+        sample,
       },
     });
     try {
@@ -2785,6 +2875,16 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
         metadata: { ...final.metadata, gameId: "future-change", gameDate: "2024-07-01" },
       });
       await store.importRevision(later);
+      const withoutPreparedReference = new PitcherChangesRepository(single, {
+        calibrations: workspace.pitchCalibrations,
+        computation: { calibration, reference, sample },
+      });
+      expect(await withoutPreparedReference.analyze(query, "hp1")).toEqual(before);
+      expect(calibration).toHaveBeenCalledTimes(1);
+      expect(new Set(reference.mock.lastCall?.[0].map(({ gameId }) => gameId))).toEqual(
+        new Set([final.metadata.gameId]),
+      );
+      expect(sample.mock.calls.every((call) => call.length === 6)).toBe(true);
       expect(await repository.analyze(query, "hp1")).toEqual(before);
     } finally {
       await workspace.close();
@@ -2862,8 +2962,14 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       dateFrom: "2024-06-08",
       dateTo: "2024-06-08",
     };
-    const workload = new PitcherWorkloadRepository(pool);
-    const comparison = new WorkloadComparisonRepository(pool);
+    const histories = new BoundedReadCache<WorkloadAppearance[]>(1024 * 1024, 4, 60_000);
+    const readHistory = vi.fn((read: () => Promise<WorkloadAppearance[]>) => read());
+    const cache = {
+      load: (key: string, read: () => Promise<WorkloadAppearance[]>) =>
+        histories.load(key, () => readHistory(read)),
+    };
+    const workload = new PitcherWorkloadRepository(pool, cache);
+    const comparison = new WorkloadComparisonRepository(pool, cache);
     const timeline = await workload.analyze(query, "hp1");
     expect(timeline.lookbackCompetition).toBe("all");
     expect(timeline.appearances).toMatchObject([
@@ -2890,6 +2996,9 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       "target",
     ]);
     expect(input.cells.map((cell) => cell.gameId)).toEqual(Array(4).fill("target"));
+    expect(readHistory).toHaveBeenCalledTimes(1);
+    expect(timeline).toEqual(await new PitcherWorkloadRepository(pool).analyze(query, "hp1"));
+    expect(input).toEqual(await new WorkloadComparisonRepository(pool).read(query, "hp1"));
     const model = comparePitcherWorkload(
       input.query,
       input.scope,
@@ -2911,6 +3020,18 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(updated.appearances).toEqual(timeline.appearances);
     expect(updated.sourceHash).not.toBe(timeline.sourceHash);
     expect((await comparison.read(query, "hp1")).sourceHash).not.toBe(input.sourceHash);
+    expect(readHistory).toHaveBeenCalledTimes(2);
+
+    await store.importRevision(
+      parseStagingGameDocumentV2({
+        ...base,
+        metadata: { ...base.metadata, gameId: "out-of-year", gameDate: "2025-01-01" },
+        source: { ...base.source, sourceGameId: "out-of-year" },
+      }),
+    );
+    const noDateLimit = await comparison.read({ season: 2024, competition: "unknown" }, "hp1");
+    expect(noDateLimit.cells.some((row) => row.gameId === "out-of-year")).toBe(true);
+    expect(noDateLimit.history.some((row) => row.gameId === "out-of-year")).toBe(false);
   });
   it("aggregates workload conditions from current pitch facts with missing tracking retained and snapshot lookback", async () => {
     const original = pitchAnalysisFixture(2024),
@@ -3238,9 +3359,54 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       { gameId: "matchup-target-tracked", stance: "R" },
       { gameId: "matchup-target-unknown", stance: null },
     ]);
+    const other = pitchAnalysisFixture(2024, "hp2");
+    await store.importRevision(
+      parseStagingGameDocumentV2({
+        ...other,
+        metadata: { ...other.metadata, gameId: "matchup-target-rival" },
+      }),
+    );
+    const query = {
+      season: 2024,
+      competition: "unknown",
+      pitcherId: "hp1",
+      batterId: "a1",
+    } as const;
+    const cache = new BoundedReadCache<PitchOutcomeCohort>(1024 * 1024, 4, 60_000);
+    const reuse = vi.spyOn(cache, "get");
+    const load = vi.spyOn(cache, "load");
+    const uncached = new MatchupRepository(pool);
+    const cached = new MatchupRepository(pool, cache);
+    const direct = await cached.direct(query);
+    expect(direct).toEqual(await uncached.direct(query));
+    const comparison = await cached.analyze(query);
+    expect(reuse.mock.results[1]?.value).toBeInstanceOf(Promise);
+    expect(comparison).toEqual(await uncached.analyze(query));
+    expect(load).toHaveBeenCalledTimes(1);
+
+    await profiles.importDataset({
+      gameId: "matchup-target-unknown",
+      season: 2024,
+      sourceBundleHash: pitchAnalysisFixture(2024).source.sourceBundleHash,
+      observations: [
+        {
+          playerId: "a1",
+          battingSide: "R",
+          rawValue: "우타",
+          endpoint: "lineup",
+          sourcePath: "fullLineUp[0].batsThrows",
+        },
+      ],
+    });
+    const after = await cached.analyze(query);
+    expect(reuse.mock.results[2]?.value).toBeUndefined();
+    expect(after.sourceHash).not.toBe(comparison.sourceHash);
+    expect(after).toEqual(await uncached.analyze(query));
+    expect(await cached.direct(query)).toEqual(await uncached.direct(query));
+    expect(load).toHaveBeenCalledTimes(2);
   });
 
-  it("shares sealed replay plays across models while rechecking current competition", async () => {
+  it("shares sealed replay inputs and run manifests while rechecking current competition and training revisions", async () => {
     const competition = new GameCompetitionRepository(pool);
     for (const year of [2024, 2025]) {
       const game = regulationGame(year);
@@ -3258,20 +3424,51 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     const game = regulationGame(2025);
     const cache = new BoundedReadCache<readonly AnalysisPlay[]>(1024 * 1024, 4, 60_000);
     const load = vi.spyOn(cache, "load");
-    const repository = new RunValueRepository(pool, cache);
-    const { observations, manifest } = await repository.training(2024);
-    const model = trainRunExpectancy(observations, runTrainingHash(manifest));
+    const games = new BoundedReadCache<ReplayAnalysisGame>(4096, 4, 60_000);
+    const runHashes = new BoundedReadCache<string>(1024, 4, 60_000);
+    const loadGame = vi.spyOn(games, "load");
+    const hashRead = vi.fn((read: () => Promise<string>) => read());
+    const repository = new RunValueRepository(pool, cache, {
+      games,
+      runHashes: { load: (key, read) => runHashes.load(key, () => hashRead(read)) },
+    });
+    const original = new RunValueRepository(pool);
+    const { observations, manifest, countObservations, winObservations } =
+      await original.training(2024);
+    const sourceHash = runTrainingHash(manifest);
+    const model = trainRunExpectancy(observations, sourceHash);
+    const countModel = trainCountRunExpectancy(countObservations, observations, sourceHash);
+    const winModel = trainWinProbability(winObservations, sourceHash);
+    const id = game.metadata.gameId;
+    const hash = "a".repeat(64);
 
-    expect(await repository.game(game.metadata.gameId, 1, model, "a".repeat(64), 2024)).toBeNull();
-    const [run, count, win] = await Promise.all([
-      repository.game(game.metadata.gameId, 1, model, "a".repeat(64), 2025),
-      repository.countGame(game.metadata.gameId, 1, null, null, 2025),
-      repository.winGame(game.metadata.gameId, 1, null, null, 2025),
-    ]);
+    expect(await repository.game(id, 2, model, hash, 2025)).toBeNull();
+    expect(await repository.game(id, 1, model, hash, 2024)).toBeNull();
+    const run = await repository.game(id, 1, model, hash, 2025);
+    const count = await repository.countGame(id, 1, countModel, hash, 2025);
+    const win = await repository.winGame(id, 1, winModel, hash, 2025);
     expect(run?.status).toBe("ready");
-    expect(count?.documentHash).toBe(run?.documentHash);
-    expect(win?.documentHash).toBe(run?.documentHash);
+    expect(run).toEqual(await original.game(id, 1, model, hash, 2025));
+    expect(count).toEqual(await original.countGame(id, 1, countModel, hash, 2025));
+    expect(win).toEqual(await original.winGame(id, 1, winModel, hash, 2025));
     expect(load).toHaveBeenCalledTimes(1);
+    expect(loadGame).toHaveBeenCalledTimes(1);
+    expect(hashRead).toHaveBeenCalledTimes(1);
+
+    const training = await store.loadCorrectionDraft(regulationGame(2024).metadata.gameId, 1);
+    await store.importRevision({
+      ...training,
+      metadata: { ...training.metadata, stadium: "잠실" },
+    });
+    expect((await repository.game(id, 1, model, hash, 2025))?.status).toBe("model_unavailable");
+    expect(hashRead).toHaveBeenCalledTimes(2);
+
+    const target = await store.loadCorrectionDraft(id, 1);
+    await store.importRevision({ ...target, metadata: { ...target.metadata, stadium: "잠실" } });
+    expect(await repository.game(id, 2, null, null, 2025)).toEqual(
+      await original.game(id, 2, null, null, 2025),
+    );
+    expect(await repository.game(id, 2, null, null, 2025)).not.toBeNull();
 
     await competition.adopt(
       competitionFixture(2025, [
@@ -3285,7 +3482,9 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect((await repository.game(game.metadata.gameId, 1, model, "a".repeat(64)))?.status).toBe(
       "model_unavailable",
     );
-    expect(load).toHaveBeenCalledTimes(1);
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(loadGame).toHaveBeenCalledTimes(2);
+    expect(hashRead).toHaveBeenCalledTimes(2);
   });
 
   it("trains RE24 on completed regular halves and preserves exact revision reads with stale-model detection", async () => {
@@ -3305,6 +3504,17 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     const repo = new RunValueRepository(pool),
       training = await repo.training(2024),
       model = trainRunExpectancy(training.observations, runTrainingHash(training.manifest));
+    const re24Only = await repo.training(2024, undefined, "re24");
+    const countOnly = await repo.training(2024, undefined, "count");
+    const winOnly = await repo.training(2024, undefined, "win");
+    expect(training.manifest).toEqual(re24Only.manifest);
+    expect(training.manifest).toEqual(countOnly.manifest);
+    expect(training.manifest).toEqual(winOnly.manifest);
+    expect(training.observations).toEqual(re24Only.observations);
+    expect(training.observations).toEqual(countOnly.observations);
+    expect(training.countObservations).toEqual(countOnly.countObservations);
+    expect(training.winObservations).toEqual(winOnly.winObservations);
+    expect(training.winObservations.length).toBeGreaterThan(0);
     expect(training.observations.filter((r) => r.season === 2024)).toHaveLength(49);
     const result = await repo.game("regulation-2025", 1, model, "a".repeat(64));
     expect(result?.status).toBe("ready");
@@ -4654,6 +4864,24 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       const context = await repository.matchupContext(notice);
       const basis = await repository.assessmentBasis(notice);
       expect(noticeIds).toEqual([laterRecord.noticeId, notice.noticeId]);
+      const search = "  " + notice.awayTeamName + "  ";
+      const summaries = await repository.listCaseSummaries({
+        season: 2025,
+        queue: "needs_action",
+        search,
+      });
+      expect(summaries.map(({ noticeId }) => noticeId)).toEqual(noticeIds);
+      expect(
+        (await repository.listCases({ season: 2025, search })).map(({ noticeId }) => noticeId),
+      ).toEqual(noticeIds);
+      expect(
+        await repository.listCaseSummaries({
+          season: 2025,
+          queue: "completed",
+          status: "action_required",
+          search,
+        }),
+      ).toEqual([]);
       expect(context.notices).toEqual([
         { notice, selection: candidate },
         { notice: laterRecord, selection: null },
@@ -6504,6 +6732,21 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     const repository = new PitchSequenceRepository(pool);
     const result = await repository.analyze({ season: 2024, ...scope }, "hp1");
     expect(result.releaseGroups).toEqual(shape.releaseGroups);
+
+    const secondScope = { competition: "unknown", dateFrom: "2024-06-03" } as const;
+    const legacyB = await new PitchAnalysisRepository(pool).analyze(2024, "hp1", secondScope);
+    const pair = await new PitchAnalysisRepository(pool).compare(
+      { season: 2024, ...scope },
+      { season: 2024, ...secondScope },
+      "hp1",
+    );
+    expect(pair).toEqual({ first: shape, second: legacyB });
+    expect(pair.second.actualPitchCount).toBe(192);
+    expect(pair.second.points.map((point) => point.gameId)).toEqual([
+      ...Array(96).fill("release-2024-2-hp1"),
+      ...Array(96).fill("release-2024-3-hp1"),
+    ]);
+    expect(pair.second.releaseGroups).toEqual(shape.releaseGroups);
     expect(result.pairs[0]?.planeTimeDifferenceMs).toBeCloseTo(0, 8);
     expect(result.pairs[1]?.planeTimeDifferenceMs).toBeCloseTo(0, 8);
     const later = releasePitchAnalysisFixture(2024, 2);

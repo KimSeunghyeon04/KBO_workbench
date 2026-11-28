@@ -3,6 +3,8 @@ import {
   ApiErrorSchema,
   AnalysisCoverageQuerySchema,
   AnalysisCoverageResultSchema,
+  AnalysisCoverageStatusQuerySchema,
+  AnalysisCoverageStatusSchema,
 } from "@kbo/contracts";
 import {
   AnalysisCoverageRepository,
@@ -39,6 +41,19 @@ export const analysisCoverageRoutes: FastifyPluginAsyncTypebox<Options> = async 
     await jobs.close();
     cache.clear();
   });
+  app.get(
+    "/api/v2/analysis/coverage/status",
+    {
+      schema: {
+        querystring: AnalysisCoverageStatusQuerySchema,
+        response: { 200: AnalysisCoverageStatusSchema, 400: ApiErrorSchema },
+      },
+    },
+    (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return jobs.status(request.query.sourceKey);
+    },
+  );
   const schema = {
     querystring: AnalysisCoverageQuerySchema,
     response: {

@@ -1,4 +1,6 @@
 import type { Pool, PoolClient } from "pg";
+import { canonicalStringify, type AnalysisScope } from "@kbo/contracts";
+import { analysisSourceHash } from "./analysis-scope.js";
 
 /**
  * Only snapshot ownership is shared: each analysis still owns its SQL, grain and hashes.
@@ -40,4 +42,54 @@ export async function withAnalysisSnapshot<T>(
   } finally {
     if (!released) client.release();
   }
+}
+
+export interface AnalysisReadSnapshot {
+  readonly client: PoolClient;
+  release(): Promise<void>;
+  sourceHash(scope: AnalysisScope): Promise<string>;
+}
+
+export function withAnalysisReadSnapshot<T>(
+  pool: Pick<Pool, "connect">,
+  read: (snapshot: AnalysisReadSnapshot) => Promise<T>,
+): Promise<T> {
+  return withAnalysisSnapshot(pool, (client, release) => {
+    const hashes = new Map<string, Promise<string>>();
+    return read({
+      client,
+      release,
+      sourceHash(scope) {
+        const key = canonicalStringify(scope);
+        const existing = hashes.get(key);
+        if (existing !== undefined) return existing;
+        const pending = analysisSourceHash(client, scope);
+        hashes.set(key, pending);
+        return pending;
+      },
+    });
+  });
+}
+
+type AnalysisPeriodPair<T> = { first: T; second: T };
+
+/** Keep the later read fresh when the first source's recheck does not cover both periods. */
+export async function readAnalysisPeriods<T>(
+  pool: Pick<Pool, "connect">,
+  first: AnalysisScope,
+  second: AnalysisScope,
+  read: (
+    snapshot: AnalysisReadSnapshot,
+    first: AnalysisScope,
+    second?: AnalysisScope,
+  ) => Promise<AnalysisPeriodPair<T>>,
+  referenceScope: (scope: AnalysisScope) => AnalysisScope = (scope) => scope,
+): Promise<AnalysisPeriodPair<T>> {
+  if (canonicalStringify(first) === canonicalStringify(second))
+    return withAnalysisReadSnapshot(pool, (snapshot) => read(snapshot, first));
+  if (canonicalStringify(referenceScope(first)) === canonicalStringify(referenceScope(second)))
+    return withAnalysisReadSnapshot(pool, (snapshot) => read(snapshot, first, second));
+  const a = await withAnalysisReadSnapshot(pool, (snapshot) => read(snapshot, first));
+  const b = await withAnalysisReadSnapshot(pool, (snapshot) => read(snapshot, second));
+  return { first: a.first, second: b.first };
 }

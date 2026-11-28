@@ -17,7 +17,7 @@ import {
   pitchReferenceScope,
   readSeasonPitchReleaseRows,
   type PitchAnalysisRow,
-} from "./pitch-analysis-repository.js";
+} from "./pitch-trajectory-input.js";
 import {
   analysisScopeParameters,
   analysisSourceHash,

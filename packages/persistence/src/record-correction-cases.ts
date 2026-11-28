@@ -10,7 +10,7 @@ import type {
   RecordCorrectionSummary,
 } from "@kbo/contracts";
 import { canonicalStringify } from "@kbo/contracts";
-import type { Pool, PoolClient } from "pg";
+import type { Pool, PoolClient, QueryResultRow } from "pg";
 import { iso, nullableIso } from "./record-correction-db.js";
 import {
   advanceMatchupGenerations,
@@ -69,6 +69,13 @@ interface AssessmentRow {
   readonly assessment_current: boolean;
   readonly effective_status: RecordCorrectionCaseStatus;
   readonly doubleheader_number: number | null;
+}
+
+interface NoticeListFilters {
+  readonly season?: number;
+  readonly status?: RecordCorrectionCaseStatus;
+  readonly queue?: RecordCorrectionQueue;
+  readonly search?: string;
 }
 
 export class RecordCorrectionCases {
@@ -597,48 +604,14 @@ export class RecordCorrectionCases {
   }
 
   private async listCaseNoticeIds(
-    filters: {
-      readonly season?: number;
-      readonly status?: RecordCorrectionCaseStatus;
-      readonly search?: string;
-    },
+    filters: Omit<NoticeListFilters, "queue">,
     matchups?: readonly Matchup[],
   ): Promise<string[]> {
-    const conditions: string[] = [];
-    const values: unknown[] = [];
-    if (filters.season !== undefined) {
-      values.push(filters.season);
-      conditions.push(`a.season=$${String(values.length)}`);
-    }
-    if (filters.status !== undefined) {
-      values.push(filters.status);
-      conditions.push(`a.effective_status=$${String(values.length)}`);
-    }
-    if (filters.search !== undefined && filters.search.trim().length > 0) {
-      values.push(`%${filters.search.trim()}%`);
-      conditions.push(
-        `(n.away_team_name ILIKE $${String(values.length)} OR n.home_team_name ILIKE $${String(values.length)} OR n.content_text ILIKE $${String(values.length)})`,
-      );
-    }
-    if (matchups !== undefined) {
-      if (matchups.length === 0) return [];
-      conditions.push("NOT a.assessment_current AND a.status <> 'dismissed'");
-      const predicates = matchups.map((matchup) => {
-        const index = values.length;
-        values.push(...matchup);
-        return `(n.season=$${index + 1} AND n.game_date=$${index + 2}
-          AND n.away_team_name=$${index + 3} AND n.home_team_name=$${index + 4})`;
-      });
-      conditions.push(`(${predicates.join(" OR ")})`);
-    }
-    const result = await this.pool.query<{ readonly notice_id: string }>(
-      `SELECT a.notice_id FROM record_correction.active_assessments a
-       JOIN record_correction.notices n
-         ON n.season=a.season AND n.revision=a.source_revision
-        AND n.notice_sequence=a.notice_sequence
-       ${conditions.length === 0 ? "" : `WHERE ${conditions.join(" AND ")}`}
-       ORDER BY n.game_date DESC,n.record_number DESC,a.notice_id`,
-      values,
+    if (matchups?.length === 0) return [];
+    const result = await this.listNoticeRows<{ readonly notice_id: string }>(
+      "a.notice_id",
+      filters,
+      matchups,
     );
     return result.rows.map(({ notice_id }) => notice_id);
   }
@@ -648,37 +621,9 @@ export class RecordCorrectionCases {
   }
 
   public async listCaseSummaries(
-    filters: {
-      readonly season?: number;
-      readonly status?: RecordCorrectionCaseStatus;
-      readonly queue?: RecordCorrectionQueue;
-      readonly search?: string;
-    } = {},
+    filters: NoticeListFilters = {},
   ): Promise<RecordCorrectionListItem[]> {
-    const conditions: string[] = [];
-    const values: unknown[] = [];
-    if (filters.season !== undefined) {
-      values.push(filters.season);
-      conditions.push(`a.season=$${String(values.length)}`);
-    }
-    if (filters.status !== undefined) {
-      values.push(filters.status);
-      conditions.push(`a.effective_status=$${String(values.length)}`);
-    }
-    if (filters.queue === "needs_action") {
-      conditions.push(`a.effective_status IN ('action_required','manual_review','unmatched')`);
-    } else if (filters.queue === "completed") {
-      conditions.push(
-        `a.effective_status IN ('already_applied','out_of_scope','resolved','dismissed')`,
-      );
-    }
-    if (filters.search !== undefined && filters.search.trim().length > 0) {
-      values.push(`%${filters.search.trim()}%`);
-      conditions.push(
-        `(n.away_team_name ILIKE $${String(values.length)} OR n.home_team_name ILIKE $${String(values.length)} OR n.content_text ILIKE $${String(values.length)})`,
-      );
-    }
-    const result = await this.pool.query<{
+    const result = await this.listNoticeRows<{
       readonly notice_id: string;
       readonly case_version: number;
       readonly status: RecordCorrectionCaseStatus;
@@ -692,17 +637,13 @@ export class RecordCorrectionCases {
       readonly before_record_text: string;
       readonly after_record_text: string;
     }>(
-      `SELECT a.notice_id,a.case_version,a.effective_status AS status,a.season,
+      `a.notice_id,a.case_version,a.effective_status AS status,a.season,
               CASE WHEN a.assessment_current THEN a.game_id END AS game_id,a.assessed_at,
               n.game_date::text AS game_date,n.away_team_name,n.home_team_name,n.venue_name,
-              n.before_record_text,n.after_record_text
-       FROM record_correction.active_assessments a
-       JOIN record_correction.notices n
-         ON n.season=a.season AND n.revision=a.source_revision
-        AND n.notice_sequence=a.notice_sequence
-       ${conditions.length === 0 ? "" : `WHERE ${conditions.join(" AND ")}`}
-       ORDER BY n.game_date DESC,n.record_number DESC,a.notice_id`,
-      values,
+              n.before_record_text,n.after_record_text`,
+      filters,
+      undefined,
+      filters.queue,
     );
     return result.rows.map((row) => ({
       noticeId: row.notice_id,
@@ -718,6 +659,56 @@ export class RecordCorrectionCases {
       beforeRecordText: row.before_record_text,
       afterRecordText: row.after_record_text,
     }));
+  }
+
+  private listNoticeRows<Row extends QueryResultRow>(
+    columns: string,
+    filters: NoticeListFilters,
+    matchups?: readonly Matchup[],
+    queue?: RecordCorrectionQueue,
+  ) {
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    if (filters.season !== undefined) {
+      values.push(filters.season);
+      conditions.push(`a.season=$${String(values.length)}`);
+    }
+    if (filters.status !== undefined) {
+      values.push(filters.status);
+      conditions.push(`a.effective_status=$${String(values.length)}`);
+    }
+    if (queue === "needs_action") {
+      conditions.push("a.effective_status IN ('action_required','manual_review','unmatched')");
+    } else if (queue === "completed") {
+      conditions.push(
+        "a.effective_status IN ('already_applied','out_of_scope','resolved','dismissed')",
+      );
+    }
+    if (filters.search !== undefined && filters.search.trim().length > 0) {
+      values.push(`%${filters.search.trim()}%`);
+      conditions.push(
+        `(n.away_team_name ILIKE $${String(values.length)} OR n.home_team_name ILIKE $${String(values.length)} OR n.content_text ILIKE $${String(values.length)})`,
+      );
+    }
+    if (matchups !== undefined) {
+      conditions.push("NOT a.assessment_current AND a.status <> 'dismissed'");
+      const predicates = matchups.map((matchup) => {
+        const index = values.length;
+        values.push(...matchup);
+        return `(n.season=$${index + 1} AND n.game_date=$${index + 2}
+          AND n.away_team_name=$${index + 3} AND n.home_team_name=$${index + 4})`;
+      });
+      conditions.push(`(${predicates.join(" OR ")})`);
+    }
+    return this.pool.query<Row>(
+      `SELECT ${columns} FROM record_correction.active_assessments a
+       JOIN record_correction.notices n
+         ON n.season=a.season AND n.revision=a.source_revision
+        AND n.notice_sequence=a.notice_sequence
+       ${conditions.length === 0 ? "" : `WHERE ${conditions.join(" AND ")}`}
+       ORDER BY n.game_date DESC,n.record_number DESC,a.notice_id`,
+      values,
+    );
   }
 
   public async case(noticeId: string): Promise<RecordCorrectionCase | null> {

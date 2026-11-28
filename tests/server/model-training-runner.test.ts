@@ -1,6 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { trainRunExpectancy } from "@kbo/game-core";
-import { runModelTraining } from "../../apps/server/src/model-training-runner.js";
+import {
+  ModelTrainingSession,
+  runModelTraining,
+} from "../../apps/server/src/model-training-runner.js";
 const harness = vi.hoisted(() => {
   const workers: { emit(event: string, value: unknown): boolean; terminate(): Promise<number> }[] =
     [];
@@ -15,6 +18,7 @@ vi.mock("node:worker_threads", async () => {
         harness.workers.push(this);
       }
       public terminate = vi.fn(async () => 0);
+      public postMessage = vi.fn();
     },
   };
 });
@@ -89,4 +93,31 @@ it("rejects worker artifacts trained for a different season", async () => {
     manifest: { version: 1, through: 2024, games: [], scopeHashes: [] },
   });
   await expect(pending).rejects.toThrow("period mismatch");
+});
+
+it("opens one worker for ordered steps and awaits each fitting phase before accepting its artifact", async () => {
+  const session = new ModelTrainingSession("unused");
+  const phase = vi.fn(async () => {});
+  expect(harness.workers).toHaveLength(0);
+  const signal = new AbortController().signal;
+  for (const through of [2024, 2025]) {
+    const sourceHash = String(through % 10).repeat(64);
+    const model = trainRunExpectancy([], sourceHash, through);
+    const result = {
+      kind: "re24",
+      model,
+      manifest: { version: 1, through, games: [], scopeHashes: [] },
+    };
+    const pending = session.run({ kind: "re24", through, sourceHash }, signal, phase);
+    const worker = harness.workers[0];
+    if (worker === undefined) throw new Error("Missing worker");
+    worker.emit("message", { phase: "fitting" });
+    worker.emit("message", result);
+    await expect(pending).resolves.toEqual(result);
+    expect(worker.terminate).not.toHaveBeenCalled();
+  }
+  expect(phase).toHaveBeenCalledTimes(2);
+  expect(harness.workers).toHaveLength(1);
+  await session.close();
+  expect(harness.workers[0]?.terminate).toHaveBeenCalledOnce();
 });

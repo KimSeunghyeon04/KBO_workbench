@@ -51,6 +51,13 @@ export async function analysisSourceHash(
   executor: Pick<Pool | PoolClient, "query">,
   scope: AnalysisScope,
 ): Promise<string> {
+  return (await readAnalysisSource(executor, scope)).manifest;
+}
+
+export async function readAnalysisSource(
+  executor: Pick<Pool | PoolClient, "query">,
+  scope: AnalysisScope,
+) {
   // Both inputs share the statement snapshot. Keep the dataset even when no game matches.
   const { rows } = await executor.query<Record<string, unknown>>(
     `SELECT dataset.hash, sources.*
@@ -65,7 +72,7 @@ export async function analysisSourceHash(
       void datasetHash;
       return source;
     });
-  return analysisManifestHash(scope, sources, hash === null ? [] : [{ hash }]);
+  return buildAnalysisManifest(scope, sources, hash === null ? [] : [{ hash }]);
 }
 
 export interface RegularModelScopeHash {
@@ -103,14 +110,20 @@ export async function readRegularModelScopeHashes(
 }
 
 export function analysisManifestHash(scope: AnalysisScope, sources: unknown, dataset: unknown) {
-  return createHash("sha256")
+  return buildAnalysisManifest(scope, sources, dataset).manifest;
+}
+
+function buildAnalysisManifest(scope: AnalysisScope, sources: unknown, dataset: unknown) {
+  const parsedSources = Value.Decode(sourceListSchema, sources);
+  const manifest = createHash("sha256")
     .update(
       canonicalStringify({
         version: 1,
         scope,
-        sources: Value.Decode(sourceListSchema, sources),
+        sources: parsedSources,
         dataset: Value.Decode(datasetListSchema, dataset),
       }),
     )
     .digest("hex");
+  return { sources: parsedSources, manifest };
 }

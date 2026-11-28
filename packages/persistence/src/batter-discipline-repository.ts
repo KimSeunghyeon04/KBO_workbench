@@ -1,14 +1,10 @@
-import { withAnalysisSnapshot } from "./analysis-snapshot.js";
+import { withAnalysisReadSnapshot, type AnalysisReadSnapshot } from "./analysis-snapshot.js";
 import {
   resolveAnalysisScope,
   type AnalysisScope,
   type AnalysisScopeOptions,
 } from "@kbo/contracts";
-import {
-  scopedAnalysisGamesSql,
-  analysisScopeParameters,
-  analysisSourceHash,
-} from "./analysis-scope.js";
+import { scopedAnalysisGamesSql, analysisScopeParameters } from "./analysis-scope.js";
 import { createHash } from "node:crypto";
 import { setImmediate } from "node:timers/promises";
 import {
@@ -25,14 +21,12 @@ import {
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { TypeCompiler } from "@sinclair/typebox/compiler";
-import type { Pool, PoolClient } from "pg";
+import type { Pool } from "pg";
 import { analysisPitchCatalogSql, scopedTrackedPitchRowsSql } from "./analysis-pitch-input.js";
 import type { PitchReferenceWorkspace } from "./pitch-reference-workspace.js";
-import {
-  prepareReference,
-  readPitchRows,
-  type PitchAnalysisComputation,
-} from "./pitch-analysis-repository.js";
+import { prepareReference, type PitchAnalysisComputation } from "./pitch-analysis-repository.js";
+
+import { readPitchRows } from "./pitch-trajectory-input.js";
 
 const rowValidator = TypeCompiler.Compile(DisciplineRowSchema);
 const heightInputSchema = Type.Object(
@@ -72,8 +66,9 @@ export class BatterDisciplineRepository {
     options: AnalysisScopeOptions = {},
   ): Promise<DisciplineSnapshot> {
     const scope = disciplineSeasonScope(season, options);
-    return withAnalysisSnapshot(this.pool, async (client, releaseSnapshot) => {
-      const { referenceHash, sourceHash } = await disciplineSourceHashes(client, scope);
+    return withAnalysisReadSnapshot(this.pool, async (snapshot) => {
+      const { client, release: releaseSnapshot } = snapshot;
+      const { referenceHash, sourceHash } = await disciplineSourceHashes(snapshot, scope);
       if (sourceHash === knownHash) {
         await releaseSnapshot();
         return { season, sourceHash, reference: null, rows: null };
@@ -104,6 +99,7 @@ export class BatterDisciplineRepository {
           await releaseSnapshot();
           return this.computeReference(referenceRows, null);
         },
+        releaseSnapshot,
       );
       await releaseSnapshot();
       return { season, sourceHash, reference, rows };
@@ -112,9 +108,9 @@ export class BatterDisciplineRepository {
 
   public async readSourceHash(input: DisciplineSourceScope) {
     const scope = disciplineSourceScope(input);
-    return withAnalysisSnapshot(
+    return withAnalysisReadSnapshot(
       this.pool,
-      async (client) => (await disciplineSourceHashes(client, scope)).sourceHash,
+      async (snapshot) => (await disciplineSourceHashes(snapshot, scope)).sourceHash,
     );
   }
 
@@ -124,12 +120,12 @@ export class BatterDisciplineRepository {
   ): Promise<readonly [string, string]> {
     const a = disciplineSourceScope(first);
     const b = disciplineSourceScope(second);
-    return withAnalysisSnapshot(this.pool, async (client) => {
-      const { sourceHash: firstHash } = await disciplineSourceHashes(client, a);
+    return withAnalysisReadSnapshot(this.pool, async (snapshot) => {
+      const { sourceHash: firstHash } = await disciplineSourceHashes(snapshot, a);
       const secondHash =
         a.season === b.season && a.competition === b.competition
           ? firstHash
-          : (await disciplineSourceHashes(client, b)).sourceHash;
+          : (await disciplineSourceHashes(snapshot, b)).sourceHash;
       return [firstHash, secondHash];
     });
   }
@@ -144,8 +140,9 @@ function disciplineSeasonScope(season: number, options: AnalysisScopeOptions): A
   return { ...selectedScope, dateFrom: null, dateTo: null };
 }
 
-async function disciplineSourceHashes(client: PoolClient, scope: AnalysisScope) {
-  const referenceHash = await analysisSourceHash(client, scope);
+async function disciplineSourceHashes(snapshot: AnalysisReadSnapshot, scope: AnalysisScope) {
+  const { client } = snapshot;
+  const referenceHash = await snapshot.sourceHash(scope);
   // Supplement imports can change effective heights without changing a sealed game hash.
   const heights = await client.query<Record<string, unknown>>(
     `

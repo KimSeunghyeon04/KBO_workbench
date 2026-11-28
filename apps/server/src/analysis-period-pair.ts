@@ -23,19 +23,14 @@ export function periodSnapshot(
   };
 }
 
-/** Each reader releases its snapshot before computation. Recheck A after B rather
- * than holding a database connection through calibration or worker execution.
- * Source hashes cover all inputs, including references. A changed seal is rejected.
- */
+/** Recheck the first source after both results are ready, outside their read snapshots. */
 export async function readAnalysisPeriodPair<T extends { sourceHash: string }>(
-  first: () => Promise<T>,
-  second: () => Promise<T>,
+  read: () => Promise<{ first: T; second: T }>,
   readFirstSourceHash: () => Promise<string>,
 ): Promise<{ first: T; second: T }> {
-  const a = await first();
-  const b = await second();
-  assertPeriodSourceHash(a.sourceHash, await readFirstSourceHash());
-  return { first: a, second: b };
+  const pair = await read();
+  assertPeriodSourceHash(pair.first.sourceHash, await readFirstSourceHash());
+  return pair;
 }
 
 export function assertPeriodSourceHash(sourceHash: string, currentSourceHash: string): void {

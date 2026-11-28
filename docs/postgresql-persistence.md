@@ -111,6 +111,10 @@ analytics/projection 계약 `4/4`와 view 컬럼은 유지하며 기존 migratio
 
 ## Game revision import
 
+경기 ID를 지정한 적재 선택은 지정한 작업공간 목록만 읽는다. 실행 작업은 경기 단위 작업 잠금 안에서
+같은 current 매니페스트의 원장과 적재 식별자를 검증한다. 접수 때 확정한 작업본 세대, 내용 해시와
+기록정정 승인 정보의 비교는 유지한다.
+
 `0004_pitch_metadata`는 `workbench.relay_pitches`와 `baseball.pitch_facts`에 nullable
 `speed_kph`, `pitch_type`을 추가한다. 신규 revision은 projection 4로 봉인하고 V3는 고정된 이전
 descriptor 컬럼 목록으로 read/hash/hydration한다. compiler는 하나이며 기존 manifest와 sealed 행은

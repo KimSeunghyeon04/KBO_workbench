@@ -134,7 +134,11 @@ export {
 } from "./official-career-workspace.js";
 export { PitchLocationRepository } from "./pitch-location-repository.js";
 export { BatterProfileRepository } from "./batter-profile-repository.js";
-export { type PitchOutcomeCache, type PitchOutcomeSnapshot } from "./pitch-outcomes.js";
+export {
+  type PitchOutcomeCache,
+  type PitchOutcomeCohort,
+  type PitchOutcomeSnapshot,
+} from "./pitch-outcomes.js";
 export { PitcherChangesRepository } from "./pitcher-changes-repository.js";
 export { PitchSequenceRepository } from "./pitch-sequence-repository.js";
 export { PitchReleaseRepository } from "./pitch-release-repository.js";
@@ -142,7 +146,11 @@ export { BaserunningAnalysisRepository } from "./baserunning-analysis-repository
 export { PitcherWorkloadRepository } from "./pitcher-workload-repository.js";
 export { WorkloadComparisonRepository } from "./workload-comparison-repository.js";
 export { MatchupRepository } from "./matchup-repository.js";
-export { RunValueRepository, runTrainingHash } from "./run-value-repository.js";
+export {
+  RunValueRepository,
+  runTrainingHash,
+  type ReplayAnalysisGame,
+} from "./run-value-repository.js";
 export { RunExpectancyWorkspace, RunTrainingManifestSchema } from "./run-expectancy-workspace.js";
 export { ParkEnvironmentRepository, parkTrainingHash } from "./park-environment-repository.js";
 export {

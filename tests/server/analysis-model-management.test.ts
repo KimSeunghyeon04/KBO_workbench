@@ -30,6 +30,20 @@ const Fastify: () => ReturnType<typeof createApp> = createRequire(
   new URL("../../apps/server/package.json", import.meta.url),
 )("fastify");
 const hash = createHash("sha256").update("test").digest("hex");
+function jobService(service: {
+  status: AnalysisModelService["status"];
+  refresh: ReturnType<AnalysisModelService["startTrainingJob"]>["refresh"];
+}) {
+  return {
+    status: service.status,
+    async statusForKind(kind: (typeof MODEL_ORDER)[number], season: number) {
+      const status = (await service.status(season)).find((entry) => entry.kind === kind);
+      if (status === undefined) throw new Error("Missing model status fixture");
+      return status;
+    },
+    startTrainingJob: () => ({ refresh: service.refresh, close: async () => {} }),
+  };
+}
 it("refreshes an imported 2026 season with the periodic policy disabled", async () => {
   await using dir = await mkdtempDisposable(path.join(tmpdir(), "kbo-model-import-"));
   const workspace = await StagingWorkspace.open(dir.path);
@@ -46,7 +60,7 @@ it("refreshes an imported 2026 season with the periodic policy disabled", async 
       })),
     refresh: vi.fn(async () => hash),
   };
-  const manager = new AnalysisModelJobManager(workspace.analysisModelJobs, service);
+  const manager = new AnalysisModelJobManager(workspace.analysisModelJobs, jobService(service));
   try {
     await manager.start();
     await manager.afterImport(2026);
@@ -93,7 +107,7 @@ it("persists before dispatch, serializes dependency order, skips current models 
   const failures: unknown[] = [];
   const manager = new AnalysisModelJobManager(
     workspace.analysisModelJobs,
-    service,
+    jobService(service),
     undefined,
     undefined,
     (error) => failures.push(error),
@@ -111,7 +125,7 @@ it("persists before dispatch, serializes dependency order, skips current models 
     expect(calls).toEqual(["quality", "matchup"]);
     expect(job.steps.slice(0, 4).every((s) => s.state === "skipped")).toBe(true);
     await manager.close();
-    const restarted = new AnalysisModelJobManager(workspace.analysisModelJobs, service);
+    const restarted = new AnalysisModelJobManager(workspace.analysisModelJobs, jobService(service));
     await restarted.start();
     expect(await restarted.create(id, false)).toEqual(job);
     await expect(restarted.create(id, true)).rejects.toThrow("조건");
@@ -134,7 +148,7 @@ it("rejects concurrent jobs, cancels a worker and retains successfully published
       );
     }),
   };
-  const manager = new AnalysisModelJobManager(workspace.analysisModelJobs, service);
+  const manager = new AnalysisModelJobManager(workspace.analysisModelJobs, jobService(service));
   try {
     await manager.start();
     const id = randomUUID();
@@ -176,7 +190,7 @@ it("recovers interrupted jobs without retraining and runs automatic checks only 
     })),
   });
   const service = { status: vi.fn(async () => statuses()), refresh: vi.fn(async () => hash) };
-  const manager = new AnalysisModelJobManager(workspace.analysisModelJobs, service);
+  const manager = new AnalysisModelJobManager(workspace.analysisModelJobs, jobService(service));
   try {
     await manager.start();
     expect((await manager.get(id)).state).toBe("failed");
@@ -208,6 +222,9 @@ it("checks freshly changed sources before publication and never replaces a previ
     quality: hash,
     matchup: hash,
   });
+  const focused = vi
+    .spyOn(AnalysisModelSourceRepository.prototype, "readForKind")
+    .mockResolvedValue(hash);
   const service = new AnalysisModelService(pool, workspace, dir.path, async () => ({
     kind: "quality",
     model,
@@ -217,8 +234,11 @@ it("checks freshly changed sources before publication and never replaces a previ
     await expect(
       service.refresh("quality", new AbortController().signal, async () => {}),
     ).rejects.toBeInstanceOf(ModelSourceChangedError);
+    expect(focused).toHaveBeenCalledExactlyOnceWith(2024, "quality");
     expect((await workspace.pitchQuality.read(2024))?.hash).toBe(saved);
-    expect((await service.status()).find((s) => s.kind === "quality")?.state).toBe("stale");
+    const statuses = await service.status();
+    expect(statuses.map((entry) => entry.kind)).toEqual(MODEL_ORDER);
+    expect(await service.statusForKind("quality", 2025)).toEqual(statuses[4]);
   } finally {
     await pool.end();
     await workspace.close();
@@ -227,10 +247,13 @@ it("checks freshly changed sources before publication and never replaces a previ
 it("validates route bodies, reports conflicts and returns the durable accepted job", async () => {
   await using dir = await mkdtempDisposable(path.join(tmpdir(), "kbo-model-api-"));
   const workspace = await StagingWorkspace.open(dir.path);
-  const manager = new AnalysisModelJobManager(workspace.analysisModelJobs, {
-    status: async () => statuses(),
-    refresh: async () => hash,
-  });
+  const manager = new AnalysisModelJobManager(
+    workspace.analysisModelJobs,
+    jobService({
+      status: async () => statuses(),
+      refresh: async () => hash,
+    }),
+  );
   const app = Fastify();
   installHttpErrorHandler(app);
   await manager.start();
@@ -295,7 +318,7 @@ it("binds idempotency and dispatch to the season, including unsupported steps on
     ),
     refresh: vi.fn(async () => hash),
   };
-  const manager = new AnalysisModelJobManager(workspace.analysisModelJobs, service);
+  const manager = new AnalysisModelJobManager(workspace.analysisModelJobs, jobService(service));
   try {
     await manager.start();
     const id = randomUUID();
@@ -319,10 +342,13 @@ it("binds idempotency and dispatch to the season, including unsupported steps on
 it("reads the exact legacy job/policy as 2025 without rewriting and rejects ambiguous formats", async () => {
   await using dir = await mkdtempDisposable(path.join(tmpdir(), "kbo-legacy-model-"));
   const workspace = await StagingWorkspace.open(dir.path);
-  const manager = new AnalysisModelJobManager(workspace.analysisModelJobs, {
-    status: async () => statuses(),
-    refresh: async () => hash,
-  });
+  const manager = new AnalysisModelJobManager(
+    workspace.analysisModelJobs,
+    jobService({
+      status: async () => statuses(),
+      refresh: async () => hash,
+    }),
+  );
   try {
     await manager.start();
     const id = randomUUID();
@@ -373,11 +399,15 @@ it("rejects wrong-period training output before publication and avoids DB work f
     quality: sourceHash,
     matchup: sourceHash,
   });
+  const focused = vi
+    .spyOn(AnalysisModelSourceRepository.prototype, "readForKind")
+    .mockResolvedValue(sourceHash);
   const train = vi.fn(async () => ({ kind: "quality" as const, model, manifest }));
   const service = new AnalysisModelService(pool, workspace, dir.path, train);
   try {
     expect((await service.status(2020)).every((s) => s.state === "unsupported")).toBe(true);
     expect(sources).not.toHaveBeenCalled();
+    expect(focused).not.toHaveBeenCalled();
     await expect(
       service.refresh("quality", new AbortController().signal, async () => {}, 2023),
     ).rejects.toBeInstanceOf(ModelSourceChangedError);
@@ -396,22 +426,25 @@ it("automatically refreshes enabled seasons serially without retrying unsupporte
   let active = 0,
     peak = 0;
   const calls: number[] = [];
-  const manager = new AnalysisModelJobManager(workspace.analysisModelJobs, {
-    status: async (season = 2025) =>
-      statuses("missing").map((s) => ({
-        ...s,
-        ...modelTrainingPeriod(s.kind, season),
-        state: s.kind === "win" ? ("unsupported" as const) : s.state,
-      })),
-    refresh: async (_kind, _signal, phase, season = 2025) => {
-      active++;
-      peak = Math.max(peak, active);
-      calls.push(season);
-      await phase("checking");
-      active--;
-      return hash;
-    },
-  });
+  const manager = new AnalysisModelJobManager(
+    workspace.analysisModelJobs,
+    jobService({
+      status: async (season = 2025) =>
+        statuses("missing").map((s) => ({
+          ...s,
+          ...modelTrainingPeriod(s.kind, season),
+          state: s.kind === "win" ? ("unsupported" as const) : s.state,
+        })),
+      refresh: async (_kind, _signal, phase, season = 2025) => {
+        active++;
+        peak = Math.max(peak, active);
+        calls.push(season);
+        await phase("checking");
+        active--;
+        return hash;
+      },
+    }),
+  );
   try {
     await manager.start();
     await manager.check();

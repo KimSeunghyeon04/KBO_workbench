@@ -1,4 +1,9 @@
-import { withAnalysisSnapshot } from "./analysis-snapshot.js";
+import {
+  readAnalysisPeriods,
+  withAnalysisReadSnapshot,
+  withAnalysisSnapshot,
+  type AnalysisReadSnapshot,
+} from "./analysis-snapshot.js";
 import { createHash } from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
@@ -25,6 +30,7 @@ import {
   LeagueBattingTotalsSchema,
   LeaguePitchingTotalsSchema,
   playerSplitBuckets,
+  type AnalysisScope,
   type AnalysisScopeQuery,
   type BattingStatisticsQuery,
   type PitchingStatisticsQuery,
@@ -426,16 +432,61 @@ export class PlayerStatisticsRepository {
   }
   public async battingWithManifest(input: BattingStatisticsQuery) {
     const query = Value.Decode(BattingStatisticsQuerySchema, input);
-    const {
-      group = "player",
-      sort = "ops",
-      minPA = 0,
-      page = 1,
-      limit = 50,
-      playerId,
-      ...scopeInput
-    } = query;
-    const { manifest, ...snapshot } = await this.read(scopeInput, group, battingSql, playerId);
+    return this.battingResponse(query, await this.read(query, battingSql));
+  }
+  public async pitchingWithManifest(input: PitchingStatisticsQuery) {
+    const query = Value.Decode(PitchingStatisticsQuerySchema, input);
+    return this.pitchingResponse(query, await this.read(query, pitchingSql));
+  }
+  public async compareBatting(
+    first: AnalysisScopeQuery,
+    second: AnalysisScopeQuery,
+    playerId: string,
+  ) {
+    const common = { playerId, group: "player" as const, limit: 200, page: 1 };
+    const a = Value.Decode(BattingStatisticsQuerySchema, { ...first, ...common });
+    const b = Value.Decode(BattingStatisticsQuerySchema, { ...second, ...common });
+    const rows = await this.compareRows(first, second, battingSql, playerId);
+    return {
+      first: this.battingResponse(a, rows.first),
+      second: this.battingResponse(b, rows.second),
+    };
+  }
+  public async comparePitching(
+    first: AnalysisScopeQuery,
+    second: AnalysisScopeQuery,
+    playerId: string,
+  ) {
+    const common = { playerId, group: "player" as const, limit: 200, page: 1 };
+    const a = Value.Decode(PitchingStatisticsQuerySchema, { ...first, ...common });
+    const b = Value.Decode(PitchingStatisticsQuerySchema, { ...second, ...common });
+    const rows = await this.compareRows(first, second, pitchingSql, playerId);
+    return {
+      first: this.pitchingResponse(a, rows.first),
+      second: this.pitchingResponse(b, rows.second),
+    };
+  }
+  private compareRows(
+    first: AnalysisScopeQuery,
+    second: AnalysisScopeQuery,
+    sql: string,
+    playerId: string,
+  ) {
+    return readAnalysisPeriods(
+      this.pool,
+      resolveAnalysisScope(first, "regular"),
+      resolveAnalysisScope(second, "regular"),
+      async (snapshot, scope) => {
+        const rows = await this.readRows(snapshot, scope, "player", sql, playerId);
+        return { first: rows, second: rows };
+      },
+    );
+  }
+  private battingResponse(
+    query: BattingStatisticsQuery,
+    { manifest, ...snapshot }: Awaited<ReturnType<PlayerStatisticsRepository["readRows"]>>,
+  ) {
+    const { group = "player", sort = "ops", minPA = 0, page = 1, limit = 50 } = query;
     const rows = Value.Decode(Type.Array(BattingStatisticsTotalsSchema), snapshot.rows)
       .map(battingStatistics)
       .filter((r) => r.plateAppearances >= minPA);
@@ -452,18 +503,11 @@ export class PlayerStatisticsRepository {
     });
     return { sourceHash: manifest, response };
   }
-  public async pitchingWithManifest(input: PitchingStatisticsQuery) {
-    const query = Value.Decode(PitchingStatisticsQuerySchema, input);
-    const {
-      group = "player",
-      sort = "kMinusBbRate",
-      minBF = 0,
-      page = 1,
-      limit = 50,
-      playerId,
-      ...scopeInput
-    } = query;
-    const { manifest, ...snapshot } = await this.read(scopeInput, group, pitchingSql, playerId);
+  private pitchingResponse(
+    query: PitchingStatisticsQuery,
+    { manifest, ...snapshot }: Awaited<ReturnType<PlayerStatisticsRepository["readRows"]>>,
+  ) {
+    const { group = "player", sort = "kMinusBbRate", minBF = 0, page = 1, limit = 50 } = query;
     const rows = Value.Decode(Type.Array(PitchingStatisticsTotalsSchema), snapshot.rows)
       .map(pitchingStatistics)
       .filter((r) => r.battersFaced >= minBF);
@@ -480,36 +524,49 @@ export class PlayerStatisticsRepository {
     });
     return { sourceHash: manifest, response };
   }
-  private async read(
-    input: Parameters<typeof resolveAnalysisScope>[0],
+  private read(input: BattingStatisticsQuery | PitchingStatisticsQuery, sql: string) {
+    const { group = "player", playerId, season, competition, dateFrom, dateTo } = input;
+    if (group === "team" && playerId !== undefined)
+      throw new InvalidAnalysisScopeError("팀 합계 조회에는 선수 조건을 함께 사용할 수 없습니다.");
+    const scope = resolveAnalysisScope(
+      {
+        season,
+        ...(competition === undefined ? {} : { competition }),
+        ...(dateFrom === undefined ? {} : { dateFrom }),
+        ...(dateTo === undefined ? {} : { dateTo }),
+      },
+      "regular",
+    );
+    return withAnalysisReadSnapshot(this.pool, (snapshot) =>
+      this.readRows(snapshot, scope, group, sql, playerId),
+    );
+  }
+  private async readRows(
+    snapshot: AnalysisReadSnapshot,
+    scope: AnalysisScope,
     group: "player" | "team",
     sql: string,
     playerId: string | undefined,
   ) {
-    if (group === "team" && playerId !== undefined)
-      throw new InvalidAnalysisScopeError("팀 합계 조회에는 선수 조건을 함께 사용할 수 없습니다.");
-    const scope = resolveAnalysisScope(input, "regular");
-    return withAnalysisSnapshot(this.pool, async (client, release) => {
-      const manifest = await analysisSourceHash(client, scope);
-      const result = await client.query<Record<string, unknown>>(sql, [
-        ...analysisScopeParameters(scope),
-        group,
-        playerId ?? null,
-      ]);
-      const sourceHash = createHash("sha256")
-        .update(
-          canonicalStringify({
-            version: 1,
-            manifest,
-            group,
-            ...(playerId === undefined ? {} : { playerId }),
-            rows: result.rows,
-          }),
-        )
-        .digest("hex");
-      await release();
-      return { scope, sourceHash, rows: result.rows, manifest };
-    });
+    const manifest = await snapshot.sourceHash(scope);
+    const result = await snapshot.client.query<Record<string, unknown>>(sql, [
+      ...analysisScopeParameters(scope),
+      group,
+      playerId ?? null,
+    ]);
+    const sourceHash = createHash("sha256")
+      .update(
+        canonicalStringify({
+          version: 1,
+          manifest,
+          group,
+          ...(playerId === undefined ? {} : { playerId }),
+          rows: result.rows,
+        }),
+      )
+      .digest("hex");
+    await snapshot.release();
+    return { scope, sourceHash, rows: result.rows, manifest };
   }
 }
 function compareMetric(a: number | null, b: number | null, ascending: boolean) {

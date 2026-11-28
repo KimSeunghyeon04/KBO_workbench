@@ -46,6 +46,10 @@ export class AnalysisCoverageJobManager {
     return { sourceKey, scope, state: "preparing" };
   }
 
+  public status(sourceKey: string) {
+    return { state: this.tasks.get(sourceKey)?.state ?? ("missing" as const) };
+  }
+
   public async close(): Promise<void> {
     this.abort.abort();
     this.queue.length = 0;

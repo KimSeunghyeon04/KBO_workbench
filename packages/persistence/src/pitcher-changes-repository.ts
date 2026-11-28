@@ -1,4 +1,4 @@
-import { withAnalysisSnapshot } from "./analysis-snapshot.js";
+import { withAnalysisReadSnapshot } from "./analysis-snapshot.js";
 import type { Pool } from "pg";
 import { Value } from "@sinclair/typebox/value";
 import { createHash } from "node:crypto";
@@ -7,24 +7,16 @@ import {
   PitcherChangesResponseSchema,
   resolveAnalysisScope,
   canonicalStringify,
-  PITCH_CALIBRATION_PARAMETERS,
-  PITCH_REFERENCE_VERSION,
-  PITCH_ANALYSIS_MODEL_VERSION,
   type PitcherChangesQuery,
   type PitcherChangesResponse,
   type PitchChangeObservation,
-  type PitchCalibrationSeason,
 } from "@kbo/contracts";
 import { analyzePitcherChanges } from "@kbo/game-core";
 import {
-  readPitchRows,
-  prepareReference,
-  analyzeRows,
+  inlinePitchAnalysisComputation,
   type PitchAnalysisComputation,
-  type PitchAnalysisRow,
 } from "./pitch-analysis-repository.js";
-import { calculatePitchCalibration, pitchCalibrationHash } from "./pitch-calibration.js";
-import { analysisSourceHash } from "./analysis-scope.js";
+import { preparePitchInputs } from "./pitch-trajectory-preparation.js";
 import type { PitchCalibrationWorkspace } from "./pitch-calibration-workspace.js";
 import type { PitchReferenceWorkspace } from "./pitch-reference-workspace.js";
 interface Options {
@@ -45,11 +37,11 @@ export class PitcherChangesRepository {
     const query = Value.Decode(PitcherChangesQuerySchema, input),
       scope = resolveAnalysisScope(query, "regular"),
       referenceScope = { ...scope, dateFrom: null };
-    return withAnalysisSnapshot(this.pool, async (client, release) => {
+    return withAnalysisReadSnapshot(this.pool, async (snapshot) => {
       const referenceHash = createHash("sha256")
           .update(
             canonicalStringify({
-              sourceHash: await analysisSourceHash(client, referenceScope),
+              sourceHash: await snapshot.sourceHash(referenceScope),
               finalOnly: true,
             }),
           )
@@ -59,60 +51,22 @@ export class PitcherChangesRepository {
           .digest("hex");
       const cached = this.options.cache?.get(sourceHash);
       if (cached !== undefined) {
-        await release();
+        await snapshot.release();
         return structuredClone(await cached);
       }
       const calculate = async () => {
-        let seasonRows: PitchAnalysisRow[] | undefined;
-        let targetRows: PitchAnalysisRow[] | undefined;
-        const compute = this.options.computation ?? {
-          calibration: async (...args: Parameters<typeof calculatePitchCalibration>) =>
-            calculatePitchCalibration(...args),
-          reference: async (...args: Parameters<typeof prepareReference>) =>
-            prepareReference(...args),
-          sample: async (...args: Parameters<typeof analyzeRows>) => analyzeRows(...args),
-        };
-        const calibrationKey = {
-          modelVersion: PITCH_CALIBRATION_PARAMETERS.modelVersion,
-          season: query.season,
-          sourceHash: referenceHash,
-        };
-        const calculateCalibration = async (previous: PitchCalibrationSeason | null) => {
-          seasonRows = await readPitchRows(client, query.season, null, true, referenceScope, true);
-          targetRows = seasonRows.filter(
-            (r) =>
-              r.pitcherId === pitcherId &&
-              (scope.dateFrom === null || r.gameDate >= scope.dateFrom),
-          );
-          await release();
-          return compute.calibration(query.season, referenceHash, seasonRows, previous);
-        };
-        const calibration =
-          this.options.calibrations === undefined
-            ? await calculateCalibration(null)
-            : await this.options.calibrations.getOrCreate(calibrationKey, calculateCalibration);
-        const referenceKey = {
-          modelVersion: PITCH_ANALYSIS_MODEL_VERSION,
-          referenceVersion: PITCH_REFERENCE_VERSION,
-          season: query.season,
-          sourceHash: referenceHash,
-          calibrationHash: pitchCalibrationHash(calibration),
-        } as const;
-        const calculateReference = async () => {
-          const referenceRows =
-            seasonRows ??
-            (await readPitchRows(client, query.season, null, false, referenceScope, true));
-          targetRows ??= await readPitchRows(client, query.season, pitcherId, false, scope, true);
-          await release();
-          return compute.reference(referenceRows, calibration);
-        };
-        const reference =
-          this.options.references === undefined
-            ? await calculateReference()
-            : await this.options.references.getOrCreate(referenceKey, calculateReference);
-        const target =
-          targetRows ?? (await readPitchRows(client, query.season, pitcherId, false, scope, true));
-        await release();
+        const compute = this.options.computation ?? inlinePitchAnalysisComputation;
+        const { calibration, reference, rowsFor } = await preparePitchInputs(snapshot, {
+          referenceScope,
+          referenceHash,
+          pitcherId,
+          scopes: [scope],
+          targetFinalOnly: true,
+          computation: compute,
+          calibrations: this.options.calibrations,
+          references: this.options.references,
+        });
+        const target = rowsFor(scope);
         const sample = await compute.sample(
           query.season,
           pitcherId,
@@ -161,7 +115,7 @@ export class PitcherChangesRepository {
         this.options.cache === undefined
           ? await calculate()
           : await this.options.cache.load(sourceHash, calculate);
-      await release();
+      await snapshot.release();
       return structuredClone(result);
     });
   }

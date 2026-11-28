@@ -1,7 +1,7 @@
 import { withAnalysisSnapshot } from "./analysis-snapshot.js";
 import { createHash } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import { Type } from "@sinclair/typebox";
+import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import {
   RunTrainingGameSchema,
@@ -41,14 +41,19 @@ const replayGameRows = Type.Array(
     { additionalProperties: false },
   ),
 );
-interface ReplayPlaysCache {
-  get(key: string): Promise<readonly AnalysisPlay[]> | undefined;
-  load(key: string, read: () => Promise<readonly AnalysisPlay[]>): Promise<readonly AnalysisPlay[]>;
+export type ReplayAnalysisGame = Omit<Static<typeof replayGameRows>[number], "regular">;
+interface ReplayReadCache<T> {
+  get(key: string): Promise<T> | undefined;
+  load(key: string, read: () => Promise<T>): Promise<T>;
 }
 export class RunValueRepository {
   public constructor(
     private readonly pool: Pool,
-    private readonly replayPlays?: ReplayPlaysCache,
+    private readonly replayPlays?: ReplayReadCache<readonly AnalysisPlay[]>,
+    private readonly replaySources?: {
+      games: ReplayReadCache<ReplayAnalysisGame>;
+      runHashes: Pick<ReplayReadCache<string>, "load">;
+    },
   ) {}
   public async training(
     through: number,
@@ -169,36 +174,79 @@ export class RunValueRepository {
     expectedSeason?: number,
   ) {
     return withAnalysisSnapshot(this.pool, async (client, release) => {
-      const { rows } = await client.query<Record<string, unknown>>(
-        `SELECT ${gameColumns},r.projection_hash AS "projectionHash",
-          COALESCE((SELECT c.competition='regular' FROM analytics.current_analysis_games c
-            WHERE c.game_id=r.game_id LIMIT 1),FALSE) AS regular
-        FROM workbench.game_revisions r JOIN baseball.game_final_states f USING(game_id,revision)
-        WHERE r.game_id=$1 AND r.revision=$2 AND r.sealed`,
-        [gameId, revision],
+      const source = await this.readReplaySource(
+        client,
+        gameId,
+        revision,
+        model !== null,
+        expectedSeason,
       );
-      const row = Value.Decode(replayGameRows, rows)[0];
-      if (row === undefined || (expectedSeason !== undefined && row.season !== expectedSeason)) {
-        await release();
-        return null;
-      }
-      const { regular, projectionHash, ...game } = row;
+      if (source === null) return null;
+      const { regular, header } = source;
+      const { projectionHash, ...game } = header;
       const modelCurrent =
         regular &&
         model !== null &&
-        model.sourceHash === runTrainingHash(await readRunManifest(client, model.trainedThrough));
+        model.sourceHash === (await this.readReplayModelHash(client, model.trainedThrough));
       const readPlays = async () => {
         const plays = await readAnalysisPlays(client, [gameId], revision);
         await release();
         return plays;
       };
-      // Only the sealed inputs can outlive this snapshot. Competition and model validity stay live.
       const key = JSON.stringify([gameId, revision, game.documentHash, projectionHash]);
       const cached = this.replayPlays?.get(key);
       if (cached !== undefined) await release();
       const plays = await (cached ?? this.replayPlays?.load(key, readPlays) ?? readPlays());
       return { game, plays, modelCurrent };
     });
+  }
+
+  private async readReplaySource(
+    client: PoolClient,
+    gameId: string,
+    revision: number,
+    needsModel: boolean,
+    expectedSeason?: number,
+  ) {
+    const key = JSON.stringify([gameId, revision]);
+    const cache = this.replaySources?.games;
+    const header = await cache?.get(key);
+    if (header !== undefined) {
+      if (expectedSeason !== undefined && header.season !== expectedSeason) return null;
+      if (!needsModel) return { header, regular: false };
+      // The revision is immutable; its current competition assignment is independent.
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT COALESCE((SELECT c.competition='regular' FROM analytics.current_analysis_games c
+          WHERE c.game_id=$1 LIMIT 1),FALSE) AS regular`,
+        [gameId],
+      );
+      const { regular } = Value.Decode(Type.Object({ regular: Type.Boolean() }), result.rows[0]);
+      return { header, regular };
+    }
+    const { rows } = await client.query<Record<string, unknown>>(
+      `SELECT ${gameColumns},r.projection_hash AS "projectionHash",
+          CASE WHEN $3 THEN COALESCE((SELECT c.competition='regular' FROM analytics.current_analysis_games c
+            WHERE c.game_id=r.game_id LIMIT 1),FALSE) ELSE FALSE END AS regular
+        FROM workbench.game_revisions r JOIN baseball.game_final_states f USING(game_id,revision)
+        WHERE r.game_id=$1 AND r.revision=$2 AND r.sealed`,
+      [gameId, revision, needsModel],
+    );
+    const row = Value.Decode(replayGameRows, rows)[0];
+    if (row === undefined || (expectedSeason !== undefined && row.season !== expectedSeason))
+      return null;
+    const { regular, ...sealed } = row;
+    return { header: await (cache?.load(key, async () => sealed) ?? sealed), regular };
+  }
+
+  private async readReplayModelHash(client: PoolClient, through: number) {
+    const cache = this.replaySources?.runHashes;
+    if (cache === undefined) return runTrainingHash(await readRunManifest(client, through));
+    const scopeHashes = await readRegularModelScopeHashes(client, through);
+    // These hashes include every current regular game and its sealed revision. All other
+    // manifest game fields come from the same immutable revisions.
+    return cache.load(canonicalStringify([through, scopeHashes]), async () =>
+      runTrainingHash(await readRunManifest(client, through, scopeHashes)),
+    );
   }
 }
 export function runTrainingHash(
