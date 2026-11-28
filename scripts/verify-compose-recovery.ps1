@@ -764,7 +764,8 @@ try {
     const gameId = `release-sample-${season}-${sample}`;
     document.revisionBase = { kind: "new_game" };
     document.source.sourceGameId = gameId;
-    document.metadata = { ...document.metadata, gameId, season, gameDate: `${season}-06-02`, status: "final" };
+    // Keep the season release samples after the July 6 All-Star workload fixture.
+    document.metadata = { ...document.metadata, gameId, season, gameDate: `${season}-07-07`, status: "final" };
     document.officialRecords = { batters: [], pitchers: [] };
     document.events = document.events.slice(0, 2);
     document.trackingCandidates = [];
