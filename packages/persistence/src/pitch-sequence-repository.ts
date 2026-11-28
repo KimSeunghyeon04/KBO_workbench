@@ -55,7 +55,7 @@ export class PitchSequenceRepository {
           ? sampleHash
           : await analysisSourceHash(client, releaseScope);
       const sourceHash = createHash("sha256")
-        .update(canonicalStringify({ sampleHash, releaseHash, timing: "season-release-v1" }))
+        .update(canonicalStringify({ sampleHash, releaseHash, timing: "50ft-v1" }))
         .digest("hex");
       const result = await client.query<Record<string, unknown>>(
         `WITH selected_games AS MATERIALIZED (

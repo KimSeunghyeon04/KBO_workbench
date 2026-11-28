@@ -1949,7 +1949,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(after.sourceHash).not.toBe(before.sourceHash);
     expect(after.actualPitchCount).toBe(4);
     expect(after.baseline).toBeNull();
-    expect(after.missingReleaseCount).toBe(2);
+    expect(after.invalidTrackingCount).toBe(1);
     expect((await pitch.catalog(2024, { competition: "postseason" })).pitchers[0]?.pitches).toBe(4);
     const narrow = await pitch.analyze(2024, "hp1", {
       competition: "regular",
@@ -3767,7 +3767,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     const updated = await repository.analyze(2024, "hp1", { competition: "unknown" });
     expect(updated.sourceHash).not.toBe(expected.sourceHash);
     expect(updated.points).toHaveLength(0);
-    expect(updated.missingReleaseCount).toBe(2);
+    expect(updated.invalidTrackingCount).toBe(1);
     expect(computation.sample).toHaveBeenCalledTimes(2);
     expect(updated).toEqual(
       await new PitchAnalysisRepository(pool).analyze(2024, "hp1", { competition: "unknown" }),
@@ -6474,7 +6474,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(data.points.every((p) => p.referenceBand !== null)).toBe(true);
   });
 
-  it("uses the finalized season release clock for a date-filtered shape and sequence", async () => {
+  it("uses a common 50-ft clock and retains season release positions in dated analyses", async () => {
     for (let i = 0; i < 3; i++) await store.importRevision(releasePitchAnalysisFixture(2024, i));
     const openGame = releasePitchAnalysisFixture(2024, 3);
     await store.importRevision(
@@ -6493,19 +6493,19 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
       ["슬라이더", 144, 3],
       ["직구", 144, 3],
     ]);
-    const t = (55 - 17 / 24) / 100;
+    const t = (50 - 17 / 24) / 100;
     expect(shape.baseline?.sampleCount).toBe(144);
     expect(shape.baseline?.arrivalMs).toBeCloseTo(t * 1000, 8);
     expect(shape.points.find((pitch) => pitch.pitchType === "슬라이더")).toMatchObject({
-      arrivalMs: expect.closeTo((t - 0.01) * 1000, 7),
-      timingDifferenceMs: expect.closeTo(-10, 7),
+      arrivalMs: expect.closeTo(t * 1000, 7),
+      timingDifferenceMs: expect.closeTo(0, 7),
       xCm: expect.closeTo((16 * t ** 2 * 30.48) / 2, 7),
     });
     const repository = new PitchSequenceRepository(pool);
     const result = await repository.analyze({ season: 2024, ...scope }, "hp1");
     expect(result.releaseGroups).toEqual(shape.releaseGroups);
-    expect(result.pairs[0]?.planeTimeDifferenceMs).toBeCloseTo(-10, 8);
-    expect(result.pairs[1]?.planeTimeDifferenceMs).toBeCloseTo(10, 8);
+    expect(result.pairs[0]?.planeTimeDifferenceMs).toBeCloseTo(0, 8);
+    expect(result.pairs[1]?.planeTimeDifferenceMs).toBeCloseTo(0, 8);
     const later = releasePitchAnalysisFixture(2024, 2);
     const draft = await store.loadCorrectionDraft(later.metadata.gameId, 1);
     await store.importRevision(draft);
@@ -6517,28 +6517,31 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     expect(updatedShape.points).toEqual(shape.points);
   }, 15_000);
 
-  it("릴리스를 추정할 수 없는 시즌은 기준 포심 없이 표본 제외 사유를 제공한다", async () => {
+  it("릴리스 표본이 부족한 경우에도 기준 포심과 유효 투구를 계산한다", async () => {
     const repository = new PitchAnalysisRepository(pool);
     await store.importRevision(pitchAnalysisFixture(2024));
-    await store.importRevision(pitchAnalysisFixture(2025));
+    const game = pitchAnalysisFixture(2025);
+    await store.importRevision(
+      parseStagingGameDocumentV2({ ...game, metadata: { ...game.metadata, status: "final" } }),
+    );
     await store.importRevision(pitchAnalysisFixture(2025, "hp2", -150));
     const first = await repository.analyze(2025, "hp1", { competition: "unknown" });
     const second = await repository.analyze(2025, "hp2", { competition: "unknown" });
     const previousSeason = await repository.analyze(2024, "hp1", { competition: "unknown" });
     expect(first.baseline).toEqual(second.baseline);
-    expect(first.baseline).toBeNull();
+    expect(first.baseline).toMatchObject({ candidateCount: 3, sampleCount: 1, excludedCount: 2 });
     expect(previousSeason.baseline).toBeNull();
     expect(first).toMatchObject({
       actualPitchCount: 4,
       missingTrackingCount: 1,
       invalidTrackingCount: 1,
-      missingReleaseCount: 2,
+      releaseGroups: [],
     });
-    expect(first.points).toHaveLength(0);
+    expect(first.points.map((p) => p.pitchType)).toEqual(["직구", "슬라이더"]);
     expect(first.calibration).toMatchObject({
       plane: "middle",
       calibratedCount: 0,
-      uncalibratedCount: 0,
+      uncalibratedCount: 2,
     });
     expect(first.referenceDistribution).toBeNull();
     expect((await repository.catalog(2025, { competition: "unknown" })).pitchers).toHaveLength(2);
@@ -6551,7 +6554,7 @@ describeIntegration("PostgreSQL 16 V3 revision 및 analytics", () => {
     const after = await repository.analyze(2025, "hp1", { competition: "unknown" });
     expect(after.baseline).toEqual(first.baseline);
     expect(after.sourceHash).not.toBe(first.sourceHash);
-    expect(after.points).toHaveLength(0);
+    expect(after.points).toHaveLength(2);
     expect(
       (await store.revisions("analysis-2025-hp1")).revisions.find(
         (revision) => revision.revision === 1,

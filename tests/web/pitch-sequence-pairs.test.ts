@@ -25,7 +25,7 @@ const releaseGroups: PitchReleaseGroup[] = [
     pitchType: "직구",
     pitches: 120,
     games: 3,
-    estimate: { xCm: -37, heightCm: 180, extensionCm: 188 },
+    estimate: { xCm: -37, heightCm: 180 },
   },
   { pitchType: "커브", pitches: 42, games: 3, estimate: null },
 ];
@@ -54,8 +54,8 @@ it("shows each mean's valid sample, missing means, and the distinct outcome deno
   );
   renderPairs(data);
   const graph = within(screen.getByRole("img", { name: "수평 궤적 비교" }));
-  expect(graph.getByText("54.33 ft")).toBeTruthy();
-  expect(screen.getByText(/릴리스 기준 두 번째−첫 번째 시간/)).toBeTruthy();
+  expect(graph.getByText("50.00 ft")).toBeTruthy();
+  expect(screen.getByText(/50ft 기준 두 번째−첫 번째 시간/)).toBeTruthy();
   fireEvent.click(screen.getByText("조합별 상세 성적과 계산 기준"));
   const table = within(screen.getByRole("table", { name: "두 구종 조합" }));
   const measured = table.getByRole("row", { name: /직구 → 직구/ });
@@ -68,7 +68,7 @@ it("shows each mean's valid sample, missing means, and the distinct outcome deno
   const missing = table.getByRole("row", { name: /커브 → 커브/ });
   expect(within(missing).getAllByRole("cell", { name: "— 유효 0쌍" })).toHaveLength(4);
   expect(screen.getByText(/Swing%는 스윙\/쌍, Whiff%는 헛스윙\/스윙/)).toBeTruthy();
-  expect(screen.getByText(/시간·구속 차는 두 번째−첫 번째/)).toBeTruthy();
+  expect(screen.getByText(/시간·구속 차는 두 번째−첫 번째.*50피트부터 비교면까지/)).toBeTruthy();
   const second = screen.getAllByRole("button", { name: "궤적 비교" })[1];
   if (!second) throw new Error("Expected second comparison");
   fireEvent.click(second);
@@ -101,6 +101,16 @@ it("decodes server-provided sample counts and rejects a response that omits one"
   await expect(getPitchSequences(query, "p", new AbortController().signal)).rejects.toThrow();
 });
 
+it("shows the available trajectories while leaving the 50-ft time difference blank", () => {
+  const data = analyzePitchSequences(query, "p", scope, "hash", [
+    pitchSequenceRow(0, { y0: 49 }),
+    pitchSequenceRow(1),
+  ]);
+  renderPairs(data);
+  expect(screen.getByRole("img", { name: "수평 궤적 비교" })).toBeTruthy();
+  expect(screen.getByText(/50ft 기준 두 번째−첫 번째 시간 — ms/)).toBeTruthy();
+});
+
 it("selects every group and resets pair navigation without losing missing tracking evidence", () => {
   const data = analyzePitchSequences(
     query,
@@ -115,11 +125,10 @@ it("selects every group and resets pair navigation without losing missing tracki
     releaseGroups,
   );
   renderPairs(data);
-  const release = within(
-    screen.getByRole("table", { name: "시즌 구종별 릴리스와 익스텐션 추정치" }),
-  );
+  const release = within(screen.getByRole("table", { name: "시즌 구종별 릴리스 위치 추정치" }));
   const first = within(release.getByRole("row", { name: /첫 공 · 직구/ }));
-  expect(first.getByRole("cell", { name: "188" })).toBeTruthy();
+  expect(first.getByRole("cell", { name: "180" })).toBeTruthy();
+  expect(release.queryByRole("columnheader", { name: /익스텐션/ })).toBeNull();
   expect(first.getByRole("cell", { name: "120구 · 3경기" })).toBeTruthy();
   expect(screen.getByRole("table", { name: "두 구종 조합" }).closest("details")?.open).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "다음 쌍" }));
@@ -131,7 +140,7 @@ it("selects every group and resets pair navigation without losing missing tracki
   expect(screen.getByRole("button", { name: "다음 쌍" }).hasAttribute("disabled")).toBe(true);
   expect(screen.getByText(/일부 좌표가 누락/)).toBeTruthy();
   const curve = within(release.getByRole("row", { name: /첫 공 · 커브/ }));
-  expect(curve.getAllByRole("cell", { name: "—" })).toHaveLength(3);
+  expect(curve.getAllByRole("cell", { name: "—" })).toHaveLength(2);
   expect(curve.getByRole("cell", { name: "42구 · 3경기" })).toBeTruthy();
   expect(screen.queryByRole("img", { name: "수평 궤적 비교" })).toBeNull();
   fireEvent.change(screen.getByRole("combobox", { name: "비교할 조합" }), {

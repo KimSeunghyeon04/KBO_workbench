@@ -30,7 +30,7 @@ export interface PitchTrajectoryComparison {
   readonly extrapolated: boolean;
 }
 
-const PITCH_COMPARISON_START_FEET = 50;
+export const PITCH_COMPARISON_START_FEET = 50;
 
 export function crossingTime(distance: number, vy: number, ay: number): number | null {
   if (!(distance > 0) || !(vy < 0)) return null;
@@ -51,11 +51,7 @@ export function pitchTimeAtPlane(y0: number, vy0: number, ay: number, y: number)
 }
 
 /** Position and velocity at a plane reached by the original trajectory. */
-export function pitchStateAtPlane(
-  input: Omit<PitchTrajectoryInput, "crossPlateY">,
-  y: number,
-  allowBackward = false,
-) {
+export function pitchStateAtPlane(input: Omit<PitchTrajectoryInput, "crossPlateY">, y: number) {
   const { x0, y0, z0, vx0, vy0, vz0, ax, ay, az } = input;
   if (
     x0 === null ||
@@ -71,7 +67,7 @@ export function pitchStateAtPlane(
     z0 < 0 ||
     vy0 >= 0 ||
     y < 0 ||
-    (!allowBackward && y > y0)
+    y > y0
   )
     return null;
 
@@ -106,13 +102,9 @@ export function pitchApproachAngles(input: PitchTrajectoryInput, plateYFeet: num
   return Object.values(result).every(Number.isFinite) ? result : null;
 }
 
-export function alignPitchTrajectory(
-  input: PitchTrajectoryInput,
-  releaseY?: number,
-): AlignedPitchTrajectory | null {
+export function alignPitchTrajectory(input: PitchTrajectoryInput): AlignedPitchTrajectory | null {
   const { ax, ay, az, crossPlateY } = input;
-  const start =
-    releaseY === undefined ? pitchComparisonStart(input) : pitchStateAtPlane(input, releaseY, true);
+  const start = pitchComparisonStart(input);
   if (
     start === null ||
     ax === null ||

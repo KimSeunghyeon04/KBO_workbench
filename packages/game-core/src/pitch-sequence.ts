@@ -5,16 +5,18 @@ import type {
   AnalysisScope,
   PitchReleaseGroup,
 } from "@kbo/contracts";
-import { pitchReleaseDepths } from "./pitch-release.js";
-import { pitchStateAtPlane } from "./pitch-trajectory.js";
+import {
+  pitchComparisonStart,
+  pitchStateAtPlane,
+  PITCH_COMPARISON_START_FEET,
+} from "./pitch-trajectory.js";
 import { matchesPitchOutcome } from "./pitch-outcomes.js";
 /** Provider coordinates, with no endpoint bias correction extended to the middle of the trajectory. */
-export function pitchPositionAtPlane(row: PitchSequenceRow, y: number, releaseY?: number) {
+export function pitchPositionAtPlane(row: PitchSequenceRow, y: number) {
   if (!row.supported || row.trackingId === null) return null;
-  const start =
-    releaseY === undefined || y > releaseY ? null : pitchStateAtPlane(row, releaseY, true);
-  const point = start?.y === y ? start : pitchStateAtPlane(row, y, start !== null);
+  const point = pitchStateAtPlane(row, y);
   if (point === null) return null;
+  const start = y <= PITCH_COMPARISON_START_FEET ? pitchComparisonStart(row) : null;
   return {
     xCm: point.x * 30.48,
     zCm: point.z * 30.48,
@@ -29,7 +31,6 @@ export function analyzePitchSequences(
   input: readonly PitchSequenceRow[],
   releaseGroups: readonly PitchReleaseGroup[] = [],
 ): PitchSequenceResponse {
-  const releaseDepths = pitchReleaseDepths(releaseGroups);
   const rows = [...input].sort((a, b) =>
     a.gameId === b.gameId
       ? a.revision === b.revision
@@ -84,8 +85,8 @@ export function analyzePitchSequences(
       (query.cohort === "discipline" && !current.eligible)
     )
       continue;
-    const a = pitchPositionAtPlane(previous, 23.8, releaseDepths.get(previous.pitchType ?? "")),
-      b = pitchPositionAtPlane(current, 23.8, releaseDepths.get(current.pitchType ?? ""));
+    const a = pitchPositionAtPlane(previous, 23.8),
+      b = pitchPositionAtPlane(current, 23.8);
     const aTime = a?.timeMs ?? null,
       bTime = b?.timeMs ?? null;
     const ap =

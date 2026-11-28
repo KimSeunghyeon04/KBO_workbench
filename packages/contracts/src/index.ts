@@ -454,7 +454,6 @@ export {
   PitchAnalysisPointSchema,
   PitchAnalysisResponseSchema,
   PITCH_ANALYSIS_MODEL_VERSION,
-  PITCH_RELEASE_REFERENCE_VERSION,
   PitchReferenceKeySchema,
   PitchReferenceSchema,
   PitchReferenceEnvelopeSchema,

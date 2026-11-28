@@ -19,10 +19,10 @@ import {
   StagingWorkspace,
 } from "@kbo/persistence";
 import { calibrationRows, emptyCalibration } from "../helpers/pitch-calibration.js";
-import { pitchFrom50Feet } from "../helpers/pitch-trajectory.js";
+import { pitchFrom50Feet, pitchFrom55Feet } from "../helpers/pitch-trajectory.js";
 
 describe("daily park calibration integration", () => {
-  it("transports a fitted 50-ft park bias to the release tangent before comparing movement", () => {
+  it("applies the same fitted park bias at 50 ft to pitches from either original plane", () => {
     const training = calibrationRows();
     const calibration = calculatePitchCalibration(2025, "a".repeat(64), training);
     const template = training.at(-1);
@@ -45,26 +45,34 @@ describe("daily park calibration integration", () => {
         az: 0,
       };
     });
-    const reference = preparePitchAnalysisReference(fitRows, emptyCalibration(2025), true);
+    const reference = preparePitchAnalysisReference(fitRows, emptyCalibration(2025));
     const result = calculatePitchAnalysisSample(
       2025,
       template.pitcherId,
       calibration.sourceHash,
-      [{ ...template, ...pitchFrom50Feet }],
+      [
+        { ...template, ...pitchFrom50Feet },
+        { ...template, ...pitchFrom55Feet, pitchId: "rebased", trackingId: "rebased" },
+      ],
       reference,
       calibration,
       fitRows,
     );
-    const referenceTime = (55 - 17 / 24) / 100;
+    const referenceTime = (50 - 17 / 24) / 100;
     const cm = (referenceTime ** 2 * 30.48) / 2;
-    const scale = 124.6 / 125.4;
-    expect(result.points[0]).toMatchObject({
-      calibrationStatus: "applied",
-      calibrationXcm: expect.closeTo(5.2 * scale * cm, 7),
-      calibrationZcm: expect.closeTo(-1.6 * scale * cm, 7),
-      xCm: expect.closeTo((8 + 40 / 125.4 - 5.2 * scale) * cm, 7),
-      zCm: expect.closeTo((-30 - 40 / 125.4 + 1.6 * scale) * cm, 7),
+    expect(result.releaseGroups?.[0]?.estimate).toEqual({
+      xCm: expect.closeTo(30.48, 9),
+      heightCm: expect.closeTo(182.88, 9),
     });
+    expect(result.points).toHaveLength(2);
+    for (const point of result.points)
+      expect(point).toMatchObject({
+        calibrationStatus: "applied",
+        calibrationXcm: expect.closeTo(5.2 * cm, 7),
+        calibrationZcm: expect.closeTo(-1.6 * cm, 7),
+        xCm: expect.closeTo((8 + 46.4 / 124.6 - 5.2) * cm, 7),
+        zCm: expect.closeTo((-30 - 64 / 124.6 + 1.6) * cm, 7),
+      });
   });
   it("recovers known biases, standardizes the plane and subtracts acceleration before comparison", () => {
     const rows = calibrationRows();

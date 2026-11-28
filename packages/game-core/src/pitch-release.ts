@@ -21,18 +21,6 @@ function timeAtPlane(row: MeasuredGeometry, yFeet: number): number | null {
   return pitchTimeAtPlane(row.y0, row.vy0, row.ay, yFeet);
 }
 
-export function pitchReleaseDepths(
-  groups: readonly PitchReleaseGroup[],
-): ReadonlyMap<string, number> {
-  return new Map(
-    groups.flatMap(({ pitchType, estimate }) =>
-      estimate === null
-        ? []
-        : [[pitchType, RUBBER_INCHES / INCHES_PER_FOOT - estimate.extensionCm / FEET_TO_CM]],
-    ),
-  );
-}
-
 function hasGeometry(row: ReleaseRow): row is ReleaseRow & MeasuredGeometry {
   const { x0, y0, z0, vx0, vy0, vz0, ax, ay, az } = row;
   return (
@@ -98,7 +86,6 @@ function fitRelease(games: readonly MeasuredGeometry[][]): PitchReleaseGroup["es
   const estimate = {
     xCm: (bestX / count) * FEET_TO_CM,
     heightCm: (bestZ / count) * FEET_TO_CM,
-    extensionCm: ((RUBBER_INCHES - bestPlane) / INCHES_PER_FOOT) * FEET_TO_CM,
   };
   return Object.values(estimate).every(Number.isFinite) ? estimate : null;
 }

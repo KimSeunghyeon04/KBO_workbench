@@ -20,7 +20,6 @@ const season = Type.Integer({ minimum: 1900, maximum: 2200 });
 const nullableNumber = Type.Union([Type.Number(), Type.Null()]);
 const hash = Type.String({ pattern: "^[0-9a-f]{64}$" });
 export const PITCH_ANALYSIS_MODEL_VERSION = 2;
-export const PITCH_RELEASE_REFERENCE_VERSION = 4;
 const baselineSchema = Type.Object(
   {
     pitchType: Type.Literal("직구"),
@@ -38,10 +37,7 @@ const baselineSchema = Type.Object(
 export const PitchReferenceKeySchema = Type.Object(
   {
     modelVersion: Type.Literal(PITCH_ANALYSIS_MODEL_VERSION),
-    referenceVersion: Type.Union([
-      Type.Literal(PITCH_REFERENCE_VERSION),
-      Type.Literal(PITCH_RELEASE_REFERENCE_VERSION),
-    ]),
+    referenceVersion: Type.Literal(PITCH_REFERENCE_VERSION),
     season,
     sourceHash: hash,
     calibrationHash: Type.Union([hash, Type.Null()]),
@@ -139,7 +135,6 @@ export const PitchAnalysisSampleSchema = Type.Object(
     actualPitchCount: count,
     missingTrackingCount: count,
     invalidTrackingCount: count,
-    missingReleaseCount: Type.Optional(count),
     releaseGroups: Type.Optional(Type.Array(PitchReleaseGroupSchema)),
     calibration: PitchCalibrationSummarySchema,
     points: Type.Array(Type.Omit(PitchAnalysisPointSchema, ["clusterId"])),

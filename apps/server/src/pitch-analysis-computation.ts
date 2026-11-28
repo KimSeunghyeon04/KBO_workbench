@@ -20,12 +20,11 @@ export function createPitchAnalysisComputation(
       if (result.kind !== "pitch_calibration") throw new Error("Unexpected calibration result");
       return result.value;
     },
-    async reference(rows, calibration, releaseBased) {
+    async reference(rows, calibration) {
       const result = await runner.run({
         kind: "pitch_reference",
         rows,
         ...(calibration === null ? {} : { calibration }),
-        ...(releaseBased === undefined ? {} : { releaseBased }),
       });
       if (result.kind !== "pitch_reference") throw new Error("Unexpected reference result");
       return result.value;

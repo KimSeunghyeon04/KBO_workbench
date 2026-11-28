@@ -207,11 +207,7 @@ export function compute(input: Computation): ComputationResult | Promise<Computa
     case "pitch_reference":
       return {
         kind: input.kind,
-        value: preparePitchAnalysisReference(
-          input.rows,
-          input.calibration ?? null,
-          input.releaseBased,
-        ),
+        value: preparePitchAnalysisReference(input.rows, input.calibration ?? null),
       };
     case "pitch_calibration":
       return {

@@ -1201,6 +1201,9 @@ try {
   await page.goto("http://localhost/analysis/pitch-shape?season=2024&competition=unknown", { waitUntil: "networkidle" });
   const chart = page.getByRole("img", { name: /\ud3c9\uade0 \ud3ec\uc2ec/ });
   await chart.waitFor();
+  const releaseTable = page.getByRole("table", { name: "\uc2dc\uc98c \uad6c\uc885\ubcc4 \ub9b4\ub9ac\uc2a4 \uc704\uce58 \ucd94\uc815\uce58", exact: true });
+  await releaseTable.waitFor();
+  if (await releaseTable.getByRole("columnheader").count() !== 4) throw new Error("Pitch shape release table has unexpected columns.");
   const shapeSettings = page.locator(".pitch-view-settings");
   const shapeSettingsSummary = shapeSettings.locator("summary");
   if (await shapeSettings.getAttribute("open") !== null) throw new Error("Pitch view settings must start collapsed.");
@@ -1352,6 +1355,8 @@ try {
     if (url.includes("pitch-sequences")) {
       await page.locator(".sequence-group-header select").selectOption({ index: 1 });
       await page.locator(".sequence-comparison .analysis-comparison-target").waitFor();
+      await page.locator(".sequence-trajectory").getByText(/50ft/).first().waitFor();
+      if (await releaseTable.getByRole("columnheader").count() !== 4) throw new Error("Pitch sequence release table has unexpected columns.");
       await page.locator(".sequence-group-details > summary").click();
       await page.locator(".sequence-group-details table").waitFor();
       await page.getByRole("button", { name: "\uADA4\uC801 \uBE44\uAD50", exact: true }).first().press("Enter");
@@ -1513,13 +1518,13 @@ try {
     $response = Invoke-RestMethod -Uri $uri
     $referenceResponses[$uri] = $response | ConvertTo-Json -Depth 100 -Compress
     if ($null -eq $response.baseline -or $response.points.Count -eq 0) {
-      throw "Release-based reference fixture did not produce points."
+      throw "50-ft reference fixture did not produce points."
     }
     if ($response.calibration.plane -ne "middle" -or
         ($response.calibration.calibratedCount + $response.calibration.uncalibratedCount) -ne $response.points.Count) {
       throw "Pitch calibration coverage does not match points."
     }
-    $referencePath = Join-Path $workspacePath "analysis/pitch-reference/v$($response.modelVersion)/reference-v4/$($response.calibration.profileHash)/$season/$($response.referenceSourceHash).json"
+    $referencePath = Join-Path $workspacePath "analysis/pitch-reference/v$($response.modelVersion)/reference-v3/$($response.calibration.profileHash)/$season/$($response.referenceSourceHash).json"
     $calibrationPath = Join-Path $workspacePath "analysis/pitch-calibration/v$($response.calibration.modelVersion)/$season/$($response.referenceSourceHash).json"
     foreach ($cachePath in @($referencePath, $calibrationPath)) {
       $referenceFiles[$cachePath] = @{

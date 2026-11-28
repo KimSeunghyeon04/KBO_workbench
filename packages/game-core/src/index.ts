@@ -5,6 +5,7 @@ export {
   averagePitchTrajectory,
   comparePitchTrajectory,
   pitchApproachAngles,
+  PITCH_COMPARISON_START_FEET,
   type PitchTrajectoryInput,
   type AlignedPitchTrajectory,
   type PitchTrajectoryComparison,
@@ -85,7 +86,7 @@ export { analyzeBatterCountFlow, analyzePitchCountFlow } from "./pitch-count-flo
 export { analyzeBatterProfile } from "./batter-profile.js";
 export { analyzePitcherChanges } from "./pitcher-changes.js";
 export { analyzePitchSequences, pitchPositionAtPlane } from "./pitch-sequence.js";
-export { estimatePitchReleases, pitchReleaseDepths } from "./pitch-release.js";
+export { estimatePitchReleases } from "./pitch-release.js";
 export {
   baserunningOpportunities,
   summarizeBaserunningOpportunities,

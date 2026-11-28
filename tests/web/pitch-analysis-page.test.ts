@@ -86,13 +86,12 @@ function response(season: number, pitcherId: string, k = 2): PitchAnalysisRespon
     actualPitchCount: 4,
     missingTrackingCount: 1,
     invalidTrackingCount: 1,
-    missingReleaseCount: 0,
     releaseGroups: [
       {
         pitchType: "직구",
         pitches: 192,
         games: 5,
-        estimate: { xCm: 42, heightCm: 188, extensionCm: 175 },
+        estimate: { xCm: 42, heightCm: 188 },
       },
     ],
     points: ["직구", "슬라이더"].map((pitchType, index) => ({
@@ -388,9 +387,10 @@ describe("투구 움직임 화면", () => {
     await user.click(screen.getByRole("button", { name: "중계 구종 수로 초기화" }));
     expect(await screen.findByLabelText("군집 수")).toHaveProperty("value", "2");
     const releases = within(
-      await screen.findByRole("table", { name: "시즌 구종별 릴리스와 익스텐션 추정치" }),
+      await screen.findByRole("table", { name: "시즌 구종별 릴리스 위치 추정치" }),
     );
-    expect(releases.getByText("175")).toBeTruthy();
+    expect(releases.getByText("188")).toBeTruthy();
+    expect(releases.queryByRole("columnheader", { name: /익스텐션/ })).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     client.clear();
   });

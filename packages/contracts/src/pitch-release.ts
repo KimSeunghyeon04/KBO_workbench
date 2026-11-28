@@ -20,7 +20,6 @@ export const PitchReleaseGroupSchema = Type.Object(
         {
           xCm: Type.Number(),
           heightCm: Type.Number({ exclusiveMinimum: 0 }),
-          extensionCm: Type.Number({ exclusiveMinimum: 0 }),
         },
         strict,
       ),

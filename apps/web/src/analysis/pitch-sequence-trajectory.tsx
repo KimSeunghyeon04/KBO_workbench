@@ -1,29 +1,22 @@
-import type { PitchReleaseGroup, PitchSequenceResponse } from "@kbo/contracts";
-import { pitchPositionAtPlane, pitchReleaseDepths } from "@kbo/game-core";
+import type { PitchSequenceResponse } from "@kbo/contracts";
+import { pitchPositionAtPlane, PITCH_COMPARISON_START_FEET } from "@kbo/game-core";
 import { pitchCallLabel } from "../events/relay-text";
 const n = (value: number | null) => value?.toFixed(2) ?? "—";
 const signed = (value: number | null) => (value !== null && value > 0 ? `+${n(value)}` : n(value));
 
 export function PitchSequenceTrajectory({
   selected,
-  releaseGroups,
 }: {
   selected: PitchSequenceResponse["pairs"][number];
-  releaseGroups: readonly PitchReleaseGroup[];
 }) {
-  const depths = pitchReleaseDepths(releaseGroups);
   const curves = [selected.previous, selected.current].map((row) => {
-    const estimatedY = depths.get(row.pitchType ?? "");
-    const releaseY =
-      estimatedY !== undefined && pitchPositionAtPlane(row, estimatedY, estimatedY)?.timeMs === 0
-        ? estimatedY
-        : undefined;
-    const first = releaseY ?? row.y0;
+    if (row.y0 === null) return [];
+    const first = Math.min(PITCH_COMPARISON_START_FEET, row.y0);
     const last = row.crossPlateY ?? 17 / 12;
-    if (first === null || first <= last) return [];
+    if (first <= last || pitchPositionAtPlane(row, first) === null) return [];
     return Array.from({ length: 41 }, (_, i) => {
       const y = i === 40 ? last : first - (i * (first - last)) / 40;
-      const point = pitchPositionAtPlane(row, y, releaseY);
+      const point = pitchPositionAtPlane(row, y);
       return point === null ? null : { y, ...point };
     }).filter((p) => p !== null);
   });
@@ -41,7 +34,7 @@ export function PitchSequenceTrajectory({
         주황 점선: 첫 공 · 녹색 실선: 두 번째 공 · 세로 점선: 23.8ft 비교면
       </p>
       <p>
-        면 간격 {n(selected.planeDistanceCm)} cm · 릴리스 기준 두 번째−첫 번째 시간{" "}
+        면 간격 {n(selected.planeDistanceCm)} cm · 50ft 기준 두 번째−첫 번째 시간{" "}
         {signed(selected.planeTimeDifferenceMs)} ms · 두 번째−첫 번째 구속{" "}
         {signed(selected.speedDifferenceKph)} km/h
       </p>
@@ -111,8 +104,8 @@ export function PitchSequenceTrajectory({
       <details className="analysis-caption">
         <summary>좌표와 해석 기준</summary>{" "}
         <p>
-          홈플레이트 뒤 꼭짓점이 원점입니다. 두 공의 시즌 구종별 추정 릴리스부터 23.8피트까지 걸린
-          시간을 비교합니다. 추정치가 없으면 원본 구간을 그리고 시간차는 비워 둡니다.
+          홈플레이트 뒤 꼭짓점이 원점입니다. 두 공이 50피트에서 23.8피트까지 가는 데 걸린 시간을
+          비교합니다. 한 공이라도 50피트에서의 궤적을 계산할 수 없으면 시간차를 비웁니다.
         </p>
       </details>
     </div>

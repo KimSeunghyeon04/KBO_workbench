@@ -31,7 +31,6 @@ it("fits a common release plane from 50 and 55 ft despite between-game motion", 
   for (const origin of [50, 55]) {
     const [group] = estimatePitchReleases(sample(origin, 54));
     expect(group).toMatchObject({ pitchType: "직구", pitches: 144, games: 3 });
-    expect(group?.estimate?.extensionCm).toBeCloseTo(198.12, 10);
     expect(group?.estimate?.xCm).toBeCloseTo(45.72, 10);
     expect(group?.estimate?.heightCm).toBeCloseTo(188.976, 10);
   }

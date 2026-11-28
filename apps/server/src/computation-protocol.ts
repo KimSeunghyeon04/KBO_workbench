@@ -155,7 +155,6 @@ export type Computation =
       kind: "pitch_reference";
       rows: readonly PitchAnalysisRow[];
       calibration?: PitchCalibrationSeason;
-      releaseBased?: boolean;
     }
   | {
       kind: "pitch_sample";

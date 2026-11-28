@@ -14,15 +14,15 @@ const fastballRelease: PitchReleaseGroup = {
   pitchType: "직구",
   games: 3,
   pitches: 120,
-  estimate: { xCm: 100, heightCm: 140, extensionCm: 5.5 * 30.48 },
+  estimate: { xCm: 100, heightCm: 140 },
 };
 const releases = [fastballRelease];
 
 it("uses one clock for a pair with different original reference planes", () => {
   const previous = row(0, { ...pitchFrom50Feet, speedKph: 139 }),
     current = row(1, { ...pitchFrom55Feet, speedKph: 141 });
-  const position = pitchPositionAtPlane(current, 1.76, 55);
-  expect(position?.timeMs).toBeCloseTo(440, 9);
+  const position = pitchPositionAtPlane(current, 1.76);
+  expect(position?.timeMs).toBeCloseTo(400, 9);
   expect(position?.xCm).toBeCloseTo(2.6544 * 30.48, 10);
   expect(position?.zCm).toBeCloseTo(2.216 * 30.48, 10);
   const { pairs, coverage } = analyzePitchSequences(
@@ -38,13 +38,13 @@ it("uses one clock for a pair with different original reference planes", () => {
   expect(pairs[0]?.planeTimeDifferenceMs).toBeCloseTo(0, 9);
   expect(pairs[0]?.arrivalDistanceCm).toBeCloseTo(0, 9);
   expect(pairs[0]?.speedDifferenceKph).toBe(2);
-  expect(pitchPositionAtPlane(previous, 55, 55)).toMatchObject({
+  expect(pitchPositionAtPlane(current, 50)).toMatchObject({
     timeMs: 0,
-    xCm: expect.closeTo(30.48),
+    xCm: expect.closeTo(1.0864 * 30.48),
   });
 });
 
-it("changes elapsed time by release depth and keeps measured geometry when an estimate is missing", () => {
+it("keeps the same 50-ft comparison when a release position is absent", () => {
   const previous = row(0, { y0: 50, vy0: -100, ay: 0 });
   const current = { ...previous, pitchSequence: 1, pitchId: "e1", pitchType: "슬라이더" };
   const slider = {
@@ -53,7 +53,6 @@ it("changes elapsed time by release depth and keeps measured geometry when an es
     estimate: {
       xCm: -85,
       heightCm: 190,
-      extensionCm: 6.5 * 30.48,
     },
   };
   const pair = analyzePitchSequences(
@@ -65,22 +64,22 @@ it("changes elapsed time by release depth and keeps measured geometry when an es
     [...releases, slider],
   ).pairs[0];
   expect(pair).toMatchObject({ planeDistanceCm: 0, arrivalDistanceCm: 0 });
-  expect(pair?.planeTimeDifferenceMs).toBeCloseTo(-10, 9);
+  expect(pair?.planeTimeDifferenceMs).toBe(0);
   const missing = analyzePitchSequences(query, "p", scope, "hash", [previous, current], releases);
   expect(missing.pairs[0]).toMatchObject({
     planeDistanceCm: 0,
     arrivalDistanceCm: 0,
-    planeTimeDifferenceMs: null,
+    planeTimeDifferenceMs: 0,
   });
-  expect(missing.groups[0]).toMatchObject({ planeDistancePairs: 1, planeTimeDifferencePairs: 0 });
+  expect(missing.groups[0]).toMatchObject({ planeDistancePairs: 1, planeTimeDifferencePairs: 1 });
 });
 
-it("uses the original spatial interval if the estimated start is physically invalid for one pitch", () => {
-  const pitch = row(0, { z0: 0.1, vz0: 10 });
-  expect(pitchPositionAtPlane(pitch, 53, 55)).toBeNull();
-  const point = pitchPositionAtPlane(pitch, 23.8, 55);
-  expect(point).toEqual(pitchPositionAtPlane(pitch, 23.8));
-  expect(point?.timeMs).toBeNull();
+it("retains downstream pair geometry when a pitch has no valid 50-ft start", () => {
+  const previous = row(0, { y0: 49, x0: 0, vx0: 0, ax: 0, z0: 6, vz0: 0, az: 0 });
+  const current = { ...previous, pitchSequence: 1, pitchId: "e1", y0: 50 };
+  const { pairs, groups } = analyzePitchSequences(query, "p", scope, "hash", [previous, current]);
+  expect(pairs[0]).toMatchObject({ planeDistanceCm: 0, planeTimeDifferenceMs: null });
+  expect(groups[0]).toMatchObject({ planeDistancePairs: 1, planeTimeDifferencePairs: 0 });
 });
 it("forms pairs before type filtering and preserves missing tracking as an intervening pitch", () => {
   const rows = [

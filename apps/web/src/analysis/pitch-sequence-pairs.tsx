@@ -87,7 +87,7 @@ export function PitchSequencePairs({ data }: { data: PitchSequenceResponse }) {
               {labelFor(JSON.stringify([selected.previous.pitchType, selected.current.pitchType]))}{" "}
               · 선택 목록 {index + 1}번째 쌍
             </h3>
-            <PitchSequenceTrajectory selected={selected} releaseGroups={data.releaseGroups} />
+            <PitchSequenceTrajectory selected={selected} />
             <PitchReleasePanel
               groups={data.releaseGroups}
               pitchTypes={[selected.previous.pitchType, selected.current.pitchType]}
@@ -116,8 +116,8 @@ export function PitchSequencePairs({ data }: { data: PitchSequenceResponse }) {
           가능한 유효 쌍만 사용하며, 유효 0쌍은 —로 표시합니다.
         </p>
         <p className="analysis-caption">
-          시간·구속 차는 두 번째−첫 번째입니다. 시간의 +는 추정 릴리스부터 비교면까지 더 오래
-          걸렸다는 뜻입니다. 구속의 +는 더 빠른 공을 뜻합니다.
+          시간·구속 차는 두 번째−첫 번째입니다. 시간의 +는 50피트부터 비교면까지 더 오래 걸렸다는
+          뜻입니다. 구속의 +는 더 빠른 공을 뜻합니다.
         </p>
         <div className="table-scroll" tabIndex={0}>
           <table className="analysis-sticky-table" aria-label="두 구종 조합">

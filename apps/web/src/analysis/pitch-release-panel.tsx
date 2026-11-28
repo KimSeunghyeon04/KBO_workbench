@@ -18,21 +18,17 @@ export function PitchReleasePanel({
   const Heading = pitchTypes ? "h3" : "h2";
   return (
     <section className={pitchTypes ? "sequence-release" : "panel"} aria-label="시즌 릴리스 추정">
-      <Heading>시즌 구종별 릴리스·익스텐션</Heading>
+      <Heading>시즌 구종별 릴리스 위치</Heading>
       {rows.length === 0 ? (
         <p className="analysis-caption">구종이 확인된 트래킹 표본이 없습니다.</p>
       ) : (
         <div className="table-scroll" tabIndex={0}>
-          <table
-            className="analysis-sticky-table"
-            aria-label="시즌 구종별 릴리스와 익스텐션 추정치"
-          >
+          <table className="analysis-sticky-table" aria-label="시즌 구종별 릴리스 위치 추정치">
             <thead>
               <tr>
                 <th scope="col">구종</th>
                 <th scope="col">릴리스 좌우 (cm)</th>
                 <th scope="col">릴리스 높이 (cm)</th>
-                <th scope="col">익스텐션 (cm)</th>
                 <th scope="col">시즌 표본</th>
               </tr>
             </thead>
@@ -56,7 +52,6 @@ function ReleaseRow({ label, group }: { label: string; group: PitchReleaseGroup 
       <th scope="row">{label}</th>
       <td>{estimate ? String(Math.round(estimate.xCm)) : "—"}</td>
       <td>{estimate?.heightCm.toFixed(0) ?? "—"}</td>
-      <td>{estimate?.extensionCm.toFixed(0) ?? "—"}</td>
       <td>
         {group ? `${group.pitches.toLocaleString()}구 · ${group.games.toLocaleString()}경기` : "—"}
       </td>

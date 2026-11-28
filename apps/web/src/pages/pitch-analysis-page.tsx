@@ -368,8 +368,7 @@ export function PitchAnalysisPage(): React.JSX.Element {
                 투수 전체 {data.actualPitchCount.toLocaleString()}구 · 계산{" "}
                 {data.points.length.toLocaleString()}구 · 트래킹 없음{" "}
                 {data.missingTrackingCount.toLocaleString()}구 · 계산 제외{" "}
-                {data.invalidTrackingCount.toLocaleString()}구 · 릴리스 추정 없음{" "}
-                {(data.missingReleaseCount ?? 0).toLocaleString()}구
+                {data.invalidTrackingCount.toLocaleString()}구
               </span>
             </div>
           </section>
@@ -444,12 +443,12 @@ export function PitchAnalysisPage(): React.JSX.Element {
               포함하며, 적용 여부를 투구별로 표시합니다.
             </p>
             <p>
-              해당 시즌에 저장된 종료 경기에서 릴리스 위치를 추정할 수 있는 ‘직구’를 포심으로
+              해당 시즌에 저장된 종료 경기에서 50피트부터의 궤적을 계산할 수 있는 ‘직구’를 포심으로
               사용합니다. 좌·우완을 합산하고 투구마다 같은 가중치를 줍니다. 투수·구종 필터는 기준
               집단을 바꾸지 않습니다.
             </p>
             <p>
-              시즌 구종별 추정 릴리스 깊이에서 각 공의 출발 위치와 진행 방향을 정렬합니다. 평균
+              홈플레이트에서 50피트 떨어진 지점에서 각 공의 위치와 진행 방향을 정렬합니다. 평균
               궤적이 플레이트에 닿는 한 시각에서 모든 공의 좌우(X)·높이(Z)·플레이트까지 거리(Y)를
               비교합니다. 십자선은 그 순간의 평균 포심입니다. 거리 양수는 플레이트 이전, 음수는 통과
               이후입니다. 축별 확대는 분포를 보기 위한 표시 비율이며 실제 길이 비율로 전환할 수
@@ -489,14 +488,12 @@ export function PitchAnalysisPage(): React.JSX.Element {
           </p>
           <p>
             트래킹 누락 {data.missingTrackingCount.toLocaleString()}구 · 궤적 부적합{" "}
-            {data.invalidTrackingCount.toLocaleString()}구 · 릴리스 추정 없음{" "}
-            {(data.missingReleaseCount ?? 0).toLocaleString()}구 · 기준 포심 미확보{" "}
+            {data.invalidTrackingCount.toLocaleString()}구 · 기준 포심 미확보{" "}
             {Math.max(
               0,
               data.actualPitchCount -
                 data.missingTrackingCount -
                 data.invalidTrackingCount -
-                (data.missingReleaseCount ?? 0) -
                 data.points.length,
             ).toLocaleString()}
             구

@@ -25,15 +25,9 @@ const universe = standardAnalysisVenueIds;
 export const pitchCalibrationHash = (value: unknown): string =>
   createHash("sha256").update(canonicalStringify(value)).digest("hex");
 
-export function middlePlaneTrajectory(
-  row: PitchAnalysisRow,
-  releaseY?: number,
-): AlignedPitchTrajectory | null {
+export function middlePlaneTrajectory(row: PitchAnalysisRow): AlignedPitchTrajectory | null {
   return row.supported && row.trackingId !== null
-    ? alignPitchTrajectory(
-        { ...row, crossPlateY: PITCH_CALIBRATION_PARAMETERS.plateYFeet },
-        releaseY,
-      )
+    ? alignPitchTrajectory({ ...row, crossPlateY: PITCH_CALIBRATION_PARAMETERS.plateYFeet })
     : null;
 }
 
